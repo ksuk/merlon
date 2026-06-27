@@ -1,0 +1,12 @@
+type: rest
+base_url: https://api.example.com
+
+auth:
+  type: bearer
+
+endpoints:
+  fetch_customer:
+    method: GET
+    path: /customers/{id}
+    field_mapping:
+      external_id: "$.id"

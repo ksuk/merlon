@@ -20,6 +20,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
 	}
+	if cfg.AdapterConfigPath != "" {
+		t.Errorf("AdapterConfigPath = %q, want %q", cfg.AdapterConfigPath, "")
+	}
 }
 
 func TestLoadFromEnv(t *testing.T) {
@@ -41,5 +44,13 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "debug")
+	}
+}
+
+func TestLoadAdapterConfigFromEnv(t *testing.T) {
+	t.Setenv("MERLON_ADAPTER_CONFIG_PATH", "/app/adapters/core.yaml")
+	cfg := Load()
+	if cfg.AdapterConfigPath != "/app/adapters/core.yaml" {
+		t.Errorf("AdapterConfigPath = %q, want %q", cfg.AdapterConfigPath, "/app/adapters/core.yaml")
 	}
 }

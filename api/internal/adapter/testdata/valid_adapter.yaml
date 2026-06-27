@@ -1,0 +1,30 @@
+type: rest
+base_url: https://core.example.com/api/v1
+timeout_seconds: 15
+
+auth:
+  type: bearer
+  token_env: CORE_API_TOKEN
+
+endpoints:
+  fetch_customer:
+    method: GET
+    path: /customers/{id}
+    field_mapping:
+      external_id: "$.customer_id"
+      name: "$.full_name"
+      country: "$.address.country_code"
+      customer_type: "$.type"
+
+  fetch_transactions:
+    method: GET
+    path: /transactions
+    params:
+      account_id: "{account_id}"
+      since: "{last_sync_timestamp}"
+    response_root: "$.transactions"
+    field_mapping:
+      external_id: "$.txn_id"
+      amount: "$.amount"
+      currency: "$.currency"
+      type: "$.transaction_type"

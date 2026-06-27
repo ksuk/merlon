@@ -3,14 +3,15 @@ package config
 import "os"
 
 type Config struct {
-	Env          string
-	HTTPAddr     string
-	DatabaseURL  string
-	JWTSecret    string
-	ConfigPath   string
-	CacheBackend string
-	EventBus     string
-	LogLevel     string
+	Env               string
+	HTTPAddr          string
+	DatabaseURL       string
+	JWTSecret         string
+	ConfigPath        string
+	CacheBackend      string
+	EventBus          string
+	LogLevel          string
+	AdapterConfigPath string
 }
 
 func Load() *Config {
@@ -22,7 +23,8 @@ func Load() *Config {
 		ConfigPath:   getEnv("MERLON_CONFIG_PATH", "config.yaml"),
 		CacheBackend: getEnv("MERLON_CACHE_BACKEND", "memory"),
 		EventBus:     getEnv("MERLON_EVENT_BUS", "pg_notify"),
-		LogLevel:     getEnv("MERLON_LOG_LEVEL", "info"),
+		LogLevel:          getEnv("MERLON_LOG_LEVEL", "info"),
+		AdapterConfigPath: getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
 	}
 }
 
