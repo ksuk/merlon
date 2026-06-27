@@ -1,0 +1,8 @@
+apiVersion: v2
+name: merlon
+description: AML/CFT compliance software for Japanese non-bank financial institutions
+type: application
+version: 0.1.0
+appVersion: "0.1.0-dev"
+maintainers:
+  - name: Merlon Project

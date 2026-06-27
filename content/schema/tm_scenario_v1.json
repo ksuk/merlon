@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlon-aml.example.com/schemas/tm_scenario_v1.json",
+  "title": "TM Scenario Definition",
+  "description": "Schema for transaction monitoring scenario definitions",
+  "type": "object",
+  "required": ["schema_version", "id", "name", "version", "conditions"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "tm_scenario_v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "name": { "type": "string" },
+    "name_ja": { "type": "string" },
+    "description": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "is_sample": { "type": "boolean" },
+    "conditions": { "type": "object" },
+    "risk_tier_adjustments": { "type": "object" },
+    "alert_severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

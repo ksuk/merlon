@@ -1,0 +1,47 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# Rust
+**/target/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Proto generated
+api/gen/
+engine/crates/merlon-proto/src/gen/
+
+# Environment
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Docker
+docker-compose.override.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build
+/build/
+*.log

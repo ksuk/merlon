@@ -1,0 +1,29 @@
+{
+  "name": "Merlon Dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "rust-lang.rust-analyzer",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bufbuild.vscode-buf",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "go.toolsManagement.checkForUpdates": "local",
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+  "forwardPorts": [8080, 50051, 5432],
+  "postCreateCommand": "go version && rustc --version && node --version && buf --version",
+  "remoteUser": "vscode"
+}

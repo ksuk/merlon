@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package merlon.v1;
+
+option go_package = "github.com/merlon-aml/merlon/api/gen/merlon/v1;merlonv1";
+
+import "merlon/v1/types.proto";
+
+service ScoringService {
+  rpc EvaluateCustomerRisk (EvaluateCustomerRiskRequest) returns (EvaluateCustomerRiskResponse);
+  rpc BatchEvaluate (BatchEvaluateRequest) returns (stream BatchEvaluateResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message EvaluateCustomerRiskRequest {
+  CustomerAttributes customer = 1;
+  string rule_set_id = 2;
+}
+
+message EvaluateCustomerRiskResponse {
+  string customer_id = 1;
+  double score = 2;
+  RiskTier tier = 3;
+  repeated RiskFactor factors = 4;
+  string rule_set_id = 5;
+  int32 rule_set_version = 6;
+  Timestamp scored_at = 7;
+}
+
+message BatchEvaluateRequest {
+  repeated EvaluateCustomerRiskRequest customers = 1;
+  string rule_set_id = 2;
+}
+
+message BatchEvaluateResponse {
+  EvaluateCustomerRiskResponse result = 1;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+}

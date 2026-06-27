@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/merlon-engine"]
+resolver = "2"

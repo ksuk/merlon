@@ -1,0 +1,60 @@
+{
+  "schema_note": "Demo customer data for import via the Merlon API. Mirrors deploy/seed/seed.sql. Names are fictitious.",
+  "customers": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "customer_type": "individual",
+      "name": "田中 太郎",
+      "name_kana": "タナカ タロウ",
+      "country": "JP",
+      "risk_tier": "low",
+      "occupation_risk": "low",
+      "account_opened_at": "2019-04-01",
+      "score": 1.4
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "customer_type": "individual",
+      "name": "鈴木 花子",
+      "name_kana": "スズキ ハナコ",
+      "country": "JP",
+      "risk_tier": "medium",
+      "occupation_risk": "medium",
+      "account_opened_at": "2024-09-15",
+      "score": 2.8
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "customer_type": "corporate_domestic",
+      "name": "株式会社山田商事",
+      "name_kana": "ヤマダショウジ",
+      "country": "JP",
+      "risk_tier": "low",
+      "occupation_risk": "low",
+      "account_opened_at": "2015-06-01",
+      "score": 1.9
+    },
+    {
+      "id": "44444444-4444-4444-4444-444444444444",
+      "customer_type": "corporate_domestic",
+      "name": "佐藤エンタープライズ株式会社",
+      "name_kana": "サトウエンタープライズ",
+      "country": "JP",
+      "risk_tier": "medium",
+      "occupation_risk": "medium",
+      "account_opened_at": "2022-01-20",
+      "score": 3.1
+    },
+    {
+      "id": "55555555-5555-5555-5555-555555555555",
+      "customer_type": "corporate_foreign",
+      "name": "Global Trade Partners Ltd.",
+      "name_kana": null,
+      "country": "SG",
+      "risk_tier": "high",
+      "occupation_risk": "high",
+      "account_opened_at": "2025-03-10",
+      "score": 4.2
+    }
+  ]
+}

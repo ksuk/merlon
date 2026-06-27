@@ -1,0 +1,80 @@
+schema_version: cdd_weight_v1
+id: cdd_basic_weights
+name: Basic CDD Risk Weights
+name_ja: 基本CDDリスクウェイト
+description: Default risk scoring weights for customer due diligence
+version: 1
+is_sample: true
+
+axes:
+  customer_attributes:
+    weight: 0.25
+    factors:
+      - name: customer_type
+        scores:
+          individual: 1
+          corporate_domestic: 2
+          corporate_foreign: 4
+      - name: occupation_risk
+        scores:
+          low: 1
+          medium: 3
+          high: 5
+      - name: account_age_months
+        ranges:
+          - max: 3
+            score: 4
+          - max: 12
+            score: 2
+          - min: 12
+            score: 1
+
+  geography:
+    weight: 0.30
+    factors:
+      - name: country_risk
+        description: Based on FATF mutual evaluation results
+        scores:
+          low: 1
+          medium: 3
+          high: 5
+      - name: domestic_region_risk
+        scores:
+          standard: 1
+          elevated: 3
+
+  product_channel:
+    weight: 0.20
+    factors:
+      - name: product_type
+        scores:
+          savings: 1
+          remittance: 3
+          crypto_exchange: 4
+      - name: channel
+        scores:
+          branch: 1
+          online: 2
+          api: 3
+
+  transaction_pattern:
+    weight: 0.25
+    factors:
+      - name: volume_vs_profile
+        description: Transaction volume relative to declared purpose
+        ranges:
+          - label: within_expected
+            score: 1
+          - label: moderately_above
+            score: 3
+          - label: significantly_above
+            score: 5
+
+tier_thresholds:
+  low:
+    max_score: 2.0
+  medium:
+    min_score: 2.0
+    max_score: 3.5
+  high:
+    min_score: 3.5

@@ -1,0 +1,29 @@
+{
+  "schema_version": "tm_scenario_v1",
+  "id": "tm_structuring_basic",
+  "name": "Basic Structuring Detection",
+  "name_ja": "基本的な分割送金検知",
+  "description": "Detects potential structuring: multiple transactions below reporting threshold within a time window",
+  "version": 1,
+  "is_sample": true,
+  "conditions": {
+    "transaction_type": ["withdrawal", "transfer"],
+    "aggregation": {
+      "window": "24h",
+      "group_by": "customer_id",
+      "function": "count_and_sum"
+    },
+    "thresholds": {
+      "single_amount_below": 2000000,
+      "aggregate_amount_above": 5000000,
+      "count_above": 3
+    }
+  },
+  "risk_tier_adjustments": {
+    "high": { "threshold_multiplier": 0.7 },
+    "medium": { "threshold_multiplier": 1.0 },
+    "low": { "threshold_multiplier": 1.5 }
+  },
+  "alert_severity": "high",
+  "tags": ["structuring", "cash", "threshold"]
+}

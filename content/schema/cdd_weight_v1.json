@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlon-aml.example.com/schemas/cdd_weight_v1.json",
+  "title": "CDD Weight Definition",
+  "description": "Schema for customer due diligence risk weight definitions",
+  "type": "object",
+  "required": ["schema_version", "id", "name", "version", "axes", "tier_thresholds"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "cdd_weight_v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "name": { "type": "string" },
+    "name_ja": { "type": "string" },
+    "description": { "type": "string" },
+    "version": { "type": "integer", "minimum": 1 },
+    "is_sample": { "type": "boolean" },
+    "axes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["weight", "factors"],
+        "properties": {
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+          "factors": { "type": "array" }
+        }
+      }
+    },
+    "tier_thresholds": {
+      "type": "object",
+      "required": ["low", "medium", "high"]
+    }
+  }
+}

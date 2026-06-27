@@ -1,0 +1,36 @@
+# Development overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  api:
+    build:
+      target: builder
+    volumes:
+      - ./api:/build
+    environment:
+      MERLON_ENV: development
+      MERLON_LOG_LEVEL: debug
+    # TODO: Add air for Go hot-reload
+    #   Install: go install github.com/air-verse/air@latest
+    #   Command: air -c .air.toml
+
+  engine:
+    volumes:
+      - ./engine:/build
+    # TODO: Add cargo-watch for Rust hot-reload
+    #   Install: cargo install cargo-watch
+    #   Command: cargo watch -x run
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: Dockerfile
+      target: builder
+    command: npm run dev -- --host 0.0.0.0
+    volumes:
+      - ./ui:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
