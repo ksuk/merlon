@@ -83,6 +83,8 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.dispatchWebhook(r.Context(), domain.WebhookEventCaseCreated, c)
+
 	writeJSON(w, http.StatusCreated, c)
 }
 
@@ -178,6 +180,12 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	event := domain.WebhookEventCaseUpdated
+	if c.Status == domain.CaseStatusClosed {
+		event = domain.WebhookEventCaseClosed
+	}
+	s.dispatchWebhook(r.Context(), event, c)
 
 	writeJSON(w, http.StatusOK, c)
 }

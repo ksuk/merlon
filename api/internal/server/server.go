@@ -21,6 +21,7 @@ type Server struct {
 	audit        domain.AuditRepository
 	cases        domain.CaseRepository
 	apikeys      domain.APIKeyRepository
+	webhooks     domain.WebhookRepository
 	limiter      *rateLimiter
 }
 
@@ -35,6 +36,7 @@ type Deps struct {
 	Audit        domain.AuditRepository
 	Cases        domain.CaseRepository
 	APIKeys      domain.APIKeyRepository
+	Webhooks     domain.WebhookRepository
 	RateLimit    int
 }
 
@@ -52,6 +54,7 @@ func New(addr string, deps Deps) *Server {
 		audit:        deps.Audit,
 		cases:        deps.Cases,
 		apikeys:      deps.APIKeys,
+		webhooks:     deps.Webhooks,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -103,6 +106,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/batch/score", s.handleBatchScore)
 	s.mux.HandleFunc("POST /api/v1/batch/monitor", s.handleBatchMonitor)
 
+	// Webhooks
+	s.mux.HandleFunc("POST /api/v1/webhooks", s.handleCreateWebhook)
+	s.mux.HandleFunc("GET /api/v1/webhooks", s.handleListWebhooks)
+	s.mux.HandleFunc("GET /api/v1/webhooks/{id}", s.handleGetWebhook)
+	s.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleDeleteWebhook)
+	s.mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", s.handleListWebhookDeliveries)
+
 	// API Keys (admin only, managed outside auth middleware)
 	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
 	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
@@ -110,6 +120,9 @@ func (s *Server) routes() {
 
 	// Audit
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
+
+	// OpenAPI
+	s.mux.HandleFunc("GET /api/v1/openapi.json", s.handleOpenAPI)
 }
 
 func (s *Server) Handler() http.Handler {

@@ -70,6 +70,8 @@ func (s *Server) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:       req.CreatedBy,
 	}
 
+	s.dispatchWebhook(r.Context(), domain.WebhookEventSTRCreated, report)
+
 	writeJSON(w, http.StatusCreated, report)
 }
 

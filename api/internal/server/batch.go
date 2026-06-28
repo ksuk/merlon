@@ -192,6 +192,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			a.CreatedAt = now
 			a.UpdatedAt = now
 			s.alerts.Create(ctx, &a)
+			s.dispatchWebhook(ctx, domain.WebhookEventAlertCreated, a)
 		}
 
 		resp.Succeeded++

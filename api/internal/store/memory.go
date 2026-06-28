@@ -411,3 +411,105 @@ func (r *MemoryAPIKeyRepo) Revoke(_ context.Context, id string) error {
 	}
 	return &domain.ErrNotFound{Entity: "api_key", ID: id}
 }
+
+// MemoryWebhookRepo
+
+type MemoryWebhookRepo struct {
+	mu         sync.RWMutex
+	webhooks   map[string]*domain.Webhook
+	deliveries []domain.WebhookDelivery
+}
+
+func NewMemoryWebhookRepo() *MemoryWebhookRepo {
+	return &MemoryWebhookRepo{webhooks: make(map[string]*domain.Webhook)}
+}
+
+func (r *MemoryWebhookRepo) Get(_ context.Context, id string) (*domain.Webhook, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	w, ok := r.webhooks[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "webhook", ID: id}
+	}
+	cp := *w
+	return &cp, nil
+}
+
+func (r *MemoryWebhookRepo) List(_ context.Context) ([]domain.Webhook, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Webhook
+	for _, w := range r.webhooks {
+		result = append(result, *w)
+	}
+	return result, nil
+}
+
+func (r *MemoryWebhookRepo) ListByEvent(_ context.Context, event domain.WebhookEventType) ([]domain.Webhook, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Webhook
+	for _, w := range r.webhooks {
+		if !w.Active {
+			continue
+		}
+		for _, e := range w.Events {
+			if e == event {
+				result = append(result, *w)
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+func (r *MemoryWebhookRepo) Create(_ context.Context, w *domain.Webhook) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.webhooks[w.ID] = w
+	return nil
+}
+
+func (r *MemoryWebhookRepo) Update(_ context.Context, w *domain.Webhook) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.webhooks[w.ID]; !ok {
+		return &domain.ErrNotFound{Entity: "webhook", ID: w.ID}
+	}
+	w.UpdatedAt = time.Now()
+	r.webhooks[w.ID] = w
+	return nil
+}
+
+func (r *MemoryWebhookRepo) Delete(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.webhooks[id]; !ok {
+		return &domain.ErrNotFound{Entity: "webhook", ID: id}
+	}
+	delete(r.webhooks, id)
+	return nil
+}
+
+func (r *MemoryWebhookRepo) CreateDelivery(_ context.Context, d *domain.WebhookDelivery) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deliveries = append(r.deliveries, *d)
+	return nil
+}
+
+func (r *MemoryWebhookRepo) ListDeliveries(_ context.Context, webhookID string, limit int) ([]domain.WebhookDelivery, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.WebhookDelivery
+	for i := len(r.deliveries) - 1; i >= 0; i-- {
+		d := r.deliveries[i]
+		if d.WebhookID == webhookID {
+			result = append(result, d)
+			if limit > 0 && len(result) >= limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}

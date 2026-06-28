@@ -40,6 +40,7 @@ func main() {
 		deps.Alerts = store.NewPgAlertRepo(pool)
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
+		deps.Webhooks = store.NewMemoryWebhookRepo()
 		log.Printf("database connected: PostgreSQL")
 	} else {
 		deps.Customers = store.NewMemoryCustomerRepo()
@@ -47,6 +48,7 @@ func main() {
 		deps.Alerts = store.NewMemoryAlertRepo()
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = store.NewMemoryCaseRepo()
+		deps.Webhooks = store.NewMemoryWebhookRepo()
 		log.Printf("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
