@@ -30,6 +30,7 @@ services:
       MERLON_HTTP_ADDR: ":8080"
       MERLON_DATABASE_URL: postgres://merlon:merlon@db:5432/merlon?sslmode=disable
       MERLON_UI_DIR: /app/ui
+      MERLON_SEED: "true"
       MERLON_LOG_LEVEL: info
     # engine is not included in the minimal profile.
     # Use docker-compose.yml for the full topology.

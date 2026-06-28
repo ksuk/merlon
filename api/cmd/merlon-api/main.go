@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
@@ -80,6 +81,16 @@ func main() {
 		log.Printf("engine connected: %s", cfg.EngineAddr)
 	} else {
 		log.Printf("warning: MERLON_ENGINE_ADDR not set, engine endpoints disabled")
+	}
+
+	if os.Getenv("MERLON_SEED") == "true" {
+		seed.Run(context.Background(), seed.Repos{
+			Customers:    deps.Customers,
+			Transactions: deps.Transactions,
+			Alerts:       deps.Alerts,
+			Cases:        deps.Cases,
+			Audit:        deps.Audit,
+		})
 	}
 
 	srv := server.New(cfg.HTTPAddr, deps)

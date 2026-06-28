@@ -58,6 +58,7 @@ services:
       MERLON_DATABASE_URL: postgres://merlon:merlon@db:5432/merlon?sslmode=disable
       MERLON_ENGINE_ADDR: engine:50051
       MERLON_UI_DIR: /app/ui
+      MERLON_SEED: "true"
       MERLON_LOG_LEVEL: info
 
 volumes:

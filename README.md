@@ -96,7 +96,7 @@ See [docs/development/setup.md](docs/development/setup.md) for detailed setup in
 
 ## Status
 
-This project is in active development (M12). Core backend services (Go API, Rust Engine) and the operator dashboard UI are implemented.
+This project is in active development (M18). Core backend services (Go API, Rust Engine), operator dashboard UI with full API coverage, code splitting, error boundaries, and development mock data seeder are implemented.
 
 ## Production Warning
 
