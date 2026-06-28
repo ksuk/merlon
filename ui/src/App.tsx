@@ -11,6 +11,8 @@ const AlertDetailPage = lazy(() => import("@/pages/alert-detail").then((m) => ({
 const CasesPage = lazy(() => import("@/pages/cases").then((m) => ({ default: m.CasesPage })))
 const CaseDetailPage = lazy(() => import("@/pages/case-detail").then((m) => ({ default: m.CaseDetailPage })))
 const TransactionsPage = lazy(() => import("@/pages/transactions").then((m) => ({ default: m.TransactionsPage })))
+const TransactionDetailPage = lazy(() => import("@/pages/transaction-detail").then((m) => ({ default: m.TransactionDetailPage })))
+const BatchPage = lazy(() => import("@/pages/batch").then((m) => ({ default: m.BatchPage })))
 const ReportsPage = lazy(() => import("@/pages/reports").then((m) => ({ default: m.ReportsPage })))
 const BacktestPage = lazy(() => import("@/pages/backtest").then((m) => ({ default: m.BacktestPage })))
 const WebhooksPage = lazy(() => import("@/pages/webhooks").then((m) => ({ default: m.WebhooksPage })))
@@ -34,6 +36,8 @@ function App() {
               <Route path="cases" element={<CasesPage />} />
               <Route path="cases/:id" element={<CaseDetailPage />} />
               <Route path="transactions" element={<TransactionsPage />} />
+              <Route path="transactions/:id" element={<TransactionDetailPage />} />
+              <Route path="batch" element={<BatchPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="backtest" element={<BacktestPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />

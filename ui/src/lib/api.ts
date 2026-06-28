@@ -209,6 +209,53 @@ export interface ConfigValidationResult {
   errors: { field: string; message: string }[]
 }
 
+export interface ScreenMatch {
+  list_id: string
+  entry_id: string
+  matched_name: string
+  similarity: number
+  list_type: string
+  source: string
+}
+
+export interface ScreenResult {
+  customer_id: string
+  hit: boolean
+  matches: ScreenMatch[]
+  lists_checked: number
+  screened_at: string
+}
+
+export interface BatchScoreResult {
+  customer_id: string
+  score: number
+  risk_tier: string
+  error?: string
+}
+
+export interface BatchScoreResponse {
+  total: number
+  succeeded: number
+  failed: number
+  results: BatchScoreResult[]
+  duration: string
+}
+
+export interface BatchMonitorResult {
+  customer_id: string
+  alerts_raised: number
+  error?: string
+}
+
+export interface BatchMonitorResponse {
+  total: number
+  succeeded: number
+  failed: number
+  alerts_total: number
+  results: BatchMonitorResult[]
+  duration: string
+}
+
 export interface SystemInfo {
   version: string
   components: string[]
@@ -221,12 +268,21 @@ export const api = {
   customers: {
     list: () => request<Customer[]>("/customers"),
     get: (id: string) => request<Customer>(`/customers/${encodeURIComponent(id)}`),
+    create: (data: { external_id: string; customer_type: string; country_code: string; product_types: string[]; attributes: Record<string, string> }) =>
+      request<Customer>("/customers", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: { country_code?: string; product_types?: string[]; attributes?: Record<string, string> }) =>
+      request<Customer>(`/customers/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
     scoreHistory: (id: string) =>
       request<ScoreRecord[]>(`/customers/${encodeURIComponent(id)}/scores`),
     score: (id: string, ruleSetId: string) =>
       request<ScoreRecord>(`/customers/${encodeURIComponent(id)}/score`, {
         method: "POST",
         body: JSON.stringify({ rule_set_id: ruleSetId }),
+      }),
+    screen: (id: string, listIds: string[]) =>
+      request<ScreenResult>(`/customers/${encodeURIComponent(id)}/screen`, {
+        method: "POST",
+        body: JSON.stringify({ list_ids: listIds }),
       }),
   },
   alerts: {
@@ -241,6 +297,8 @@ export const api = {
   cases: {
     list: () => request<Case[]>("/cases"),
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
+    create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
+      request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),
     update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string }) =>
       request<Case>(`/cases/${encodeURIComponent(id)}`, {
         method: "PATCH",
@@ -254,6 +312,9 @@ export const api = {
   },
   transactions: {
     list: () => request<Transaction[]>("/transactions"),
+    get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
+    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; executed_at: string }) =>
+      request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data) }),
   },
   audit: {
     list: (resourceType?: string, resourceId?: string) => {
@@ -263,6 +324,18 @@ export const api = {
       const qs = params.toString()
       return request<AuditEntry[]>(`/audit${qs ? `?${qs}` : ""}`)
     },
+  },
+  batch: {
+    score: (customerIds?: string[]) =>
+      request<BatchScoreResponse>("/batch/score", {
+        method: "POST",
+        body: JSON.stringify({ customer_ids: customerIds }),
+      }),
+    monitor: (customerIds?: string[]) =>
+      request<BatchMonitorResponse>("/batch/monitor", {
+        method: "POST",
+        body: JSON.stringify({ customer_ids: customerIds }),
+      }),
   },
   reports: {
     createSTR: (alertId: string, suspiciousPoint: string, createdBy: string) =>
@@ -302,8 +375,8 @@ export const api = {
           body: JSON.stringify({ name, role }),
         }),
       revoke: (id: string) =>
-        request<{ status: string }>(`/admin/apikeys/${encodeURIComponent(id)}/revoke`, {
-          method: "POST",
+        request<{ status: string }>(`/admin/apikeys/${encodeURIComponent(id)}`, {
+          method: "DELETE",
         }),
     },
   },

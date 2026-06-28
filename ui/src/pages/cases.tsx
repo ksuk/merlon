@@ -1,4 +1,6 @@
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Table,
   TableBody,
@@ -9,6 +11,8 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type CasePriority, type CaseStatus } from "@/lib/api"
+import { Plus } from "lucide-react"
+import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
 const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high"> = {
@@ -36,6 +40,36 @@ function formatDateTime(iso: string) {
 
 export function CasesPage() {
   const { data: cases, loading, error } = useApi(api.cases.list)
+  const [showForm, setShowForm] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [priority, setPriority] = useState<CasePriority>("medium")
+  const custRef = useRef<HTMLInputElement>(null)
+  const alertRef = useRef<HTMLInputElement>(null)
+  const assignRef = useRef<HTMLInputElement>(null)
+  const summaryRef = useRef<HTMLInputElement>(null)
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    const customerId = custRef.current?.value.trim()
+    const summary = summaryRef.current?.value.trim()
+    if (!customerId || !summary) return
+    setCreating(true)
+    const alertIds = alertRef.current?.value.trim()
+      ? alertRef.current.value.split(",").map((s) => s.trim()).filter(Boolean)
+      : []
+    try {
+      await api.cases.create({
+        customer_id: customerId,
+        alert_ids: alertIds,
+        priority,
+        assigned_to: assignRef.current?.value.trim() || undefined,
+        summary,
+      })
+      window.location.reload()
+    } finally {
+      setCreating(false)
+    }
+  }
 
   if (loading) {
     return <TableSkeleton />
@@ -49,8 +83,60 @@ export function CasesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">ケース一覧</h1>
-        <p className="text-sm text-muted-foreground">{cases?.length ?? 0} 件</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">{cases?.length ?? 0} 件</p>
+          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+            <Plus className="h-4 w-4" />
+            新規作成
+          </Button>
+        </div>
       </div>
+
+      {showForm && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">ケース作成</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreate} className="space-y-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium">顧客ID</label>
+                  <input ref={custRef} required placeholder="cust-001"
+                    className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">アラートID（カンマ区切り）</label>
+                  <input ref={alertRef} placeholder="alert-001,alert-002"
+                    className="w-48 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">担当者</label>
+                  <input ref={assignRef} placeholder="tanaka"
+                    className="w-24 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium">優先度</label>
+                  <div className="flex gap-1">
+                    {(["low", "medium", "high"] as const).map((p) => (
+                      <button key={p} type="button" onClick={() => setPriority(p)}
+                        className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${priority === p ? "border-primary bg-primary/10 text-primary" : "border-input text-muted-foreground hover:bg-accent"}`}>
+                        {PRIORITY_LABELS[p]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium">概要</label>
+                <input ref={summaryRef} required placeholder="ケースの概要..."
+                  className="w-full rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+              </div>
+              <Button type="submit" size="sm" disabled={creating}>作成</Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="rounded-xl border">
         <Table>
@@ -76,11 +162,13 @@ export function CasesPage() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">
-                      {STATUS_LABELS[c.status] ?? c.status}
-                    </Badge>
+                    <Badge variant="outline">{STATUS_LABELS[c.status] ?? c.status}</Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-sm">{c.customer_id}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    <Link to={`/customers/${c.customer_id}`} className="text-primary hover:underline">
+                      {c.customer_id}
+                    </Link>
+                  </TableCell>
                   <TableCell>{c.assigned_to || "-"}</TableCell>
                   <TableCell className="max-w-[300px] truncate">{c.summary}</TableCell>
                   <TableCell className="whitespace-nowrap">{formatDateTime(c.created_at)}</TableCell>

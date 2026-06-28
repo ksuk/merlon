@@ -10,9 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type RiskTier } from "@/lib/api"
-import { ArrowLeft, RefreshCw } from "lucide-react"
-import { useCallback, useState } from "react"
+import { api, type RiskTier, type ScreenResult } from "@/lib/api"
+import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
+import { useCallback, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 
 const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
@@ -46,6 +46,11 @@ export function CustomerDetailPage() {
     useCallback(() => api.customers.scoreHistory(id!), [id]),
   )
   const [scoring, setScoring] = useState(false)
+  const [screening, setScreening] = useState(false)
+  const [screenResult, setScreenResult] = useState<ScreenResult | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const countryRef = useRef<HTMLInputElement>(null)
 
   async function handleScore() {
     if (!id) return
@@ -55,6 +60,29 @@ export function CustomerDetailPage() {
       window.location.reload()
     } catch {
       setScoring(false)
+    }
+  }
+
+  async function handleScreen() {
+    if (!id) return
+    setScreening(true)
+    setScreenResult(null)
+    try {
+      const result = await api.customers.screen(id, [])
+      setScreenResult(result)
+    } finally {
+      setScreening(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!id || !countryRef.current) return
+    setSaving(true)
+    try {
+      await api.customers.update(id, { country_code: countryRef.current.value.trim() })
+      window.location.reload()
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -94,8 +122,11 @@ export function CustomerDetailPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">基本情報</CardTitle>
+            <Button size="sm" variant="ghost" onClick={() => setEditing(!editing)}>
+              <Pencil className="h-4 w-4" />
+            </Button>
           </CardHeader>
           <CardContent>
             <dl className="space-y-3 text-sm">
@@ -109,7 +140,15 @@ export function CustomerDetailPage() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">国コード</dt>
-                <dd>{customer.country_code}</dd>
+                <dd>
+                  {editing ? (
+                    <div className="flex gap-2">
+                      <input ref={countryRef} defaultValue={customer.country_code} maxLength={2}
+                        className="w-16 rounded-md border bg-background px-2 py-1 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                      <Button size="sm" variant="outline" onClick={handleSave} disabled={saving}>保存</Button>
+                    </div>
+                  ) : customer.country_code}
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">プロダクト</dt>
@@ -130,10 +169,16 @@ export function CustomerDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">リスク評価</CardTitle>
-            <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
-              <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
-              スコアリング
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleScreen} disabled={screening}>
+                <Search className={`h-4 w-4 ${screening ? "animate-pulse" : ""}`} />
+                スクリーニング
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
+                <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
+                スコアリング
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <dl className="space-y-3 text-sm">
@@ -150,9 +195,7 @@ export function CustomerDetailPage() {
                     <Badge variant={TIER_VARIANT[customer.risk_tier]}>
                       {TIER_LABELS[customer.risk_tier]}
                     </Badge>
-                  ) : (
-                    "未スコア"
-                  )}
+                  ) : "未スコア"}
                 </dd>
               </div>
               <div className="flex justify-between">
@@ -163,6 +206,48 @@ export function CustomerDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {screenResult && (
+        <Card className={screenResult.hit ? "border-red-200" : "border-green-200"}>
+          <CardHeader>
+            <CardTitle className="text-base">
+              スクリーニング結果
+              <Badge variant={screenResult.hit ? "destructive" : "low"} className="ml-2">
+                {screenResult.hit ? "ヒットあり" : "ヒットなし"}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              チェック済みリスト: {screenResult.lists_checked}件 | 実行日時: {formatDateTime(screenResult.screened_at)}
+            </p>
+            {screenResult.matches.length > 0 && (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>リスト</TableHead>
+                    <TableHead>一致名</TableHead>
+                    <TableHead>類似度</TableHead>
+                    <TableHead>種別</TableHead>
+                    <TableHead>ソース</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {screenResult.matches.map((m, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-mono text-xs">{m.list_id}</TableCell>
+                      <TableCell>{m.matched_name}</TableCell>
+                      <TableCell>{(m.similarity * 100).toFixed(1)}%</TableCell>
+                      <TableCell>{m.list_type}</TableCell>
+                      <TableCell>{m.source}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {customer.attributes && Object.keys(customer.attributes).length > 0 && (
         <Card>
