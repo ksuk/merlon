@@ -1,43 +1,50 @@
+import { lazy } from "react"
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { AppLayout } from "@/components/layout/app-layout"
-import { DashboardPage } from "@/pages/dashboard"
-import { CustomersPage } from "@/pages/customers"
-import { CustomerDetailPage } from "@/pages/customer-detail"
-import { AlertsPage } from "@/pages/alerts"
-import { AlertDetailPage } from "@/pages/alert-detail"
-import { CasesPage } from "@/pages/cases"
-import { CaseDetailPage } from "@/pages/case-detail"
-import { TransactionsPage } from "@/pages/transactions"
-import { APIKeysPage } from "@/pages/apikeys"
-import { ConfigPage } from "@/pages/config"
-import { ReportsPage } from "@/pages/reports"
-import { BacktestPage } from "@/pages/backtest"
-import { WebhooksPage } from "@/pages/webhooks"
-import { AuditPage } from "@/pages/audit"
-import { SystemPage } from "@/pages/system"
+import { ErrorBoundary } from "@/components/error-boundary"
+
+const DashboardPage = lazy(() => import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage })))
+const CustomersPage = lazy(() => import("@/pages/customers").then((m) => ({ default: m.CustomersPage })))
+const CustomerDetailPage = lazy(() => import("@/pages/customer-detail").then((m) => ({ default: m.CustomerDetailPage })))
+const AlertsPage = lazy(() => import("@/pages/alerts").then((m) => ({ default: m.AlertsPage })))
+const AlertDetailPage = lazy(() => import("@/pages/alert-detail").then((m) => ({ default: m.AlertDetailPage })))
+const CasesPage = lazy(() => import("@/pages/cases").then((m) => ({ default: m.CasesPage })))
+const CaseDetailPage = lazy(() => import("@/pages/case-detail").then((m) => ({ default: m.CaseDetailPage })))
+const TransactionsPage = lazy(() => import("@/pages/transactions").then((m) => ({ default: m.TransactionsPage })))
+const ReportsPage = lazy(() => import("@/pages/reports").then((m) => ({ default: m.ReportsPage })))
+const BacktestPage = lazy(() => import("@/pages/backtest").then((m) => ({ default: m.BacktestPage })))
+const WebhooksPage = lazy(() => import("@/pages/webhooks").then((m) => ({ default: m.WebhooksPage })))
+const APIKeysPage = lazy(() => import("@/pages/apikeys").then((m) => ({ default: m.APIKeysPage })))
+const ConfigPage = lazy(() => import("@/pages/config").then((m) => ({ default: m.ConfigPage })))
+const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })))
+const SystemPage = lazy(() => import("@/pages/system").then((m) => ({ default: m.SystemPage })))
+const NotFoundPage = lazy(() => import("@/pages/not-found").then((m) => ({ default: m.NotFoundPage })))
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="customers" element={<CustomersPage />} />
-          <Route path="customers/:id" element={<CustomerDetailPage />} />
-          <Route path="alerts" element={<AlertsPage />} />
-          <Route path="alerts/:id" element={<AlertDetailPage />} />
-          <Route path="cases" element={<CasesPage />} />
-          <Route path="cases/:id" element={<CaseDetailPage />} />
-          <Route path="transactions" element={<TransactionsPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="backtest" element={<BacktestPage />} />
-          <Route path="webhooks" element={<WebhooksPage />} />
-          <Route path="apikeys" element={<APIKeysPage />} />
-          <Route path="config" element={<ConfigPage />} />
-          <Route path="audit" element={<AuditPage />} />
-          <Route path="system" element={<SystemPage />} />
-        </Route>
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+            <Route element={<AppLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="customers" element={<CustomersPage />} />
+              <Route path="customers/:id" element={<CustomerDetailPage />} />
+              <Route path="alerts" element={<AlertsPage />} />
+              <Route path="alerts/:id" element={<AlertDetailPage />} />
+              <Route path="cases" element={<CasesPage />} />
+              <Route path="cases/:id" element={<CaseDetailPage />} />
+              <Route path="transactions" element={<TransactionsPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="backtest" element={<BacktestPage />} />
+              <Route path="webhooks" element={<WebhooksPage />} />
+              <Route path="apikeys" element={<APIKeysPage />} />
+              <Route path="config" element={<ConfigPage />} />
+              <Route path="audit" element={<AuditPage />} />
+              <Route path="system" element={<SystemPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }

@@ -17,20 +17,22 @@ beforeEach(() => {
   )
 })
 
-test('renders Merlon heading in sidebar', () => {
+test('renders Merlon heading in sidebar', async () => {
   render(<App />)
-  expect(screen.getByText('Merlon')).toBeDefined()
+  expect(await screen.findByText('Merlon')).toBeDefined()
 })
 
 test('renders dashboard title', async () => {
   render(<App />)
-  expect(await screen.findByText('ダッシュボード')).toBeDefined()
+  const items = await screen.findAllByText('ダッシュボード')
+  expect(items.length).toBeGreaterThanOrEqual(1)
 })
 
-test('renders sidebar navigation items', () => {
+test('renders sidebar navigation items', async () => {
   render(<App />)
-  expect(screen.getByText('顧客')).toBeDefined()
-  expect(screen.getByText('アラート')).toBeDefined()
+  expect(await screen.findByText('顧客')).toBeDefined()
+  const alerts = screen.getAllByText('アラート')
+  expect(alerts.length).toBeGreaterThanOrEqual(1)
   expect(screen.getByText('ケース')).toBeDefined()
   expect(screen.getByText('取引')).toBeDefined()
   expect(screen.getByText('監査ログ')).toBeDefined()
