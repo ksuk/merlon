@@ -1,0 +1,127 @@
+package server
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/merlon-aml/merlon/api/internal/domain"
+)
+
+type auditResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *auditResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (s *Server) auditMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.audit == nil || r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		aw := &auditResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(aw, r)
+
+		if r.Method == http.MethodGet {
+			return
+		}
+
+		action := resolveAction(r.Method, r.URL.Path)
+		resourceType, resourceID := resolveResource(r.URL.Path)
+
+		entry := &domain.AuditEntry{
+			UserID:       r.Header.Get("X-User-ID"),
+			Action:       action,
+			ResourceType: resourceType,
+			ResourceID:   resourceID,
+			IPAddress:    extractIP(r),
+			UserAgent:    r.UserAgent(),
+			CreatedAt:    time.Now(),
+		}
+
+		s.audit.Create(r.Context(), entry)
+	})
+}
+
+func resolveAction(method, path string) string {
+	switch method {
+	case http.MethodPost:
+		if strings.Contains(path, "/score") {
+			return "score_customer"
+		}
+		if strings.Contains(path, "/screen") {
+			return "screen_customer"
+		}
+		if strings.Contains(path, "/backtest") {
+			return "run_backtest"
+		}
+		if strings.Contains(path, "/reports/str") {
+			return "create_str"
+		}
+		return "create"
+	case http.MethodPut:
+		return "update"
+	case http.MethodPatch:
+		return "update_status"
+	case http.MethodDelete:
+		return "delete"
+	default:
+		return method
+	}
+}
+
+func resolveResource(path string) (string, string) {
+	parts := strings.Split(strings.TrimPrefix(path, "/api/v1/"), "/")
+	if len(parts) == 0 {
+		return "unknown", ""
+	}
+
+	resourceType := parts[0]
+	resourceID := ""
+
+	if len(parts) >= 2 {
+		resourceID = parts[1]
+	}
+
+	return resourceType, resourceID
+}
+
+func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	if s.audit == nil {
+		writeError(w, http.StatusServiceUnavailable, "audit not configured")
+		return
+	}
+
+	resourceType := r.URL.Query().Get("resource_type")
+	resourceID := r.URL.Query().Get("resource_id")
+	limit := 50
+
+	entries, err := s.audit.List(r.Context(), resourceType, resourceID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []domain.AuditEntry{}
+	}
+
+	writeJSON(w, http.StatusOK, entries)
+}
+
+func extractIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	host := r.RemoteAddr
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	return host
+}

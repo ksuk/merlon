@@ -19,6 +19,20 @@ func testServer() *Server {
 	)
 }
 
+func testServerFull() *Server {
+	return New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:   &engine.MockMonitoringEngine{},
+		Screening:    &engine.MockScreeningEngine{},
+		Backtest:     &engine.MockBacktestEngine{},
+		Audit:        store.NewMemoryAuditRepo(),
+		Cases:        store.NewMemoryCaseRepo(),
+	})
+}
+
 func testServerWithEngine(scoring engine.ScoringEngine, monitoring engine.MonitoringEngine) *Server {
 	return testServerWithEngines(scoring, monitoring, &engine.MockScreeningEngine{})
 }

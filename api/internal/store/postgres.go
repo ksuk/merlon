@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -351,4 +352,193 @@ func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain
 		return &domain.ErrNotFound{Entity: "alert", ID: id}
 	}
 	return nil
+}
+
+// PgAuditRepo
+
+type PgAuditRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgAuditRepo(pool *pgxpool.Pool) *PgAuditRepo {
+	return &PgAuditRepo{pool: pool}
+}
+
+func (r *PgAuditRepo) Create(ctx context.Context, entry *domain.AuditEntry) error {
+	details, _ := json.Marshal(entry.Details)
+	err := r.pool.QueryRow(ctx,
+		`INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6::inet, $7, $8) RETURNING id`,
+		entry.UserID, entry.Action, entry.ResourceType, entry.ResourceID,
+		details, nullableString(entry.IPAddress), entry.UserAgent, entry.CreatedAt,
+	).Scan(&entry.ID)
+	return err
+}
+
+func (r *PgAuditRepo) List(ctx context.Context, resourceType, resourceID string, limit int) ([]domain.AuditEntry, error) {
+	query := `SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs`
+	var args []any
+	var conditions []string
+	argIdx := 1
+
+	if resourceType != "" {
+		conditions = append(conditions, fmt.Sprintf("resource_type = $%d", argIdx))
+		args = append(args, resourceType)
+		argIdx++
+	}
+	if resourceID != "" {
+		conditions = append(conditions, fmt.Sprintf("resource_id = $%d", argIdx))
+		args = append(args, resourceID)
+		argIdx++
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", argIdx)
+	args = append(args, limit)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []domain.AuditEntry
+	for rows.Next() {
+		var e domain.AuditEntry
+		var details []byte
+		var ipAddr *string
+		if err := rows.Scan(
+			&e.ID, &e.UserID, &e.Action, &e.ResourceType, &e.ResourceID,
+			&details, &ipAddr, &e.UserAgent, &e.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if len(details) > 0 {
+			json.Unmarshal(details, &e.Details)
+		}
+		if ipAddr != nil {
+			e.IPAddress = *ipAddr
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func nullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// PgCaseRepo
+
+type PgCaseRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgCaseRepo(pool *pgxpool.Pool) *PgCaseRepo {
+	return &PgCaseRepo{pool: pool}
+}
+
+func (r *PgCaseRepo) Get(ctx context.Context, id string) (*domain.Case, error) {
+	var c domain.Case
+	err := r.pool.QueryRow(ctx,
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		FROM cases WHERE id = $1`, id,
+	).Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &domain.ErrNotFound{Entity: "case", ID: id}
+		}
+		return nil, err
+	}
+
+	notes, err := r.getNotes(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	c.Notes = notes
+	return &c, nil
+}
+
+func (r *PgCaseRepo) ListByCustomer(ctx context.Context, customerID string) ([]domain.Case, error) {
+	return r.listCases(ctx,
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		FROM cases WHERE customer_id = $1 ORDER BY created_at DESC`, customerID)
+}
+
+func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Case, error) {
+	return r.listCases(ctx,
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		FROM cases WHERE status != 'closed' ORDER BY priority DESC, created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+}
+
+func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) ([]domain.Case, error) {
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cases []domain.Case
+	for rows.Next() {
+		var c domain.Case
+		if err := rows.Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt); err != nil {
+			return nil, err
+		}
+		cases = append(cases, c)
+	}
+	return cases, rows.Err()
+}
+
+func (r *PgCaseRepo) Create(ctx context.Context, c *domain.Case) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		c.ID, c.CustomerID, c.AlertIDs, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.CreatedAt, c.UpdatedAt)
+	return err
+}
+
+func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
+	c.UpdatedAt = time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, updated_at=$6, closed_at=$7 WHERE id=$1`,
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.UpdatedAt, c.ClosedAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	return nil
+}
+
+func (r *PgCaseRepo) AddNote(ctx context.Context, caseID string, note *domain.CaseNote) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO case_notes (id, case_id, author, content, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		note.ID, caseID, note.Author, note.Content, note.CreatedAt)
+	return err
+}
+
+func (r *PgCaseRepo) getNotes(ctx context.Context, caseID string) ([]domain.CaseNote, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, author, content, created_at FROM case_notes WHERE case_id = $1 ORDER BY created_at ASC`, caseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notes []domain.CaseNote
+	for rows.Next() {
+		var n domain.CaseNote
+		if err := rows.Scan(&n.ID, &n.Author, &n.Content, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		notes = append(notes, n)
+	}
+	return notes, rows.Err()
 }

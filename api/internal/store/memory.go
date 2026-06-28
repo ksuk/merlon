@@ -232,3 +232,131 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 	a.UpdatedAt = now
 	return nil
 }
+
+// MemoryAuditRepo
+
+type MemoryAuditRepo struct {
+	mu      sync.RWMutex
+	entries []domain.AuditEntry
+	nextID  int64
+}
+
+func NewMemoryAuditRepo() *MemoryAuditRepo {
+	return &MemoryAuditRepo{nextID: 1}
+}
+
+func (r *MemoryAuditRepo) Create(_ context.Context, entry *domain.AuditEntry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	entry.ID = r.nextID
+	r.nextID++
+	if entry.CreatedAt.IsZero() {
+		entry.CreatedAt = time.Now()
+	}
+	r.entries = append(r.entries, *entry)
+	return nil
+}
+
+func (r *MemoryAuditRepo) List(_ context.Context, resourceType, resourceID string, limit int) ([]domain.AuditEntry, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var filtered []domain.AuditEntry
+	for i := len(r.entries) - 1; i >= 0; i-- {
+		e := r.entries[i]
+		if resourceType != "" && e.ResourceType != resourceType {
+			continue
+		}
+		if resourceID != "" && e.ResourceID != resourceID {
+			continue
+		}
+		filtered = append(filtered, e)
+		if limit > 0 && len(filtered) >= limit {
+			break
+		}
+	}
+	return filtered, nil
+}
+
+// MemoryCaseRepo
+
+type MemoryCaseRepo struct {
+	mu   sync.RWMutex
+	data map[string]*domain.Case
+}
+
+func NewMemoryCaseRepo() *MemoryCaseRepo {
+	return &MemoryCaseRepo{data: make(map[string]*domain.Case)}
+}
+
+func (r *MemoryCaseRepo) Get(_ context.Context, id string) (*domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	c, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "case", ID: id}
+	}
+	cp := *c
+	return &cp, nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomer(_ context.Context, customerID string) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	return result, nil
+}
+
+func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Case
+	for _, c := range r.data {
+		if c.Status != domain.CaseStatusClosed {
+			open = append(open, *c)
+		}
+	}
+	if offset >= len(open) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(open) {
+		end = len(open)
+	}
+	return open[offset:end], nil
+}
+
+func (r *MemoryCaseRepo) Create(_ context.Context, c *domain.Case) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data[c.ID] = c
+	return nil
+}
+
+func (r *MemoryCaseRepo) Update(_ context.Context, c *domain.Case) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.data[c.ID]; !ok {
+		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	c.UpdatedAt = time.Now()
+	r.data[c.ID] = c
+	return nil
+}
+
+func (r *MemoryCaseRepo) AddNote(_ context.Context, caseID string, note *domain.CaseNote) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.data[caseID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "case", ID: caseID}
+	}
+	c.Notes = append(c.Notes, *note)
+	c.UpdatedAt = time.Now()
+	return nil
+}

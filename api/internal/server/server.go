@@ -17,6 +17,8 @@ type Server struct {
 	monitoring   engine.MonitoringEngine
 	screening    engine.ScreeningEngine
 	backtest     engine.BacktestEngine
+	audit        domain.AuditRepository
+	cases        domain.CaseRepository
 }
 
 type Deps struct {
@@ -27,6 +29,8 @@ type Deps struct {
 	Monitoring   engine.MonitoringEngine
 	Screening    engine.ScreeningEngine
 	Backtest     engine.BacktestEngine
+	Audit        domain.AuditRepository
+	Cases        domain.CaseRepository
 }
 
 func New(addr string, deps Deps) *Server {
@@ -40,6 +44,8 @@ func New(addr string, deps Deps) *Server {
 		monitoring:   deps.Monitoring,
 		screening:    deps.Screening,
 		backtest:     deps.Backtest,
+		audit:        deps.Audit,
+		cases:        deps.Cases,
 	}
 	s.routes()
 	return s
@@ -73,10 +79,20 @@ func (s *Server) routes() {
 	// Reports
 	s.mux.HandleFunc("POST /api/v1/reports/str", s.handleCreateSTR)
 	s.mux.HandleFunc("GET /api/v1/reports/str/export", s.handleExportSTR)
+
+	// Cases
+	s.mux.HandleFunc("POST /api/v1/cases", s.handleCreateCase)
+	s.mux.HandleFunc("GET /api/v1/cases", s.handleListCases)
+	s.mux.HandleFunc("GET /api/v1/cases/{id}", s.handleGetCase)
+	s.mux.HandleFunc("PATCH /api/v1/cases/{id}", s.handleUpdateCase)
+	s.mux.HandleFunc("POST /api/v1/cases/{id}/notes", s.handleAddCaseNote)
+
+	// Audit
+	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return s.auditMiddleware(s.mux)
 }
 
 func (s *Server) Start() error {
