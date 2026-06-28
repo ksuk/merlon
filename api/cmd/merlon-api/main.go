@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/server"
@@ -19,10 +20,28 @@ import (
 func main() {
 	cfg := config.Load()
 
-	deps := server.Deps{
-		Customers:    store.NewMemoryCustomerRepo(),
-		Transactions: store.NewMemoryTransactionRepo(),
-		Alerts:       store.NewMemoryAlertRepo(),
+	deps := server.Deps{}
+
+	if os.Getenv("MERLON_DATABASE_URL") != "" {
+		pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("database connection: %v", err)
+		}
+		defer pool.Close()
+
+		if err := pool.Ping(context.Background()); err != nil {
+			log.Fatalf("database ping: %v", err)
+		}
+
+		deps.Customers = store.NewPgCustomerRepo(pool)
+		deps.Transactions = store.NewPgTransactionRepo(pool)
+		deps.Alerts = store.NewPgAlertRepo(pool)
+		log.Printf("database connected: PostgreSQL")
+	} else {
+		deps.Customers = store.NewMemoryCustomerRepo()
+		deps.Transactions = store.NewMemoryTransactionRepo()
+		deps.Alerts = store.NewMemoryAlertRepo()
+		log.Printf("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
 	if cfg.EngineAddr != "" {
