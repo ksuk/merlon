@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Transaction monitoring engine with structuring and rapid movement scenarios (M2.1)
+- gRPC MonitoringService for TM evaluation
+- YAML-based TM scenario configuration with risk-tier adjustments
 - Initial monorepo structure (M1.1)
 - Go API stub with `/healthz` endpoint
 - Rust engine stub with health/version functions

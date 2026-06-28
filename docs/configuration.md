@@ -16,6 +16,7 @@ Merlon の設定は環境変数と `config.yaml` の二層構成である。環�
 | `MERLON_OBJECT_STORE_URL` | レポート成果物の保存先 | `file:///var/lib/merlon/objects` | S3 互換ストレージ推奨 |
 | `MERLON_LOG_LEVEL` | ログレベル（`debug` / `info` / `warn` / `error`） | `info` | `info` |
 | `MERLON_JWT_SECRET` | API 認証用の署名シークレット | 空（必須） | 32 バイト以上のランダム値 |
+| `MERLON_TM_SCENARIOS_PATH` | TM シナリオ YAML ディレクトリ | `tm_scenarios` | 環境に応じて |
 | `MERLON_CONFIG_PATH` | `config.yaml` のパス | `/etc/merlon/config.yaml` | 環境に応じて |
 | `MERLON_AUDIT_WORM` | 監査ログの WORM モード（Enterprise） | `false` | `true` |
 

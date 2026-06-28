@@ -41,3 +41,10 @@ message HealthStatus {
   string status = 1;
   string version = 2;
 }
+
+message HealthRequest {}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+}

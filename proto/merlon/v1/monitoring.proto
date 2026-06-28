@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package merlon.v1;
+
+option go_package = "github.com/merlon-aml/merlon/api/gen/merlon/v1;merlonv1";
+
+import "merlon/v1/types.proto";
+
+service MonitoringService {
+  rpc EvaluateTransactions (EvaluateTransactionsRequest) returns (EvaluateTransactionsResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message TransactionData {
+  string transaction_id = 1;
+  string customer_id = 2;
+  double amount = 3;
+  string currency = 4;
+  string counterparty_id = 5;
+  string counterparty_country = 6;
+  TransactionDirection direction = 7;
+  Timestamp executed_at = 8;
+  string channel = 9;
+}
+
+enum TransactionDirection {
+  TRANSACTION_DIRECTION_UNSPECIFIED = 0;
+  TRANSACTION_DIRECTION_INBOUND = 1;
+  TRANSACTION_DIRECTION_OUTBOUND = 2;
+  TRANSACTION_DIRECTION_INTERNAL = 3;
+}
+
+enum AlertSeverity {
+  ALERT_SEVERITY_UNSPECIFIED = 0;
+  ALERT_SEVERITY_LOW = 1;
+  ALERT_SEVERITY_MEDIUM = 2;
+  ALERT_SEVERITY_HIGH = 3;
+  ALERT_SEVERITY_CRITICAL = 4;
+}
+
+message EvaluateTransactionsRequest {
+  string customer_id = 1;
+  RiskTier customer_risk_tier = 2;
+  repeated TransactionData transactions = 3;
+  repeated string scenario_ids = 4;
+}
+
+message Alert {
+  string alert_id = 1;
+  string scenario_id = 2;
+  AlertSeverity severity = 3;
+  string customer_id = 4;
+  repeated string transaction_ids = 5;
+  string description = 6;
+  double score = 7;
+  Timestamp detected_at = 8;
+}
+
+message EvaluateTransactionsResponse {
+  string customer_id = 1;
+  repeated Alert alerts = 2;
+  int32 scenarios_evaluated = 3;
+}
+

@@ -36,9 +36,3 @@ message BatchEvaluateResponse {
   EvaluateCustomerRiskResponse result = 1;
 }
 
-message HealthRequest {}
-
-message HealthResponse {
-  string status = 1;
-  string version = 2;
-}

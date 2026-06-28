@@ -1,4 +1,5 @@
 pub mod grpc;
+pub mod monitoring;
 pub mod proto;
 pub mod scoring;
 

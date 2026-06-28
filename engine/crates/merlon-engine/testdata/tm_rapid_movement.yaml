@@ -1,0 +1,18 @@
+schema_version: "1.0"
+scenario_id: test_rapid_movement
+name: "Test Rapid Movement"
+description: "Test rapid movement detection"
+parameters:
+  window_hours: 48
+  inbound_threshold: 5000000
+  outbound_threshold: 5000000
+  outbound_ratio_min: 0.80
+  currency: JPY
+risk_tier_adjustments:
+  HIGH:
+    inbound_threshold: 2000000
+    outbound_threshold: 2000000
+  MEDIUM: {}
+  LOW:
+    inbound_threshold: 10000000
+    outbound_threshold: 10000000
