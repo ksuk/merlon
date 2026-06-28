@@ -31,6 +31,7 @@ func testServerWithEngines(scoring engine.ScoringEngine, monitoring engine.Monit
 		Scoring:      scoring,
 		Monitoring:   monitoring,
 		Screening:    screening,
+		Backtest:     &engine.MockBacktestEngine{},
 	})
 }
 

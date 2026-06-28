@@ -15,6 +15,7 @@ type Client struct {
 	scoring    pb.ScoringServiceClient
 	monitoring pb.MonitoringServiceClient
 	screening  pb.ScreeningServiceClient
+	backtest   pb.BacktestServiceClient
 	conn       *grpc.ClientConn
 }
 
@@ -33,6 +34,7 @@ func NewClient(addr string) (*Client, error) {
 		scoring:    pb.NewScoringServiceClient(conn),
 		monitoring: pb.NewMonitoringServiceClient(conn),
 		screening:  pb.NewScreeningServiceClient(conn),
+		backtest:   pb.NewBacktestServiceClient(conn),
 		conn:       conn,
 	}, nil
 }
@@ -247,4 +249,79 @@ func (c *Client) ScreenCustomer(
 		ListsChecked: int(resp.ListsChecked),
 		ScreenedAt:   screenedAt,
 	}, nil
+}
+
+func (c *Client) RunBacktest(
+	ctx context.Context,
+	customers []domain.Customer,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+	description string,
+) (*domain.BacktestResult, error) {
+	var pbCustomers []*pb.BacktestCustomer
+	for _, cust := range customers {
+		pbCustomers = append(pbCustomers, &pb.BacktestCustomer{
+			CustomerId:   cust.ID,
+			CustomerType: customerTypeToProto(cust.CustomerType),
+			CountryCode:  cust.CountryCode,
+			ProductTypes: cust.ProductTypes,
+			RiskTier:     riskTierToProtoFromPtr(cust.RiskTier),
+		})
+	}
+
+	var pbTxns []*pb.BacktestTransaction
+	for _, t := range transactions {
+		pbTxns = append(pbTxns, &pb.BacktestTransaction{
+			TransactionId:       t.ID,
+			CustomerId:          t.CustomerID,
+			Amount:              t.Amount,
+			Currency:            t.Currency,
+			CounterpartyId:      t.CounterpartyID,
+			CounterpartyCountry: t.CounterpartyCountry,
+			Direction:           directionToProto(t.Direction),
+			ExecutedAt: &pb.Timestamp{
+				Seconds: t.ExecutedAt.Unix(),
+				Nanos:   int32(t.ExecutedAt.Nanosecond()),
+			},
+			Channel: t.Channel,
+		})
+	}
+
+	resp, err := c.backtest.RunBacktest(ctx, &pb.RunBacktestRequest{
+		Customers:   pbCustomers,
+		Transactions: pbTxns,
+		ScenarioIds:  scenarioIDs,
+		Description:  description,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("backtest rpc: %w", err)
+	}
+
+	var scenarioResults []domain.BacktestScenarioResult
+	for _, sr := range resp.ScenarioResults {
+		scenarioResults = append(scenarioResults, domain.BacktestScenarioResult{
+			ScenarioID:          sr.ScenarioId,
+			AlertsGenerated:     int(sr.AlertsGenerated),
+			HighSeverityCount:   int(sr.HighSeverityCount),
+			MediumSeverityCount: int(sr.MediumSeverityCount),
+			LowSeverityCount:    int(sr.LowSeverityCount),
+			AffectedCustomerIDs: sr.AffectedCustomerIds,
+		})
+	}
+
+	return &domain.BacktestResult{
+		BacktestID:        resp.BacktestId,
+		TotalTransactions: int(resp.TotalTransactions),
+		TotalCustomers:    int(resp.TotalCustomers),
+		TotalAlerts:       int(resp.TotalAlerts),
+		ScenarioResults:   scenarioResults,
+		ExecutionTimeMs:   resp.ExecutionTimeMs,
+	}, nil
+}
+
+func riskTierToProtoFromPtr(t *domain.RiskTier) pb.RiskTier {
+	if t == nil {
+		return pb.RiskTier_RISK_TIER_MEDIUM
+	}
+	return riskTierToProto(*t)
 }

@@ -1,8 +1,12 @@
+use std::sync::Arc;
+
+use merlon_engine::grpc::backtest_service::BacktestServiceImpl;
 use merlon_engine::grpc::monitoring_service::MonitoringServiceImpl;
 use merlon_engine::grpc::scoring_service::ScoringServiceImpl;
 use merlon_engine::grpc::screening_service::ScreeningServiceImpl;
 use merlon_engine::monitoring::config::ScenarioConfig;
 use merlon_engine::monitoring::engine::TmEngine;
+use merlon_engine::proto::merlon::v1::backtest_service_server::BacktestServiceServer;
 use merlon_engine::proto::merlon::v1::monitoring_service_server::MonitoringServiceServer;
 use merlon_engine::proto::merlon::v1::scoring_service_server::ScoringServiceServer;
 use merlon_engine::proto::merlon::v1::screening_service_server::ScreeningServiceServer;
@@ -25,8 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "tm_scenarios".to_string());
 
     let tm_configs = load_yaml_configs::<ScenarioConfig>(&tm_paths)?;
-    let tm_engine = TmEngine::new(tm_configs)?;
-    let monitoring_service = MonitoringServiceImpl::new(tm_engine);
+    let tm_engine = Arc::new(TmEngine::new(tm_configs)?);
+    let monitoring_service = MonitoringServiceImpl::from_arc(Arc::clone(&tm_engine));
+    let backtest_service = BacktestServiceImpl::new(Arc::clone(&tm_engine));
 
     let screening_paths = std::env::var("MERLON_SCREENING_LISTS_PATH")
         .unwrap_or_else(|_| "screening_lists".to_string());
@@ -54,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ScoringServiceServer::new(scoring_service))
         .add_service(MonitoringServiceServer::new(monitoring_service))
         .add_service(ScreeningServiceServer::new(screening_service))
+        .add_service(BacktestServiceServer::new(backtest_service))
         .serve(addr)
         .await?;
 

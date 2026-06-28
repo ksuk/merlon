@@ -70,3 +70,31 @@ func (m *MockScreeningEngine) ScreenCustomer(
 		ScreenedAt:   time.Now(),
 	}, nil
 }
+
+type MockBacktestEngine struct {
+	Result *domain.BacktestResult
+	Err    error
+}
+
+func (m *MockBacktestEngine) RunBacktest(
+	_ context.Context,
+	_ []domain.Customer,
+	_ []domain.Transaction,
+	_ []string,
+	_ string,
+) (*domain.BacktestResult, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	if m.Result != nil {
+		return m.Result, nil
+	}
+	return &domain.BacktestResult{
+		BacktestID:        "bt_mock",
+		TotalTransactions: 0,
+		TotalCustomers:    0,
+		TotalAlerts:       0,
+		ScenarioResults:   nil,
+		ExecutionTimeMs:   0.1,
+	}, nil
+}

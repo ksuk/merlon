@@ -27,3 +27,13 @@ type ScreeningEngine interface {
 		listIDs []string,
 	) (*domain.ScreenResult, error)
 }
+
+type BacktestEngine interface {
+	RunBacktest(
+		ctx context.Context,
+		customers []domain.Customer,
+		transactions []domain.Transaction,
+		scenarioIDs []string,
+		description string,
+	) (*domain.BacktestResult, error)
+}

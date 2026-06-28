@@ -16,6 +16,7 @@ type Server struct {
 	scoring      engine.ScoringEngine
 	monitoring   engine.MonitoringEngine
 	screening    engine.ScreeningEngine
+	backtest     engine.BacktestEngine
 }
 
 type Deps struct {
@@ -25,6 +26,7 @@ type Deps struct {
 	Scoring      engine.ScoringEngine
 	Monitoring   engine.MonitoringEngine
 	Screening    engine.ScreeningEngine
+	Backtest     engine.BacktestEngine
 }
 
 func New(addr string, deps Deps) *Server {
@@ -37,6 +39,7 @@ func New(addr string, deps Deps) *Server {
 		scoring:      deps.Scoring,
 		monitoring:   deps.Monitoring,
 		screening:    deps.Screening,
+		backtest:     deps.Backtest,
 	}
 	s.routes()
 	return s
@@ -63,6 +66,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/alerts", s.handleListAlerts)
 	s.mux.HandleFunc("GET /api/v1/alerts/{id}", s.handleGetAlert)
 	s.mux.HandleFunc("PATCH /api/v1/alerts/{id}", s.handleUpdateAlertStatus)
+
+	// Backtest
+	s.mux.HandleFunc("POST /api/v1/backtest", s.handleRunBacktest)
 }
 
 func (s *Server) Handler() http.Handler {

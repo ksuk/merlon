@@ -34,9 +34,10 @@ func main() {
 		deps.Scoring = client
 		deps.Monitoring = client
 		deps.Screening = client
+		deps.Backtest = client
 		log.Printf("engine connected: %s", cfg.EngineAddr)
 	} else {
-		log.Printf("warning: MERLON_ENGINE_ADDR not set, scoring/monitoring/screening endpoints disabled")
+		log.Printf("warning: MERLON_ENGINE_ADDR not set, engine endpoints disabled")
 	}
 
 	srv := server.New(cfg.HTTPAddr, deps)

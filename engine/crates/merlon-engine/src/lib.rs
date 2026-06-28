@@ -1,3 +1,4 @@
+pub mod backtest;
 pub mod grpc;
 pub mod monitoring;
 pub mod proto;

@@ -21,6 +21,14 @@ impl MonitoringServiceImpl {
             engine: Arc::new(engine),
         }
     }
+
+    pub fn from_arc(engine: Arc<TmEngine>) -> Self {
+        Self { engine }
+    }
+
+    pub fn engine_arc(&self) -> Arc<TmEngine> {
+        Arc::clone(&self.engine)
+    }
 }
 
 fn proto_direction_to_internal(d: i32) -> TransactionDirection {

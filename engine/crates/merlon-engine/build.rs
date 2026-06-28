@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &format!("{proto_dir}/merlon/v1/types.proto"),
                 &format!("{proto_dir}/merlon/v1/monitoring.proto"),
                 &format!("{proto_dir}/merlon/v1/screening.proto"),
+                &format!("{proto_dir}/merlon/v1/backtest.proto"),
             ],
             &[proto_dir],
         )?;
