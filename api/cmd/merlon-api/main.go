@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/config"
+	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/server"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
@@ -22,6 +23,19 @@ func main() {
 		Customers:    store.NewMemoryCustomerRepo(),
 		Transactions: store.NewMemoryTransactionRepo(),
 		Alerts:       store.NewMemoryAlertRepo(),
+	}
+
+	if cfg.EngineAddr != "" {
+		client, err := engine.NewClient(cfg.EngineAddr)
+		if err != nil {
+			log.Fatalf("engine client: %v", err)
+		}
+		defer client.Close()
+		deps.Scoring = client
+		deps.Monitoring = client
+		log.Printf("engine connected: %s", cfg.EngineAddr)
+	} else {
+		log.Printf("warning: MERLON_ENGINE_ADDR not set, scoring/monitoring endpoints disabled")
 	}
 
 	srv := server.New(cfg.HTTPAddr, deps)

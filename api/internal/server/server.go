@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/engine"
 )
 
 type Server struct {
@@ -12,12 +13,16 @@ type Server struct {
 	customers    domain.CustomerRepository
 	transactions domain.TransactionRepository
 	alerts       domain.AlertRepository
+	scoring      engine.ScoringEngine
+	monitoring   engine.MonitoringEngine
 }
 
 type Deps struct {
 	Customers    domain.CustomerRepository
 	Transactions domain.TransactionRepository
 	Alerts       domain.AlertRepository
+	Scoring      engine.ScoringEngine
+	Monitoring   engine.MonitoringEngine
 }
 
 func New(addr string, deps Deps) *Server {
@@ -27,6 +32,8 @@ func New(addr string, deps Deps) *Server {
 		customers:    deps.Customers,
 		transactions: deps.Transactions,
 		alerts:       deps.Alerts,
+		scoring:      deps.Scoring,
+		monitoring:   deps.Monitoring,
 	}
 	s.routes()
 	return s
@@ -41,6 +48,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/customers", s.handleCreateCustomer)
 	s.mux.HandleFunc("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
 	s.mux.HandleFunc("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
+	s.mux.HandleFunc("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
 
 	// Transactions
 	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)

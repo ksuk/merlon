@@ -149,3 +149,98 @@ func TestUpdateCustomer(t *testing.T) {
 		t.Errorf("attributes[pep] = %q, want %q", updated.Attributes["pep"], "true")
 	}
 }
+
+func TestScoreCustomer(t *testing.T) {
+	s := testServer()
+
+	// Create customer
+	body := `{"external_id":"SCORE001","customer_type":"individual","country_code":"JP","product_types":["spot_trading"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	// Score
+	scoreBody := `{"rule_set_id":"test_preset"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var record domain.ScoreRecord
+	json.NewDecoder(rec.Body).Decode(&record)
+
+	if record.Score != 2.5 {
+		t.Errorf("score = %f, want 2.5", record.Score)
+	}
+	if record.Tier != domain.RiskTierMedium {
+		t.Errorf("tier = %q, want %q", record.Tier, domain.RiskTierMedium)
+	}
+
+	// Verify customer was updated
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers/"+created.ID, nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var updated domain.Customer
+	json.NewDecoder(rec.Body).Decode(&updated)
+
+	if updated.RiskScore == nil || *updated.RiskScore != 2.5 {
+		t.Errorf("risk_score not updated")
+	}
+	if updated.RiskTier == nil || *updated.RiskTier != domain.RiskTierMedium {
+		t.Errorf("risk_tier not updated")
+	}
+
+	// Verify score history
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers/"+created.ID+"/scores", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var history []domain.ScoreRecord
+	json.NewDecoder(rec.Body).Decode(&history)
+
+	if len(history) != 1 {
+		t.Errorf("score history len = %d, want 1", len(history))
+	}
+}
+
+func TestScoreCustomerNotFound(t *testing.T) {
+	s := testServer()
+
+	body := `{"rule_set_id":"test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/nonexistent/score", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestScoreCustomerNoEngine(t *testing.T) {
+	s := testServerWithEngine(nil, nil)
+
+	// Create customer first
+	body := `{"external_id":"NOENG","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	scoreBody := `{"rule_set_id":"test"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}

@@ -5,6 +5,7 @@ import "os"
 type Config struct {
 	Env               string
 	HTTPAddr          string
+	EngineAddr        string
 	DatabaseURL       string
 	JWTSecret         string
 	ConfigPath        string
@@ -18,6 +19,7 @@ func Load() *Config {
 	return &Config{
 		Env:          getEnv("MERLON_ENV", "development"),
 		HTTPAddr:     getEnv("MERLON_HTTP_ADDR", ":8080"),
+		EngineAddr:   getEnv("MERLON_ENGINE_ADDR", ""),
 		DatabaseURL:  getEnv("MERLON_DATABASE_URL", "postgres://merlon:merlon@localhost:5432/merlon?sslmode=disable"),
 		JWTSecret:    getEnv("MERLON_JWT_SECRET", ""),
 		ConfigPath:   getEnv("MERLON_CONFIG_PATH", "config.yaml"),

@@ -149,3 +149,58 @@ func (s *Server) handleGetScoreHistory(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, records)
 }
+
+type ScoreCustomerRequest struct {
+	RuleSetID string `json:"rule_set_id"`
+}
+
+func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
+	if s.scoring == nil {
+		writeError(w, http.StatusServiceUnavailable, "scoring engine not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	c, err := s.customers.Get(r.Context(), id)
+	if err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req ScoreCustomerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	record, err := s.scoring.ScoreCustomer(r.Context(), c, req.RuleSetID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "scoring engine error: "+err.Error())
+		return
+	}
+
+	record.ID = generateID()
+
+	// Update customer risk score
+	c.RiskScore = &record.Score
+	c.RiskTier = &record.Tier
+	now := record.ScoredAt
+	c.LastScoredAt = &now
+
+	if err := s.customers.Update(r.Context(), c); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := s.customers.SaveScoreRecord(r.Context(), record); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, record)
+}

@@ -6,14 +6,25 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
 
 func testServer() *Server {
+	return testServerWithEngine(
+		&engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		&engine.MockMonitoringEngine{},
+	)
+}
+
+func testServerWithEngine(scoring engine.ScoringEngine, monitoring engine.MonitoringEngine) *Server {
 	return New(":0", Deps{
 		Customers:    store.NewMemoryCustomerRepo(),
 		Transactions: store.NewMemoryTransactionRepo(),
 		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      scoring,
+		Monitoring:   monitoring,
 	})
 }
 
