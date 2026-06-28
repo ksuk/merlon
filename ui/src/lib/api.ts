@@ -127,6 +127,32 @@ export interface AuditEntry {
   created_at: string
 }
 
+export type WebhookEventType =
+  | "alert.created" | "alert.resolved"
+  | "case.created" | "case.updated" | "case.closed"
+  | "str.created" | "score.changed" | "screening.match"
+
+export interface Webhook {
+  id: string
+  url: string
+  events: WebhookEventType[]
+  secret?: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WebhookDelivery {
+  id: string
+  webhook_id: string
+  event: WebhookEventType
+  payload: string
+  status_code: number
+  success: boolean
+  error?: string
+  created_at: string
+}
+
 export interface SystemInfo {
   version: string
   components: string[]
@@ -181,6 +207,19 @@ export const api = {
       const qs = params.toString()
       return request<AuditEntry[]>(`/audit${qs ? `?${qs}` : ""}`)
     },
+  },
+  webhooks: {
+    list: () => request<Webhook[]>("/webhooks"),
+    get: (id: string) => request<Webhook>(`/webhooks/${encodeURIComponent(id)}`),
+    create: (url: string, events: WebhookEventType[], secret?: string) =>
+      request<Webhook>("/webhooks", {
+        method: "POST",
+        body: JSON.stringify({ url, events, secret }),
+      }),
+    delete: (id: string) =>
+      request<{ status: string }>(`/webhooks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    deliveries: (id: string) =>
+      request<WebhookDelivery[]>(`/webhooks/${encodeURIComponent(id)}/deliveries`),
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),

@@ -8,6 +8,7 @@ import { AlertDetailPage } from "@/pages/alert-detail"
 import { CasesPage } from "@/pages/cases"
 import { CaseDetailPage } from "@/pages/case-detail"
 import { TransactionsPage } from "@/pages/transactions"
+import { WebhooksPage } from "@/pages/webhooks"
 import { AuditPage } from "@/pages/audit"
 import { SystemPage } from "@/pages/system"
 
@@ -24,6 +25,7 @@ function App() {
           <Route path="cases" element={<CasesPage />} />
           <Route path="cases/:id" element={<CaseDetailPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
+          <Route path="webhooks" element={<WebhooksPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="system" element={<SystemPage />} />
         </Route>
