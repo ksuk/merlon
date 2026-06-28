@@ -8,6 +8,8 @@ import { AlertDetailPage } from "@/pages/alert-detail"
 import { CasesPage } from "@/pages/cases"
 import { CaseDetailPage } from "@/pages/case-detail"
 import { TransactionsPage } from "@/pages/transactions"
+import { APIKeysPage } from "@/pages/apikeys"
+import { ConfigPage } from "@/pages/config"
 import { ReportsPage } from "@/pages/reports"
 import { BacktestPage } from "@/pages/backtest"
 import { WebhooksPage } from "@/pages/webhooks"
@@ -30,6 +32,8 @@ function App() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="backtest" element={<BacktestPage />} />
           <Route path="webhooks" element={<WebhooksPage />} />
+          <Route path="apikeys" element={<APIKeysPage />} />
+          <Route path="config" element={<ConfigPage />} />
           <Route path="audit" element={<AuditPage />} />
           <Route path="system" element={<SystemPage />} />
         </Route>

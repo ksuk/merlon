@@ -186,6 +186,29 @@ export interface BacktestScenarioResult {
   affected_customer_ids: string[]
 }
 
+export type Role = "admin" | "analyst" | "viewer"
+
+export interface APIKey {
+  id: string
+  name: string
+  role: Role
+  active: boolean
+  created_at: string
+  last_used?: string
+}
+
+export interface APIKeyCreateResponse {
+  id: string
+  name: string
+  role: Role
+  key: string
+}
+
+export interface ConfigValidationResult {
+  valid: boolean
+  errors: { field: string; message: string }[]
+}
+
 export interface SystemInfo {
   version: string
   components: string[]
@@ -269,6 +292,27 @@ export const api = {
       request<{ status: string }>(`/webhooks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     deliveries: (id: string) =>
       request<WebhookDelivery[]>(`/webhooks/${encodeURIComponent(id)}/deliveries`),
+  },
+  admin: {
+    apikeys: {
+      list: () => request<APIKey[]>("/admin/apikeys"),
+      create: (name: string, role: Role) =>
+        request<APIKeyCreateResponse>("/admin/apikeys", {
+          method: "POST",
+          body: JSON.stringify({ name, role }),
+        }),
+      revoke: (id: string) =>
+        request<{ status: string }>(`/admin/apikeys/${encodeURIComponent(id)}/revoke`, {
+          method: "POST",
+        }),
+    },
+  },
+  config: {
+    validate: (configType: string, yamlContent: string) =>
+      request<ConfigValidationResult>("/config/validate", {
+        method: "POST",
+        body: JSON.stringify({ config_type: configType, yaml_content: yamlContent }),
+      }),
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),

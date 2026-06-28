@@ -8,8 +8,10 @@ import {
   Shield,
   FileText,
   FlaskConical,
+  KeyRound,
   ScrollText,
   Settings,
+  Settings2,
   Webhook,
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
@@ -23,6 +25,8 @@ const navItems = [
   { to: "/reports", label: "STRレポート", icon: FileText },
   { to: "/backtest", label: "バックテスト", icon: FlaskConical },
   { to: "/webhooks", label: "Webhook", icon: Webhook },
+  { to: "/apikeys", label: "APIキー", icon: KeyRound },
+  { to: "/config", label: "設定検証", icon: Settings2 },
   { to: "/audit", label: "監査ログ", icon: ScrollText },
   { to: "/system", label: "システム", icon: Settings },
 ]
