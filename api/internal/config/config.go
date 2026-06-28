@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 type Config struct {
 	Env               string
@@ -13,6 +16,8 @@ type Config struct {
 	EventBus          string
 	LogLevel          string
 	AdapterConfigPath string
+	RateLimit         int
+	AuthEnabled       bool
 }
 
 func Load() *Config {
@@ -27,7 +32,18 @@ func Load() *Config {
 		EventBus:     getEnv("MERLON_EVENT_BUS", "pg_notify"),
 		LogLevel:          getEnv("MERLON_LOG_LEVEL", "info"),
 		AdapterConfigPath: getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
+		RateLimit:         getEnvInt("MERLON_RATE_LIMIT", 0),
+		AuthEnabled:       getEnv("MERLON_AUTH_ENABLED", "") == "true",
 	}
+}
+
+func getEnvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
 }
 
 func getEnv(key, fallback string) string {

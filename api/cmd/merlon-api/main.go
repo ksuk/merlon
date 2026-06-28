@@ -22,8 +22,10 @@ func main() {
 
 	deps := server.Deps{}
 
+	var pool *pgxpool.Pool
 	if os.Getenv("MERLON_DATABASE_URL") != "" {
-		pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+		var err error
+		pool, err = pgxpool.New(context.Background(), cfg.DatabaseURL)
 		if err != nil {
 			log.Fatalf("database connection: %v", err)
 		}
@@ -46,6 +48,20 @@ func main() {
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = store.NewMemoryCaseRepo()
 		log.Printf("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
+	}
+
+	if cfg.AuthEnabled {
+		if pool != nil {
+			deps.APIKeys = store.NewPgAPIKeyRepo(pool)
+		} else {
+			deps.APIKeys = store.NewMemoryAPIKeyRepo()
+		}
+		log.Printf("API key authentication enabled")
+	}
+
+	deps.RateLimit = cfg.RateLimit
+	if cfg.RateLimit > 0 {
+		log.Printf("rate limit: %d req/min", cfg.RateLimit)
 	}
 
 	if cfg.EngineAddr != "" {

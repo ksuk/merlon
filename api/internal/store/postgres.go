@@ -542,3 +542,64 @@ func (r *PgCaseRepo) getNotes(ctx context.Context, caseID string) ([]domain.Case
 	}
 	return notes, rows.Err()
 }
+
+// PgAPIKeyRepo
+
+type PgAPIKeyRepo struct {
+	pool *pgxpool.Pool
+}
+
+func NewPgAPIKeyRepo(pool *pgxpool.Pool) *PgAPIKeyRepo {
+	return &PgAPIKeyRepo{pool: pool}
+}
+
+func (r *PgAPIKeyRepo) GetByHash(ctx context.Context, keyHash string) (*domain.APIKey, error) {
+	var k domain.APIKey
+	err := r.pool.QueryRow(ctx,
+		`SELECT id, name, key_hash, role, active, created_at, last_used FROM api_keys WHERE key_hash = $1`, keyHash,
+	).Scan(&k.ID, &k.Name, &k.KeyHash, &k.Role, &k.Active, &k.CreatedAt, &k.LastUsed)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &domain.ErrNotFound{Entity: "api_key", ID: keyHash}
+		}
+		return nil, err
+	}
+	return &k, nil
+}
+
+func (r *PgAPIKeyRepo) Create(ctx context.Context, key *domain.APIKey) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO api_keys (id, name, key_hash, role, active, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		key.ID, key.Name, key.KeyHash, string(key.Role), key.Active, key.CreatedAt)
+	return err
+}
+
+func (r *PgAPIKeyRepo) List(ctx context.Context) ([]domain.APIKey, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, name, key_hash, role, active, created_at, last_used FROM api_keys ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []domain.APIKey
+	for rows.Next() {
+		var k domain.APIKey
+		if err := rows.Scan(&k.ID, &k.Name, &k.KeyHash, &k.Role, &k.Active, &k.CreatedAt, &k.LastUsed); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}
+
+func (r *PgAPIKeyRepo) Revoke(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE api_keys SET active = FALSE WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "api_key", ID: id}
+	}
+	return nil
+}

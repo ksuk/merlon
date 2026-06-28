@@ -360,3 +360,54 @@ func (r *MemoryCaseRepo) AddNote(_ context.Context, caseID string, note *domain.
 	c.UpdatedAt = time.Now()
 	return nil
 }
+
+// MemoryAPIKeyRepo
+
+type MemoryAPIKeyRepo struct {
+	mu   sync.RWMutex
+	data map[string]*domain.APIKey // keyed by hash
+}
+
+func NewMemoryAPIKeyRepo() *MemoryAPIKeyRepo {
+	return &MemoryAPIKeyRepo{data: make(map[string]*domain.APIKey)}
+}
+
+func (r *MemoryAPIKeyRepo) GetByHash(_ context.Context, keyHash string) (*domain.APIKey, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	k, ok := r.data[keyHash]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "api_key", ID: keyHash}
+	}
+	cp := *k
+	return &cp, nil
+}
+
+func (r *MemoryAPIKeyRepo) Create(_ context.Context, key *domain.APIKey) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data[key.KeyHash] = key
+	return nil
+}
+
+func (r *MemoryAPIKeyRepo) List(_ context.Context) ([]domain.APIKey, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var keys []domain.APIKey
+	for _, k := range r.data {
+		keys = append(keys, *k)
+	}
+	return keys, nil
+}
+
+func (r *MemoryAPIKeyRepo) Revoke(_ context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, k := range r.data {
+		if k.ID == id {
+			k.Active = false
+			return nil
+		}
+	}
+	return &domain.ErrNotFound{Entity: "api_key", ID: id}
+}

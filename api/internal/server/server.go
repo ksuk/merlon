@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
@@ -19,6 +20,8 @@ type Server struct {
 	backtest     engine.BacktestEngine
 	audit        domain.AuditRepository
 	cases        domain.CaseRepository
+	apikeys      domain.APIKeyRepository
+	limiter      *rateLimiter
 }
 
 type Deps struct {
@@ -31,6 +34,8 @@ type Deps struct {
 	Backtest     engine.BacktestEngine
 	Audit        domain.AuditRepository
 	Cases        domain.CaseRepository
+	APIKeys      domain.APIKeyRepository
+	RateLimit    int
 }
 
 func New(addr string, deps Deps) *Server {
@@ -46,6 +51,10 @@ func New(addr string, deps Deps) *Server {
 		backtest:     deps.Backtest,
 		audit:        deps.Audit,
 		cases:        deps.Cases,
+		apikeys:      deps.APIKeys,
+	}
+	if deps.RateLimit > 0 {
+		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
 	}
 	s.routes()
 	return s
@@ -94,14 +103,23 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/batch/score", s.handleBatchScore)
 	s.mux.HandleFunc("POST /api/v1/batch/monitor", s.handleBatchMonitor)
 
+	// API Keys (admin only, managed outside auth middleware)
+	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
+	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
+	s.mux.HandleFunc("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)
+
 	// Audit
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.auditMiddleware(s.mux)
+	var h http.Handler = s.mux
+	h = s.auditMiddleware(h)
+	h = s.authMiddleware(h)
+	h = s.rateLimitMiddleware(h)
+	return h
 }
 
 func (s *Server) Start() error {
-	return http.ListenAndServe(s.addr, s.mux)
+	return http.ListenAndServe(s.addr, s.Handler())
 }
