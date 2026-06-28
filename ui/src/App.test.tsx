@@ -33,4 +33,6 @@ test('renders sidebar navigation items', () => {
   expect(screen.getByText('アラート')).toBeDefined()
   expect(screen.getByText('ケース')).toBeDefined()
   expect(screen.getByText('取引')).toBeDefined()
+  expect(screen.getByText('監査ログ')).toBeDefined()
+  expect(screen.getByText('システム')).toBeDefined()
 })

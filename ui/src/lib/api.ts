@@ -115,6 +115,25 @@ export interface Factor {
   description: string
 }
 
+export interface AuditEntry {
+  id: number
+  user_id: string
+  action: string
+  resource_type: string
+  resource_id: string
+  details?: Record<string, string>
+  ip_address?: string
+  user_agent?: string
+  created_at: string
+}
+
+export interface SystemInfo {
+  version: string
+  components: string[]
+  endpoints: number
+  features: Record<string, boolean>
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
@@ -153,5 +172,17 @@ export const api = {
   },
   transactions: {
     list: () => request<Transaction[]>("/transactions"),
+  },
+  audit: {
+    list: (resourceType?: string, resourceId?: string) => {
+      const params = new URLSearchParams()
+      if (resourceType) params.set("resource_type", resourceType)
+      if (resourceId) params.set("resource_id", resourceId)
+      const qs = params.toString()
+      return request<AuditEntry[]>(`/audit${qs ? `?${qs}` : ""}`)
+    },
+  },
+  system: {
+    info: () => request<SystemInfo>("/system/info"),
   },
 }

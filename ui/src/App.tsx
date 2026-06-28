@@ -8,6 +8,8 @@ import { AlertDetailPage } from "@/pages/alert-detail"
 import { CasesPage } from "@/pages/cases"
 import { CaseDetailPage } from "@/pages/case-detail"
 import { TransactionsPage } from "@/pages/transactions"
+import { AuditPage } from "@/pages/audit"
+import { SystemPage } from "@/pages/system"
 
 function App() {
   return (
@@ -22,6 +24,8 @@ function App() {
           <Route path="cases" element={<CasesPage />} />
           <Route path="cases/:id" element={<CaseDetailPage />} />
           <Route path="transactions" element={<TransactionsPage />} />
+          <Route path="audit" element={<AuditPage />} />
+          <Route path="system" element={<SystemPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

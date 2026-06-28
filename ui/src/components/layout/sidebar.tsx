@@ -6,6 +6,8 @@ import {
   FolderOpen,
   ArrowLeftRight,
   Shield,
+  ScrollText,
+  Settings,
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 
@@ -15,6 +17,8 @@ const navItems = [
   { to: "/alerts", label: "アラート", icon: AlertTriangle },
   { to: "/cases", label: "ケース", icon: FolderOpen },
   { to: "/transactions", label: "取引", icon: ArrowLeftRight },
+  { to: "/audit", label: "監査ログ", icon: ScrollText },
+  { to: "/system", label: "システム", icon: Settings },
 ]
 
 export function Sidebar() {
