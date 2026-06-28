@@ -153,6 +153,39 @@ export interface WebhookDelivery {
   created_at: string
 }
 
+export interface STRReport {
+  id: string
+  alert_id: string
+  customer_id: string
+  report_type: string
+  status: string
+  suspicious_point: string
+  transaction_ids: string[]
+  total_amount: number
+  currency: string
+  created_at: string
+  submitted_at?: string
+  created_by: string
+}
+
+export interface BacktestResult {
+  backtest_id: string
+  total_transactions: number
+  total_customers: number
+  total_alerts: number
+  scenario_results: BacktestScenarioResult[]
+  execution_time_ms: number
+}
+
+export interface BacktestScenarioResult {
+  scenario_id: string
+  alerts_generated: number
+  high_severity_count: number
+  medium_severity_count: number
+  low_severity_count: number
+  affected_customer_ids: string[]
+}
+
 export interface SystemInfo {
   version: string
   components: string[]
@@ -207,6 +240,22 @@ export const api = {
       const qs = params.toString()
       return request<AuditEntry[]>(`/audit${qs ? `?${qs}` : ""}`)
     },
+  },
+  reports: {
+    createSTR: (alertId: string, suspiciousPoint: string, createdBy: string) =>
+      request<STRReport>("/reports/str", {
+        method: "POST",
+        body: JSON.stringify({ alert_id: alertId, suspicious_point: suspiciousPoint, created_by: createdBy }),
+      }),
+    exportSTR: (alertId: string, format: "csv" | "json" = "csv") =>
+      `${BASE}/reports/str/export?alert_id=${encodeURIComponent(alertId)}&format=${format}`,
+  },
+  backtest: {
+    run: (customerIds: string[], scenarioIds: string[], description: string) =>
+      request<BacktestResult>("/backtest", {
+        method: "POST",
+        body: JSON.stringify({ customer_ids: customerIds, scenario_ids: scenarioIds, description }),
+      }),
   },
   webhooks: {
     list: () => request<Webhook[]>("/webhooks"),
