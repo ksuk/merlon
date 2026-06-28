@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use merlon_engine::grpc::backtest_service::BacktestServiceImpl;
+use merlon_engine::grpc::config_service::ConfigServiceImpl;
 use merlon_engine::grpc::monitoring_service::MonitoringServiceImpl;
 use merlon_engine::grpc::scoring_service::ScoringServiceImpl;
 use merlon_engine::grpc::screening_service::ScreeningServiceImpl;
 use merlon_engine::monitoring::config::ScenarioConfig;
 use merlon_engine::monitoring::engine::TmEngine;
 use merlon_engine::proto::merlon::v1::backtest_service_server::BacktestServiceServer;
+use merlon_engine::proto::merlon::v1::config_service_server::ConfigServiceServer;
 use merlon_engine::proto::merlon::v1::monitoring_service_server::MonitoringServiceServer;
 use merlon_engine::proto::merlon::v1::scoring_service_server::ScoringServiceServer;
 use merlon_engine::proto::merlon::v1::screening_service_server::ScreeningServiceServer;
@@ -44,6 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let screening_lists = load_yaml_configs::<ScreeningListConfig>(&screening_paths)?;
     let screening_engine = ScreeningEngine::new(screening_lists, screening_threshold)?;
     let screening_service = ScreeningServiceImpl::new(screening_engine);
+    let config_service = ConfigServiceImpl::new();
 
     let addr = std::env::var("MERLON_ENGINE_ADDR")
         .unwrap_or_else(|_| "[::]:50051".to_string())
@@ -60,6 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(MonitoringServiceServer::new(monitoring_service))
         .add_service(ScreeningServiceServer::new(screening_service))
         .add_service(BacktestServiceServer::new(backtest_service))
+        .add_service(ConfigServiceServer::new(config_service))
         .serve(addr)
         .await?;
 

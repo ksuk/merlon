@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package merlon.v1;
+
+option go_package = "github.com/merlon-aml/merlon/api/gen/merlon/v1;merlonv1";
+
+service ConfigService {
+  rpc ValidateConfig(ValidateConfigRequest) returns (ValidateConfigResponse);
+}
+
+message ValidateConfigRequest {
+  string config_type = 1; // "cdd_weights", "tm_scenarios", "screening_lists"
+  string yaml_content = 2;
+}
+
+message ValidationError {
+  string field = 1;
+  string message = 2;
+}
+
+message ValidateConfigResponse {
+  bool valid = 1;
+  repeated ValidationError errors = 2;
+}

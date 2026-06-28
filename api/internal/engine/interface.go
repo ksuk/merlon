@@ -37,3 +37,17 @@ type BacktestEngine interface {
 		description string,
 	) (*domain.BacktestResult, error)
 }
+
+type ConfigValidationError struct {
+	Field   string `json:"field"`
+	Message string `json:"message"`
+}
+
+type ConfigValidationResult struct {
+	Valid  bool                    `json:"valid"`
+	Errors []ConfigValidationError `json:"errors"`
+}
+
+type ConfigEngine interface {
+	ValidateConfig(ctx context.Context, configType, yamlContent string) (*ConfigValidationResult, error)
+}

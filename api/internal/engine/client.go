@@ -16,6 +16,7 @@ type Client struct {
 	monitoring pb.MonitoringServiceClient
 	screening  pb.ScreeningServiceClient
 	backtest   pb.BacktestServiceClient
+	config     pb.ConfigServiceClient
 	conn       *grpc.ClientConn
 }
 
@@ -35,6 +36,7 @@ func NewClient(addr string) (*Client, error) {
 		monitoring: pb.NewMonitoringServiceClient(conn),
 		screening:  pb.NewScreeningServiceClient(conn),
 		backtest:   pb.NewBacktestServiceClient(conn),
+		config:     pb.NewConfigServiceClient(conn),
 		conn:       conn,
 	}, nil
 }
@@ -324,4 +326,27 @@ func riskTierToProtoFromPtr(t *domain.RiskTier) pb.RiskTier {
 		return pb.RiskTier_RISK_TIER_MEDIUM
 	}
 	return riskTierToProto(*t)
+}
+
+func (c *Client) ValidateConfig(ctx context.Context, configType, yamlContent string) (*ConfigValidationResult, error) {
+	resp, err := c.config.ValidateConfig(ctx, &pb.ValidateConfigRequest{
+		ConfigType:  configType,
+		YamlContent: yamlContent,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("config validate rpc: %w", err)
+	}
+
+	var errors []ConfigValidationError
+	for _, e := range resp.Errors {
+		errors = append(errors, ConfigValidationError{
+			Field:   e.Field,
+			Message: e.Message,
+		})
+	}
+
+	return &ConfigValidationResult{
+		Valid:  resp.Valid,
+		Errors: errors,
+	}, nil
 }

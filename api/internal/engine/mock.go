@@ -98,3 +98,18 @@ func (m *MockBacktestEngine) RunBacktest(
 		ExecutionTimeMs:   0.1,
 	}, nil
 }
+
+type MockConfigEngine struct {
+	Result *ConfigValidationResult
+	Err    error
+}
+
+func (m *MockConfigEngine) ValidateConfig(_ context.Context, _, _ string) (*ConfigValidationResult, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	if m.Result != nil {
+		return m.Result, nil
+	}
+	return &ConfigValidationResult{Valid: true}, nil
+}

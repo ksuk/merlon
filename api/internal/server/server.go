@@ -22,6 +22,7 @@ type Server struct {
 	cases        domain.CaseRepository
 	apikeys      domain.APIKeyRepository
 	webhooks     domain.WebhookRepository
+	configEngine engine.ConfigEngine
 	limiter      *rateLimiter
 }
 
@@ -37,6 +38,7 @@ type Deps struct {
 	Cases        domain.CaseRepository
 	APIKeys      domain.APIKeyRepository
 	Webhooks     domain.WebhookRepository
+	Config       engine.ConfigEngine
 	RateLimit    int
 }
 
@@ -55,6 +57,7 @@ func New(addr string, deps Deps) *Server {
 		cases:        deps.Cases,
 		apikeys:      deps.APIKeys,
 		webhooks:     deps.Webhooks,
+		configEngine: deps.Config,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -120,6 +123,12 @@ func (s *Server) routes() {
 
 	// Audit
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
+
+	// Config validation
+	s.mux.HandleFunc("POST /api/v1/config/validate", s.handleValidateConfig)
+
+	// System info
+	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)
 
 	// OpenAPI
 	s.mux.HandleFunc("GET /api/v1/openapi.json", s.handleOpenAPI)
