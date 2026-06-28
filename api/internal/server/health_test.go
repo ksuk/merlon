@@ -5,10 +5,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/merlon-aml/merlon/api/internal/store"
 )
 
+func testServer() *Server {
+	return New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+	})
+}
+
 func TestHandleHealth(t *testing.T) {
-	s := New(":0")
+	s := testServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()

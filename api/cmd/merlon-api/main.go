@@ -12,12 +12,19 @@ import (
 
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/server"
+	"github.com/merlon-aml/merlon/api/internal/store"
 )
 
 func main() {
 	cfg := config.Load()
 
-	srv := server.New(cfg.HTTPAddr)
+	deps := server.Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+	}
+
+	srv := server.New(cfg.HTTPAddr, deps)
 
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPAddr,
