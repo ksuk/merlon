@@ -97,11 +97,36 @@ export interface Transaction {
   created_at: string
 }
 
+export interface ScoreRecord {
+  id: string
+  customer_id: string
+  score: number
+  tier: RiskTier
+  factors: Factor[]
+  rule_set_id: string
+  rule_set_version: number
+  scored_at: string
+}
+
+export interface Factor {
+  name: string
+  axis: string
+  score: number
+  description: string
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
     list: () => request<Customer[]>("/customers"),
     get: (id: string) => request<Customer>(`/customers/${encodeURIComponent(id)}`),
+    scoreHistory: (id: string) =>
+      request<ScoreRecord[]>(`/customers/${encodeURIComponent(id)}/scores`),
+    score: (id: string, ruleSetId: string) =>
+      request<ScoreRecord>(`/customers/${encodeURIComponent(id)}/score`, {
+        method: "POST",
+        body: JSON.stringify({ rule_set_id: ruleSetId }),
+      }),
   },
   alerts: {
     list: () => request<Alert[]>("/alerts"),
@@ -115,6 +140,16 @@ export const api = {
   cases: {
     list: () => request<Case[]>("/cases"),
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
+    update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string }) =>
+      request<Case>(`/cases/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    addNote: (id: string, author: string, content: string) =>
+      request<CaseNote>(`/cases/${encodeURIComponent(id)}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ author, content }),
+      }),
   },
   transactions: {
     list: () => request<Transaction[]>("/transactions"),

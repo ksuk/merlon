@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type AlertSeverity, type AlertStatus } from "@/lib/api"
+import { Link } from "react-router-dom"
 
 const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "critical"> = {
   low: "low",
@@ -70,11 +71,13 @@ export function AlertsPage() {
           <TableBody>
             {alerts && alerts.length > 0 ? (
               alerts.map((a) => (
-                <TableRow key={a.id}>
+                <TableRow key={a.id} className="cursor-pointer">
                   <TableCell>
-                    <Badge variant={SEVERITY_VARIANT[a.severity]}>
-                      {SEVERITY_LABELS[a.severity] ?? a.severity}
-                    </Badge>
+                    <Link to={`/alerts/${a.id}`}>
+                      <Badge variant={SEVERITY_VARIANT[a.severity]}>
+                        {SEVERITY_LABELS[a.severity] ?? a.severity}
+                      </Badge>
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type CasePriority, type CaseStatus } from "@/lib/api"
+import { Link } from "react-router-dom"
 
 const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high"> = {
   low: "low",
@@ -66,11 +67,13 @@ export function CasesPage() {
           <TableBody>
             {cases && cases.length > 0 ? (
               cases.map((c) => (
-                <TableRow key={c.id}>
+                <TableRow key={c.id} className="cursor-pointer">
                   <TableCell>
-                    <Badge variant={PRIORITY_VARIANT[c.priority]}>
-                      {PRIORITY_LABELS[c.priority] ?? c.priority}
-                    </Badge>
+                    <Link to={`/cases/${c.id}`}>
+                      <Badge variant={PRIORITY_VARIANT[c.priority]}>
+                        {PRIORITY_LABELS[c.priority] ?? c.priority}
+                      </Badge>
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">

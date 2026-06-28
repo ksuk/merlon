@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type RiskTier } from "@/lib/api"
+import { Link } from "react-router-dom"
 
 const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
   low: "low",
@@ -65,8 +66,12 @@ export function CustomersPage() {
           <TableBody>
             {customers && customers.length > 0 ? (
               customers.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-mono text-sm">{c.external_id}</TableCell>
+                <TableRow key={c.id} className="cursor-pointer">
+                  <TableCell className="font-mono text-sm">
+                    <Link to={`/customers/${c.id}`} className="text-primary underline-offset-4 hover:underline">
+                      {c.external_id}
+                    </Link>
+                  </TableCell>
                   <TableCell>{TYPE_LABELS[c.customer_type] ?? c.customer_type}</TableCell>
                   <TableCell>{c.country_code}</TableCell>
                   <TableCell>
