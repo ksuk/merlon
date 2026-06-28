@@ -69,6 +69,10 @@ func (s *Server) routes() {
 
 	// Backtest
 	s.mux.HandleFunc("POST /api/v1/backtest", s.handleRunBacktest)
+
+	// Reports
+	s.mux.HandleFunc("POST /api/v1/reports/str", s.handleCreateSTR)
+	s.mux.HandleFunc("GET /api/v1/reports/str/export", s.handleExportSTR)
 }
 
 func (s *Server) Handler() http.Handler {

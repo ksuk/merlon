@@ -1,4 +1,4 @@
-# Standard topology: db + redis + engine + api + ui
+# Standard topology: db + engine + api
 # For minimal (PostgreSQL + API only), use docker-compose.minimal.yml
 
 services:
@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: merlon
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -19,26 +19,27 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
+  engine:
+    build:
+      context: .
+      dockerfile: engine/Dockerfile
     ports:
-      - "6379:6379"
+      - "50051:50051"
     volumes:
-      - redisdata:/data
+      - ./content/_sample/cdd_weights:/app/cdd_weights:ro
+      - ./content/_sample/tm_scenarios:/app/tm_scenarios:ro
+      - ./content/_sample/screening_lists:/app/screening_lists:ro
+    environment:
+      MERLON_ENGINE_ADDR: "[::]:50051"
+      MERLON_CDD_WEIGHTS_PATH: /app/cdd_weights/crypto_exchange.yaml
+      MERLON_TM_SCENARIOS_PATH: /app/tm_scenarios
+      MERLON_SCREENING_LISTS_PATH: /app/screening_lists
+      MERLON_SCREENING_THRESHOLD: "0.85"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "true"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-  engine:
-    build:
-      context: ./engine
-      dockerfile: Dockerfile
-    ports:
-      - "50051:50051"
-    # M1.1: engine runs as a standalone stub.
-    # gRPC communication with api will be wired in M1.3.
 
   api:
     build:
@@ -47,26 +48,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      engine:
+        condition: service_started
     ports:
       - "8080:8080"
     environment:
       MERLON_ENV: development
       MERLON_HTTP_ADDR: ":8080"
       MERLON_DATABASE_URL: postgres://merlon:merlon@db:5432/merlon?sslmode=disable
-      MERLON_CACHE_BACKEND: redis
+      MERLON_ENGINE_ADDR: engine:50051
       MERLON_LOG_LEVEL: info
-
-  ui:
-    build:
-      context: ./ui
-      dockerfile: Dockerfile
-    depends_on:
-      - api
-    ports:
-      - "3000:3000"
 
 volumes:
   pgdata:
-  redisdata:
