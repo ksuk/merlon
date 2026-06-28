@@ -96,7 +96,7 @@ See [docs/development/setup.md](docs/development/setup.md) for detailed setup in
 
 ## Status
 
-This project is in early development (M1.1: repository initialization). Core features are not yet implemented.
+This project is in active development (M12). Core backend services (Go API, Rust Engine) and the operator dashboard UI are implemented.
 
 ## Production Warning
 

@@ -84,6 +84,11 @@ func main() {
 
 	srv := server.New(cfg.HTTPAddr, deps)
 
+	if cfg.UIDir != "" {
+		srv.SetUIDir(cfg.UIDir)
+		log.Printf("serving UI from: %s", cfg.UIDir)
+	}
+
 	httpServer := &http.Server{
 		Addr:    cfg.HTTPAddr,
 		Handler: srv.Handler(),

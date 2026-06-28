@@ -16,6 +16,7 @@ type Config struct {
 	EventBus          string
 	LogLevel          string
 	AdapterConfigPath string
+	UIDir             string
 	RateLimit         int
 	AuthEnabled       bool
 }
@@ -32,6 +33,7 @@ func Load() *Config {
 		EventBus:     getEnv("MERLON_EVENT_BUS", "pg_notify"),
 		LogLevel:          getEnv("MERLON_LOG_LEVEL", "info"),
 		AdapterConfigPath: getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
+		UIDir:             getEnv("MERLON_UI_DIR", ""),
 		RateLimit:         getEnvInt("MERLON_RATE_LIMIT", 0),
 		AuthEnabled:       getEnv("MERLON_AUTH_ENABLED", "") == "true",
 	}
