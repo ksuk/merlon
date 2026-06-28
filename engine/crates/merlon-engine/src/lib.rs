@@ -1,3 +1,7 @@
+pub mod grpc;
+pub mod proto;
+pub mod scoring;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct HealthStatus {

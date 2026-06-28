@@ -1,0 +1,71 @@
+# CDD Weight Preset: Crypto Exchange (暗号資産交換業向け)
+# Licensed under Apache-2.0 (separate from BSL 1.1)
+#
+# This is a sample starting point. Adjust weights and values
+# to match your risk assessment policy before production use.
+
+schema_version: "1.0"
+preset_id: crypto_exchange
+name: 暗号資産交換業向けCDDウェイト
+
+risk_factors:
+  customer_type:
+    weight: 0.20
+    values:
+      individual: 1
+      corporate_domestic: 2
+      corporate_foreign: 3
+      pep: 5
+
+  beneficial_owner_opacity:
+    weight: 0.10
+    applies_to: [corporate_domestic, corporate_foreign]
+    values:
+      transparent: 1
+      partially_opaque: 3
+      opaque: 5
+
+  incorporation_recency:
+    weight: 0.05
+    applies_to: [corporate_domestic, corporate_foreign]
+    values:
+      established: 1
+      recent: 3
+
+  geography:
+    weight: 0.30
+    values:
+      JP: 1
+      US: 2
+      SG: 2
+      KR: 2
+      CN: 3
+      RU: 4
+      IR: 5
+      KP: 5
+
+  product_channel:
+    weight: 0.20
+    values:
+      spot_trading: 1
+      margin_trading: 2
+      otc_trading: 2
+      defi_bridge: 4
+      mixer_related: 5
+
+  transaction_pattern:
+    weight: 0.15
+    values:
+      normal: 1
+      high_volume: 3
+      rapid_movement: 4
+      structuring_suspected: 5
+
+tier_thresholds:
+  LOW:
+    max: 2.0
+  MEDIUM:
+    min: 2.0
+    max: 3.5
+  HIGH:
+    min: 3.5
