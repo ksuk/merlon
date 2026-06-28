@@ -12,19 +12,25 @@ import (
 )
 
 func testServer() *Server {
-	return testServerWithEngine(
+	return testServerWithEngines(
 		&engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
 		&engine.MockMonitoringEngine{},
+		&engine.MockScreeningEngine{},
 	)
 }
 
 func testServerWithEngine(scoring engine.ScoringEngine, monitoring engine.MonitoringEngine) *Server {
+	return testServerWithEngines(scoring, monitoring, &engine.MockScreeningEngine{})
+}
+
+func testServerWithEngines(scoring engine.ScoringEngine, monitoring engine.MonitoringEngine, screening engine.ScreeningEngine) *Server {
 	return New(":0", Deps{
 		Customers:    store.NewMemoryCustomerRepo(),
 		Transactions: store.NewMemoryTransactionRepo(),
 		Alerts:       store.NewMemoryAlertRepo(),
 		Scoring:      scoring,
 		Monitoring:   monitoring,
+		Screening:    screening,
 	})
 }
 

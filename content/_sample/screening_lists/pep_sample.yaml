@@ -1,0 +1,20 @@
+schema_version: "1.0"
+list_id: pep_sample
+list_type: pep
+name: "PEPリスト（サンプル）"
+source: "Sample PEP list"
+entries:
+  - entry_id: "PEP-001"
+    names:
+      - "Taro Yamada"
+      - "山田 太郎"
+      - "ヤマダ タロウ"
+    country: "JP"
+    type: individual
+  - entry_id: "PEP-002"
+    names:
+      - "Hanako Suzuki"
+      - "鈴木 花子"
+      - "スズキ ハナコ"
+    country: "JP"
+    type: individual

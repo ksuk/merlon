@@ -1,0 +1,23 @@
+schema_version: "1.0"
+list_id: test_sanctions
+list_type: sanctions
+name: "Test Sanctions List"
+source: "test"
+entries:
+  - entry_id: "S001"
+    names:
+      - "Kim Jong Un"
+      - "金正恩"
+    country: "KP"
+    type: individual
+  - entry_id: "S002"
+    names:
+      - "Test Entity Corp"
+    country: "IR"
+    type: entity
+  - entry_id: "S003"
+    names:
+      - "Taro Tanaka"
+      - "田中太郎"
+    country: "JP"
+    type: individual

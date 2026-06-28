@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/engine"
 )
 
 func TestCreateCustomer(t *testing.T) {
@@ -237,6 +239,112 @@ func TestScoreCustomerNoEngine(t *testing.T) {
 
 	scoreBody := `{"rule_set_id":"test"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestScreenCustomerHit(t *testing.T) {
+	mockScreening := &engine.MockScreeningEngine{
+		Result: &domain.ScreenResult{
+			CustomerID:   "will-be-overridden",
+			Hit:          true,
+			Matches:      []domain.ScreenMatch{{ListID: "sanctions", EntryID: "S001", MatchedName: "Test Name", Similarity: 0.95, ListType: "sanctions", Source: "test"}},
+			ListsChecked: 1,
+			ScreenedAt:   time.Now(),
+		},
+	}
+	s := testServerWithEngines(
+		&engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		&engine.MockMonitoringEngine{},
+		mockScreening,
+	)
+
+	body := `{"external_id":"SCR001","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	screenBody := `{"list_ids":[]}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/screen", strings.NewReader(screenBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var result domain.ScreenResult
+	json.NewDecoder(rec.Body).Decode(&result)
+
+	if !result.Hit {
+		t.Error("expected hit=true")
+	}
+	if len(result.Matches) != 1 {
+		t.Errorf("matches len = %d, want 1", len(result.Matches))
+	}
+}
+
+func TestScreenCustomerNoHit(t *testing.T) {
+	s := testServer()
+
+	body := `{"external_id":"SCR002","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	screenBody := `{"list_ids":[]}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/screen", strings.NewReader(screenBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var result domain.ScreenResult
+	json.NewDecoder(rec.Body).Decode(&result)
+
+	if result.Hit {
+		t.Error("expected hit=false")
+	}
+}
+
+func TestScreenCustomerNotFound(t *testing.T) {
+	s := testServer()
+
+	screenBody := `{"list_ids":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/nonexistent/screen", strings.NewReader(screenBody))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestScreenCustomerNoEngine(t *testing.T) {
+	s := testServerWithEngines(nil, nil, nil)
+
+	body := `{"external_id":"SCR003","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	screenBody := `{"list_ids":[]}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/screen", strings.NewReader(screenBody))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 

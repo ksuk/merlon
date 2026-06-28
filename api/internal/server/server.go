@@ -15,6 +15,7 @@ type Server struct {
 	alerts       domain.AlertRepository
 	scoring      engine.ScoringEngine
 	monitoring   engine.MonitoringEngine
+	screening    engine.ScreeningEngine
 }
 
 type Deps struct {
@@ -23,6 +24,7 @@ type Deps struct {
 	Alerts       domain.AlertRepository
 	Scoring      engine.ScoringEngine
 	Monitoring   engine.MonitoringEngine
+	Screening    engine.ScreeningEngine
 }
 
 func New(addr string, deps Deps) *Server {
@@ -34,6 +36,7 @@ func New(addr string, deps Deps) *Server {
 		alerts:       deps.Alerts,
 		scoring:      deps.Scoring,
 		monitoring:   deps.Monitoring,
+		screening:    deps.Screening,
 	}
 	s.routes()
 	return s
@@ -49,6 +52,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
 	s.mux.HandleFunc("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
 	s.mux.HandleFunc("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
+	s.mux.HandleFunc("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
 	// Transactions
 	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)

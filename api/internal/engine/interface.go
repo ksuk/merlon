@@ -19,3 +19,11 @@ type MonitoringEngine interface {
 		scenarioIDs []string,
 	) ([]domain.Alert, error)
 }
+
+type ScreeningEngine interface {
+	ScreenCustomer(
+		ctx context.Context,
+		customer *domain.Customer,
+		listIDs []string,
+	) (*domain.ScreenResult, error)
+}

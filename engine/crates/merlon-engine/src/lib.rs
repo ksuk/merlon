@@ -2,6 +2,7 @@ pub mod grpc;
 pub mod monitoring;
 pub mod proto;
 pub mod scoring;
+pub mod screening;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 

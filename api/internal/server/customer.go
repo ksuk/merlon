@@ -204,3 +204,40 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, record)
 }
+
+type ScreenCustomerRequest struct {
+	ListIDs []string `json:"list_ids"`
+}
+
+func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
+	if s.screening == nil {
+		writeError(w, http.StatusServiceUnavailable, "screening engine not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	c, err := s.customers.Get(r.Context(), id)
+	if err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req ScreenCustomerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	result, err := s.screening.ScreenCustomer(r.Context(), c, req.ListIDs)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "screening engine error: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}

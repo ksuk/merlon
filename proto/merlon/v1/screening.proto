@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package merlon.v1;
+
+option go_package = "github.com/merlon-aml/merlon/api/gen/merlon/v1;merlonv1";
+
+import "merlon/v1/types.proto";
+
+service ScreeningService {
+  rpc ScreenCustomer (ScreenCustomerRequest) returns (ScreenCustomerResponse);
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message ScreenCustomerRequest {
+  string customer_id = 1;
+  string name = 2;
+  string name_kana = 3;
+  string country_code = 4;
+  string date_of_birth = 5;
+  repeated string list_ids = 6;
+}
+
+message ScreenMatch {
+  string list_id = 1;
+  string entry_id = 2;
+  string matched_name = 3;
+  double similarity = 4;
+  string list_type = 5;
+  string source = 6;
+}
+
+message ScreenCustomerResponse {
+  string customer_id = 1;
+  bool hit = 2;
+  repeated ScreenMatch matches = 3;
+  int32 lists_checked = 4;
+  Timestamp screened_at = 5;
+}

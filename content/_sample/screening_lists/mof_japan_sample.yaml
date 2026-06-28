@@ -1,0 +1,24 @@
+schema_version: "1.0"
+list_id: mof_japan_sample
+list_type: sanctions
+name: "財務省制裁リスト（サンプル）"
+source: "Ministry of Finance Japan (sample)"
+entries:
+  - entry_id: "MOF-001"
+    names:
+      - "Kim Jong Un"
+      - "金正恩"
+      - "キム ジョンウン"
+    country: "KP"
+    type: individual
+  - entry_id: "MOF-002"
+    names:
+      - "Korea Mining Development Trading Corporation"
+      - "朝鮮鉱業開発貿易会社"
+    country: "KP"
+    type: entity
+  - entry_id: "MOF-003"
+    names:
+      - "Banco Delta Asia"
+    country: "MO"
+    type: entity

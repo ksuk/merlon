@@ -45,3 +45,28 @@ func (m *MockMonitoringEngine) EvaluateTransactions(
 	}
 	return m.Alerts, nil
 }
+
+type MockScreeningEngine struct {
+	Result *domain.ScreenResult
+	Err    error
+}
+
+func (m *MockScreeningEngine) ScreenCustomer(
+	_ context.Context,
+	customer *domain.Customer,
+	_ []string,
+) (*domain.ScreenResult, error) {
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	if m.Result != nil {
+		return m.Result, nil
+	}
+	return &domain.ScreenResult{
+		CustomerID:   customer.ID,
+		Hit:          false,
+		Matches:      nil,
+		ListsChecked: 1,
+		ScreenedAt:   time.Now(),
+	}, nil
+}

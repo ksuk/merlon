@@ -14,6 +14,7 @@ import (
 type Client struct {
 	scoring    pb.ScoringServiceClient
 	monitoring pb.MonitoringServiceClient
+	screening  pb.ScreeningServiceClient
 	conn       *grpc.ClientConn
 }
 
@@ -31,6 +32,7 @@ func NewClient(addr string) (*Client, error) {
 	return &Client{
 		scoring:    pb.NewScoringServiceClient(conn),
 		monitoring: pb.NewMonitoringServiceClient(conn),
+		screening:  pb.NewScreeningServiceClient(conn),
 		conn:       conn,
 	}, nil
 }
@@ -201,4 +203,48 @@ func (c *Client) EvaluateTransactions(
 	}
 
 	return alerts, nil
+}
+
+func (c *Client) ScreenCustomer(
+	ctx context.Context,
+	customer *domain.Customer,
+	listIDs []string,
+) (*domain.ScreenResult, error) {
+	nameKana := customer.Attributes["name_kana"]
+
+	resp, err := c.screening.ScreenCustomer(ctx, &pb.ScreenCustomerRequest{
+		CustomerId:  customer.ID,
+		Name:        customer.ExternalID,
+		NameKana:    nameKana,
+		CountryCode: customer.CountryCode,
+		ListIds:     listIDs,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("screening rpc: %w", err)
+	}
+
+	var matches []domain.ScreenMatch
+	for _, m := range resp.Matches {
+		matches = append(matches, domain.ScreenMatch{
+			ListID:      m.ListId,
+			EntryID:     m.EntryId,
+			MatchedName: m.MatchedName,
+			Similarity:  m.Similarity,
+			ListType:    m.ListType,
+			Source:      m.Source,
+		})
+	}
+
+	screenedAt := time.Now()
+	if resp.ScreenedAt != nil {
+		screenedAt = time.Unix(resp.ScreenedAt.Seconds, int64(resp.ScreenedAt.Nanos))
+	}
+
+	return &domain.ScreenResult{
+		CustomerID:   resp.CustomerId,
+		Hit:          resp.Hit,
+		Matches:      matches,
+		ListsChecked: int(resp.ListsChecked),
+		ScreenedAt:   screenedAt,
+	}, nil
 }
