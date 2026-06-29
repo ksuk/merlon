@@ -22,8 +22,9 @@ type Server struct {
 	cases        domain.CaseRepository
 	apikeys      domain.APIKeyRepository
 	webhooks     domain.WebhookRepository
-	configEngine engine.ConfigEngine
-	limiter      *rateLimiter
+	configEngine   engine.ConfigEngine
+	limiter        *rateLimiter
+	bootstrapToken string
 }
 
 type Deps struct {
@@ -38,8 +39,9 @@ type Deps struct {
 	Cases        domain.CaseRepository
 	APIKeys      domain.APIKeyRepository
 	Webhooks     domain.WebhookRepository
-	Config       engine.ConfigEngine
-	RateLimit    int
+	Config         engine.ConfigEngine
+	RateLimit      int
+	BootstrapToken string
 }
 
 func New(addr string, deps Deps) *Server {
@@ -57,7 +59,8 @@ func New(addr string, deps Deps) *Server {
 		cases:        deps.Cases,
 		apikeys:      deps.APIKeys,
 		webhooks:     deps.Webhooks,
-		configEngine: deps.Config,
+		configEngine:   deps.Config,
+		bootstrapToken: deps.BootstrapToken,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -116,7 +119,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleDeleteWebhook)
 	s.mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", s.handleListWebhookDeliveries)
 
-	// API Keys (admin only, managed outside auth middleware)
+	// API Keys (admin only, requires admin API key or bootstrap token)
 	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
 	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
 	s.mux.HandleFunc("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)

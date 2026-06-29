@@ -20,6 +20,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("config validation: %v", err)
+	}
 
 	deps := server.Deps{}
 
@@ -59,6 +62,7 @@ func main() {
 		} else {
 			deps.APIKeys = store.NewMemoryAPIKeyRepo()
 		}
+		deps.BootstrapToken = cfg.BootstrapToken
 		log.Printf("API key authentication enabled")
 	}
 
@@ -68,7 +72,11 @@ func main() {
 	}
 
 	if cfg.EngineAddr != "" {
-		client, err := engine.NewClient(cfg.EngineAddr)
+		var engineOpts []engine.ClientOption
+		if cfg.EngineTLSCert != "" {
+			engineOpts = append(engineOpts, engine.WithTLS(cfg.EngineTLSCert, cfg.EngineTLSServerName))
+		}
+		client, err := engine.NewClient(cfg.EngineAddr, engineOpts...)
 		if err != nil {
 			log.Fatalf("engine client: %v", err)
 		}

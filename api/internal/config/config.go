@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
@@ -18,7 +19,17 @@ type Config struct {
 	AdapterConfigPath string
 	UIDir             string
 	RateLimit         int
-	AuthEnabled       bool
+	AuthEnabled         bool
+	BootstrapToken      string
+	EngineTLSCert       string
+	EngineTLSServerName string
+}
+
+func (c *Config) Validate() error {
+	if c.Env == "production" && !c.AuthEnabled {
+		return fmt.Errorf("MERLON_AUTH_ENABLED must be true in production")
+	}
+	return nil
 }
 
 func Load() *Config {
@@ -35,7 +46,10 @@ func Load() *Config {
 		AdapterConfigPath: getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
 		UIDir:             getEnv("MERLON_UI_DIR", ""),
 		RateLimit:         getEnvInt("MERLON_RATE_LIMIT", 0),
-		AuthEnabled:       getEnv("MERLON_AUTH_ENABLED", "") == "true",
+		AuthEnabled:         getEnv("MERLON_AUTH_ENABLED", "") == "true",
+		BootstrapToken:      getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
+		EngineTLSCert:       getEnv("MERLON_ENGINE_TLS_CERT", ""),
+		EngineTLSServerName: getEnv("MERLON_ENGINE_TLS_SERVER_NAME", ""),
 	}
 }
 

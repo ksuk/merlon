@@ -26,9 +26,18 @@ func HashAPIKey(raw string) string {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.apikeys == nil || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/api/v1/admin/") {
+		if s.apikeys == nil || r.URL.Path == "/healthz" {
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		// Bootstrap token: only allows POST /api/v1/admin/apikeys (first key creation)
+		if s.bootstrapToken != "" && r.URL.Path == "/api/v1/admin/apikeys" && r.Method == http.MethodPost {
+			header := r.Header.Get("Authorization")
+			if header == "Bearer "+s.bootstrapToken {
+				next.ServeHTTP(w, r)
+				return
+			}
 		}
 
 		header := r.Header.Get("Authorization")
@@ -58,6 +67,12 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		if !key.Active {
 			writeAuthError(w, http.StatusUnauthorized, "API key revoked")
+			return
+		}
+
+		// Admin routes require admin role
+		if strings.HasPrefix(r.URL.Path, "/api/v1/admin/") && key.Role != domain.RoleAdmin {
+			writeAuthError(w, http.StatusForbidden, "admin role required")
 			return
 		}
 

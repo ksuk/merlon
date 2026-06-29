@@ -26,6 +26,7 @@ api:
   env:
     MERLON_ENV: production
     MERLON_LOG_LEVEL: info
+    MERLON_AUTH_ENABLED: "true"
 
 # -- Rust scoring/evaluation engine.
 engine:

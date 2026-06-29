@@ -54,3 +54,32 @@ func TestLoadAdapterConfigFromEnv(t *testing.T) {
 		t.Errorf("AdapterConfigPath = %q, want %q", cfg.AdapterConfigPath, "/app/adapters/core.yaml")
 	}
 }
+
+func TestLoadBootstrapToken(t *testing.T) {
+	t.Setenv("MERLON_BOOTSTRAP_TOKEN", "my-secret-token")
+	cfg := Load()
+	if cfg.BootstrapToken != "my-secret-token" {
+		t.Errorf("BootstrapToken = %q, want %q", cfg.BootstrapToken, "my-secret-token")
+	}
+}
+
+func TestValidateProductionWithoutAuth(t *testing.T) {
+	cfg := &Config{Env: "production", AuthEnabled: false}
+	if err := cfg.Validate(); err == nil {
+		t.Error("Validate() should fail for production without auth")
+	}
+}
+
+func TestValidateProductionWithAuth(t *testing.T) {
+	cfg := &Config{Env: "production", AuthEnabled: true}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() unexpected error: %v", err)
+	}
+}
+
+func TestValidateDevelopmentWithoutAuth(t *testing.T) {
+	cfg := &Config{Env: "development", AuthEnabled: false}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() unexpected error: %v", err)
+	}
+}
