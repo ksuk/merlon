@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,6 +49,51 @@ func TestCreateCustomerMissingExternalID(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateCustomerOversizedAttributes(t *testing.T) {
+	s := testServer()
+
+	bigVal := strings.Repeat("x", 10001)
+	body := `{"external_id":"EXT_BIG","customer_type":"individual","country_code":"JP","attributes":{"name":"` + bigVal + `"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateCustomerTooManyAttributes(t *testing.T) {
+	s := testServer()
+
+	attrs := make(map[string]string, 51)
+	for i := 0; i < 51; i++ {
+		attrs[fmt.Sprintf("key_%d", i)] = "value"
+	}
+	attrsJSON, _ := json.Marshal(attrs)
+	body := `{"external_id":"EXT_MANY","customer_type":"individual","country_code":"JP","attributes":` + string(attrsJSON) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateCustomerInvalidType(t *testing.T) {
+	s := testServer()
+
+	body := `{"external_id":"EXT_BAD","customer_type":"unknown_type","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 

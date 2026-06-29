@@ -21,12 +21,12 @@ impl BacktestServiceImpl {
     }
 }
 
-fn direction_from_proto(d: i32) -> TransactionDirection {
+fn direction_from_proto(d: i32) -> Result<TransactionDirection, Status> {
     match d {
-        1 => TransactionDirection::Inbound,
-        2 => TransactionDirection::Outbound,
-        3 => TransactionDirection::Internal,
-        _ => TransactionDirection::Inbound,
+        1 => Ok(TransactionDirection::Inbound),
+        2 => Ok(TransactionDirection::Outbound),
+        3 => Ok(TransactionDirection::Internal),
+        _ => Err(Status::invalid_argument("invalid transaction direction")),
     }
 }
 
@@ -53,6 +53,12 @@ impl BacktestService for BacktestServiceImpl {
         if req.customers.is_empty() {
             return Err(Status::invalid_argument("customers required"));
         }
+        if req.customers.len() > 1_000 {
+            return Err(Status::invalid_argument("too many customers (max 1000)"));
+        }
+        if req.transactions.len() > 100_000 {
+            return Err(Status::invalid_argument("too many transactions (max 100000)"));
+        }
 
         let customers: Vec<BacktestCustomer> = req
             .customers
@@ -73,19 +79,19 @@ impl BacktestService for BacktestServiceImpl {
                     .map(|ts| ts.seconds)
                     .unwrap_or(0);
 
-                TransactionInput {
+                Ok(TransactionInput {
                     transaction_id: t.transaction_id.clone(),
                     customer_id: t.customer_id.clone(),
                     amount: t.amount,
                     currency: t.currency.clone(),
                     counterparty_id: t.counterparty_id.clone(),
                     counterparty_country: t.counterparty_country.clone(),
-                    direction: direction_from_proto(t.direction),
+                    direction: direction_from_proto(t.direction)?,
                     executed_at_secs,
                     channel: t.channel.clone(),
-                }
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, Status>>()?;
 
         let input = BacktestInput {
             customers,

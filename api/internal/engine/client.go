@@ -2,14 +2,46 @@ package engine
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	pb "github.com/merlon-aml/merlon/api/gen/merlon/v1"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+type ClientOption func(*clientOptions)
+
+type clientOptions struct {
+	creds grpc.DialOption
+}
+
+func WithTLS(certFile, serverName string) ClientOption {
+	return func(o *clientOptions) {
+		caCert, err := os.ReadFile(certFile)
+		if err != nil {
+			log.Printf("warning: failed to read TLS cert %q: %v, falling back to insecure", certFile, err)
+			return
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caCert) {
+			log.Printf("warning: failed to parse TLS cert %q, falling back to insecure", certFile)
+			return
+		}
+		tlsCfg := &tls.Config{
+			RootCAs:    pool,
+			ServerName: serverName,
+			MinVersion: tls.VersionTLS12,
+		}
+		o.creds = grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg))
+	}
+}
 
 type Client struct {
 	scoring    pb.ScoringServiceClient
@@ -20,13 +52,20 @@ type Client struct {
 	conn       *grpc.ClientConn
 }
 
-func NewClient(addr string) (*Client, error) {
+func NewClient(addr string, opts ...ClientOption) (*Client, error) {
+	o := &clientOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	if o.creds == nil {
+		log.Printf("warning: gRPC connection to %s using insecure transport", addr)
+		o.creds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, addr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	conn, err := grpc.DialContext(ctx, addr, o.creds)
 	if err != nil {
 		return nil, fmt.Errorf("engine dial: %w", err)
 	}
@@ -46,6 +85,13 @@ func (c *Client) Close() error {
 		return c.conn.Close()
 	}
 	return nil
+}
+
+func customerScreeningName(c *domain.Customer) string {
+	if name, ok := c.Attributes["name"]; ok && name != "" {
+		return name
+	}
+	return c.ExternalID
 }
 
 func customerTypeToProto(ct domain.CustomerType) pb.CustomerType {
@@ -218,7 +264,7 @@ func (c *Client) ScreenCustomer(
 
 	resp, err := c.screening.ScreenCustomer(ctx, &pb.ScreenCustomerRequest{
 		CustomerId:  customer.ID,
-		Name:        customer.ExternalID,
+		Name:        customerScreeningName(customer),
 		NameKana:    nameKana,
 		CountryCode: customer.CountryCode,
 		ListIds:     listIDs,

@@ -40,7 +40,7 @@ func TestDashboardWithData(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
-	body = `{"external_id":"DASH002","customer_type":"corporate","country_code":"US","product_types":["margin_trading"]}`
+	body = `{"external_id":"DASH002","customer_type":"corporate_domestic","country_code":"US","product_types":["margin_trading"]}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

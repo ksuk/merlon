@@ -115,6 +115,34 @@ func TestListTransactionsMissingCustomerID(t *testing.T) {
 	}
 }
 
+func TestCreateTransactionInvalidDirection(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX004","amount":100,"direction":"bogus"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreateTransactionMissingDirection(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX005","amount":100}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestGetTransaction(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)

@@ -3,11 +3,18 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+)
+
+const (
+	maxAttributes    = 50
+	maxAttrKeyLen    = 256
+	maxAttrValueLen  = 10000
 )
 
 type CreateCustomerRequest struct {
@@ -69,8 +76,12 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "external_id required")
 		return
 	}
-	if req.CustomerType == "" {
-		writeError(w, http.StatusBadRequest, "customer_type required")
+	if !isValidCustomerType(req.CustomerType) {
+		writeError(w, http.StatusBadRequest, "customer_type must be one of: individual, corporate_domestic, corporate_foreign")
+		return
+	}
+	if err := validateAttributes(req.Attributes); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -120,6 +131,10 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		c.ProductTypes = *req.ProductTypes
 	}
 	if req.Attributes != nil {
+		if err := validateAttributes(req.Attributes); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		c.Attributes = req.Attributes
 	}
 
@@ -240,4 +255,28 @@ func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func isValidCustomerType(ct domain.CustomerType) bool {
+	switch ct {
+	case domain.CustomerTypeIndividual, domain.CustomerTypeCorporateDomestic, domain.CustomerTypeCorporateForeign:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateAttributes(attrs map[string]string) error {
+	if len(attrs) > maxAttributes {
+		return fmt.Errorf("too many attributes: %d (max %d)", len(attrs), maxAttributes)
+	}
+	for k, v := range attrs {
+		if len(k) > maxAttrKeyLen {
+			return fmt.Errorf("attribute key too long: %d chars (max %d)", len(k), maxAttrKeyLen)
+		}
+		if len(v) > maxAttrValueLen {
+			return fmt.Errorf("attribute value too long for key %q: %d chars (max %d)", k, len(v), maxAttrValueLen)
+		}
+	}
+	return nil
 }

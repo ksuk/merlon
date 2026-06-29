@@ -31,12 +31,12 @@ impl MonitoringServiceImpl {
     }
 }
 
-fn proto_direction_to_internal(d: i32) -> TransactionDirection {
+fn proto_direction_to_internal(d: i32) -> Result<TransactionDirection, Status> {
     match ProtoDirection::try_from(d) {
-        Ok(ProtoDirection::Inbound) => TransactionDirection::Inbound,
-        Ok(ProtoDirection::Outbound) => TransactionDirection::Outbound,
-        Ok(ProtoDirection::Internal) => TransactionDirection::Internal,
-        _ => TransactionDirection::Inbound,
+        Ok(ProtoDirection::Inbound) => Ok(TransactionDirection::Inbound),
+        Ok(ProtoDirection::Outbound) => Ok(TransactionDirection::Outbound),
+        Ok(ProtoDirection::Internal) => Ok(TransactionDirection::Internal),
+        _ => Err(Status::invalid_argument("invalid transaction direction")),
     }
 }
 
@@ -73,24 +73,29 @@ impl MonitoringService for MonitoringServiceImpl {
         if req.transactions.is_empty() {
             return Err(Status::invalid_argument("transactions must not be empty"));
         }
+        if req.transactions.len() > 10_000 {
+            return Err(Status::invalid_argument("too many transactions (max 10000)"));
+        }
 
         let risk_tier = risk_tier_str(req.customer_risk_tier);
 
         let transactions: Vec<TransactionInput> = req
             .transactions
             .iter()
-            .map(|t| TransactionInput {
-                transaction_id: t.transaction_id.clone(),
-                customer_id: t.customer_id.clone(),
-                amount: t.amount,
-                currency: t.currency.clone(),
-                counterparty_id: t.counterparty_id.clone(),
-                counterparty_country: t.counterparty_country.clone(),
-                direction: proto_direction_to_internal(t.direction),
-                executed_at_secs: t.executed_at.as_ref().map_or(0, |ts| ts.seconds),
-                channel: t.channel.clone(),
+            .map(|t| {
+                Ok(TransactionInput {
+                    transaction_id: t.transaction_id.clone(),
+                    customer_id: t.customer_id.clone(),
+                    amount: t.amount,
+                    currency: t.currency.clone(),
+                    counterparty_id: t.counterparty_id.clone(),
+                    counterparty_country: t.counterparty_country.clone(),
+                    direction: proto_direction_to_internal(t.direction)?,
+                    executed_at_secs: t.executed_at.as_ref().map_or(0, |ts| ts.seconds),
+                    channel: t.channel.clone(),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, Status>>()?;
 
         let alerts = self
             .engine

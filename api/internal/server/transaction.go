@@ -81,6 +81,10 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "amount must be positive")
 		return
 	}
+	if !isValidDirection(req.Direction) {
+		writeError(w, http.StatusBadRequest, "direction must be one of: inbound, outbound, internal")
+		return
+	}
 
 	// Verify customer exists
 	_, err := s.customers.Get(r.Context(), req.CustomerID)
@@ -125,4 +129,13 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusCreated, t)
+}
+
+func isValidDirection(d domain.TransactionDirection) bool {
+	switch d {
+	case domain.DirectionInbound, domain.DirectionOutbound, domain.DirectionInternal:
+		return true
+	default:
+		return false
+	}
 }

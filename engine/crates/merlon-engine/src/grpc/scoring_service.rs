@@ -37,7 +37,7 @@ impl ScoringServiceImpl {
             1 => "individual",
             2 => "corporate_domestic",
             3 => "corporate_foreign",
-            _ => "individual",
+            _ => return Err(Status::invalid_argument("invalid customer_type")),
         };
 
         let input = ScoringInput {
@@ -103,6 +103,9 @@ impl ScoringService for ScoringServiceImpl {
         request: Request<BatchEvaluateRequest>,
     ) -> Result<Response<Self::BatchEvaluateStream>, Status> {
         let batch = request.into_inner();
+        if batch.customers.len() > 10_000 {
+            return Err(Status::invalid_argument("too many customers (max 10000)"));
+        }
         let (tx, rx) = mpsc::channel(128);
         let engine = Arc::clone(&self.engine);
 
@@ -231,6 +234,26 @@ mod tests {
 
         assert_eq!(resp.tier, ProtoRiskTier::High as i32);
         assert!(resp.score >= 3.5);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_invalid_customer_type() {
+        let service = test_service();
+        let req = EvaluateCustomerRiskRequest {
+            customer: Some(CustomerAttributes {
+                customer_id: "C999".to_string(),
+                customer_type: 99,
+                country_code: "JP".to_string(),
+                product_types: vec!["spot_trading".to_string()],
+            }),
+            rule_set_id: "test_preset".to_string(),
+        };
+
+        let result = service
+            .evaluate_customer_risk(Request::new(req))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
     }
 
     #[tokio::test]
