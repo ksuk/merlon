@@ -31,6 +31,12 @@ impl ScreeningService for ScreeningServiceImpl {
         if req.name.is_empty() {
             return Err(Status::invalid_argument("name required"));
         }
+        if req.name.len() > 10_000 {
+            return Err(Status::invalid_argument("name too long (max 10000 chars)"));
+        }
+        if req.name_kana.len() > 10_000 {
+            return Err(Status::invalid_argument("name_kana too long (max 10000 chars)"));
+        }
 
         let input = ScreenInput {
             customer_id: req.customer_id.clone(),
@@ -159,6 +165,26 @@ mod tests {
 
         assert!(!resp.hit);
         assert!(resp.matches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_screen_name_too_long() {
+        let service = test_service();
+        let long_name = "a".repeat(10_001);
+        let req = ScreenCustomerRequest {
+            customer_id: "C004".to_string(),
+            name: long_name,
+            name_kana: String::new(),
+            country_code: "JP".to_string(),
+            date_of_birth: String::new(),
+            list_ids: vec![],
+        };
+
+        let result = service
+            .screen_customer(Request::new(req))
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
     }
 
     #[tokio::test]

@@ -24,6 +24,10 @@ impl ConfigService for ConfigServiceImpl {
     ) -> Result<Response<ValidateConfigResponse>, Status> {
         let req = request.into_inner();
 
+        if req.yaml_content.len() > 512 * 1024 {
+            return Err(Status::invalid_argument("yaml_content too large (max 512KB)"));
+        }
+
         let errors = match req.config_type.as_str() {
             "cdd_weights" => validate_cdd_weights(&req.yaml_content),
             "tm_scenarios" => validate_tm_scenarios(&req.yaml_content),

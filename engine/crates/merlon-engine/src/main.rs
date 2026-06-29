@@ -59,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Server::builder()
+        .max_frame_size(Some(4 * 1024 * 1024))
         .add_service(ScoringServiceServer::new(scoring_service))
         .add_service(MonitoringServiceServer::new(monitoring_service))
         .add_service(ScreeningServiceServer::new(screening_service))
