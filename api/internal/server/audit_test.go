@@ -15,7 +15,6 @@ func TestAuditMiddlewareRecordsWrite(t *testing.T) {
 
 	body := `{"external_id":"AUD001","customer_type":"individual","country_code":"JP","product_types":["spot_trading"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
-	req.Header.Set("X-User-ID", "analyst01")
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -38,11 +37,69 @@ func TestAuditMiddlewareRecordsWrite(t *testing.T) {
 	if entry.Action != "create" {
 		t.Errorf("action = %q, want %q", entry.Action, "create")
 	}
-	if entry.UserID != "analyst01" {
-		t.Errorf("user_id = %q, want %q", entry.UserID, "analyst01")
+	if entry.UserID != "anonymous" {
+		t.Errorf("user_id = %q, want %q", entry.UserID, "anonymous")
 	}
 	if entry.ResourceType != "customers" {
 		t.Errorf("resource_type = %q, want %q", entry.ResourceType, "customers")
+	}
+}
+
+func TestAuditUserIDFromPrincipal(t *testing.T) {
+	s := testServerWithAuth()
+	apiKey := createAPIKey(t, s, "audit-test", domain.RoleAdmin)
+
+	body := `{"external_id":"AUD_PRINCIPAL","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/audit?resource_type=customers", nil)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var entries []domain.AuditEntry
+	json.NewDecoder(rec.Body).Decode(&entries)
+
+	if len(entries) < 1 {
+		t.Fatalf("expected at least 1 audit entry, got %d", len(entries))
+	}
+
+	entry := entries[0]
+	if !strings.HasPrefix(entry.UserID, "apikey:") {
+		t.Errorf("user_id = %q, want prefix 'apikey:'", entry.UserID)
+	}
+}
+
+func TestAuditIPValidation(t *testing.T) {
+	s := testServerFull()
+
+	body := `{"external_id":"AUD_IP","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	req.Header.Set("X-Forwarded-For", "not-an-ip, 1.2.3.4")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/audit?resource_type=customers", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var entries []domain.AuditEntry
+	json.NewDecoder(rec.Body).Decode(&entries)
+
+	if len(entries) < 1 {
+		t.Fatalf("expected at least 1 audit entry, got %d", len(entries))
+	}
+
+	ip := entries[0].IPAddress
+	if ip == "not-an-ip" {
+		t.Errorf("invalid IP should be rejected, got %q", ip)
 	}
 }
 

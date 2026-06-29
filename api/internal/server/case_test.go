@@ -215,6 +215,45 @@ func TestAddCaseNote(t *testing.T) {
 	}
 }
 
+func TestCaseNoteAuthorFromPrincipal(t *testing.T) {
+	s := testServerWithAuth()
+	apiKey := createAPIKey(t, s, "case-test", domain.RoleAdmin)
+
+	body := `{"external_id":"CASE_AUTH","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var cust domain.Customer
+	json.NewDecoder(rec.Body).Decode(&cust)
+
+	body = `{"customer_id":"` + cust.ID + `","summary":"Auth case"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	body = `{"content":"Note from principal"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases/"+created.ID+"/notes", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var note domain.CaseNote
+	json.NewDecoder(rec.Body).Decode(&note)
+	if !strings.HasPrefix(note.Author, "apikey:") {
+		t.Errorf("author = %q, want prefix 'apikey:'", note.Author)
+	}
+}
+
 func TestAddCaseNoteEmptyContent(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)

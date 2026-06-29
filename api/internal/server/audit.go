@@ -1,6 +1,8 @@
 package server
 
 import (
+	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -36,7 +38,7 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		resourceType, resourceID := resolveResource(r.URL.Path)
 
 		entry := &domain.AuditEntry{
-			UserID:       r.Header.Get("X-User-ID"),
+			UserID:       resolveAuditUserID(r),
 			Action:       action,
 			ResourceType: resourceType,
 			ResourceID:   resourceID,
@@ -45,7 +47,9 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			CreatedAt:    time.Now(),
 		}
 
-		s.audit.Create(r.Context(), entry)
+		if err := s.audit.Create(r.Context(), entry); err != nil {
+			log.Printf("audit write error: %v", err)
+		}
 	})
 }
 
@@ -114,14 +118,23 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, entries)
 }
 
+func resolveAuditUserID(r *http.Request) string {
+	if key, ok := r.Context().Value(ctxKeyAPIKey).(*domain.APIKey); ok && key != nil {
+		return "apikey:" + key.ID
+	}
+	return "anonymous"
+}
+
 func extractIP(r *http.Request) string {
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		return strings.TrimSpace(parts[0])
+		candidate := strings.TrimSpace(strings.Split(forwarded, ",")[0])
+		if net.ParseIP(candidate) != nil {
+			return candidate
+		}
 	}
-	host := r.RemoteAddr
-	if idx := strings.LastIndex(host, ":"); idx != -1 {
-		host = host[:idx]
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
 	return host
 }

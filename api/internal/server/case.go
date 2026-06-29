@@ -220,9 +220,14 @@ func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	author := resolveAuditUserID(r)
+	if author == "anonymous" && req.Author != "" {
+		author = req.Author
+	}
+
 	note := &domain.CaseNote{
 		ID:        generateID(),
-		Author:    req.Author,
+		Author:    author,
 		Content:   req.Content,
 		CreatedAt: time.Now(),
 	}
