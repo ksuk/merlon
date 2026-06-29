@@ -30,6 +30,10 @@ func (s *Server) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "yaml_content is required")
 		return
 	}
+	if len(req.YAMLContent) > 512*1024 {
+		writeError(w, http.StatusBadRequest, "yaml_content too large (max 512KB)")
+		return
+	}
 
 	result, err := s.configEngine.ValidateConfig(r.Context(), req.ConfigType, req.YAMLContent)
 	if err != nil {

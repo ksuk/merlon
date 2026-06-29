@@ -111,6 +111,23 @@ func TestRunBacktestNoCustomerIDs(t *testing.T) {
 	}
 }
 
+func TestBacktestTooManyCustomers(t *testing.T) {
+	s := testServer()
+
+	ids := make([]string, 101)
+	for i := range ids {
+		ids[i] = `"c` + strings.Repeat("0", 5) + `"`
+	}
+	body := `{"customer_ids":[` + strings.Join(ids, ",") + `]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backtest", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestRunBacktestCustomerNotFound(t *testing.T) {
 	s := testServer()
 

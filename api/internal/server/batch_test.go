@@ -107,6 +107,23 @@ func TestBatchScoreNoEngine(t *testing.T) {
 	}
 }
 
+func TestBatchScoreTooManyCustomers(t *testing.T) {
+	s := testServerWithAllEngines()
+
+	ids := make([]string, 1001)
+	for i := range ids {
+		ids[i] = `"nonexistent` + strings.Repeat("0", 5) + `"`
+	}
+	body := `{"customer_ids":[` + strings.Join(ids, ",") + `]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/score", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestBatchMonitorAll(t *testing.T) {
 	s := testServerWithAllEngines()
 

@@ -7,6 +7,8 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
+const maxBacktestCustomers = 100
+
 type RunBacktestRequest struct {
 	CustomerIDs []string `json:"customer_ids"`
 	ScenarioIDs []string `json:"scenario_ids"`
@@ -29,6 +31,10 @@ func (s *Server) handleRunBacktest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "customer_ids required")
 		return
 	}
+	if len(req.CustomerIDs) > maxBacktestCustomers {
+		writeError(w, http.StatusBadRequest, "too many customer_ids (max 100)")
+		return
+	}
 
 	var customers []domain.Customer
 	for _, id := range req.CustomerIDs {
@@ -42,7 +48,7 @@ func (s *Server) handleRunBacktest(w http.ResponseWriter, r *http.Request) {
 
 	var allTxns []domain.Transaction
 	for _, c := range customers {
-		txns, err := s.transactions.ListByCustomer(r.Context(), c.ID, 10000, 0)
+		txns, err := s.transactions.ListByCustomer(r.Context(), c.ID, 1000, 0)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

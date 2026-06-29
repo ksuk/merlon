@@ -8,6 +8,8 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
+const maxBatchCustomers = 1000
+
 type batchScoreRequest struct {
 	CustomerIDs []string `json:"customer_ids,omitempty"`
 }
@@ -41,6 +43,11 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.CustomerIDs) > maxBatchCustomers {
+		writeError(w, http.StatusBadRequest, "too many customer_ids (max 1000)")
+		return
+	}
+
 	ctx := r.Context()
 
 	var customers []domain.Customer
@@ -54,7 +61,7 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var err error
-		customers, err = s.customers.List(ctx, 10000, 0)
+		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -128,6 +135,11 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(req.CustomerIDs) > maxBatchCustomers {
+		writeError(w, http.StatusBadRequest, "too many customer_ids (max 1000)")
+		return
+	}
+
 	ctx := r.Context()
 
 	var customers []domain.Customer
@@ -141,7 +153,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var err error
-		customers, err = s.customers.List(ctx, 10000, 0)
+		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -153,7 +165,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, c := range customers {
-		txns, err := s.transactions.ListByCustomer(ctx, c.ID, 10000, 0)
+		txns, err := s.transactions.ListByCustomer(ctx, c.ID, maxBatchCustomers, 0)
 		if err != nil {
 			resp.Failed++
 			resp.Results = append(resp.Results, batchMonitorResult{
