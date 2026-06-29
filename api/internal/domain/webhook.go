@@ -22,7 +22,7 @@ type Webhook struct {
 	ID         string             `json:"id"`
 	URL        string             `json:"url"`
 	Events     []WebhookEventType `json:"events"`
-	Secret     string             `json:"secret,omitempty"`
+	Secret     string             `json:"-"`
 	Active     bool               `json:"active"`
 	CreatedAt  time.Time          `json:"created_at"`
 	UpdatedAt  time.Time          `json:"updated_at"`

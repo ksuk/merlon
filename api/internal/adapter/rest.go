@@ -195,6 +195,10 @@ func (a *RESTAdapter) callEndpoint(ctx context.Context, ep EndpointConfig, pathP
 
 	fullURL := strings.TrimRight(a.config.BaseURL, "/") + path
 
+	if err := a.validator.Validate(fullURL); err != nil {
+		return nil, fmt.Errorf("URL validation: %w", err)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, ep.Method, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)

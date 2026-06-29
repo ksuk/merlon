@@ -43,7 +43,7 @@ func (v *URLValidator) Validate(rawURL string) error {
 	}
 
 	host := u.Hostname()
-	if !v.allowlist[host] {
+	if len(v.allowlist) > 0 && !v.allowlist[host] {
 		return fmt.Errorf("host %q is not in the outbound allowlist", host)
 	}
 

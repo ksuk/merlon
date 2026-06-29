@@ -283,6 +283,43 @@ func TestMissingEndpoint(t *testing.T) {
 	}
 }
 
+func TestCallEndpointValidatesURL(t *testing.T) {
+	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"id": "C001"})
+	})
+	defer ts.Close()
+
+	cfg := &AdapterConfig{
+		Type:    "rest",
+		BaseURL: ts.URL,
+		Auth:    AuthConfig{Type: "none"},
+		Endpoints: map[string]EndpointConfig{
+			"fetch_customer": {
+				Method:       "GET",
+				Path:         "/customers/{id}",
+				FieldMapping: map[string]string{"external_id": "$.id"},
+			},
+		},
+		TimeoutSeconds: 5,
+	}
+	secCfg := SecurityConfig{
+		OutboundAllowlist:    []string{"allowed.example.com"},
+		BlockPrivateIPRanges: false,
+	}
+	a, err := NewRESTAdapter(cfg, secCfg)
+	if err != nil {
+		t.Fatalf("NewRESTAdapter() error = %v", err)
+	}
+
+	_, err = a.FetchCustomer(context.Background(), "C001")
+	if err == nil {
+		t.Fatal("expected error: host not in allowlist")
+	}
+	if !strings.Contains(err.Error(), "not in the outbound allowlist") {
+		t.Errorf("expected allowlist error, got: %v", err)
+	}
+}
+
 func TestInterfaceCompliance(t *testing.T) {
 	var _ Adapter = (*RESTAdapter)(nil)
 }

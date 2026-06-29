@@ -8,7 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -102,6 +105,16 @@ type createWebhookRequest struct {
 	Secret string                    `json:"secret,omitempty"`
 }
 
+type createWebhookResponse struct {
+	ID        string                    `json:"id"`
+	URL       string                    `json:"url"`
+	Events    []domain.WebhookEventType `json:"events"`
+	Secret    string                    `json:"secret,omitempty"`
+	Active    bool                      `json:"active"`
+	CreatedAt time.Time                 `json:"created_at"`
+	UpdatedAt time.Time                 `json:"updated_at"`
+}
+
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
 		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
@@ -116,6 +129,10 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	if req.URL == "" {
 		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if err := validateWebhookURL(req.URL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if len(req.Events) == 0 {
@@ -139,7 +156,15 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, hook)
+	writeJSON(w, http.StatusCreated, createWebhookResponse{
+		ID:        hook.ID,
+		URL:       hook.URL,
+		Events:    hook.Events,
+		Secret:    req.Secret,
+		Active:    hook.Active,
+		CreatedAt: hook.CreatedAt,
+		UpdatedAt: hook.UpdatedAt,
+	})
 }
 
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
@@ -230,4 +255,24 @@ func (s *Server) handleListWebhookDeliveries(w http.ResponseWriter, r *http.Requ
 	}
 
 	writeJSON(w, http.StatusOK, deliveries)
+}
+
+func validateWebhookURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("invalid URL")
+	}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("URL scheme must be http or https")
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return fmt.Errorf("webhook URL must not target localhost")
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return fmt.Errorf("webhook URL must not target private or loopback addresses")
+		}
+	}
+	return nil
 }
