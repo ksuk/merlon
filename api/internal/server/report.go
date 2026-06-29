@@ -128,19 +128,30 @@ func (s *Server) exportSTRCSV(w http.ResponseWriter, alert *domain.Alert, custom
 	})
 
 	writer.Write([]string{
-		"STR-" + alert.ID,
-		alert.ID,
-		alert.CustomerID,
-		customer.ExternalID,
-		string(customer.CustomerType),
-		customer.CountryCode,
-		alert.ScenarioID,
-		string(alert.Severity),
-		alert.Description,
-		strings.Join(alert.TransactionIDs, ";"),
+		sanitizeCSVCell("STR-" + alert.ID),
+		sanitizeCSVCell(alert.ID),
+		sanitizeCSVCell(alert.CustomerID),
+		sanitizeCSVCell(customer.ExternalID),
+		sanitizeCSVCell(string(customer.CustomerType)),
+		sanitizeCSVCell(customer.CountryCode),
+		sanitizeCSVCell(alert.ScenarioID),
+		sanitizeCSVCell(string(alert.Severity)),
+		sanitizeCSVCell(alert.Description),
+		sanitizeCSVCell(strings.Join(alert.TransactionIDs, ";")),
 		fmt.Sprintf("%.2f", alert.Score),
-		alert.DetectedAt.Format(time.RFC3339),
+		sanitizeCSVCell(alert.DetectedAt.Format(time.RFC3339)),
 	})
+}
+
+func sanitizeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r', '\n':
+		return "'" + s
+	}
+	return s
 }
 
 type strExportJSON struct {

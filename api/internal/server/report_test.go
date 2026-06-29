@@ -134,6 +134,30 @@ func TestExportSTRCSV(t *testing.T) {
 	}
 }
 
+func TestCSVSanitization(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"normal", "normal"},
+		{"=cmd|'/C calc'!A0", "'=cmd|'/C calc'!A0"},
+		{"+cmd", "'+cmd"},
+		{"-cmd", "'-cmd"},
+		{"@SUM(A1)", "'@SUM(A1)"},
+		{"\tcmd", "'\tcmd"},
+		{"\rcmd", "'\rcmd"},
+		{"\ncmd", "'\ncmd"},
+		{"", ""},
+		{"safe text", "safe text"},
+	}
+	for _, tt := range tests {
+		got := sanitizeCSVCell(tt.input)
+		if got != tt.expected {
+			t.Errorf("sanitizeCSVCell(%q) = %q, want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
 func TestExportSTRJSON(t *testing.T) {
 	s := testServer()
 	_, alert := createTestCustomerAndAlert(t, s)
