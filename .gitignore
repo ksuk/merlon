@@ -30,6 +30,9 @@ engine/crates/merlon-proto/src/gen/
 # Docker
 docker-compose.override.yml
 
+# Test artifacts
+.playwright-mcp/
+
 # IDE
 .idea/
 .vscode/
