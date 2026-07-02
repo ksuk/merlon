@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -69,7 +70,7 @@ func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventTy
 		req.Header.Set("X-Merlon-Signature", sig)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := webhookHTTPClient().Do(req)
 	if err != nil {
 		s.recordDelivery(hook.ID, event, string(body), 0, false, err.Error())
 		return
@@ -78,6 +79,55 @@ func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventTy
 
 	success := resp.StatusCode >= 200 && resp.StatusCode < 300
 	s.recordDelivery(hook.ID, event, string(body), resp.StatusCode, success, "")
+}
+
+func postWebhook(ctx context.Context, rawURL string, body []byte, headers http.Header) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
+	resp, err := webhookHTTPClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func webhookHTTPClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+		if err != nil {
+			return nil, err
+		}
+		for _, ip := range ips {
+			if !isPublicIP(ip) {
+				return nil, fmt.Errorf("webhook URL resolved to private or loopback address")
+			}
+		}
+		return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+	}
+	return &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			return validatePublicHTTPURL(req.URL)
+		},
+	}
 }
 
 func (s *Server) recordDelivery(webhookID string, event domain.WebhookEventType, payload string, statusCode int, success bool, errMsg string) {
@@ -109,7 +159,6 @@ type createWebhookResponse struct {
 	ID        string                    `json:"id"`
 	URL       string                    `json:"url"`
 	Events    []domain.WebhookEventType `json:"events"`
-	Secret    string                    `json:"secret,omitempty"`
 	Active    bool                      `json:"active"`
 	CreatedAt time.Time                 `json:"created_at"`
 	UpdatedAt time.Time                 `json:"updated_at"`
@@ -160,7 +209,6 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 		ID:        hook.ID,
 		URL:       hook.URL,
 		Events:    hook.Events,
-		Secret:    req.Secret,
 		Active:    hook.Active,
 		CreatedAt: hook.CreatedAt,
 		UpdatedAt: hook.UpdatedAt,
@@ -262,17 +310,28 @@ func validateWebhookURL(rawURL string) error {
 	if err != nil || u.Host == "" {
 		return fmt.Errorf("invalid URL")
 	}
+	return validatePublicHTTPURL(u)
+}
+
+func validatePublicHTTPURL(u *url.URL) error {
+	if u == nil || u.Host == "" {
+		return fmt.Errorf("invalid URL")
+	}
 	if u.Scheme != "https" && u.Scheme != "http" {
 		return fmt.Errorf("URL scheme must be http or https")
 	}
-	host := u.Hostname()
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 	if host == "localhost" {
 		return fmt.Errorf("webhook URL must not target localhost")
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		if !isPublicIP(ip) {
 			return fmt.Errorf("webhook URL must not target private or loopback addresses")
 		}
 	}
 	return nil
+}
+
+func isPublicIP(ip net.IP) bool {
+	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified())
 }

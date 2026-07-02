@@ -66,6 +66,19 @@ func TestCreateCustomerOversizedAttributes(t *testing.T) {
 	}
 }
 
+func TestCreateCustomerRejectsOversizedBody(t *testing.T) {
+	s := testServer()
+
+	body := `{"external_id":"BIG","customer_type":"individual","country_code":"JP","attributes":{"blob":"` + strings.Repeat("A", maxRequestBodyBytes) + `"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
 func TestCreateCustomerTooManyAttributes(t *testing.T) {
 	s := testServer()
 

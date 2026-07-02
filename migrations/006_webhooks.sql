@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
     id         TEXT PRIMARY KEY,
     url        TEXT NOT NULL,
     events     TEXT[] NOT NULL,
-    secret     TEXT,
+    secret_ciphertext TEXT,
     active     BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

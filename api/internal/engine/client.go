@@ -20,18 +20,19 @@ type ClientOption func(*clientOptions)
 
 type clientOptions struct {
 	creds grpc.DialOption
+	err   error
 }
 
 func WithTLS(certFile, serverName string) ClientOption {
 	return func(o *clientOptions) {
 		caCert, err := os.ReadFile(certFile)
 		if err != nil {
-			log.Printf("warning: failed to read TLS cert %q: %v, falling back to insecure", certFile, err)
+			o.err = fmt.Errorf("read TLS cert %q: %w", certFile, err)
 			return
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caCert) {
-			log.Printf("warning: failed to parse TLS cert %q, falling back to insecure", certFile)
+			o.err = fmt.Errorf("parse TLS cert %q", certFile)
 			return
 		}
 		tlsCfg := &tls.Config{
@@ -56,6 +57,9 @@ func NewClient(addr string, opts ...ClientOption) (*Client, error) {
 	o := &clientOptions{}
 	for _, opt := range opts {
 		opt(o)
+	}
+	if o.err != nil {
+		return nil, o.err
 	}
 	if o.creds == nil {
 		log.Printf("warning: gRPC connection to %s using insecure transport", addr)
@@ -209,13 +213,13 @@ func (c *Client) EvaluateTransactions(
 	var pbTxns []*pb.TransactionData
 	for _, t := range transactions {
 		pbTxns = append(pbTxns, &pb.TransactionData{
-			TransactionId:      t.ID,
-			CustomerId:         t.CustomerID,
-			Amount:             t.Amount,
-			Currency:           t.Currency,
-			CounterpartyId:     t.CounterpartyID,
+			TransactionId:       t.ID,
+			CustomerId:          t.CustomerID,
+			Amount:              t.Amount,
+			Currency:            t.Currency,
+			CounterpartyId:      t.CounterpartyID,
 			CounterpartyCountry: t.CounterpartyCountry,
-			Direction:          directionToProto(t.Direction),
+			Direction:           directionToProto(t.Direction),
 			ExecutedAt: &pb.Timestamp{
 				Seconds: t.ExecutedAt.Unix(),
 				Nanos:   int32(t.ExecutedAt.Nanosecond()),
@@ -336,7 +340,7 @@ func (c *Client) RunBacktest(
 	}
 
 	resp, err := c.backtest.RunBacktest(ctx, &pb.RunBacktestRequest{
-		Customers:   pbCustomers,
+		Customers:    pbCustomers,
 		Transactions: pbTxns,
 		ScenarioIds:  scenarioIDs,
 		Description:  description,

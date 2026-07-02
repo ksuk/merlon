@@ -8,37 +8,39 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/engine"
 )
 
+const maxRequestBodyBytes = 1 << 20
+
 type Server struct {
-	mux          *http.ServeMux
-	addr         string
-	customers    domain.CustomerRepository
-	transactions domain.TransactionRepository
-	alerts       domain.AlertRepository
-	scoring      engine.ScoringEngine
-	monitoring   engine.MonitoringEngine
-	screening    engine.ScreeningEngine
-	backtest     engine.BacktestEngine
-	audit        domain.AuditRepository
-	cases        domain.CaseRepository
-	apikeys      domain.APIKeyRepository
-	webhooks     domain.WebhookRepository
+	mux            *http.ServeMux
+	addr           string
+	customers      domain.CustomerRepository
+	transactions   domain.TransactionRepository
+	alerts         domain.AlertRepository
+	scoring        engine.ScoringEngine
+	monitoring     engine.MonitoringEngine
+	screening      engine.ScreeningEngine
+	backtest       engine.BacktestEngine
+	audit          domain.AuditRepository
+	cases          domain.CaseRepository
+	apikeys        domain.APIKeyRepository
+	webhooks       domain.WebhookRepository
 	configEngine   engine.ConfigEngine
 	limiter        *rateLimiter
 	bootstrapToken string
 }
 
 type Deps struct {
-	Customers    domain.CustomerRepository
-	Transactions domain.TransactionRepository
-	Alerts       domain.AlertRepository
-	Scoring      engine.ScoringEngine
-	Monitoring   engine.MonitoringEngine
-	Screening    engine.ScreeningEngine
-	Backtest     engine.BacktestEngine
-	Audit        domain.AuditRepository
-	Cases        domain.CaseRepository
-	APIKeys      domain.APIKeyRepository
-	Webhooks     domain.WebhookRepository
+	Customers      domain.CustomerRepository
+	Transactions   domain.TransactionRepository
+	Alerts         domain.AlertRepository
+	Scoring        engine.ScoringEngine
+	Monitoring     engine.MonitoringEngine
+	Screening      engine.ScreeningEngine
+	Backtest       engine.BacktestEngine
+	Audit          domain.AuditRepository
+	Cases          domain.CaseRepository
+	APIKeys        domain.APIKeyRepository
+	Webhooks       domain.WebhookRepository
 	Config         engine.ConfigEngine
 	RateLimit      int
 	BootstrapToken string
@@ -46,19 +48,19 @@ type Deps struct {
 
 func New(addr string, deps Deps) *Server {
 	s := &Server{
-		mux:          http.NewServeMux(),
-		addr:         addr,
-		customers:    deps.Customers,
-		transactions: deps.Transactions,
-		alerts:       deps.Alerts,
-		scoring:      deps.Scoring,
-		monitoring:   deps.Monitoring,
-		screening:    deps.Screening,
-		backtest:     deps.Backtest,
-		audit:        deps.Audit,
-		cases:        deps.Cases,
-		apikeys:      deps.APIKeys,
-		webhooks:     deps.Webhooks,
+		mux:            http.NewServeMux(),
+		addr:           addr,
+		customers:      deps.Customers,
+		transactions:   deps.Transactions,
+		alerts:         deps.Alerts,
+		scoring:        deps.Scoring,
+		monitoring:     deps.Monitoring,
+		screening:      deps.Screening,
+		backtest:       deps.Backtest,
+		audit:          deps.Audit,
+		cases:          deps.Cases,
+		apikeys:        deps.APIKeys,
+		webhooks:       deps.Webhooks,
 		configEngine:   deps.Config,
 		bootstrapToken: deps.BootstrapToken,
 	}
@@ -142,9 +144,23 @@ func (s *Server) Handler() http.Handler {
 	h = s.auditMiddleware(h)
 	h = s.authMiddleware(h)
 	h = s.rateLimitMiddleware(h)
+	h = requestBodyLimitMiddleware(h)
 	return h
 }
 
 func (s *Server) Start() error {
 	return http.ListenAndServe(s.addr, s.Handler())
+}
+
+func requestBodyLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > maxRequestBodyBytes {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return
+		}
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
 }

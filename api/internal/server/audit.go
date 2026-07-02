@@ -126,12 +126,6 @@ func resolveAuditUserID(r *http.Request) string {
 }
 
 func extractIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		candidate := strings.TrimSpace(strings.Split(forwarded, ",")[0])
-		if net.ParseIP(candidate) != nil {
-			return candidate
-		}
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

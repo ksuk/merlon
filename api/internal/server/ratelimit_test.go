@@ -67,3 +67,27 @@ func TestRateLimitHealthzExempt(t *testing.T) {
 		t.Errorf("healthz status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
+
+func TestRateLimitIgnoresSpoofedForwardedForByDefault(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		RateLimit:    1,
+	})
+
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+		req.RemoteAddr = "203.0.113.10:12345"
+		req.Header.Set("X-Forwarded-For", "198.51.100.10")
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		if i == 0 && rec.Code != http.StatusOK {
+			t.Fatalf("first request status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		if i == 1 && rec.Code != http.StatusTooManyRequests {
+			t.Fatalf("second request status = %d, want %d", rec.Code, http.StatusTooManyRequests)
+		}
+	}
+}

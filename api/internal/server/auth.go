@@ -35,6 +35,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		if s.bootstrapToken != "" && r.URL.Path == "/api/v1/admin/apikeys" && r.Method == http.MethodPost {
 			header := r.Header.Get("Authorization")
 			if header == "Bearer "+s.bootstrapToken {
+				if !s.bootstrapTokenAllowed(r.Context()) {
+					writeAuthError(w, http.StatusUnauthorized, "bootstrap token has already been used")
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -89,6 +93,14 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) bootstrapTokenAllowed(ctx context.Context) bool {
+	if s.apikeys == nil {
+		return false
+	}
+	keys, err := s.apikeys.List(ctx)
+	return err == nil && len(keys) == 0
+}
+
 func hasPermission(role domain.Role, method, path string) bool {
 	switch role {
 	case domain.RoleAdmin:
@@ -114,10 +126,10 @@ type createAPIKeyRequest struct {
 }
 
 type createAPIKeyResponse struct {
-	ID    string      `json:"id"`
-	Name  string      `json:"name"`
-	Role  domain.Role `json:"role"`
-	Key   string      `json:"key"`
+	ID   string      `json:"id"`
+	Name string      `json:"name"`
+	Role domain.Role `json:"role"`
+	Key  string      `json:"key"`
 }
 
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {

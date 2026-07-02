@@ -225,6 +225,22 @@ func TestBootstrapTokenCreateKey(t *testing.T) {
 	}
 }
 
+func TestBootstrapTokenCannotCreateSecondKey(t *testing.T) {
+	s := testServerWithAuth()
+
+	createAPIKey(t, s, "first-key", domain.RoleAdmin)
+
+	body := `{"name":"second-bootstrap-key","role":"admin"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/apikeys", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testBootstrapToken)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestBootstrapTokenCannotListKeys(t *testing.T) {
 	s := testServerWithAuth()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/apikeys", nil)

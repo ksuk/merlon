@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +57,7 @@ func TestCreateWebhook(t *testing.T) {
 	}
 }
 
-func TestCreateWebhookSecretReturnedOnCreate(t *testing.T) {
+func TestCreateWebhookSecretRedactedOnCreate(t *testing.T) {
 	s := testServerWithWebhooks()
 
 	body := `{"url":"https://example.com/webhook","events":["alert.created"],"secret":"mysecret"}`
@@ -71,8 +72,24 @@ func TestCreateWebhookSecretReturnedOnCreate(t *testing.T) {
 	var resp map[string]any
 	json.NewDecoder(rec.Body).Decode(&resp)
 
-	if resp["secret"] != "mysecret" {
-		t.Errorf("create response should include secret, got %v", resp["secret"])
+	if _, ok := resp["secret"]; ok {
+		t.Error("create response should not include secret")
+	}
+}
+
+func TestWebhookRedirectToPrivateAddressIsBlocked(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("private redirect target should not be reached")
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	if err := postWebhook(context.Background(), redirector.URL, nil, nil); err == nil {
+		t.Fatal("expected redirect to private address to be blocked")
 	}
 }
 
