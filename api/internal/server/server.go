@@ -123,6 +123,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
 	s.mux.HandleFunc("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
+	// Screening (WS-7)
+	s.mux.HandleFunc("POST /api/v1/screening/check", s.handleScreeningCheck)
+
 	// Transactions
 	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)
 	s.mux.HandleFunc("GET /api/v1/transactions/{id}", s.handleGetTransaction)

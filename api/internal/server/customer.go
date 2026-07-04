@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
 const (
@@ -238,6 +240,7 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	record.ID = generateID()
 
 	// Update customer risk score
+	oldTier := c.RiskTier
 	c.RiskScore = &record.Score
 	c.RiskTier = &record.Tier
 	now := record.ScoredAt
@@ -253,7 +256,46 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO(WS-4): once api/internal/events.Bus exists, publish a tier
+	// promotion event here and let a subscriber trigger the rescreen
+	// asynchronously. Until then, call the immediate rescreen synchronously
+	// (screening.md "CDD ティア昇格時（Medium → High 等、新ティアの頻度を即時適用）").
+	if isTierPromotion(oldTier, record.Tier) && s.screening != nil {
+		deps := screening.SchedulerDeps{
+			Customers:        s.customers,
+			Screening:        s.screening,
+			Results:          s.screeningResults,
+			TargetCustomerID: c.ID,
+		}
+		if _, err := screening.RunRescreeningBatch(r.Context(), deps, screening.TriggerTierPromoted); err != nil {
+			slog.Error("tier-promotion immediate rescreen failed", "customer_id", c.ID, "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, record)
+}
+
+// isTierPromotion reports whether newTier is a promotion (e.g. Medium ->
+// High) relative to oldTier. A first-ever score (oldTier == nil) is not a
+// promotion.
+func isTierPromotion(oldTier *domain.RiskTier, newTier domain.RiskTier) bool {
+	if oldTier == nil {
+		return false
+	}
+	return tierRank(newTier) > tierRank(*oldTier)
+}
+
+func tierRank(t domain.RiskTier) int {
+	switch t {
+	case domain.RiskTierLow:
+		return 0
+	case domain.RiskTierMedium:
+		return 1
+	case domain.RiskTierHigh:
+		return 2
+	default:
+		return -1
+	}
 }
 
 type ScreenCustomerRequest struct {
