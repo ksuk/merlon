@@ -49,3 +49,17 @@ type ErrNotFound struct {
 func (e *ErrNotFound) Error() string {
 	return e.Entity + " not found: " + e.ID
 }
+
+// ErrConflict signals a version mismatch (optimistic locking) or a unique
+// constraint violation (e.g. the whitelist_entries partial unique index on
+// active entries per customer, whitelist.md §3.1). Callers translate this to
+// HTTP 409.
+type ErrConflict struct {
+	Entity string
+	ID     string
+	Reason string
+}
+
+func (e *ErrConflict) Error() string {
+	return e.Entity + " conflict: " + e.ID + ": " + e.Reason
+}
