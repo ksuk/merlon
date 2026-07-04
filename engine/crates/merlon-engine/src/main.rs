@@ -52,6 +52,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "[::]:50051".to_string())
         .parse()?;
 
+    // Standard grpc.health.v1 health check (OPS-002, overview.md §4.4),
+    // superseding the per-service deprecated custom Health rpc. The overall
+    // ("" service name) check is SERVING as soon as health_reporter() is
+    // created; this process has nothing left to initialize asynchronously
+    // after the services above are constructed. Each individual service is
+    // also registered so `grpc_health_probe -service=<name>` works.
+    let (health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<ScoringServiceServer<ScoringServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<MonitoringServiceServer<MonitoringServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<ScreeningServiceServer<ScreeningServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<BacktestServiceServer<BacktestServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<ConfigServiceServer<ConfigServiceImpl>>()
+        .await;
+
     eprintln!(
         "merlon-engine v{} starting gRPC server on {}",
         merlon_engine::VERSION,
@@ -60,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .max_frame_size(Some(4 * 1024 * 1024))
+        .add_service(health_service)
         .add_service(ScoringServiceServer::new(scoring_service))
         .add_service(MonitoringServiceServer::new(monitoring_service))
         .add_service(ScreeningServiceServer::new(screening_service))
