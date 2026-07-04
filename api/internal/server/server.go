@@ -176,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.authMiddleware(h)
 	h = s.rateLimitMiddleware(h)
 	h = requestBodyLimitMiddleware(h)
+	h = s.metricsMiddleware(h)
 	return h
 }
 
