@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 )
@@ -28,6 +29,8 @@ type Server struct {
 	engineHealth   engine.HealthChecker
 	limiter        *rateLimiter
 	bootstrapToken string
+	tokenIssuer    *auth.TokenIssuer
+	denylist       auth.Denylist
 }
 
 type Deps struct {
@@ -46,6 +49,8 @@ type Deps struct {
 	EngineHealth   engine.HealthChecker
 	RateLimit      int
 	BootstrapToken string
+	TokenIssuer    *auth.TokenIssuer
+	Denylist       auth.Denylist
 }
 
 func New(addr string, deps Deps) *Server {
@@ -66,6 +71,8 @@ func New(addr string, deps Deps) *Server {
 		configEngine:   deps.Config,
 		engineHealth:   deps.EngineHealth,
 		bootstrapToken: deps.BootstrapToken,
+		tokenIssuer:    deps.TokenIssuer,
+		denylist:       deps.Denylist,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
