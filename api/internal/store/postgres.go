@@ -100,6 +100,54 @@ func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.
 	return customers, rows.Err()
 }
 
+func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Customer, error) {
+	const baseQuery = `SELECT id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at FROM customers`
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if after == nil {
+		rows, err = r.pool.Query(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+	} else {
+		rows, err = r.pool.Query(ctx, baseQuery+` WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
+			after.CreatedAt, after.ID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var customers []domain.Customer
+	for rows.Next() {
+		var c domain.Customer
+		var attrs []byte
+		var products []string
+		var riskTier *string
+
+		if err := rows.Scan(
+			&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
+			&products, &attrs,
+			&c.RiskScore, &riskTier, &c.LastScoredAt,
+			&c.CreatedAt, &c.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		c.ProductTypes = products
+		c.Attributes = make(map[string]string)
+		if len(attrs) > 0 {
+			json.Unmarshal(attrs, &c.Attributes)
+		}
+		if riskTier != nil {
+			rt := domain.RiskTier(*riskTier)
+			c.RiskTier = &rt
+		}
+		customers = append(customers, c)
+	}
+	return customers, rows.Err()
+}
+
 func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
 	_, err := r.pool.Exec(ctx,
@@ -236,6 +284,40 @@ func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID strin
 	return txns, rows.Err()
 }
 
+func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Transaction, error) {
+	const baseQuery = `SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at
+		FROM transactions WHERE customer_id = $1`
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if after == nil {
+		rows, err = r.pool.Query(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $2`, customerID, limit)
+	} else {
+		rows, err = r.pool.Query(ctx, baseQuery+` AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4`,
+			customerID, after.CreatedAt, after.ID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var txns []domain.Transaction
+	for rows.Next() {
+		var t domain.Transaction
+		if err := rows.Scan(
+			&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
+			&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
+			&t.Channel, &t.ExecutedAt, &t.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		txns = append(txns, t)
+	}
+	return txns, rows.Err()
+}
+
 func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at)
@@ -301,6 +383,28 @@ func (r *PgAlertRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain
 		FROM alerts WHERE status = 'open' ORDER BY severity DESC, detected_at DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
+}
+
+func (r *PgAlertRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	const baseQuery = `SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+		FROM alerts WHERE customer_id = $1`
+
+	if after == nil {
+		return r.listAlerts(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $2`, customerID, limit)
+	}
+	return r.listAlerts(ctx, baseQuery+` AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4`,
+		customerID, after.CreatedAt, after.ID, limit)
+}
+
+func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	const baseQuery = `SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+		FROM alerts WHERE status = 'open'`
+
+	if after == nil {
+		return r.listAlerts(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+	}
+	return r.listAlerts(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
+		after.CreatedAt, after.ID, limit)
 }
 
 func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any) ([]domain.Alert, error) {
@@ -475,6 +579,17 @@ func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.
 	return r.listCases(ctx,
 		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
 		FROM cases WHERE status != 'closed' ORDER BY priority DESC, created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+}
+
+func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		FROM cases WHERE status != 'closed'`
+
+	if after == nil {
+		return r.listCases(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
+	}
+	return r.listCases(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
+		after.CreatedAt, after.ID, limit)
 }
 
 func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) ([]domain.Case, error) {

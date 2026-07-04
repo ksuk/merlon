@@ -47,6 +47,7 @@ type CaseRepository interface {
 	Get(ctx context.Context, id string) (*Case, error)
 	ListByCustomer(ctx context.Context, customerID string) ([]Case, error)
 	ListOpen(ctx context.Context, limit, offset int) ([]Case, error)
+	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
 	Create(ctx context.Context, c *Case) error
 	Update(ctx context.Context, c *Case) error
 	AddNote(ctx context.Context, caseID string, note *CaseNote) error
