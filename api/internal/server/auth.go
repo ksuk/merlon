@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -17,9 +18,12 @@ import (
 type contextKey string
 
 const (
-	ctxKeyAPIKey      contextKey = "api_key"
-	ctxKeyPrincipal   contextKey = "principal"
-	accessTokenCookie            = "access_token"
+	ctxKeyAPIKey       contextKey = "api_key"
+	ctxKeyPrincipal    contextKey = "principal"
+	accessTokenCookie             = "access_token"
+	refreshTokenCookie            = "refresh_token"
+	csrfCookieName                = "csrf_token"
+	csrfHeaderName                = "X-CSRF-Token"
 )
 
 // Principal is the unified authenticated subject, whether it arrived via a
@@ -38,6 +42,14 @@ func HashAPIKey(raw string) string {
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.apikeys == nil || r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Session endpoints authenticate themselves (login: credentials;
+		// refresh/logout: the refresh_token cookie, which may outlive an
+		// already-expired access token).
+		if isPublicAuthPath(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -138,9 +150,6 @@ func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, cont
 		return Principal{}, nil, &authError{http.StatusUnauthorized, "invalid or expired session"}
 	}
 
-	// Denylist consultation (immediate revocation on logout/forced signout) is
-	// wired in alongside the session API in Task 7, once auth.Denylist exists
-	// and Deps carries one.
 	if s.denylist != nil {
 		revoked, err := s.denylist.IsRevoked(r.Context(), claims.UserID)
 		if err != nil {
@@ -151,10 +160,48 @@ func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, cont
 		}
 	}
 
+	// CSRF (Double Submit Cookie, auth.md §2): cookie-based auth is subject to
+	// CSRF, unlike the Bearer API key path, so state-changing requests must
+	// echo the non-HttpOnly csrf_token cookie back in a header.
+	if !isSafeMethod(r.Method) && !csrfTokenMatches(r) {
+		return Principal{}, nil, &authError{http.StatusForbidden, "missing or invalid CSRF token"}
+	}
+
 	principal := Principal{Role: domain.Role(claims.Role), UserID: claims.UserID}
 	ctx := context.WithValue(r.Context(), ctxKeyPrincipal, principal)
 	ctx = auth.WithRole(ctx, principal.Role)
 	return principal, ctx, nil
+}
+
+// isPublicAuthPath reports whether r targets a session endpoint that
+// authenticates itself rather than relying on authMiddleware (login checks
+// credentials directly; refresh/logout authenticate via the refresh_token
+// cookie, which may still be valid after the access token has expired).
+func isPublicAuthPath(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	switch r.URL.Path {
+	case "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout":
+		return true
+	}
+	return false
+}
+
+func isSafeMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
+}
+
+func csrfTokenMatches(r *http.Request) bool {
+	cookie, err := r.Cookie(csrfCookieName)
+	if err != nil || cookie.Value == "" {
+		return false
+	}
+	header := r.Header.Get(csrfHeaderName)
+	if header == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(header)) == 1
 }
 
 func (s *Server) bootstrapTokenAllowed(ctx context.Context) bool {

@@ -28,6 +28,23 @@ func hashRefreshToken(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// HashRefreshToken exposes the raw-token hashing scheme so callers (e.g. the
+// session API) can look up a RefreshToken row by its raw cookie value.
+func HashRefreshToken(raw string) string {
+	return hashRefreshToken(raw)
+}
+
+// RevokeRefreshTokenFamily revokes every token in rawToken's session
+// (token_family), used by logout to end the whole session rather than just
+// its current tip.
+func RevokeRefreshTokenFamily(ctx context.Context, repo domain.RefreshTokenRepository, rawToken string) error {
+	tok, err := repo.GetByHash(ctx, hashRefreshToken(rawToken))
+	if err != nil {
+		return fmt.Errorf("lookup refresh token: %w", err)
+	}
+	return repo.RevokeFamily(ctx, tok.TokenFamily)
+}
+
 func randomHex(numBytes int) (string, error) {
 	b := make([]byte, numBytes)
 	if _, err := rand.Read(b); err != nil {

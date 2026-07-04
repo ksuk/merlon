@@ -117,6 +117,34 @@ func TestRotateRefreshToken_Expired(t *testing.T) {
 	}
 }
 
+func TestRevokeRefreshTokenFamily(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryRefreshTokenRepo()
+
+	rawToken, family, err := IssueRefreshToken(ctx, repo, "user-1")
+	if err != nil {
+		t.Fatalf("IssueRefreshToken: %v", err)
+	}
+	rotatedRaw, _, err := RotateRefreshToken(ctx, repo, rawToken)
+	if err != nil {
+		t.Fatalf("RotateRefreshToken: %v", err)
+	}
+
+	if err := RevokeRefreshTokenFamily(ctx, repo, rotatedRaw); err != nil {
+		t.Fatalf("RevokeRefreshTokenFamily: %v", err)
+	}
+
+	active, err := repo.ListActiveByUser(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("ListActiveByUser: %v", err)
+	}
+	for _, tok := range active {
+		if tok.TokenFamily == family {
+			t.Fatalf("token %s in family %s is still active after RevokeRefreshTokenFamily", tok.ID, family)
+		}
+	}
+}
+
 func TestConcurrentSessionLimit(t *testing.T) {
 	ctx := context.Background()
 	repo := store.NewMemoryRefreshTokenRepo()

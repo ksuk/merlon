@@ -31,6 +31,8 @@ type Server struct {
 	bootstrapToken string
 	tokenIssuer    *auth.TokenIssuer
 	denylist       auth.Denylist
+	users          domain.UserRepository
+	refreshTokens  domain.RefreshTokenRepository
 }
 
 type Deps struct {
@@ -51,6 +53,8 @@ type Deps struct {
 	BootstrapToken string
 	TokenIssuer    *auth.TokenIssuer
 	Denylist       auth.Denylist
+	Users          domain.UserRepository
+	RefreshTokens  domain.RefreshTokenRepository
 }
 
 func New(addr string, deps Deps) *Server {
@@ -73,6 +77,8 @@ func New(addr string, deps Deps) *Server {
 		bootstrapToken: deps.BootstrapToken,
 		tokenIssuer:    deps.TokenIssuer,
 		denylist:       deps.Denylist,
+		users:          deps.Users,
+		refreshTokens:  deps.RefreshTokens,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -135,6 +141,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
 	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
 	s.mux.HandleFunc("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)
+
+	// Session (JWT login/logout/refresh/me)
+	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("POST /api/v1/auth/refresh", s.handleRefresh)
+	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleMe)
 
 	// Audit
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
