@@ -13,6 +13,7 @@ import {
   ScrollText,
   Settings,
   Settings2,
+  SlidersHorizontal,
   Webhook,
 } from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
@@ -28,6 +29,7 @@ const navItems = [
   { to: "/backtest", label: "バックテスト", icon: FlaskConical },
   { to: "/webhooks", label: "Webhook", icon: Webhook },
   { to: "/apikeys", label: "APIキー", icon: KeyRound },
+  { to: "/rules", label: "ルール管理", icon: SlidersHorizontal },
   { to: "/config", label: "設定検証", icon: Settings2 },
   { to: "/audit", label: "監査ログ", icon: ScrollText },
   { to: "/system", label: "システム", icon: Settings },
