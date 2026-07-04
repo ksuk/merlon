@@ -11,11 +11,24 @@ import (
 
 	pb "github.com/merlon-aml/merlon/api/gen/merlon/v1"
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
+
+// observeGRPCCall records merlon_grpc_request_duration_seconds for a single
+// client RPC call (OPS-003). Call as: defer observeGRPCCall(method, time.Now(), &err)()
+func observeGRPCCall(method string, start time.Time, errp *error) func() {
+	return func() {
+		status := "ok"
+		if *errp != nil {
+			status = "error"
+		}
+		metrics.GRPCRequestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+	}
+}
 
 type ClientOption func(*clientOptions)
 
@@ -182,7 +195,9 @@ func alertSeverityFromProto(s pb.AlertSeverity) domain.AlertSeverity {
 	}
 }
 
-func (c *Client) ScoreCustomer(ctx context.Context, customer *domain.Customer, ruleSetID string) (*domain.ScoreRecord, error) {
+func (c *Client) ScoreCustomer(ctx context.Context, customer *domain.Customer, ruleSetID string) (_ *domain.ScoreRecord, err error) {
+	defer observeGRPCCall("ScoreCustomer", time.Now(), &err)()
+
 	resp, err := c.scoring.EvaluateCustomerRisk(ctx, &pb.EvaluateCustomerRiskRequest{
 		Customer: &pb.CustomerAttributes{
 			CustomerId:   customer.ID,
@@ -226,7 +241,9 @@ func (c *Client) EvaluateTransactions(
 	riskTier domain.RiskTier,
 	transactions []domain.Transaction,
 	scenarioIDs []string,
-) ([]domain.Alert, error) {
+) (_ []domain.Alert, err error) {
+	defer observeGRPCCall("EvaluateTransactions", time.Now(), &err)()
+
 	var pbTxns []*pb.TransactionData
 	for _, t := range transactions {
 		pbTxns = append(pbTxns, &pb.TransactionData{
@@ -280,7 +297,9 @@ func (c *Client) ScreenCustomer(
 	ctx context.Context,
 	customer *domain.Customer,
 	listIDs []string,
-) (*domain.ScreenResult, error) {
+) (_ *domain.ScreenResult, err error) {
+	defer observeGRPCCall("ScreenCustomer", time.Now(), &err)()
+
 	nameKana := customer.Attributes["name_kana"]
 
 	resp, err := c.screening.ScreenCustomer(ctx, &pb.ScreenCustomerRequest{
@@ -326,7 +345,9 @@ func (c *Client) RunBacktest(
 	transactions []domain.Transaction,
 	scenarioIDs []string,
 	description string,
-) (*domain.BacktestResult, error) {
+) (_ *domain.BacktestResult, err error) {
+	defer observeGRPCCall("RunBacktest", time.Now(), &err)()
+
 	var pbCustomers []*pb.BacktestCustomer
 	for _, cust := range customers {
 		pbCustomers = append(pbCustomers, &pb.BacktestCustomer{
@@ -395,7 +416,9 @@ func riskTierToProtoFromPtr(t *domain.RiskTier) pb.RiskTier {
 	return riskTierToProto(*t)
 }
 
-func (c *Client) ValidateConfig(ctx context.Context, configType, yamlContent string) (*ConfigValidationResult, error) {
+func (c *Client) ValidateConfig(ctx context.Context, configType, yamlContent string) (_ *ConfigValidationResult, err error) {
+	defer observeGRPCCall("ValidateConfig", time.Now(), &err)()
+
 	resp, err := c.config.ValidateConfig(ctx, &pb.ValidateConfigRequest{
 		ConfigType:  configType,
 		YamlContent: yamlContent,
