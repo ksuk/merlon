@@ -91,6 +91,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /healthz/live", s.handleHealthLive)
 	s.mux.HandleFunc("GET /healthz/ready", s.handleHealthReady)
+	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	// Initial setup (overview.md §4.5)
 	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)

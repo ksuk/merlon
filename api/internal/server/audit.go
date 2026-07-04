@@ -22,7 +22,7 @@ func (w *auditResponseWriter) WriteHeader(code int) {
 
 func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.audit == nil || r.URL.Path == "/healthz" {
+		if s.audit == nil || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}
