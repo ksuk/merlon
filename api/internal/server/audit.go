@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -20,6 +22,50 @@ func (w *auditResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+type auditDetailsKey struct{}
+
+// auditDetailsSink is a mutable container injected into the request context
+// by auditMiddleware before calling the handler. Because it is shared by
+// pointer, a handler can populate it (via setAuditDetail) and the middleware
+// will see those values after ServeHTTP returns, letting specific handlers
+// (e.g. handleUpdateRule's before/after diff, ALD-003) attach structured
+// details to the generic audit entry without every handler needing its own
+// audit-writing logic.
+type auditDetailsSink struct {
+	mu      sync.Mutex
+	details map[string]string
+}
+
+func (s *auditDetailsSink) set(key, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.details == nil {
+		s.details = make(map[string]string)
+	}
+	s.details[key] = value
+}
+
+func (s *auditDetailsSink) snapshot() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.details) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(s.details))
+	for k, v := range s.details {
+		out[k] = v
+	}
+	return out
+}
+
+// setAuditDetail attaches a key/value pair to the audit log entry that will
+// be written for this request, if auditMiddleware is active. No-op otherwise.
+func setAuditDetail(r *http.Request, key, value string) {
+	if sink, ok := r.Context().Value(auditDetailsKey{}).(*auditDetailsSink); ok {
+		sink.set(key, value)
+	}
+}
+
 func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.audit == nil || r.URL.Path == "/healthz" {
@@ -27,8 +73,11 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		sink := &auditDetailsSink{}
+		ctx := context.WithValue(r.Context(), auditDetailsKey{}, sink)
+
 		aw := &auditResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(aw, r)
+		next.ServeHTTP(aw, r.WithContext(ctx))
 
 		if r.Method == http.MethodGet {
 			return
@@ -42,6 +91,7 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 			Action:       action,
 			ResourceType: resourceType,
 			ResourceID:   resourceID,
+			Details:      sink.snapshot(),
 			IPAddress:    extractIP(r),
 			UserAgent:    r.UserAgent(),
 			CreatedAt:    time.Now(),
@@ -67,6 +117,15 @@ func resolveAction(method, path string) string {
 		}
 		if strings.Contains(path, "/reports/str") {
 			return "create_str"
+		}
+		if strings.Contains(path, "/rules/") && strings.HasSuffix(path, "/activate") {
+			return "activate_rule"
+		}
+		if strings.Contains(path, "/rules/") && strings.HasSuffix(path, "/deactivate") {
+			return "deactivate_rule"
+		}
+		if path == "/api/v1/rules/import" {
+			return "import_rules"
 		}
 		return "create"
 	case http.MethodPut:

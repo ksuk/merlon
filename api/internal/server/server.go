@@ -33,6 +33,7 @@ type Server struct {
 	denylist       auth.Denylist
 	users          domain.UserRepository
 	refreshTokens  domain.RefreshTokenRepository
+	rules          domain.RuleRepository
 }
 
 type Deps struct {
@@ -55,6 +56,7 @@ type Deps struct {
 	Denylist       auth.Denylist
 	Users          domain.UserRepository
 	RefreshTokens  domain.RefreshTokenRepository
+	Rules          domain.RuleRepository
 }
 
 func New(addr string, deps Deps) *Server {
@@ -79,6 +81,7 @@ func New(addr string, deps Deps) *Server {
 		denylist:       deps.Denylist,
 		users:          deps.Users,
 		refreshTokens:  deps.RefreshTokens,
+		rules:          deps.Rules,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -161,6 +164,17 @@ func (s *Server) routes() {
 
 	// Config validation
 	s.mux.HandleFunc("POST /api/v1/config/validate", s.handleValidateConfig)
+
+	// Rules (api.md §1.4): reads are open to all roles, writes require
+	// auth.PermRuleWrite (Admin only) on top of the coarse role check, since
+	// hasPermission alone would let Analyst write like most other resources.
+	s.mux.HandleFunc("GET /api/v1/rules", s.handleListRules)
+	s.mux.HandleFunc("GET /api/v1/rules/{id}", s.handleGetRule)
+	s.mux.HandleFunc("GET /api/v1/rules/{id}/export", s.handleExportRule)
+	s.mux.Handle("POST /api/v1/rules", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleCreateRule)))
+	s.mux.Handle("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
+	s.mux.Handle("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
+	s.mux.Handle("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
 
 	// System info
 	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)

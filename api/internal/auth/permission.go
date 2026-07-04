@@ -16,6 +16,12 @@ const (
 	PermWhitelistRequest Permission = "whitelist:request"
 	PermWhitelistApprove Permission = "whitelist:approve"
 	PermAuditRead        Permission = "audit:read"
+	// PermRuleWrite gates rule definition create/update/activate/deactivate/
+	// import (api.md §1.4). Unlike the coarse method-based check in
+	// server.hasPermission (which lets Analyst write most resources), rule
+	// changes affect scoring/monitoring behavior system-wide, so api.md
+	// restricts them to Admin specifically.
+	PermRuleWrite Permission = "rule:write"
 )
 
 // RolePermissions maps each role to its granted permissions (auth.md §3).
@@ -23,7 +29,7 @@ const (
 // may not approve them or read the audit log (segregation of duties);
 // Viewer holds none.
 var RolePermissions = map[domain.Role][]Permission{
-	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead},
+	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermRuleWrite},
 	domain.RoleAnalyst: {PermWhitelistRequest},
 	domain.RoleViewer:  {},
 }
