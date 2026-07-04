@@ -5,6 +5,7 @@ use crate::proto::merlon::v1::{
     ValidateConfigRequest, ValidateConfigResponse, ValidationError,
 };
 use crate::scoring::config::CddWeightConfig;
+use crate::scoring::country_risk::CountryRiskTable;
 use crate::monitoring::config::ScenarioConfig;
 use crate::screening::config::ScreeningListConfig;
 
@@ -38,6 +39,7 @@ impl ConfigService for ConfigServiceImpl {
             "cdd_weights" => validate_cdd_weights(&req.yaml_content),
             "tm_scenarios" => validate_tm_scenarios(&req.yaml_content),
             "screening_lists" => validate_screening_lists(&req.yaml_content),
+            "country_risk" => validate_country_risk(&req.yaml_content),
             _ => vec![ValidationError {
                 field: "config_type".to_string(),
                 message: format!("unknown config type: {}", req.config_type),
@@ -111,6 +113,16 @@ fn validate_screening_lists(yaml_content: &str) -> Vec<ValidationError> {
     }
 }
 
+fn validate_country_risk(yaml_content: &str) -> Vec<ValidationError> {
+    match CountryRiskTable::from_yaml(yaml_content) {
+        Ok(_) => vec![],
+        Err(e) => vec![ValidationError {
+            field: "config".to_string(),
+            message: e.to_string(),
+        }],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +187,45 @@ thresholds:
         let req = Request::new(ValidateConfigRequest {
             config_type: "cdd_weights".to_string(),
             yaml_content: "{{invalid".to_string(),
+        });
+        let resp = svc.validate_config(req).await.unwrap().into_inner();
+        assert!(!resp.valid);
+    }
+
+    #[tokio::test]
+    async fn test_validate_valid_country_risk() {
+        let svc = ConfigServiceImpl::new();
+        let yaml = r#"
+schema_version: "1.0"
+content_type: country_risk_table
+effective_date: "2026-07-01"
+default_score: 3
+countries:
+  JP: { score: 1 }
+  KP: { score: 5, reason: "FATF blacklist" }
+"#;
+        let req = Request::new(ValidateConfigRequest {
+            config_type: "country_risk".to_string(),
+            yaml_content: yaml.to_string(),
+        });
+        let resp = svc.validate_config(req).await.unwrap().into_inner();
+        assert!(resp.valid, "errors: {:?}", resp.errors);
+    }
+
+    #[tokio::test]
+    async fn test_validate_invalid_country_risk_default_score_one() {
+        let svc = ConfigServiceImpl::new();
+        let yaml = r#"
+schema_version: "1.0"
+content_type: country_risk_table
+effective_date: "2026-07-01"
+default_score: 1
+countries:
+  JP: { score: 1 }
+"#;
+        let req = Request::new(ValidateConfigRequest {
+            config_type: "country_risk".to_string(),
+            yaml_content: yaml.to_string(),
         });
         let resp = svc.validate_config(req).await.unwrap().into_inner();
         assert!(!resp.valid);
