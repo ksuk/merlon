@@ -9,6 +9,7 @@ import "merlon/v1/types.proto";
 service ScoringService {
   rpc EvaluateCustomerRisk (EvaluateCustomerRiskRequest) returns (EvaluateCustomerRiskResponse);
   rpc BatchEvaluate (BatchEvaluateRequest) returns (stream BatchEvaluateResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc Health (HealthRequest) returns (HealthResponse);
 }
 

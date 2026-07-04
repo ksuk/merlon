@@ -8,6 +8,7 @@ import "merlon/v1/types.proto";
 
 service MonitoringService {
   rpc EvaluateTransactions (EvaluateTransactionsRequest) returns (EvaluateTransactionsResponse);
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc Health (HealthRequest) returns (HealthResponse);
 }
 
