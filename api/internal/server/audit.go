@@ -1,7 +1,7 @@
 package server
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -48,7 +48,7 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		}
 
 		if err := s.audit.Create(r.Context(), entry); err != nil {
-			log.Printf("audit write error: %v", err)
+			slog.ErrorContext(r.Context(), "audit write error", "error", err)
 		}
 	})
 }
