@@ -119,6 +119,14 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func resolveAuditUserID(r *http.Request) string {
+	if principal, ok := r.Context().Value(ctxKeyPrincipal).(Principal); ok {
+		if principal.UserID != "" {
+			return principal.UserID
+		}
+		if principal.APIKeyID != "" {
+			return "apikey:" + principal.APIKeyID
+		}
+	}
 	if key, ok := r.Context().Value(ctxKeyAPIKey).(*domain.APIKey); ok && key != nil {
 		return "apikey:" + key.ID
 	}

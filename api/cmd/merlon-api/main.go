@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/seed"
@@ -59,11 +60,35 @@ func main() {
 	if cfg.AuthEnabled {
 		if pool != nil {
 			deps.APIKeys = store.NewPgAPIKeyRepo(pool)
+			deps.Users = store.NewPgUserRepo(pool)
+			deps.RefreshTokens = store.NewPgRefreshTokenRepo(pool)
 		} else {
 			deps.APIKeys = store.NewMemoryAPIKeyRepo()
+			deps.Users = store.NewMemoryUserRepo()
+			deps.RefreshTokens = store.NewMemoryRefreshTokenRepo()
 		}
 		deps.BootstrapToken = cfg.BootstrapToken
+		deps.Denylist = auth.NewInMemoryDenylist()
 		log.Printf("API key authentication enabled")
+
+		switch {
+		case cfg.JWTPrivateKeyFile != "" && cfg.JWTPublicKeyFile != "":
+			issuer, err := auth.NewRS256Issuer(cfg.JWTPrivateKeyFile, cfg.JWTPublicKeyFile)
+			if err != nil {
+				log.Fatalf("jwt issuer: %v", err)
+			}
+			deps.TokenIssuer = issuer
+			log.Printf("JWT session authentication enabled (RS256)")
+		case cfg.JWTSecret != "":
+			issuer, err := auth.NewHS256Issuer(cfg.JWTSecret)
+			if err != nil {
+				log.Fatalf("jwt issuer: %v", err)
+			}
+			deps.TokenIssuer = issuer
+			log.Printf("warning: JWT session authentication enabled with HS256/MERLON_JWT_SECRET (development only; set MERLON_JWT_PRIVATE_KEY_FILE/MERLON_JWT_PUBLIC_KEY_FILE for production)")
+		default:
+			log.Printf("warning: no JWT signing key configured; local user login (email/password) is disabled, API key authentication is still available")
+		}
 	}
 
 	deps.RateLimit = cfg.RateLimit

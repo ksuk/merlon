@@ -112,3 +112,58 @@ func TestHandleHealth_EngineHealthy(t *testing.T) {
 		t.Errorf("status code = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
+
+// TestHealthzLive_AlwaysHealthyRegardlessOfSetup is acceptance criterion 1:
+// /healthz/live must report healthy even before initial setup completes.
+func TestHealthzLive_AlwaysHealthyRegardlessOfSetup(t *testing.T) {
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(),
+		Users:     store.NewMemoryUserRepo(), // empty: setup not completed
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz/live", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestHealthzReady_UnhealthyBeforeSetup(t *testing.T) {
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(),
+		Users:     store.NewMemoryUserRepo(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
+func TestHealthzReady_HealthyAfterSetup(t *testing.T) {
+	users := store.NewMemoryUserRepo()
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(),
+		Users:     users,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/setup", strings.NewReader(`{"email":"admin@example.com","password":"correct-horse-battery-staple"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}

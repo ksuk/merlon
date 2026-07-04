@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 )
@@ -28,6 +29,10 @@ type Server struct {
 	engineHealth   engine.HealthChecker
 	limiter        *rateLimiter
 	bootstrapToken string
+	tokenIssuer    *auth.TokenIssuer
+	denylist       auth.Denylist
+	users          domain.UserRepository
+	refreshTokens  domain.RefreshTokenRepository
 }
 
 type Deps struct {
@@ -46,6 +51,10 @@ type Deps struct {
 	EngineHealth   engine.HealthChecker
 	RateLimit      int
 	BootstrapToken string
+	TokenIssuer    *auth.TokenIssuer
+	Denylist       auth.Denylist
+	Users          domain.UserRepository
+	RefreshTokens  domain.RefreshTokenRepository
 }
 
 func New(addr string, deps Deps) *Server {
@@ -66,6 +75,10 @@ func New(addr string, deps Deps) *Server {
 		configEngine:   deps.Config,
 		engineHealth:   deps.EngineHealth,
 		bootstrapToken: deps.BootstrapToken,
+		tokenIssuer:    deps.TokenIssuer,
+		denylist:       deps.Denylist,
+		users:          deps.Users,
+		refreshTokens:  deps.RefreshTokens,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -76,6 +89,11 @@ func New(addr string, deps Deps) *Server {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+	s.mux.HandleFunc("GET /healthz/live", s.handleHealthLive)
+	s.mux.HandleFunc("GET /healthz/ready", s.handleHealthReady)
+
+	// Initial setup (overview.md §4.5)
+	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)
 
 	// Customers
 	s.mux.HandleFunc("GET /api/v1/customers", s.handleListCustomers)
@@ -128,6 +146,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
 	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
 	s.mux.HandleFunc("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)
+
+	// Users (admin only)
+	s.mux.HandleFunc("GET /api/v1/admin/users", s.handleListUsers)
+
+	// Session (JWT login/logout/refresh/me)
+	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("POST /api/v1/auth/refresh", s.handleRefresh)
+	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleMe)
 
 	// Audit
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)

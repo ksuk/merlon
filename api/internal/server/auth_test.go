@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/store"
@@ -28,6 +29,30 @@ func testServerWithAuth() *Server {
 		APIKeys:        store.NewMemoryAPIKeyRepo(),
 		BootstrapToken: testBootstrapToken,
 	})
+}
+
+func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
+	t.Helper()
+	issuer, err := auth.NewHS256Issuer("test-only-secret-not-for-production")
+	if err != nil {
+		t.Fatalf("NewHS256Issuer: %v", err)
+	}
+
+	s := New(":0", Deps{
+		Customers:      store.NewMemoryCustomerRepo(),
+		Transactions:   store.NewMemoryTransactionRepo(),
+		Alerts:         store.NewMemoryAlertRepo(),
+		Scoring:        &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:     &engine.MockMonitoringEngine{},
+		Screening:      &engine.MockScreeningEngine{},
+		Backtest:       &engine.MockBacktestEngine{},
+		Audit:          store.NewMemoryAuditRepo(),
+		Cases:          store.NewMemoryCaseRepo(),
+		APIKeys:        store.NewMemoryAPIKeyRepo(),
+		BootstrapToken: testBootstrapToken,
+		TokenIssuer:    issuer,
+	})
+	return s, issuer
 }
 
 func createAPIKey(t *testing.T, s *Server, name string, role domain.Role) string {
@@ -265,5 +290,57 @@ func TestAdminCreateWithAdminKey(t *testing.T) {
 
 	if rec.Code != http.StatusCreated {
 		t.Errorf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+}
+
+// TestAuthMiddleware_AcceptsAPIKeyAndJWT verifies backward compatibility
+// (acceptance criterion 3): the same endpoint must accept either an API key
+// or a JWT session cookie.
+func TestAuthMiddleware_AcceptsAPIKeyAndJWT(t *testing.T) {
+	s, issuer := testServerWithJWT(t)
+	apiKey := createAPIKey(t, s, "api-key", domain.RoleAdmin)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("API key path: status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	token, err := issuer.IssueAccessToken("user-1", string(domain.RoleAdmin), "jti-1")
+	if err != nil {
+		t.Fatalf("IssueAccessToken: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	req.AddCookie(&http.Cookie{Name: "access_token", Value: token})
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("JWT cookie path: status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAuthMiddleware_AnalystForbiddenOnWhitelistApprove verifies acceptance
+// criterion 4: RequirePermission(PermWhitelistApprove) rejects an Analyst
+// with 403 on a dummy route, even though the coarse method/path check
+// (hasPermission) still permits Analysts to write.
+func TestAuthMiddleware_AnalystForbiddenOnWhitelistApprove(t *testing.T) {
+	s, _ := testServerWithJWT(t)
+	analystKey := createAPIKey(t, s, "analyst-key", domain.RoleAnalyst)
+
+	dummy := auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	handler := s.authMiddleware(dummy)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist/dummy-approve", nil)
+	req.Header.Set("Authorization", "Bearer "+analystKey)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body: %s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }

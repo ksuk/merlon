@@ -15,12 +15,15 @@ Merlon の設定は環境変数と `config.yaml` の二層構成である。環�
 | `MERLON_REDIS_URL` | Redis 接続文字列（オプション） | 空（無効） | キャッシュ利用時に設定 |
 | `MERLON_OBJECT_STORE_URL` | レポート成果物の保存先 | `file:///var/lib/merlon/objects` | S3 互換ストレージ推奨 |
 | `MERLON_LOG_LEVEL` | ログレベル（`debug` / `info` / `warn` / `error`） | `info` | `info` |
-| `MERLON_JWT_SECRET` | API 認証用の署名シークレット | 空（必須） | 32 バイト以上のランダム値 |
+| `MERLON_JWT_PRIVATE_KEY_FILE` | JWT アクセストークン署名用 RSA 秘密鍵ファイルのパス（PEM、PKCS1/PKCS8） | 空 | 必須（RS256、auth.md §2） |
+| `MERLON_JWT_PUBLIC_KEY_FILE` | JWT 検証用 RSA 公開鍵ファイルのパス（PEM、PKIX） | 空 | 必須（RS256、auth.md §2） |
+| `MERLON_JWT_SECRET` | **非推奨・開発専用。** RS256 鍵ペア（`MERLON_JWT_PRIVATE_KEY_FILE`/`MERLON_JWT_PUBLIC_KEY_FILE`）が未設定の場合のみ、HS256 の暫定署名シークレットとして使用される（auth.md §2.5「現行実装からの移行」） | 空 | 本番では未設定とし、RS256 鍵ペアを使用すること |
+| `MERLON_BOOTSTRAP_TOKEN` | 初期セットアップ完了前に限り、最初の APIキーを発行できるブートストラップトークン。初期セットアップ完了後（`users` テーブルに1件以上存在、または既に APIキーが1件以上存在）は自動的に無効化される（AUTH-006） | 空 | ワンタイムで払い出し、使用後は破棄 |
 | `MERLON_TM_SCENARIOS_PATH` | TM シナリオ YAML ディレクトリ | `tm_scenarios` | 環境に応じて |
 | `MERLON_CONFIG_PATH` | `config.yaml` のパス | `/etc/merlon/config.yaml` | 環境に応じて |
 | `MERLON_AUDIT_WORM` | 監査ログの WORM モード（Enterprise） | `false` | `true` |
 
-`MERLON_JWT_SECRET` が未設定の場合、API は起動を拒否する（Secure by Default 原則）。
+JWT 署名鍵（`MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE`）と `MERLON_JWT_SECRET` がいずれも未設定の場合、API 自体は起動するが、ローカルユーザ認証（メール+パスワードのログイン、`POST /api/v1/auth/login` 等）は無効化される。既存の APIキー認証（M2M、AUTH-006）には影響しない。
 
 ## config.yaml
 
