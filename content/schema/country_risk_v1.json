@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlon-aml.example.com/schemas/country_risk_v1.json",
+  "title": "Country Risk Table",
+  "type": "object",
+  "required": ["schema_version", "content_type", "effective_date", "default_score", "countries"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "content_type": { "type": "string", "const": "country_risk_table" },
+    "name": { "type": "string" },
+    "effective_date": { "type": "string", "format": "date" },
+    "default_score": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "countries": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["score"],
+        "properties": {
+          "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "reason": { "type": "string" }
+        }
+      },
+      "propertyNames": { "pattern": "^[A-Z]{2}$" }
+    }
+  }
+}

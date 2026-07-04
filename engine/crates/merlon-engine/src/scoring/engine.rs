@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::config::{CddWeightConfig, ConfigError};
+use super::country_risk::CountryRiskTable;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RiskTier {
@@ -58,7 +59,11 @@ impl CddScoringEngine {
         Ok(Self { config })
     }
 
-    pub fn evaluate(&self, input: &ScoringInput) -> ScoringResult {
+    pub fn evaluate(
+        &self,
+        input: &ScoringInput,
+        country_risk_table: Option<&CountryRiskTable>,
+    ) -> ScoringResult {
         let applicable: Vec<(&String, &super::config::RiskFactorDef)> = self
             .config
             .risk_factors
@@ -82,14 +87,13 @@ impl CddScoringEngine {
                 0.0
             };
 
-            let raw_value = self
-                .resolve_factor_value(name, def, input)
-                .unwrap_or(FALLBACK_MAX_VALUE);
+            let resolved = self.resolve_factor_value(name, def, input, country_risk_table);
+            let raw_value = resolved.unwrap_or(FALLBACK_MAX_VALUE);
 
             let contribution = effective_weight * raw_value;
             score += contribution;
 
-            let description = if self.resolve_factor_value(name, def, input).is_some() {
+            let description = if resolved.is_some() {
                 format!("{name}={raw_value}")
             } else {
                 format!("{name}={raw_value} (fallback: unresolved)")
@@ -123,7 +127,24 @@ impl CddScoringEngine {
         factor_name: &str,
         def: &super::config::RiskFactorDef,
         input: &ScoringInput,
+        country_risk_table: Option<&CountryRiskTable>,
     ) -> Option<f64> {
+        // `source: country_risk_table` is resolved independently of `values`:
+        // previously this function returned early via `def.values.as_ref()?`
+        // whenever `values` was absent, so a factor defined only via `source`
+        // always fell back to FALLBACK_MAX_VALUE regardless of the actual
+        // country risk table content (rule-schema.md §3.5).
+        if def.source.as_deref() == Some("country_risk_table") {
+            let table = country_risk_table?;
+            return match factor_name {
+                "geography" => Some(table.score_for(&input.country_code) as f64),
+                _ => input
+                    .attributes
+                    .get(factor_name)
+                    .map(|code| table.score_for(code) as f64),
+            };
+        }
+
         let values = def.values.as_ref()?;
 
         let key = match factor_name {

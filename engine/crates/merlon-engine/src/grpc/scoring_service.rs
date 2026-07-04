@@ -48,7 +48,7 @@ impl ScoringServiceImpl {
             attributes: HashMap::new(),
         };
 
-        let result = self.engine.evaluate(&input);
+        let result = self.engine.evaluate(&input, None);
 
         let tier = match result.tier {
             RiskTier::Low => ProtoRiskTier::Low as i32,

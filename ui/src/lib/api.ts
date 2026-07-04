@@ -289,6 +289,38 @@ export interface User {
   updated_at: string
 }
 
+export type RuleType = "TM_SCENARIO" | "CDD_WEIGHT" | "SCREENING_CONFIG" | "COUNTRY_RISK"
+
+export interface RuleDefinition {
+  id: string
+  type: RuleType
+  name: string
+  description?: string
+  definition: unknown
+  version: number
+  is_active: boolean
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PaginationMeta {
+  next_cursor?: string
+  has_more: boolean
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: PaginationMeta
+}
+
+export interface RuleImportItem {
+  type: RuleType
+  name: string
+  description?: string
+  definition: unknown
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
@@ -412,6 +444,29 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ config_type: configType, yaml_content: yamlContent }),
       }),
+  },
+  rules: {
+    list: (params?: { type?: RuleType; activeOnly?: boolean }) => {
+      const qs = new URLSearchParams()
+      if (params?.type) qs.set("type", params.type)
+      if (params?.activeOnly) qs.set("is_active", "true")
+      const q = qs.toString()
+      return request<PaginatedResponse<RuleDefinition>>(`/rules${q ? `?${q}` : ""}`)
+    },
+    get: (id: string, version?: number) =>
+      request<RuleDefinition>(`/rules/${encodeURIComponent(id)}${version ? `?version=${version}` : ""}`),
+    create: (data: { type: RuleType; name: string; description?: string; definition: unknown; is_active?: boolean }) =>
+      request<RuleDefinition>("/rules", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: { description?: string; definition: unknown; is_active?: boolean }) =>
+      request<RuleDefinition>(`/rules/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
+    activate: (id: string) =>
+      request<RuleDefinition>(`/rules/${encodeURIComponent(id)}/activate`, { method: "POST" }),
+    deactivate: (id: string) =>
+      request<RuleDefinition>(`/rules/${encodeURIComponent(id)}/deactivate`, { method: "POST" }),
+    import: (items: RuleImportItem[]) =>
+      request<RuleDefinition[]>("/rules/import", { method: "POST", body: JSON.stringify(items) }),
+    exportUrl: (id: string, format: "json" | "yaml" = "json") =>
+      `${BASE}/rules/${encodeURIComponent(id)}/export?format=${format}`,
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),
