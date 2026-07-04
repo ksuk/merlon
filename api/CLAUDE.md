@@ -32,4 +32,4 @@ Entry point: `api/cmd/merlon-api/main.go`
 - Repository pattern: interfaces in `domain/repository.go` → implementations in `store/`
 - DI: `server.Deps` struct for dependency injection (assembled in main.go)
 - Tests: standard `testing` package. Files named `*_test.go`
-- Generated code: protobuf output in `api/gen/` is **committed to the repo**
+- Generated code: protobuf output in `api/gen/` is **gitignored and regenerated at build time** (`cd proto && buf generate`, or `make proto`). Run this before `go build`/`go test` on a fresh checkout.
