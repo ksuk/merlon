@@ -1,0 +1,174 @@
+package screening
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"sync"
+)
+
+// ListStore persists the current, last-successfully-imported content of a
+// sanctions/PEP list keyed by list ID. RunImportJob only ever calls
+// SaveList after a successful fetch (full replace); on fetch failure the
+// previously saved list is left untouched so matching continues against it
+// (screening.md "リスト取得に失敗した場合、前回成功時のリストで照合を継続する").
+type ListStore interface {
+	SaveList(ctx context.Context, data *RawListData) error
+	GetList(ctx context.Context, listID string) (*RawListData, error)
+}
+
+// FailureTracker counts consecutive fetch failures per list so RunImportJob
+// can flag a list for an operational alert once the failure streak reaches
+// staleFailureThreshold (screening.md, default 3 consecutive days).
+type FailureTracker interface {
+	RecordSuccess(ctx context.Context, listID string) error
+	RecordFailure(ctx context.Context, listID string) (consecutiveFailures int, err error)
+	ConsecutiveFailures(ctx context.Context, listID string) (int, error)
+}
+
+// staleFailureThreshold is the default number of consecutive fetch failures
+// after which an operational alert is required (screening.md "連続 N 日間
+// （デフォルト：3 日）取得失敗した場合、運用アラート...を発行").
+const staleFailureThreshold = 3
+
+// ListImportOutcome records what RunImportJob did for one configured list
+// adapter during a single run.
+type ListImportOutcome struct {
+	ListID                string
+	Imported              bool
+	Skipped               bool
+	SkipReason            string
+	Err                   error
+	ConsecutiveFailures   int
+	NeedsOperationalAlert bool
+}
+
+// ImportResult is the aggregate outcome of one RunImportJob invocation
+// across all configured list adapters.
+type ImportResult struct {
+	Outcomes []ListImportOutcome
+}
+
+// RunImportJob fetches every configured list adapter and replaces the
+// corresponding entry in store on success. A fetch error leaves the
+// previously stored list untouched and increments that list's consecutive
+// failure count; ErrPEPNotConfigured is treated as an intentional skip
+// (audit-logged, not counted as a failure) rather than an error, per
+// screening.md's PEP-not-configured handling.
+func RunImportJob(ctx context.Context, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker) (ImportResult, error) {
+	listIDs := make([]string, 0, len(adapters))
+	for id := range adapters {
+		listIDs = append(listIDs, id)
+	}
+	sort.Strings(listIDs)
+
+	var result ImportResult
+	for _, listID := range listIDs {
+		outcome, err := importOne(ctx, listID, adapters[listID], store, failureTracker)
+		if err != nil {
+			return result, err
+		}
+		result.Outcomes = append(result.Outcomes, outcome)
+	}
+	return result, nil
+}
+
+func importOne(ctx context.Context, listID string, adapter ListAdapter, store ListStore, failureTracker FailureTracker) (ListImportOutcome, error) {
+	data, err := adapter.FetchList(ctx)
+
+	switch {
+	case errors.Is(err, ErrPEPNotConfigured):
+		slog.Warn("screening list import skipped: provider not configured",
+			"list_id", listID, "reason", "pep_not_configured")
+		return ListImportOutcome{ListID: listID, Skipped: true, SkipReason: "pep_not_configured"}, nil
+
+	case err != nil:
+		n, trackErr := failureTracker.RecordFailure(ctx, listID)
+		if trackErr != nil {
+			return ListImportOutcome{}, fmt.Errorf("record failure for list %q: %w", listID, trackErr)
+		}
+		needsAlert := n >= staleFailureThreshold
+		slog.Error("screening list import failed, continuing with previously imported list",
+			"list_id", listID, "error", err,
+			"consecutive_failures", n, "needs_operational_alert", needsAlert)
+		return ListImportOutcome{
+			ListID:                listID,
+			Err:                   err,
+			ConsecutiveFailures:   n,
+			NeedsOperationalAlert: needsAlert,
+		}, nil
+
+	default:
+		if err := store.SaveList(ctx, data); err != nil {
+			return ListImportOutcome{}, fmt.Errorf("save list %q: %w", listID, err)
+		}
+		if err := failureTracker.RecordSuccess(ctx, listID); err != nil {
+			return ListImportOutcome{}, fmt.Errorf("record success for list %q: %w", listID, err)
+		}
+		return ListImportOutcome{ListID: listID, Imported: true}, nil
+	}
+}
+
+// MemoryListStore is the dev/test-only ListStore, mirroring the store
+// package's Memory*Repo naming convention.
+type MemoryListStore struct {
+	mu   sync.RWMutex
+	data map[string]*RawListData
+}
+
+func NewMemoryListStore() *MemoryListStore {
+	return &MemoryListStore{data: make(map[string]*RawListData)}
+}
+
+func (s *MemoryListStore) SaveList(_ context.Context, data *RawListData) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cp := *data
+	s.data[data.ListID] = &cp
+	return nil
+}
+
+func (s *MemoryListStore) GetList(_ context.Context, listID string) (*RawListData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	data, ok := s.data[listID]
+	if !ok {
+		return nil, fmt.Errorf("list %q: %w", listID, errListNotFound)
+	}
+	cp := *data
+	return &cp, nil
+}
+
+var errListNotFound = errors.New("screening list not found")
+
+// MemoryFailureTracker is the dev/test-only FailureTracker.
+type MemoryFailureTracker struct {
+	mu     sync.Mutex
+	counts map[string]int
+}
+
+func NewMemoryFailureTracker() *MemoryFailureTracker {
+	return &MemoryFailureTracker{counts: make(map[string]int)}
+}
+
+func (t *MemoryFailureTracker) RecordSuccess(_ context.Context, listID string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.counts[listID] = 0
+	return nil
+}
+
+func (t *MemoryFailureTracker) RecordFailure(_ context.Context, listID string) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.counts[listID]++
+	return t.counts[listID], nil
+}
+
+func (t *MemoryFailureTracker) ConsecutiveFailures(_ context.Context, listID string) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.counts[listID], nil
+}
