@@ -89,6 +89,11 @@ func New(addr string, deps Deps) *Server {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+	s.mux.HandleFunc("GET /healthz/live", s.handleHealthLive)
+	s.mux.HandleFunc("GET /healthz/ready", s.handleHealthReady)
+
+	// Initial setup (overview.md §4.5)
+	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)
 
 	// Customers
 	s.mux.HandleFunc("GET /api/v1/customers", s.handleListCustomers)

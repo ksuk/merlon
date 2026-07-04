@@ -41,7 +41,7 @@ func HashAPIKey(raw string) string {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.apikeys == nil || r.URL.Path == "/healthz" {
+		if s.apikeys == nil || r.URL.Path == "/healthz" || r.URL.Path == "/healthz/live" || r.URL.Path == "/healthz/ready" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -182,7 +182,7 @@ func isPublicAuthPath(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout":
+	case "/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/setup":
 		return true
 	}
 	return false
@@ -204,12 +204,27 @@ func csrfTokenMatches(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(header)) == 1
 }
 
+// bootstrapTokenAllowed reports whether the bootstrap token may still be
+// used to create the first API key. It is disabled once any API key exists,
+// and (AUTH-006 "初期セットアップ完了後は無効化") also once initial setup
+// has completed, i.e. any local user account exists.
 func (s *Server) bootstrapTokenAllowed(ctx context.Context) bool {
 	if s.apikeys == nil {
 		return false
 	}
 	keys, err := s.apikeys.List(ctx)
-	return err == nil && len(keys) == 0
+	if err != nil || len(keys) != 0 {
+		return false
+	}
+
+	if s.users != nil {
+		count, err := s.users.Count(ctx)
+		if err != nil || count != 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 func hasPermission(role domain.Role, method, path string) bool {
