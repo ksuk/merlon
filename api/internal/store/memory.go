@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -617,4 +618,118 @@ func (r *MemoryWebhookRepo) ListDeliveries(_ context.Context, webhookID string, 
 		}
 	}
 	return result, nil
+}
+
+// MemoryRuleRepo stores rule definitions keyed by name, each holding every
+// version ever created (append-only; Auditability First). "id" in the
+// RuleRepository interface refers to this name, not a per-row UUID: the
+// rule_definitions PRIMARY KEY is regenerated on every version INSERT
+// (migrations/001_init.sql), so name is the only value stable enough for
+// GET /api/v1/rules/{id}?version=N to keep resolving after a PUT creates a
+// new row.
+type MemoryRuleRepo struct {
+	mu       sync.RWMutex
+	versions map[string][]*domain.RuleDefinition
+}
+
+func NewMemoryRuleRepo() *MemoryRuleRepo {
+	return &MemoryRuleRepo{versions: make(map[string][]*domain.RuleDefinition)}
+}
+
+func (r *MemoryRuleRepo) Get(_ context.Context, id string) (*domain.RuleDefinition, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	vs := r.versions[id]
+	if len(vs) == 0 {
+		return nil, &domain.ErrNotFound{Entity: "rule_definition", ID: id}
+	}
+	cp := *vs[len(vs)-1]
+	return &cp, nil
+}
+
+func (r *MemoryRuleRepo) GetVersion(_ context.Context, id string, version int) (*domain.RuleDefinition, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, rd := range r.versions[id] {
+		if rd.Version == version {
+			cp := *rd
+			return &cp, nil
+		}
+	}
+	return nil, &domain.ErrNotFound{Entity: "rule_definition", ID: id}
+}
+
+func (r *MemoryRuleRepo) List(_ context.Context, ruleType domain.RuleType, activeOnly bool, limit int, after *domain.Cursor) ([]domain.RuleDefinition, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var all []domain.RuleDefinition
+	for _, vs := range r.versions {
+		for _, rd := range vs {
+			if ruleType != "" && rd.Type != ruleType {
+				continue
+			}
+			if activeOnly && !rd.IsActive {
+				continue
+			}
+			all = append(all, *rd)
+		}
+	}
+
+	return sortAndPageByCursor(all, limit, after,
+		func(rd domain.RuleDefinition) time.Time { return rd.CreatedAt },
+		func(rd domain.RuleDefinition) string { return rd.ID },
+	), nil
+}
+
+func (r *MemoryRuleRepo) Create(_ context.Context, rd *domain.RuleDefinition) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.versions[rd.Name]) > 0 {
+		return fmt.Errorf("rule %q already exists", rd.Name)
+	}
+	rd.Version = 1
+	cp := *rd
+	r.versions[rd.Name] = []*domain.RuleDefinition{&cp}
+	return nil
+}
+
+// CreateNewVersion never mutates an existing row: it appends a new one with
+// version = max(existing versions) + 1 (Auditability First, no UPDATE/overwrite).
+func (r *MemoryRuleRepo) CreateNewVersion(_ context.Context, rd *domain.RuleDefinition) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	existing := r.versions[rd.Name]
+	if len(existing) == 0 {
+		return &domain.ErrNotFound{Entity: "rule_definition", ID: rd.Name}
+	}
+	rd.Version = existing[len(existing)-1].Version + 1
+	if rd.IsActive {
+		deactivateAll(existing)
+	}
+	cp := *rd
+	r.versions[rd.Name] = append(existing, &cp)
+	return nil
+}
+
+func (r *MemoryRuleRepo) SetActive(_ context.Context, id string, active bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	vs := r.versions[id]
+	if len(vs) == 0 {
+		return &domain.ErrNotFound{Entity: "rule_definition", ID: id}
+	}
+	if active {
+		deactivateAll(vs)
+	}
+	vs[len(vs)-1].IsActive = active
+	return nil
+}
+
+// deactivateAll enforces the "at most one active version per rule name"
+// invariant the engine's hot-reload (active rule set fetch) depends on.
+func deactivateAll(versions []*domain.RuleDefinition) {
+	for _, v := range versions {
+		v.IsActive = false
+	}
 }
