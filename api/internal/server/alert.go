@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
 )
 
 type UpdateAlertStatusRequest struct {
@@ -16,6 +17,13 @@ type UpdateAlertStatusRequest struct {
 
 func alertCursor(a domain.Alert) Cursor {
 	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID}
+}
+
+// recordAlertCreated increments merlon_alerts_total (OPS-003, overview.md
+// §4.4) for a single newly created alert. Call this exactly once per alert,
+// right after its creation is confirmed, to avoid double-counting.
+func recordAlertCreated(a *domain.Alert) {
+	metrics.AlertsTotal.WithLabelValues(a.ScenarioID, string(a.Severity)).Inc()
 }
 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {

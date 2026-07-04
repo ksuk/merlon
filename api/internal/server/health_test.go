@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,17 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
+
+// stubDBPinger is a test double for the DBPinger dependency /healthz/ready
+// uses to check PostgreSQL connectivity (Task 3, overview.md §4.4 "ヘルス
+// チェックの粒度").
+type stubDBPinger struct {
+	err error
+}
+
+func (p *stubDBPinger) Ping(_ context.Context) error {
+	return p.err
+}
 
 func testServer() *Server {
 	return testServerWithEngines(
@@ -165,5 +177,76 @@ func TestHealthzReady_HealthyAfterSetup(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestHealthzReadyUnhealthyOnDBDown is acceptance criterion 2: DB down makes
+// /healthz/ready unhealthy while /healthz/live stays healthy.
+func TestHealthzReadyUnhealthyOnDBDown(t *testing.T) {
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(),
+		DB:        &stubDBPinger{err: errors.New("connection refused")},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "postgres") {
+		t.Errorf("body = %s, want it to mention the postgres check", rec.Body.String())
+	}
+
+	liveReq := httptest.NewRequest(http.MethodGet, "/healthz/live", nil)
+	liveRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(liveRec, liveReq)
+
+	if liveRec.Code != http.StatusOK {
+		t.Errorf("/healthz/live status code = %d, want %d (DB down must not affect liveness)", liveRec.Code, http.StatusOK)
+	}
+}
+
+// TestHealthzReadyHealthyWhenAllDepsUp is acceptance criterion 3: DB and
+// engine both reachable makes /healthz/ready healthy.
+func TestHealthzReadyHealthyWhenAllDepsUp(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		DB:           &stubDBPinger{},
+		EngineHealth: &engine.MockHealthChecker{},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"postgres":"ok"`) {
+		t.Errorf("body = %s, want postgres check reported ok", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"engine":"ok"`) {
+		t.Errorf("body = %s, want engine check reported ok", rec.Body.String())
+	}
+}
+
+// TestHealthzReadyUnhealthyOnEngineDown ensures the engine check still gates
+// readiness independently of the DB check (regression guard for the
+// checks-map refactor).
+func TestHealthzReadyUnhealthyOnEngineDown(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		DB:           &stubDBPinger{},
+		EngineHealth: &engine.MockHealthChecker{Err: errors.New("engine unreachable")},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
 	}
 }

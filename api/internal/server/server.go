@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -10,6 +11,14 @@ import (
 )
 
 const maxRequestBodyBytes = 1 << 20
+
+// DBPinger reports whether the PostgreSQL connection pool is reachable. It
+// is satisfied directly by *pgxpool.Pool, kept as a narrow interface here so
+// /healthz/ready (Task 3, overview.md §4.4) can be tested without a real
+// database.
+type DBPinger interface {
+	Ping(ctx context.Context) error
+}
 
 type Server struct {
 	mux            *http.ServeMux
@@ -34,6 +43,7 @@ type Server struct {
 	users          domain.UserRepository
 	refreshTokens  domain.RefreshTokenRepository
 	rules          domain.RuleRepository
+	db             DBPinger
 }
 
 type Deps struct {
@@ -57,6 +67,7 @@ type Deps struct {
 	Users          domain.UserRepository
 	RefreshTokens  domain.RefreshTokenRepository
 	Rules          domain.RuleRepository
+	DB             DBPinger
 }
 
 func New(addr string, deps Deps) *Server {
@@ -82,6 +93,7 @@ func New(addr string, deps Deps) *Server {
 		users:          deps.Users,
 		refreshTokens:  deps.RefreshTokens,
 		rules:          deps.Rules,
+		db:             deps.DB,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -94,6 +106,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("GET /healthz/live", s.handleHealthLive)
 	s.mux.HandleFunc("GET /healthz/ready", s.handleHealthReady)
+	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	// Initial setup (overview.md §4.5)
 	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)
@@ -190,6 +203,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.authMiddleware(h)
 	h = s.rateLimitMiddleware(h)
 	h = requestBodyLimitMiddleware(h)
+	h = s.metricsMiddleware(h)
 	return h
 }
 

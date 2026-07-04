@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -68,7 +68,7 @@ func setAuditDetail(r *http.Request, key, value string) {
 
 func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.audit == nil || r.URL.Path == "/healthz" {
+		if s.audit == nil || r.URL.Path == "/healthz" || r.URL.Path == "/healthz/live" || r.URL.Path == "/healthz/ready" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -98,7 +98,7 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		}
 
 		if err := s.audit.Create(r.Context(), entry); err != nil {
-			log.Printf("audit write error: %v", err)
+			slog.ErrorContext(r.Context(), "audit write error", "error", err)
 		}
 	})
 }

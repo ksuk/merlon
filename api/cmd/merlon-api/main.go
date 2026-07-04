@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,15 +14,19 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/logging"
 	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
 
 func main() {
+	slog.SetDefault(logging.NewLogger(os.Stdout))
+
 	cfg := config.Load()
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("config validation: %v", err)
+		slog.Error("config validation", "error", err)
+		os.Exit(1)
 	}
 
 	deps := server.Deps{}
@@ -32,12 +36,14 @@ func main() {
 		var err error
 		pool, err = pgxpool.New(context.Background(), cfg.DatabaseURL)
 		if err != nil {
-			log.Fatalf("database connection: %v", err)
+			slog.Error("database connection", "error", err)
+			os.Exit(1)
 		}
 		defer pool.Close()
 
 		if err := pool.Ping(context.Background()); err != nil {
-			log.Fatalf("database ping: %v", err)
+			slog.Error("database ping", "error", err)
+			os.Exit(1)
 		}
 
 		deps.Customers = store.NewPgCustomerRepo(pool)
@@ -46,7 +52,8 @@ func main() {
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
-		log.Printf("database connected: PostgreSQL")
+		deps.DB = pool
+		slog.Info("database connected", "backend", "postgresql")
 	} else {
 		deps.Customers = store.NewMemoryCustomerRepo()
 		deps.Transactions = store.NewMemoryTransactionRepo()
@@ -54,7 +61,7 @@ func main() {
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = store.NewMemoryCaseRepo()
 		deps.Webhooks = store.NewMemoryWebhookRepo()
-		log.Printf("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
+		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
 	if cfg.AuthEnabled {
@@ -69,31 +76,33 @@ func main() {
 		}
 		deps.BootstrapToken = cfg.BootstrapToken
 		deps.Denylist = auth.NewInMemoryDenylist()
-		log.Printf("API key authentication enabled")
+		slog.Info("API key authentication enabled")
 
 		switch {
 		case cfg.JWTPrivateKeyFile != "" && cfg.JWTPublicKeyFile != "":
 			issuer, err := auth.NewRS256Issuer(cfg.JWTPrivateKeyFile, cfg.JWTPublicKeyFile)
 			if err != nil {
-				log.Fatalf("jwt issuer: %v", err)
+				slog.Error("jwt issuer", "error", err)
+				os.Exit(1)
 			}
 			deps.TokenIssuer = issuer
-			log.Printf("JWT session authentication enabled (RS256)")
+			slog.Info("JWT session authentication enabled", "algorithm", "RS256")
 		case cfg.JWTSecret != "":
 			issuer, err := auth.NewHS256Issuer(cfg.JWTSecret)
 			if err != nil {
-				log.Fatalf("jwt issuer: %v", err)
+				slog.Error("jwt issuer", "error", err)
+				os.Exit(1)
 			}
 			deps.TokenIssuer = issuer
-			log.Printf("warning: JWT session authentication enabled with HS256/MERLON_JWT_SECRET (development only; set MERLON_JWT_PRIVATE_KEY_FILE/MERLON_JWT_PUBLIC_KEY_FILE for production)")
+			slog.Warn("JWT session authentication enabled with HS256/MERLON_JWT_SECRET (development only; set MERLON_JWT_PRIVATE_KEY_FILE/MERLON_JWT_PUBLIC_KEY_FILE for production)")
 		default:
-			log.Printf("warning: no JWT signing key configured; local user login (email/password) is disabled, API key authentication is still available")
+			slog.Warn("no JWT signing key configured; local user login (email/password) is disabled, API key authentication is still available")
 		}
 	}
 
 	deps.RateLimit = cfg.RateLimit
 	if cfg.RateLimit > 0 {
-		log.Printf("rate limit: %d req/min", cfg.RateLimit)
+		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}
 
 	if cfg.EngineAddr != "" {
@@ -103,7 +112,8 @@ func main() {
 		}
 		client, err := engine.NewClient(cfg.EngineAddr, engineOpts...)
 		if err != nil {
-			log.Fatalf("engine client: %v", err)
+			slog.Error("engine client", "error", err)
+			os.Exit(1)
 		}
 		defer client.Close()
 		deps.Scoring = client
@@ -112,9 +122,9 @@ func main() {
 		deps.Backtest = client
 		deps.Config = client
 		deps.EngineHealth = client
-		log.Printf("engine connected: %s", cfg.EngineAddr)
+		slog.Info("engine connected", "addr", cfg.EngineAddr)
 	} else {
-		log.Printf("warning: MERLON_ENGINE_ADDR not set, engine endpoints disabled")
+		slog.Warn("MERLON_ENGINE_ADDR not set, engine endpoints disabled")
 	}
 
 	if os.Getenv("MERLON_SEED") == "true" {
@@ -131,7 +141,7 @@ func main() {
 
 	if cfg.UIDir != "" {
 		srv.SetUIDir(cfg.UIDir)
-		log.Printf("serving UI from: %s", cfg.UIDir)
+		slog.Info("serving UI", "dir", cfg.UIDir)
 	}
 
 	httpServer := &http.Server{
@@ -140,9 +150,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("merlon-api starting env=%s addr=%s", cfg.Env, cfg.HTTPAddr)
+		slog.Info("merlon-api starting", "env", cfg.Env, "addr", cfg.HTTPAddr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server error: %v", err)
+			slog.Error("server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -150,14 +161,15 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	log.Printf("merlon-api shutting down")
+	slog.Info("merlon-api shutting down")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		log.Fatalf("graceful shutdown failed: %v", err)
+		slog.Error("graceful shutdown failed", "error", err)
+		os.Exit(1)
 	}
 
-	log.Printf("merlon-api stopped")
+	slog.Info("merlon-api stopped")
 }

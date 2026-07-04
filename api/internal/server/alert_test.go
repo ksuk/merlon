@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func seedAlert(t *testing.T, s *Server, customerID string) domain.Alert {
@@ -321,5 +323,23 @@ func TestListAlerts_ResponseFieldsUnchanged(t *testing.T) {
 		if _, ok := got[key]; !ok {
 			t.Errorf("field %q missing from list response item", key)
 		}
+	}
+}
+
+// TestCreateAlertIncrementsMetric is Task 9 (overview.md §4.4 OPS-003):
+// creating an alert (via batch monitoring, the only path that raises
+// alerts) must increment merlon_alerts_total for that alert's
+// scenario/severity.
+func TestCreateAlertIncrementsMetric(t *testing.T) {
+	before := testutil.ToFloat64(metrics.AlertsTotal.WithLabelValues("test_metric_scenario", "high"))
+
+	recordAlertCreated(&domain.Alert{
+		ScenarioID: "test_metric_scenario",
+		Severity:   domain.AlertSeverityHigh,
+	})
+
+	after := testutil.ToFloat64(metrics.AlertsTotal.WithLabelValues("test_metric_scenario", "high"))
+	if after != before+1 {
+		t.Errorf("merlon_alerts_total{scenario_id=test_metric_scenario,severity=high} = %v, want %v", after, before+1)
 	}
 }

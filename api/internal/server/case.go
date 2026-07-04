@@ -8,7 +8,29 @@ import (
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
 )
+
+// openCaseStatuses are the sub-statuses merlon_cases_open (OPS-003,
+// overview.md §4.4) tracks. "closed" is deliberately absent: a closed case
+// is not an open case, so it is only ever decremented from, never counted.
+var openCaseStatuses = map[domain.CaseStatus]bool{
+	domain.CaseStatusOpen:          true,
+	domain.CaseStatusInvestigating: true,
+	domain.CaseStatusEscalated:     true,
+}
+
+// adjustCasesOpenGauge updates merlon_cases_open for a case status
+// transition. oldStatus is "" for a newly created case. Call this exactly
+// once per confirmed transition to avoid double-counting.
+func adjustCasesOpenGauge(oldStatus, newStatus domain.CaseStatus) {
+	if oldStatus != "" && openCaseStatuses[oldStatus] {
+		metrics.CasesOpen.WithLabelValues(string(oldStatus)).Dec()
+	}
+	if openCaseStatuses[newStatus] {
+		metrics.CasesOpen.WithLabelValues(string(newStatus)).Inc()
+	}
+}
 
 type createCaseRequest struct {
 	CustomerID string              `json:"customer_id"`
@@ -83,6 +105,7 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	adjustCasesOpenGauge("", c.Status)
 
 	s.dispatchWebhook(r.Context(), domain.WebhookEventCaseCreated, c)
 
@@ -206,6 +229,7 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldStatus := c.Status
 	if req.Status != "" {
 		c.Status = req.Status
 		if req.Status == domain.CaseStatusClosed {
@@ -223,6 +247,9 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 	if err := s.cases.Update(r.Context(), c); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if req.Status != "" {
+		adjustCasesOpenGauge(oldStatus, c.Status)
 	}
 
 	event := domain.WebhookEventCaseUpdated
