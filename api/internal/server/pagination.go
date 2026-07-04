@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
 const (
@@ -87,6 +89,20 @@ func ParsePageRequest(r *http.Request) (PageRequest, error) {
 type PaginationMeta struct {
 	NextCursor string `json:"next_cursor,omitempty"`
 	HasMore    bool   `json:"has_more"`
+}
+
+// toDomainCursor converts a server.Cursor to the domain package's equivalent,
+// which repository interfaces use so domain does not depend on server.
+func toDomainCursor(c *Cursor) *domain.Cursor {
+	if c == nil {
+		return nil
+	}
+	return &domain.Cursor{CreatedAt: c.CreatedAt, ID: c.ID}
+}
+
+// fromDomainCursor converts a domain.Cursor back to server.Cursor.
+func fromDomainCursor(c domain.Cursor) Cursor {
+	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID}
 }
 
 // BuildPaginationMeta trims a slice fetched with limit+1 rows down to at most

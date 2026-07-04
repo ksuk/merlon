@@ -1,11 +1,27 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+// decodeListResponse decodes the additive {"data", "pagination"} envelope
+// that list endpoints return (Task 2), used by resource-specific list tests.
+func decodeListResponse[T any](t *testing.T, body io.Reader) ([]T, PaginationMeta) {
+	t.Helper()
+	var resp struct {
+		Data       []T            `json:"data"`
+		Pagination PaginationMeta `json:"pagination"`
+	}
+	if err := json.NewDecoder(body).Decode(&resp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	return resp.Data, resp.Pagination
+}
 
 func TestEncodeDecodeCursor_RoundTrip(t *testing.T) {
 	c := Cursor{CreatedAt: time.Date(2026, 7, 1, 12, 30, 0, 123456789, time.UTC), ID: "abc-123"}
