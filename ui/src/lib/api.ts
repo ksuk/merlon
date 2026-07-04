@@ -1,13 +1,24 @@
 const BASE = "/api/v1"
 
+// getCookie reads the non-HttpOnly csrf_token cookie set at login, so it can
+// be echoed back per the Double Submit Cookie CSRF scheme (auth.md §2).
+function getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+  return match ? decodeURIComponent(match[1]) : null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  })
+  const method = (init?.method ?? "GET").toUpperCase()
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string> | undefined),
+  }
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfToken = getCookie("csrf_token")
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken
+  }
+
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
   if (!res.ok) {
     const body = await res.text()
     throw new Error(`API ${res.status}: ${body}`)
@@ -263,6 +274,21 @@ export interface SystemInfo {
   features: Record<string, boolean>
 }
 
+export interface AuthUser {
+  id: string
+  email: string
+  role: Role
+}
+
+export interface User {
+  id: string
+  email: string
+  role: Role
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
@@ -389,5 +415,23 @@ export const api = {
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),
+  },
+  auth: {
+    login: (email: string, password: string) =>
+      request<AuthUser>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      }),
+    logout: () => request<{ status: string }>("/auth/logout", { method: "POST" }),
+    refresh: () => request<{ status: string }>("/auth/refresh", { method: "POST" }),
+    me: () => request<AuthUser>("/auth/me"),
+  },
+  setup: (email: string, password: string) =>
+    request<AuthUser>("/setup", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  users: {
+    list: () => request<User[]>("/admin/users"),
   },
 }

@@ -167,6 +167,27 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, meResponse{ID: user.ID, Email: user.Email, Role: user.Role})
 }
 
+// handleListUsers is the admin user-management screen's data source
+// (ui/src/pages/users.tsx). Routed under /api/v1/admin/ so authMiddleware's
+// existing admin-only prefix check applies.
+func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil {
+		writeError(w, http.StatusServiceUnavailable, "user management not configured")
+		return
+	}
+
+	users, err := s.users.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if users == nil {
+		users = []domain.User{}
+	}
+
+	writeJSON(w, http.StatusOK, users)
+}
+
 func (s *Server) recordAuthAudit(r *http.Request, userID, action string) {
 	if s.audit == nil {
 		return

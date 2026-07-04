@@ -33,6 +33,8 @@ type UserRepository interface {
 	// Count is used to determine whether initial setup (overview.md §4.5) has
 	// already been completed.
 	Count(ctx context.Context) (int, error)
+	// List returns all users, for the admin user-management screen.
+	List(ctx context.Context) ([]User, error)
 }
 
 type RefreshTokenRepository interface {

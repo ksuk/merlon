@@ -310,6 +310,31 @@ func TestMe_ReturnsCurrentUser(t *testing.T) {
 	}
 }
 
+func TestListUsers_ReturnsAllUsers(t *testing.T) {
+	s, users, _ := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+	createTestUser(t, users, "bob@example.com", testUserPassword, domain.RoleAnalyst)
+
+	loginRec := doLogin(t, s, "alice@example.com", testUserPassword)
+	cookies := loginRec.Result().Cookies()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	attachCookies(req, cookies)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got []domain.User
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(users) = %d, want 2", len(got))
+	}
+}
+
 // TestAuthFlow_LoginAccessRefreshRotationReuseDetection is the acceptance
 // criterion 2 E2E test: login -> access -> refresh -> rotation -> reuse
 // detection revokes the whole session family.

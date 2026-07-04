@@ -68,6 +68,17 @@ func (r *MemoryUserRepo) Count(_ context.Context) (int, error) {
 	return len(r.data), nil
 }
 
+func (r *MemoryUserRepo) List(_ context.Context) ([]domain.User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	users := make([]domain.User, 0, len(r.data))
+	for _, u := range r.data {
+		users = append(users, *u)
+	}
+	sortByCreatedAtDesc(users, func(u domain.User) time.Time { return u.CreatedAt }, func(u domain.User) string { return u.ID })
+	return users, nil
+}
+
 // MemoryRefreshTokenRepo
 
 type MemoryRefreshTokenRepo struct {
@@ -209,6 +220,25 @@ func (r *PgUserRepo) Count(ctx context.Context) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
 	return count, err
+}
+
+func (r *PgUserRepo) List(ctx context.Context) ([]domain.User, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, email, password_hash, role, active, created_at, updated_at FROM users ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []domain.User
+	for rows.Next() {
+		var u domain.User
+		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt, &u.UpdatedAt); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, rows.Err()
 }
 
 // PgRefreshTokenRepo

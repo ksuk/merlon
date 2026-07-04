@@ -147,6 +147,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
 	s.mux.HandleFunc("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)
 
+	// Users (admin only)
+	s.mux.HandleFunc("GET /api/v1/admin/users", s.handleListUsers)
+
 	// Session (JWT login/logout/refresh/me)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)

@@ -20,6 +20,9 @@ const APIKeysPage = lazy(() => import("@/pages/apikeys").then((m) => ({ default:
 const ConfigPage = lazy(() => import("@/pages/config").then((m) => ({ default: m.ConfigPage })))
 const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })))
 const SystemPage = lazy(() => import("@/pages/system").then((m) => ({ default: m.SystemPage })))
+const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.UsersPage })))
+const LoginPage = lazy(() => import("@/pages/login").then((m) => ({ default: m.LoginPage })))
+const SetupPage = lazy(() => import("@/pages/setup").then((m) => ({ default: m.SetupPage })))
 const NotFoundPage = lazy(() => import("@/pages/not-found").then((m) => ({ default: m.NotFoundPage })))
 
 function App() {
@@ -27,6 +30,8 @@ function App() {
     <BrowserRouter>
       <ErrorBoundary>
         <Routes>
+            <Route path="login" element={<LoginPage />} />
+            <Route path="setup" element={<SetupPage />} />
             <Route element={<AppLayout />}>
               <Route index element={<DashboardPage />} />
               <Route path="customers" element={<CustomersPage />} />
@@ -42,6 +47,7 @@ function App() {
               <Route path="backtest" element={<BacktestPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />
               <Route path="apikeys" element={<APIKeysPage />} />
+              <Route path="users" element={<UsersPage />} />
               <Route path="config" element={<ConfigPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="system" element={<SystemPage />} />
