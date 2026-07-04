@@ -175,6 +175,7 @@ func (s *Server) routes() {
 	s.mux.Handle("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
 	s.mux.Handle("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
 	s.mux.Handle("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
+	s.mux.Handle("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
 
 	// System info
 	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)
