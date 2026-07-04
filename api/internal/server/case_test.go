@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestCreateCase(t *testing.T) {
@@ -188,6 +190,66 @@ func TestUpdateCase(t *testing.T) {
 	}
 	if updated.AssignedTo != "senior_analyst" {
 		t.Errorf("assigned_to = %q, want %q", updated.AssignedTo, "senior_analyst")
+	}
+}
+
+// TestCaseStatusChangeUpdatesGauge is Task 9 (overview.md §4.4 OPS-003):
+// merlon_cases_open must track a case through its open sub-statuses and
+// stop counting it once closed, without ever counting "closed" itself
+// (closed cases are not "open" cases by definition).
+func TestCaseStatusChangeUpdatesGauge(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	openBefore := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("open"))
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Gauge test case"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	openAfterCreate := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("open"))
+	if openAfterCreate != openBefore+1 {
+		t.Errorf("merlon_cases_open{status=open} after create = %v, want %v", openAfterCreate, openBefore+1)
+	}
+
+	investigatingBefore := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("investigating"))
+
+	body = `{"status":"investigating"}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	openAfterInvestigating := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("open"))
+	if openAfterInvestigating != openAfterCreate-1 {
+		t.Errorf("merlon_cases_open{status=open} after moving to investigating = %v, want %v", openAfterInvestigating, openAfterCreate-1)
+	}
+	investigatingAfter := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("investigating"))
+	if investigatingAfter != investigatingBefore+1 {
+		t.Errorf("merlon_cases_open{status=investigating} = %v, want %v", investigatingAfter, investigatingBefore+1)
+	}
+
+	body = `{"status":"closed"}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	investigatingAfterClose := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("investigating"))
+	if investigatingAfterClose != investigatingAfter-1 {
+		t.Errorf("merlon_cases_open{status=investigating} after closing = %v, want %v", investigatingAfterClose, investigatingAfter-1)
+	}
+	closedGauge := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("closed"))
+	if closedGauge != 0 {
+		t.Errorf("merlon_cases_open{status=closed} = %v, want 0 (closed is never counted as open)", closedGauge)
 	}
 }
 
