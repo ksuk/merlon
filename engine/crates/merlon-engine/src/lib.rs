@@ -1,5 +1,6 @@
 pub mod backtest;
 pub mod grpc;
+pub mod metrics_server;
 pub mod monitoring;
 pub mod proto;
 pub mod scoring;

@@ -53,6 +53,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "[::]:50051".to_string())
         .parse()?;
 
+    // /metrics HTTP endpoint (Task 8, OPS-003, overview.md §4.4) on a
+    // separate port from the gRPC server, so scraping never contends with
+    // the gRPC transport.
+    let metrics_addr: std::net::SocketAddr = std::env::var("MERLON_ENGINE_METRICS_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:9090".to_string())
+        .parse()?;
+    tokio::spawn(async move {
+        if let Err(err) = merlon_engine::metrics_server::serve(metrics_addr).await {
+            eprintln!("metrics server error: {err}");
+        }
+    });
+
     // Standard grpc.health.v1 health check (OPS-002, overview.md §4.4),
     // superseding the per-service deprecated custom Health rpc. The overall
     // ("" service name) check is SERVING as soon as health_reporter() is

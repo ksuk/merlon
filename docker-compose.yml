@@ -25,8 +25,11 @@ services:
       - ./content/_sample/cdd_weights:/app/cdd_weights:ro
       - ./content/_sample/tm_scenarios:/app/tm_scenarios:ro
       - ./content/_sample/screening_lists:/app/screening_lists:ro
+    ports:
+      - "9090:9090"
     environment:
       MERLON_ENGINE_ADDR: "[::]:50051"
+      MERLON_ENGINE_METRICS_ADDR: "0.0.0.0:9090"
       MERLON_CDD_WEIGHTS_PATH: /app/cdd_weights/crypto_exchange.yaml
       MERLON_TM_SCENARIOS_PATH: /app/tm_scenarios
       MERLON_SCREENING_LISTS_PATH: /app/screening_lists
