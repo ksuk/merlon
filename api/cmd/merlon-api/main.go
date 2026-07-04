@@ -46,6 +46,7 @@ func main() {
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.DB = pool
 		log.Printf("database connected: PostgreSQL")
 	} else {
 		deps.Customers = store.NewMemoryCustomerRepo()

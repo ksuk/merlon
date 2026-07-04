@@ -48,7 +48,7 @@ func (rl *rateLimiter) allow(key string) (bool, int) {
 
 func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.limiter == nil || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
+		if s.limiter == nil || r.URL.Path == "/healthz" || r.URL.Path == "/healthz/live" || r.URL.Path == "/healthz/ready" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}

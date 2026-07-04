@@ -1,6 +1,12 @@
 package server
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+	"time"
+)
+
+const healthzReadyDBPingTimeout = 2 * time.Second
 
 // handleHealth is the original combined health endpoint (engine reachability
 // as a best-effort signal). Kept unchanged for Contract Stability; new
@@ -31,38 +37,60 @@ func (s *Server) handleHealthLive(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
-// handleHealthReady is the readiness probe: unhealthy until initial setup
-// (overview.md §4.5) completes, and while the engine is unreachable.
-// Postgres/Redis connectivity checks are added in WS-3 (OPS-002); this
-// endpoint checks what WS-1 owns (setup gating, engine reachability).
+// handleHealthReady is the readiness probe (overview.md §4.4 "ヘルスチェッ
+// クの粒度"): unhealthy until initial setup (overview.md §4.5) completes,
+// and while PostgreSQL or the Rust engine's grpc.health.v1 check is
+// unreachable. Each dependency's outcome is reported under "checks" so
+// operators can tell which one is failing; a dependency not configured
+// (e.g. no DB pool in in-memory dev mode) is simply omitted rather than
+// reported as failing.
 func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
+	checks := map[string]string{}
+	healthy := true
+
 	if s.users != nil {
 		count, err := s.users.Count(r.Context())
-		if err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-				"status": "unhealthy",
-				"setup":  err.Error(),
-			})
-			return
+		switch {
+		case err != nil:
+			checks["setup"] = "error: " + err.Error()
+			healthy = false
+		case count == 0:
+			checks["setup"] = "error: initial setup not completed"
+			healthy = false
+		default:
+			checks["setup"] = "ok"
 		}
-		if count == 0 {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-				"status": "unhealthy",
-				"setup":  "initial setup not completed",
-			})
-			return
+	}
+
+	if s.db != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), healthzReadyDBPingTimeout)
+		defer cancel()
+		if err := s.db.Ping(ctx); err != nil {
+			checks["postgres"] = "error: " + err.Error()
+			healthy = false
+		} else {
+			checks["postgres"] = "ok"
 		}
 	}
 
 	if s.engineHealth != nil {
 		if err := s.engineHealth.CheckHealth(r.Context()); err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
-				"status": "unhealthy",
-				"engine": err.Error(),
-			})
-			return
+			checks["engine"] = "error: " + err.Error()
+			healthy = false
+		} else {
+			checks["engine"] = "ok"
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	status := http.StatusOK
+	statusText := "healthy"
+	if !healthy {
+		status = http.StatusServiceUnavailable
+		statusText = "unhealthy"
+	}
+
+	writeJSON(w, status, map[string]any{
+		"status": statusText,
+		"checks": checks,
+	})
 }

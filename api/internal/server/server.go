@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -10,6 +11,14 @@ import (
 )
 
 const maxRequestBodyBytes = 1 << 20
+
+// DBPinger reports whether the PostgreSQL connection pool is reachable. It
+// is satisfied directly by *pgxpool.Pool, kept as a narrow interface here so
+// /healthz/ready (Task 3, overview.md §4.4) can be tested without a real
+// database.
+type DBPinger interface {
+	Ping(ctx context.Context) error
+}
 
 type Server struct {
 	mux            *http.ServeMux
@@ -33,6 +42,7 @@ type Server struct {
 	denylist       auth.Denylist
 	users          domain.UserRepository
 	refreshTokens  domain.RefreshTokenRepository
+	db             DBPinger
 }
 
 type Deps struct {
@@ -55,6 +65,7 @@ type Deps struct {
 	Denylist       auth.Denylist
 	Users          domain.UserRepository
 	RefreshTokens  domain.RefreshTokenRepository
+	DB             DBPinger
 }
 
 func New(addr string, deps Deps) *Server {
@@ -79,6 +90,7 @@ func New(addr string, deps Deps) *Server {
 		denylist:       deps.Denylist,
 		users:          deps.Users,
 		refreshTokens:  deps.RefreshTokens,
+		db:             deps.DB,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
