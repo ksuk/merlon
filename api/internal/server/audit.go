@@ -127,6 +127,12 @@ func resolveAction(method, path string) string {
 		if path == "/api/v1/rules/import" {
 			return "import_rules"
 		}
+		if strings.Contains(path, "/whitelist/") && strings.HasSuffix(path, "/approve") {
+			return "approve_whitelist_entry"
+		}
+		if strings.Contains(path, "/whitelist/") && strings.HasSuffix(path, "/revoke") {
+			return "revoke_whitelist_entry"
+		}
 		return "create"
 	case http.MethodPut:
 		return "update"

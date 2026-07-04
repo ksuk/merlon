@@ -43,6 +43,7 @@ type Server struct {
 	users          domain.UserRepository
 	refreshTokens  domain.RefreshTokenRepository
 	rules          domain.RuleRepository
+	whitelist      domain.WhitelistRepository
 	db             DBPinger
 }
 
@@ -67,6 +68,7 @@ type Deps struct {
 	Users          domain.UserRepository
 	RefreshTokens  domain.RefreshTokenRepository
 	Rules          domain.RuleRepository
+	Whitelist      domain.WhitelistRepository
 	DB             DBPinger
 }
 
@@ -93,6 +95,7 @@ func New(addr string, deps Deps) *Server {
 		users:          deps.Users,
 		refreshTokens:  deps.RefreshTokens,
 		rules:          deps.Rules,
+		whitelist:      deps.Whitelist,
 		db:             deps.DB,
 	}
 	if deps.RateLimit > 0 {
@@ -189,6 +192,15 @@ func (s *Server) routes() {
 	s.mux.Handle("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
 	s.mux.Handle("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
 	s.mux.Handle("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
+
+	// Whitelist (whitelist.md §1, §3.1): reads are open to all roles; request
+	// and revoke require auth.PermWhitelistRequest, approve requires the
+	// stricter auth.PermWhitelistApprove (segregation of duties, WL-003).
+	s.mux.HandleFunc("GET /api/v1/whitelist", s.handleListWhitelistEntries)
+	s.mux.HandleFunc("GET /api/v1/whitelist/{id}", s.handleGetWhitelistEntry)
+	s.mux.Handle("POST /api/v1/whitelist", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleCreateWhitelistEntry)))
+	s.mux.Handle("POST /api/v1/whitelist/{id}/approve", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleApproveWhitelistEntry)))
+	s.mux.Handle("POST /api/v1/whitelist/{id}/revoke", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleRevokeWhitelistEntry)))
 
 	// System info
 	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)
