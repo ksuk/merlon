@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -109,6 +110,10 @@ func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, c)
 }
 
+func caseCursor(c domain.Case) Cursor {
+	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID}
+}
+
 func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
 		writeError(w, http.StatusServiceUnavailable, "case management not configured")
@@ -116,25 +121,64 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	}
 
 	customerID := r.URL.Query().Get("customer_id")
-
-	var cases []domain.Case
-	var err error
-
 	if customerID != "" {
-		cases, err = s.cases.ListByCustomer(r.Context(), customerID)
-	} else {
-		cases, err = s.cases.ListOpen(r.Context(), 50, 0)
+		cases, err := s.cases.ListByCustomer(r.Context(), customerID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writePaginatedJSON(w, http.StatusOK, cases, PaginationMeta{HasMore: false})
+		return
 	}
 
+	if r.URL.Query().Get("cursor") != "" {
+		s.handleListCasesCursor(w, r)
+		return
+	}
+	s.handleListCasesOffset(w, r)
+}
+
+// handleListCasesCursor serves api.md §1.1 cursor-based pagination.
+func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request) {
+	pageReq, err := ParsePageRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	cases, err := s.cases.ListOpenByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if cases == nil {
-		cases = []domain.Case{}
+
+	page, meta := BuildPaginationMeta(cases, pageReq.Limit, caseCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
+}
+
+// handleListCasesOffset preserves the pre-existing offset/limit contract
+// (api.md §1.2 dual-support / deprecation period) while still returning the
+// additive {"data", "pagination"} envelope.
+func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request) {
+	offsetParam := r.URL.Query().Get("offset")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(offsetParam)
+	if limit <= 0 || limit > 100 {
+		limit = 50
 	}
 
-	writeJSON(w, http.StatusOK, cases)
+	cases, err := s.cases.ListOpen(r.Context(), limit+1, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if offsetParam != "" {
+		setOffsetDeprecationHeaders(w)
+	}
+
+	page, meta := BuildPaginationMeta(cases, limit, caseCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
 func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {

@@ -31,6 +31,9 @@ impl MonitoringServiceImpl {
     }
 }
 
+// tonic::Status is the error type every gRPC handler in this codebase uses;
+// boxing it here alone would just move the cost to callers that unwrap it.
+#[allow(clippy::result_large_err)]
 fn proto_direction_to_internal(d: i32) -> Result<TransactionDirection, Status> {
     match ProtoDirection::try_from(d) {
         Ok(ProtoDirection::Inbound) => Ok(TransactionDirection::Inbound),
@@ -79,6 +82,7 @@ impl MonitoringService for MonitoringServiceImpl {
 
         let risk_tier = risk_tier_str(req.customer_risk_tier);
 
+        #[allow(clippy::result_large_err)]
         let transactions: Vec<TransactionInput> = req
             .transactions
             .iter()

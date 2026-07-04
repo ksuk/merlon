@@ -86,6 +86,7 @@ func main() {
 		deps.Screening = client
 		deps.Backtest = client
 		deps.Config = client
+		deps.EngineHealth = client
 		log.Printf("engine connected: %s", cfg.EngineAddr)
 	} else {
 		log.Printf("warning: MERLON_ENGINE_ADDR not set, engine endpoints disabled")

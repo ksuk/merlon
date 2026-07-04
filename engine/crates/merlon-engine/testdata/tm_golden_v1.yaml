@@ -1,0 +1,13 @@
+schema_version: "1.0"
+scenario_id: golden_test_scenario
+name: Golden Test Scenario
+description: Fixture for the v1/v2 dual-loader golden equivalence test
+parameters:
+  window_hours: 24
+  threshold: 1000000
+risk_tier_adjustments:
+  HIGH:
+    threshold: 500000
+  MEDIUM: {}
+  LOW:
+    threshold: 2000000

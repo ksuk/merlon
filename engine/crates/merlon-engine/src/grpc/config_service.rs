@@ -10,6 +10,12 @@ use crate::screening::config::ScreeningListConfig;
 
 pub struct ConfigServiceImpl;
 
+impl Default for ConfigServiceImpl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConfigServiceImpl {
     pub fn new() -> Self {
         Self

@@ -92,10 +92,10 @@ impl ScreeningEngine {
 
     fn collect_query_names(&self, input: &ScreenInput) -> Vec<String> {
         let mut names = vec![input.name.clone()];
-        if let Some(kana) = &input.name_kana {
-            if !kana.is_empty() {
-                names.push(kana.clone());
-            }
+        if let Some(kana) = &input.name_kana
+            && !kana.is_empty()
+        {
+            names.push(kana.clone());
         }
         names
     }

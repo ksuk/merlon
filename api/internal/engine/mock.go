@@ -99,6 +99,14 @@ func (m *MockBacktestEngine) RunBacktest(
 	}, nil
 }
 
+type MockHealthChecker struct {
+	Err error
+}
+
+func (m *MockHealthChecker) CheckHealth(_ context.Context) error {
+	return m.Err
+}
+
 type MockConfigEngine struct {
 	Result *ConfigValidationResult
 	Err    error

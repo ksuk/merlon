@@ -8,7 +8,13 @@ import "merlon/v1/types.proto";
 
 service MonitoringService {
   rpc EvaluateTransactions (EvaluateTransactionsRequest) returns (EvaluateTransactionsResponse);
-  rpc Health (HealthRequest) returns (HealthResponse);
+  // @deprecated Use the standard grpc.health.v1.Health service instead
+  // (OPS-002, overview.md §4.4). Kept for backward compatibility until
+  // 2027-07-04 (12 months), per Contract Stability.
+  // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
+  rpc Health (HealthRequest) returns (HealthResponse) {
+    option deprecated = true;
+  }
 }
 
 message TransactionData {

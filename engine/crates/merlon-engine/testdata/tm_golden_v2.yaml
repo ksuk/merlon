@@ -1,0 +1,34 @@
+# Same semantics as tm_golden_v1.yaml (identical thresholds), restructured
+# per rule-schema.md §1 / tm_scenario_v2.json. v1 had no customer_type
+# dimension, so the threshold is repeated for every customer_type.
+schema_version: "2.0"
+scenario_id: golden_test_scenario
+name: Golden Test Scenario
+description: Fixture for the v1/v2 dual-loader golden equivalence test
+type: aggregation
+conditions:
+  transaction_type:
+    - deposit
+  aggregation:
+    field: amount
+    function: sum
+    period: 24h
+    group_by: customer_id
+  threshold:
+    by_customer_type:
+      individual:
+        by_risk_tier:
+          LOW: 2000000
+          MEDIUM: 1000000
+          HIGH: 500000
+      corporate_domestic:
+        by_risk_tier:
+          LOW: 2000000
+          MEDIUM: 1000000
+          HIGH: 500000
+      corporate_foreign:
+        by_risk_tier:
+          LOW: 2000000
+          MEDIUM: 1000000
+          HIGH: 500000
+severity: HIGH

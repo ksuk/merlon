@@ -31,23 +31,59 @@ type UpdateCustomerRequest struct {
 	Attributes   map[string]string `json:"attributes,omitempty"`
 }
 
+func customerCursor(c domain.Customer) Cursor {
+	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID}
+}
+
 func (s *Server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if r.URL.Query().Get("cursor") != "" {
+		s.handleListCustomersCursor(w, r)
+		return
+	}
+	s.handleListCustomersOffset(w, r)
+}
+
+// handleListCustomersCursor serves api.md §1.1 cursor-based pagination.
+func (s *Server) handleListCustomersCursor(w http.ResponseWriter, r *http.Request) {
+	pageReq, err := ParsePageRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
-	customers, err := s.customers.List(r.Context(), limit, offset)
+	customers, err := s.customers.ListByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if customers == nil {
-		customers = []domain.Customer{}
+
+	page, meta := BuildPaginationMeta(customers, pageReq.Limit, customerCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
+}
+
+// handleListCustomersOffset preserves the pre-existing offset/limit contract
+// (api.md §1.2 dual-support / deprecation period) while still returning the
+// additive {"data", "pagination"} envelope.
+func (s *Server) handleListCustomersOffset(w http.ResponseWriter, r *http.Request) {
+	offsetParam := r.URL.Query().Get("offset")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(offsetParam)
+	if limit <= 0 || limit > 100 {
+		limit = 20
 	}
 
-	writeJSON(w, http.StatusOK, customers)
+	customers, err := s.customers.List(r.Context(), limit+1, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if offsetParam != "" {
+		setOffsetDeprecationHeaders(w)
+	}
+
+	page, meta := BuildPaginationMeta(customers, limit, customerCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
 func (s *Server) handleGetCustomer(w http.ResponseWriter, r *http.Request) {

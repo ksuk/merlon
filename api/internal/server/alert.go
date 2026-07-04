@@ -14,10 +14,53 @@ type UpdateAlertStatusRequest struct {
 	ResolvedBy string             `json:"resolved_by"`
 }
 
+func alertCursor(a domain.Alert) Cursor {
+	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID}
+}
+
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	customerID := r.URL.Query().Get("customer_id")
+
+	if r.URL.Query().Get("cursor") != "" {
+		s.handleListAlertsCursor(w, r, customerID)
+		return
+	}
+	s.handleListAlertsOffset(w, r, customerID)
+}
+
+// handleListAlertsCursor serves api.md §1.1 cursor-based pagination.
+func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, customerID string) {
+	pageReq, err := ParsePageRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	fetchLimit := pageReq.Limit + 1
+	after := toDomainCursor(pageReq.Cursor)
+
+	var alerts []domain.Alert
+	if customerID != "" {
+		alerts, err = s.alerts.ListByCustomerCursor(r.Context(), customerID, fetchLimit, after)
+	} else {
+		alerts, err = s.alerts.ListOpenByCursor(r.Context(), fetchLimit, after)
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	page, meta := BuildPaginationMeta(alerts, pageReq.Limit, alertCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
+}
+
+// handleListAlertsOffset preserves the pre-existing offset/limit contract
+// (api.md §1.2 dual-support / deprecation period) while still returning the
+// additive {"data", "pagination"} envelope.
+func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, customerID string) {
+	offsetParam := r.URL.Query().Get("offset")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	offset, _ := strconv.Atoi(offsetParam)
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
@@ -28,20 +71,22 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if customerID != "" {
-		alerts, err = s.alerts.ListByCustomer(r.Context(), customerID, limit, offset)
+		alerts, err = s.alerts.ListByCustomer(r.Context(), customerID, limit+1, offset)
 	} else {
-		alerts, err = s.alerts.ListOpen(r.Context(), limit, offset)
+		alerts, err = s.alerts.ListOpen(r.Context(), limit+1, offset)
 	}
 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if alerts == nil {
-		alerts = []domain.Alert{}
+
+	if offsetParam != "" {
+		setOffsetDeprecationHeaders(w)
 	}
 
-	writeJSON(w, http.StatusOK, alerts)
+	page, meta := BuildPaginationMeta(alerts, limit, alertCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
 func (s *Server) handleGetAlert(w http.ResponseWriter, r *http.Request) {

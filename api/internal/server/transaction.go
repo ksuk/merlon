@@ -22,6 +22,10 @@ type CreateTransactionRequest struct {
 	ExecutedAt          time.Time                `json:"executed_at"`
 }
 
+func transactionCursor(t domain.Transaction) Cursor {
+	return Cursor{CreatedAt: t.CreatedAt, ID: t.ID}
+}
+
 func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) {
 	customerID := r.URL.Query().Get("customer_id")
 	if customerID == "" {
@@ -29,22 +33,54 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if r.URL.Query().Get("cursor") != "" {
+		s.handleListTransactionsCursor(w, r, customerID)
+		return
+	}
+	s.handleListTransactionsOffset(w, r, customerID)
+}
+
+// handleListTransactionsCursor serves api.md §1.1 cursor-based pagination.
+func (s *Server) handleListTransactionsCursor(w http.ResponseWriter, r *http.Request, customerID string) {
+	pageReq, err := ParsePageRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
-	txns, err := s.transactions.ListByCustomer(r.Context(), customerID, limit, offset)
+	txns, err := s.transactions.ListByCustomerCursor(r.Context(), customerID, pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if txns == nil {
-		txns = []domain.Transaction{}
+
+	page, meta := BuildPaginationMeta(txns, pageReq.Limit, transactionCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
+}
+
+// handleListTransactionsOffset preserves the pre-existing offset/limit
+// contract (api.md §1.2 dual-support / deprecation period) while still
+// returning the additive {"data", "pagination"} envelope.
+func (s *Server) handleListTransactionsOffset(w http.ResponseWriter, r *http.Request, customerID string) {
+	offsetParam := r.URL.Query().Get("offset")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	offset, _ := strconv.Atoi(offsetParam)
+	if limit <= 0 || limit > 100 {
+		limit = 20
 	}
 
-	writeJSON(w, http.StatusOK, txns)
+	txns, err := s.transactions.ListByCustomer(r.Context(), customerID, limit+1, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if offsetParam != "" {
+		setOffsetDeprecationHeaders(w)
+	}
+
+	page, meta := BuildPaginationMeta(txns, limit, transactionCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
 func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {

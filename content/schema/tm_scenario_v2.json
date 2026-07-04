@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlon-aml.example.com/schemas/tm_scenario_v2.json",
+  "title": "TM Scenario Definition v2",
+  "type": "object",
+  "required": ["schema_version", "scenario_id", "name", "type", "conditions", "severity"],
+  "properties": {
+    "schema_version": { "type": "string" },
+    "scenario_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "type": { "type": "string", "enum": ["aggregation"] },
+    "conditions": {
+      "type": "object",
+      "properties": {
+        "transaction_type": { "type": "array", "items": { "type": "string" } },
+        "aggregation": {
+          "type": "object",
+          "properties": {
+            "field": { "type": "string" },
+            "function": { "type": "string" },
+            "period": { "type": "string" },
+            "group_by": { "type": "string" }
+          }
+        },
+        "threshold": {
+          "type": "object",
+          "properties": {
+            "by_customer_type": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "by_risk_tier": {
+                    "type": "object",
+                    "properties": {
+                      "LOW": { "type": "number" },
+                      "MEDIUM": { "type": "number" },
+                      "HIGH": { "type": "number" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "absolute_threshold": { "type": "number" },
+        "additional": { "type": "object" }
+      }
+    },
+    "evaluation_mode": {
+      "type": "string",
+      "enum": ["realtime", "batch", "both"],
+      "default": "batch"
+    },
+    "severity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,5 +68,47 @@ func TestHandleHealth(t *testing.T) {
 
 	if body := rec.Body.String(); !strings.Contains(body, "ok") {
 		t.Errorf("body = %q, want it to contain %q", body, "ok")
+	}
+}
+
+func TestHandleHealth_EngineUnreachable(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      &engine.MockScoringEngine{},
+		Monitoring:   &engine.MockMonitoringEngine{},
+		Screening:    &engine.MockScreeningEngine{},
+		Backtest:     &engine.MockBacktestEngine{},
+		EngineHealth: &engine.MockHealthChecker{Err: errors.New("engine unreachable")},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status code = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHandleHealth_EngineHealthy(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      &engine.MockScoringEngine{},
+		Monitoring:   &engine.MockMonitoringEngine{},
+		Screening:    &engine.MockScreeningEngine{},
+		Backtest:     &engine.MockBacktestEngine{},
+		EngineHealth: &engine.MockHealthChecker{},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status code = %d, want %d", rec.Code, http.StatusOK)
 	}
 }

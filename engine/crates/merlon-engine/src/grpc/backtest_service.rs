@@ -21,6 +21,9 @@ impl BacktestServiceImpl {
     }
 }
 
+// tonic::Status is the error type every gRPC handler in this codebase uses;
+// boxing it here alone would just move the cost to callers that unwrap it.
+#[allow(clippy::result_large_err)]
 fn direction_from_proto(d: i32) -> Result<TransactionDirection, Status> {
     match d {
         1 => Ok(TransactionDirection::Inbound),
@@ -69,6 +72,7 @@ impl BacktestService for BacktestServiceImpl {
             })
             .collect();
 
+        #[allow(clippy::result_large_err)]
         let transactions: Vec<TransactionInput> = req
             .transactions
             .iter()

@@ -25,6 +25,7 @@ type Server struct {
 	apikeys        domain.APIKeyRepository
 	webhooks       domain.WebhookRepository
 	configEngine   engine.ConfigEngine
+	engineHealth   engine.HealthChecker
 	limiter        *rateLimiter
 	bootstrapToken string
 }
@@ -42,6 +43,7 @@ type Deps struct {
 	APIKeys        domain.APIKeyRepository
 	Webhooks       domain.WebhookRepository
 	Config         engine.ConfigEngine
+	EngineHealth   engine.HealthChecker
 	RateLimit      int
 	BootstrapToken string
 }
@@ -62,6 +64,7 @@ func New(addr string, deps Deps) *Server {
 		apikeys:        deps.APIKeys,
 		webhooks:       deps.Webhooks,
 		configEngine:   deps.Config,
+		engineHealth:   deps.EngineHealth,
 		bootstrapToken: deps.BootstrapToken,
 	}
 	if deps.RateLimit > 0 {

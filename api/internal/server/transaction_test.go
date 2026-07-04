@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -95,11 +96,52 @@ func TestListTransactions(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var txns []domain.Transaction
-	json.NewDecoder(rec.Body).Decode(&txns)
+	txns, _ := decodeListResponse[domain.Transaction](t, rec.Body)
 
 	if len(txns) != 2 {
 		t.Errorf("len = %d, want 2", len(txns))
+	}
+}
+
+func TestHandleListTransactions_CursorPagination(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	for _, ext := range []string{"TX030", "TX031", "TX032"} {
+		body := `{"customer_id":"` + cust.ID + `","external_id":"` + ext + `","amount":1000,"currency":"JPY","direction":"inbound"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/transactions?customer_id="+cust.ID+"&limit=2", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	page1, meta1 := decodeListResponse[domain.Transaction](t, rec.Body)
+	if len(page1) != 2 {
+		t.Fatalf("page1 len = %d, want 2", len(page1))
+	}
+	if !meta1.HasMore || meta1.NextCursor == "" {
+		t.Fatal("expected has_more with a next_cursor on first page")
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/api/v1/transactions?customer_id="+cust.ID+"&limit=2&cursor="+url.QueryEscape(meta1.NextCursor), nil)
+	rec2 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec2.Code, http.StatusOK, rec2.Body.String())
+	}
+
+	page2, meta2 := decodeListResponse[domain.Transaction](t, rec2.Body)
+	if len(page2) != 1 {
+		t.Fatalf("page2 len = %d, want 1", len(page2))
+	}
+	if meta2.HasMore {
+		t.Error("expected has_more = false on second page")
 	}
 }
 

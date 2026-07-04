@@ -2,11 +2,64 @@ package store
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
+
+// sortByCreatedAtDesc orders items by (created_at, id) descending, matching
+// the default sort api.md §1.1 specifies and the ORDER BY clause the
+// Postgres repositories use. Go map iteration order is randomized per run,
+// so anything read out of a map (as every Memory*Repo does) must be sorted
+// before it can be paginated at all, whether by offset or cursor.
+func sortByCreatedAtDesc[T any](items []T, createdAt func(T) time.Time, id func(T) string) {
+	sort.Slice(items, func(i, j int) bool {
+		ci, cj := createdAt(items[i]), createdAt(items[j])
+		if !ci.Equal(cj) {
+			return ci.After(cj)
+		}
+		return id(items[i]) > id(items[j])
+	})
+}
+
+// pageByOffset slices a (created_at, id)-descending-sorted list the same way
+// the Postgres OFFSET/LIMIT path does.
+func pageByOffset[T any](items []T, limit, offset int) []T {
+	if offset >= len(items) {
+		return nil
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end]
+}
+
+// sortAndPageByCursor orders items by (created_at, id) descending, drops
+// everything at or after the cursor position, and trims the remainder to
+// limit. It mirrors the keyset SQL `WHERE (created_at, id) < (?, ?) ORDER BY
+// created_at DESC, id DESC LIMIT ?` used by the Postgres repositories, so
+// in-memory and Postgres traversal produce the same result set.
+func sortAndPageByCursor[T any](items []T, limit int, after *domain.Cursor, createdAt func(T) time.Time, id func(T) string) []T {
+	sortByCreatedAtDesc(items, createdAt, id)
+
+	if after != nil {
+		filtered := make([]T, 0, len(items))
+		for _, it := range items {
+			if createdAt(it).Before(after.CreatedAt) || (createdAt(it).Equal(after.CreatedAt) && id(it) < after.ID) {
+				filtered = append(filtered, it)
+			}
+		}
+		items = filtered
+	}
+
+	if limit >= 0 && limit < len(items) {
+		items = items[:limit]
+	}
+	return items
+}
 
 type MemoryCustomerRepo struct {
 	mu       sync.RWMutex
@@ -53,14 +106,24 @@ func (r *MemoryCustomerRepo) List(_ context.Context, limit, offset int) ([]domai
 	for _, c := range r.data {
 		all = append(all, *c)
 	}
-	if offset >= len(all) {
-		return nil, nil
+	sortByCreatedAtDesc(all,
+		func(c domain.Customer) time.Time { return c.CreatedAt },
+		func(c domain.Customer) string { return c.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryCustomerRepo) ListByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Customer
+	for _, c := range r.data {
+		all = append(all, *c)
 	}
-	end := offset + limit
-	if end > len(all) {
-		end = len(all)
-	}
-	return all[offset:end], nil
+	return sortAndPageByCursor(all, limit, after,
+		func(c domain.Customer) time.Time { return c.CreatedAt },
+		func(c domain.Customer) string { return c.ID },
+	), nil
 }
 
 func (r *MemoryCustomerRepo) Create(_ context.Context, c *domain.Customer) error {
@@ -126,19 +189,28 @@ func (r *MemoryTransactionRepo) Get(_ context.Context, id string) (*domain.Trans
 func (r *MemoryTransactionRepo) ListByCustomer(_ context.Context, customerID string, limit, offset int) ([]domain.Transaction, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	ids := r.byCustomer[customerID]
-	if offset >= len(ids) {
-		return nil, nil
+	var all []domain.Transaction
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
 	}
-	end := offset + limit
-	if end > len(ids) {
-		end = len(ids)
+	sortByCreatedAtDesc(all,
+		func(t domain.Transaction) time.Time { return t.CreatedAt },
+		func(t domain.Transaction) string { return t.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryTransactionRepo) ListByCustomerCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Transaction
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
 	}
-	var result []domain.Transaction
-	for _, id := range ids[offset:end] {
-		result = append(result, *r.data[id])
-	}
-	return result, nil
+	return sortAndPageByCursor(all, limit, after,
+		func(t domain.Transaction) time.Time { return t.CreatedAt },
+		func(t domain.Transaction) string { return t.ID },
+	), nil
 }
 
 func (r *MemoryTransactionRepo) Create(_ context.Context, t *domain.Transaction) error {
@@ -176,19 +248,15 @@ func (r *MemoryAlertRepo) Get(_ context.Context, id string) (*domain.Alert, erro
 func (r *MemoryAlertRepo) ListByCustomer(_ context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	ids := r.byCustomer[customerID]
-	if offset >= len(ids) {
-		return nil, nil
+	var all []domain.Alert
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
 	}
-	end := offset + limit
-	if end > len(ids) {
-		end = len(ids)
-	}
-	var result []domain.Alert
-	for _, id := range ids[offset:end] {
-		result = append(result, *r.data[id])
-	}
-	return result, nil
+	sortByCreatedAtDesc(all,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
 }
 
 func (r *MemoryAlertRepo) ListOpen(_ context.Context, limit, offset int) ([]domain.Alert, error) {
@@ -200,14 +268,39 @@ func (r *MemoryAlertRepo) ListOpen(_ context.Context, limit, offset int) ([]doma
 			open = append(open, *a)
 		}
 	}
-	if offset >= len(open) {
-		return nil, nil
+	sortByCreatedAtDesc(open,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return pageByOffset(open, limit, offset), nil
+}
+
+func (r *MemoryAlertRepo) ListByCustomerCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Alert
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
 	}
-	end := offset + limit
-	if end > len(open) {
-		end = len(open)
+	return sortAndPageByCursor(all, limit, after,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	), nil
+}
+
+func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Alert
+	for _, a := range r.data {
+		if a.Status == domain.AlertStatusOpen {
+			open = append(open, *a)
+		}
 	}
-	return open[offset:end], nil
+	return sortAndPageByCursor(open, limit, after,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	), nil
 }
 
 func (r *MemoryAlertRepo) Create(_ context.Context, a *domain.Alert) error {
@@ -321,14 +414,26 @@ func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domai
 			open = append(open, *c)
 		}
 	}
-	if offset >= len(open) {
-		return nil, nil
+	sortByCreatedAtDesc(open,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
+	return pageByOffset(open, limit, offset), nil
+}
+
+func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Case
+	for _, c := range r.data {
+		if c.Status != domain.CaseStatusClosed {
+			open = append(open, *c)
+		}
 	}
-	end := offset + limit
-	if end > len(open) {
-		end = len(open)
-	}
-	return open[offset:end], nil
+	return sortAndPageByCursor(open, limit, after,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
 }
 
 func (r *MemoryCaseRepo) Create(_ context.Context, c *domain.Case) error {

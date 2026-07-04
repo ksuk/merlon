@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tm_paths = std::env::var("MERLON_TM_SCENARIOS_PATH")
         .unwrap_or_else(|_| "tm_scenarios".to_string());
 
-    let tm_configs = load_yaml_configs::<ScenarioConfig>(&tm_paths)?;
+    let tm_configs = load_tm_scenario_configs(&tm_paths)?;
     let tm_engine = Arc::new(TmEngine::new(tm_configs)?);
     let monitoring_service = MonitoringServiceImpl::from_arc(Arc::clone(&tm_engine));
     let backtest_service = BacktestServiceImpl::new(Arc::clone(&tm_engine));
@@ -52,6 +52,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "[::]:50051".to_string())
         .parse()?;
 
+    // Standard grpc.health.v1 health check (OPS-002, overview.md §4.4),
+    // superseding the per-service deprecated custom Health rpc. The overall
+    // ("" service name) check is SERVING as soon as health_reporter() is
+    // created; this process has nothing left to initialize asynchronously
+    // after the services above are constructed. Each individual service is
+    // also registered so `grpc_health_probe -service=<name>` works.
+    let (health_reporter, health_service) = tonic_health::server::health_reporter();
+    health_reporter
+        .set_serving::<ScoringServiceServer<ScoringServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<MonitoringServiceServer<MonitoringServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<ScreeningServiceServer<ScreeningServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<BacktestServiceServer<BacktestServiceImpl>>()
+        .await;
+    health_reporter
+        .set_serving::<ConfigServiceServer<ConfigServiceImpl>>()
+        .await;
+
     eprintln!(
         "merlon-engine v{} starting gRPC server on {}",
         merlon_engine::VERSION,
@@ -60,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .max_frame_size(Some(4 * 1024 * 1024))
+        .add_service(health_service)
         .add_service(ScoringServiceServer::new(scoring_service))
         .add_service(MonitoringServiceServer::new(monitoring_service))
         .add_service(ScreeningServiceServer::new(screening_service))
@@ -82,6 +106,22 @@ fn load_yaml_configs<T: serde::de::DeserializeOwned>(
             let content = std::fs::read_to_string(&path)?;
             let config: T = serde_yaml::from_str(&content)?;
             configs.push(config);
+        }
+    }
+    Ok(configs)
+}
+
+/// Loads TM scenario content with the v1/v2 dual loader (rule-schema.md
+/// §3.1), unlike `load_yaml_configs` which the CDD weight/screening list
+/// configs still use (those have no v2 format yet).
+fn load_tm_scenario_configs(dir: &str) -> Result<Vec<ScenarioConfig>, Box<dyn std::error::Error>> {
+    let mut configs = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+            let content = std::fs::read_to_string(&path)?;
+            configs.push(ScenarioConfig::from_yaml_dual(&content)?);
         }
     }
     Ok(configs)

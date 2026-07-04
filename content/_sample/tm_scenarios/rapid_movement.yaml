@@ -1,18 +1,47 @@
-schema_version: "1.0"
+# tm_scenario_v2 (rule-schema.md §1). Semantically equivalent to the v1
+# fixture at content/_sample/tm_scenarios_v1_compat/rapid_movement.yaml for
+# the inbound-threshold axis (rule-schema.md §3.1 migration item 2); v1's
+# separate outbound_threshold/outbound_ratio_min parameters do not have a
+# per-risk-tier home in the v2 schema yet, so they are kept flat under
+# conditions.additional at their v1 MEDIUM-tier (baseline) values. Full
+# evaluation semantics for this scenario are WS-5 scope.
+schema_version: "2.0"
 scenario_id: tm_rapid_movement
 name: "急速資金移動検知"
 description: "短期間での大量の入出金を検知する"
-parameters:
-  window_hours: 48
-  inbound_threshold: 5000000
-  outbound_threshold: 5000000
-  outbound_ratio_min: 0.80
-  currency: JPY
-risk_tier_adjustments:
-  HIGH:
-    inbound_threshold: 2000000
-    outbound_threshold: 2000000
-  MEDIUM: {}
-  LOW:
-    inbound_threshold: 10000000
-    outbound_threshold: 10000000
+type: aggregation
+conditions:
+  transaction_type:
+    - deposit
+    - transfer_in
+    - transfer_out
+  aggregation:
+    field: amount
+    function: sum
+    period: 48h
+    group_by: customer_id
+  threshold:
+    by_customer_type:
+      individual:
+        by_risk_tier:
+          LOW: 10000000
+          MEDIUM: 5000000
+          HIGH: 2000000
+      corporate_domestic:
+        by_risk_tier:
+          LOW: 10000000
+          MEDIUM: 5000000
+          HIGH: 2000000
+      corporate_foreign:
+        by_risk_tier:
+          LOW: 10000000
+          MEDIUM: 5000000
+          HIGH: 2000000
+  additional:
+    outbound_threshold: 5000000
+    outbound_ratio_min: 0.80
+evaluation_mode: both
+severity: HIGH
+tags:
+  - rapid_movement
+  - sample
