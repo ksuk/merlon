@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 type ClientOption func(*clientOptions)
@@ -50,6 +51,7 @@ type Client struct {
 	screening  pb.ScreeningServiceClient
 	backtest   pb.BacktestServiceClient
 	config     pb.ConfigServiceClient
+	health     grpc_health_v1.HealthClient
 	conn       *grpc.ClientConn
 }
 
@@ -80,8 +82,23 @@ func NewClient(addr string, opts ...ClientOption) (*Client, error) {
 		screening:  pb.NewScreeningServiceClient(conn),
 		backtest:   pb.NewBacktestServiceClient(conn),
 		config:     pb.NewConfigServiceClient(conn),
+		health:     grpc_health_v1.NewHealthClient(conn),
 		conn:       conn,
 	}, nil
+}
+
+// CheckHealth reports whether the engine's overall grpc.health.v1 status is
+// SERVING (OPS-002). It is engine-reachability only; it does not judge this
+// API process's own readiness (WS-1's /healthz/ready).
+func (c *Client) CheckHealth(ctx context.Context) error {
+	resp, err := c.health.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: ""})
+	if err != nil {
+		return fmt.Errorf("engine health check: %w", err)
+	}
+	if resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+		return fmt.Errorf("engine not serving: status=%s", resp.Status)
+	}
+	return nil
 }
 
 func (c *Client) Close() error {

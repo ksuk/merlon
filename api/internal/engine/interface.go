@@ -51,3 +51,12 @@ type ConfigValidationResult struct {
 type ConfigEngine interface {
 	ValidateConfig(ctx context.Context, configType, yamlContent string) (*ConfigValidationResult, error)
 }
+
+// HealthChecker reports whether the Rust engine is reachable and serving,
+// via the standard grpc.health.v1 protocol (OPS-002). This is independent
+// of WS-1's /healthz/ready readiness judgement (which also covers whether
+// this API process itself has completed initial setup); HealthChecker only
+// answers "can we reach the engine".
+type HealthChecker interface {
+	CheckHealth(ctx context.Context) error
+}
