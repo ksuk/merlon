@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tm_paths = std::env::var("MERLON_TM_SCENARIOS_PATH")
         .unwrap_or_else(|_| "tm_scenarios".to_string());
 
-    let tm_configs = load_yaml_configs::<ScenarioConfig>(&tm_paths)?;
+    let tm_configs = load_tm_scenario_configs(&tm_paths)?;
     let tm_engine = Arc::new(TmEngine::new(tm_configs)?);
     let monitoring_service = MonitoringServiceImpl::from_arc(Arc::clone(&tm_engine));
     let backtest_service = BacktestServiceImpl::new(Arc::clone(&tm_engine));
@@ -82,6 +82,22 @@ fn load_yaml_configs<T: serde::de::DeserializeOwned>(
             let content = std::fs::read_to_string(&path)?;
             let config: T = serde_yaml::from_str(&content)?;
             configs.push(config);
+        }
+    }
+    Ok(configs)
+}
+
+/// Loads TM scenario content with the v1/v2 dual loader (rule-schema.md
+/// §3.1), unlike `load_yaml_configs` which the CDD weight/screening list
+/// configs still use (those have no v2 format yet).
+fn load_tm_scenario_configs(dir: &str) -> Result<Vec<ScenarioConfig>, Box<dyn std::error::Error>> {
+    let mut configs = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+            let content = std::fs::read_to_string(&path)?;
+            configs.push(ScenarioConfig::from_yaml_dual(&content)?);
         }
     }
     Ok(configs)
