@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use merlon_engine::grpc::backtest_service::BacktestServiceImpl;
 use merlon_engine::grpc::config_service::ConfigServiceImpl;
+use merlon_engine::grpc::metrics_interceptor::MetricsLayer;
 use merlon_engine::grpc::monitoring_service::MonitoringServiceImpl;
 use merlon_engine::grpc::scoring_service::ScoringServiceImpl;
 use merlon_engine::grpc::screening_service::ScreeningServiceImpl;
@@ -83,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Server::builder()
         .max_frame_size(Some(4 * 1024 * 1024))
+        .layer(MetricsLayer)
         .add_service(health_service)
         .add_service(ScoringServiceServer::new(scoring_service))
         .add_service(MonitoringServiceServer::new(monitoring_service))
