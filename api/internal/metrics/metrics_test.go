@@ -28,6 +28,7 @@ func TestMetricsAllRegistered(t *testing.T) {
 		{"merlon_db_pool_active_connections", DBPoolActiveConnections},
 		{"merlon_webhook_dlq_depth", WebhookDLQDepth},
 		{"merlon_batch_evaluation_duration_seconds", BatchEvaluationDuration},
+		{"merlon_cdd_event_chain_truncated_total", CDDEventChainTruncatedTotal},
 	}
 
 	for _, tc := range cases {

@@ -1,18 +1,41 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/merlon-aml/merlon/api/internal/store"
 )
+
+// fakeBus is an in-memory test double for events.Bus that records every
+// published event, so tests can assert on what handleScoreCustomer (Task 8)
+// publishes without a real transport.
+type fakeBus struct {
+	mu        sync.Mutex
+	published []events.Event
+}
+
+func (b *fakeBus) Publish(_ context.Context, e events.Event) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.published = append(b.published, e)
+	return nil
+}
+
+func (b *fakeBus) Subscribe(context.Context, string, func(events.Event)) error {
+	return nil
+}
 
 func TestCreateCustomer(t *testing.T) {
 	s := testServer()
@@ -316,6 +339,50 @@ func TestScoreCustomer(t *testing.T) {
 
 	if len(history) != 1 {
 		t.Errorf("score history len = %d, want 1", len(history))
+	}
+}
+
+// TestScoreCustomer_PublishesTierChangeEvent verifies Task 8 (CDD-009): a
+// scoring call that sets a customer's risk tier publishes a
+// "cdd.tier_changed" event on the configured events.Bus.
+func TestScoreCustomer_PublishesTierChangeEvent(t *testing.T) {
+	bus := &fakeBus{}
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh},
+		Monitoring:   &engine.MockMonitoringEngine{},
+		Screening:    &engine.MockScreeningEngine{},
+		Events:       bus,
+	})
+
+	body := `{"external_id":"TIER001","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	scoreBody := `{"rule_set_id":"test"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+	if len(bus.published) != 1 {
+		t.Fatalf("published events = %d, want 1", len(bus.published))
+	}
+	if bus.published[0].Topic != "cdd.tier_changed" {
+		t.Errorf("Topic = %q, want %q", bus.published[0].Topic, "cdd.tier_changed")
+	}
+	if bus.published[0].ChainID == "" {
+		t.Error("expected non-empty ChainID")
 	}
 }
 

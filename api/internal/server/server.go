@@ -8,6 +8,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/events"
 	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
@@ -55,7 +56,9 @@ type Server struct {
 	screeningFailureTracker screening.FailureTracker
 	screeningListIDs        []string
 
-	db DBPinger
+	db           DBPinger
+	pendingEvals domain.PendingEvaluationRepository
+	events       events.Bus
 }
 
 type Deps struct {
@@ -89,7 +92,9 @@ type Deps struct {
 	ScreeningFailureTracker screening.FailureTracker
 	ScreeningListIDs        []string
 
-	DB DBPinger
+	DB                 DBPinger
+	PendingEvaluations domain.PendingEvaluationRepository
+	Events             events.Bus
 }
 
 func New(addr string, deps Deps) *Server {
@@ -123,7 +128,9 @@ func New(addr string, deps Deps) *Server {
 		screeningFailureTracker: deps.ScreeningFailureTracker,
 		screeningListIDs:        deps.ScreeningListIDs,
 
-		db: deps.DB,
+		db:           deps.DB,
+		pendingEvals: deps.PendingEvaluations,
+		events:       deps.Events,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)

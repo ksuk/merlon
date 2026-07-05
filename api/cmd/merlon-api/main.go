@@ -16,6 +16,11 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/engineclient"
+	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/merlon-aml/merlon/api/internal/events/handlers"
+	_ "github.com/merlon-aml/merlon/api/internal/events/nats"
+	_ "github.com/merlon-aml/merlon/api/internal/events/pgnotify"
 	"github.com/merlon-aml/merlon/api/internal/logging"
 	"github.com/merlon-aml/merlon/api/internal/screening"
 	"github.com/merlon-aml/merlon/api/internal/seed"
@@ -67,6 +72,7 @@ func main() {
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
+		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
 		deps.DB = pool
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
@@ -78,6 +84,7 @@ func main() {
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
+		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
@@ -134,9 +141,13 @@ func main() {
 			os.Exit(1)
 		}
 		defer client.Close()
-		deps.Scoring = client
-		deps.Monitoring = client
-		deps.Screening = client
+		// Wrap in a circuit breaker (overview.md §4.4: 3s timeout, 2 retries,
+		// 30s open, half-open allows 1 request) so a stalled engine trips
+		// instead of leaving every caller blocked on a hung gRPC call.
+		cbClient := engineclient.Wrap(client)
+		deps.Scoring = cbClient
+		deps.Monitoring = cbClient
+		deps.Screening = cbClient
 		deps.Backtest = client
 		deps.Config = client
 		deps.EngineHealth = client
@@ -157,6 +168,29 @@ func main() {
 
 	jobsCtx, cancelJobs := context.WithCancel(context.Background())
 	defer cancelJobs()
+
+	// Event bus (Task 6/7, EVENT_BUS driver selection): pg_notify requires a
+	// real PostgreSQL connection, so it's only wired in the Postgres-backed
+	// deployment mode. The in-memory dev mode has no event bus (tier-change
+	// propagation, Task 8, is a no-op then, same as any other Postgres-only
+	// background job in this file).
+	if pool != nil {
+		bus, err := events.NewBus(events.Config{Driver: cfg.EventBus, Pool: pool})
+		if err != nil {
+			slog.Error("event bus", "error", err)
+			os.Exit(1)
+		}
+		deps.Events = bus
+		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts)
+		if err := bus.Subscribe(jobsCtx, "cdd.tier_changed", tierChangeHandler); err != nil {
+			slog.Error("event bus subscribe", "topic", "cdd.tier_changed", "error", err)
+			os.Exit(1)
+		}
+		slog.Info("event bus configured", "driver", cfg.EventBus)
+	} else {
+		slog.Warn("no PostgreSQL connection, event bus disabled (CDD tier-change propagation, Task 8, will not run)")
+	}
+
 	if deps.Whitelist != nil {
 		batch.StartExpiryTicker(jobsCtx, deps.Whitelist, whitelistExpiryCheckInterval, func(entries []domain.WhitelistEntry) {
 			for _, e := range entries {
@@ -223,11 +257,24 @@ func main() {
 		}
 	}()
 
+	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
+	defer cancelRecovery()
+	if deps.PendingEvaluations != nil && deps.Monitoring != nil {
+		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
+		go func() {
+			if err := recoveryJob.Run(recoveryCtx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("pending evaluation recovery job stopped", "error", err)
+			}
+		}()
+		slog.Info("pending evaluation recovery job started")
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
 	slog.Info("merlon-api shutting down")
+	cancelRecovery()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

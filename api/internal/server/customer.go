@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,21 +11,23 @@ import (
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/merlon-aml/merlon/api/internal/events/handlers"
 	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
 const (
-	maxAttributes    = 50
-	maxAttrKeyLen    = 256
-	maxAttrValueLen  = 10000
+	maxAttributes   = 50
+	maxAttrKeyLen   = 256
+	maxAttrValueLen = 10000
 )
 
 type CreateCustomerRequest struct {
-	ExternalID   string            `json:"external_id"`
+	ExternalID   string              `json:"external_id"`
 	CustomerType domain.CustomerType `json:"customer_type"`
-	CountryCode  string            `json:"country_code"`
-	ProductTypes []string          `json:"product_types"`
-	Attributes   map[string]string `json:"attributes"`
+	CountryCode  string              `json:"country_code"`
+	ProductTypes []string            `json:"product_types"`
+	Attributes   map[string]string   `json:"attributes"`
 }
 
 type UpdateCustomerRequest struct {
@@ -239,8 +242,9 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 
 	record.ID = generateID()
 
-	// Update customer risk score
 	oldTier := c.RiskTier
+
+	// Update customer risk score
 	c.RiskScore = &record.Score
 	c.RiskTier = &record.Tier
 	now := record.ScoredAt
@@ -256,9 +260,7 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO(WS-4): once api/internal/events.Bus exists, publish a tier
-	// promotion event here and let a subscriber trigger the rescreen
-	// asynchronously. Until then, call the immediate rescreen synchronously
+	// Immediate sanctions rescreen at the new tier's frequency
 	// (screening.md "CDD ティア昇格時（Medium → High 等、新ティアの頻度を即時適用）").
 	if isTierPromotion(oldTier, record.Tier) && s.screening != nil {
 		deps := screening.SchedulerDeps{
@@ -271,6 +273,12 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 			slog.Error("tier-promotion immediate rescreen failed", "customer_id", c.ID, "error", err)
 		}
 	}
+
+	// Publish a tier-change event (Task 8, CDD-009) so
+	// events/handlers.TierChangeHandler can trigger transaction-monitoring.md's
+	// 24h retroactive TM re-evaluation on upgrades. Independent of the
+	// screening rescreen above (different downstream consumer).
+	s.publishTierChange(r.Context(), c.ID, oldTier, record.Tier, record.ScoredAt)
 
 	writeJSON(w, http.StatusOK, record)
 }
@@ -296,6 +304,40 @@ func tierRank(t domain.RiskTier) int {
 	default:
 		return -1
 	}
+}
+
+// publishTierChange emits a "cdd.tier_changed" event (Task 8, CDD-009) when
+// scoring changed the customer's risk tier, so
+// events/handlers.TierChangeHandler can trigger transaction-monitoring.md's
+// retroactive re-evaluation on upgrades. It is a no-op if no event bus is
+// configured or the tier did not change.
+func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTier *domain.RiskTier, newTier domain.RiskTier, scoredAt time.Time) {
+	if s.events == nil {
+		return
+	}
+	if oldTier != nil && *oldTier == newTier {
+		return
+	}
+
+	tc := handlers.TierChangeEvent{
+		CustomerID: customerID,
+		OldTier:    oldTier,
+		NewTier:    newTier,
+		ChainID:    generateID(),
+		ScoredAt:   scoredAt,
+	}
+	payload, err := json.Marshal(tc)
+	if err != nil {
+		return
+	}
+
+	_ = s.events.Publish(ctx, events.Event{
+		ID:        generateID(),
+		Topic:     "cdd.tier_changed",
+		Payload:   payload,
+		ChainID:   tc.ChainID,
+		CreatedAt: time.Now(),
+	})
 }
 
 type ScreenCustomerRequest struct {
