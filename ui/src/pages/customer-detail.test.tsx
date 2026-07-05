@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { CustomerDetailPage } from "./customer-detail"
 
 function renderWithRoute(id: string) {
-  return render(
+  return renderWithI18n(
     <MemoryRouter initialEntries={[`/customers/${id}`]}>
       <Routes>
         <Route path="customers/:id" element={<CustomerDetailPage />} />
@@ -43,7 +44,7 @@ test("renders customer detail with profile data", async () => {
     return Promise.resolve(new Response(JSON.stringify([])))
   })
 
-  renderWithRoute("c1")
+  await renderWithRoute("c1")
 
   expect(await screen.findByText("EXT-001")).toBeDefined()
   expect(screen.getByText("個人")).toBeDefined()
@@ -54,7 +55,7 @@ test("renders customer detail with profile data", async () => {
 test("shows error for missing customer", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("not found"))
 
-  renderWithRoute("nonexistent")
+  await renderWithRoute("nonexistent")
 
   expect(await screen.findByText("顧客データの取得に失敗しました")).toBeDefined()
 })

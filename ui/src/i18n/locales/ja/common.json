@@ -71,5 +71,156 @@
       "upToDate": "最新",
       "staleDays": "{{days}}日経過"
     }
+  },
+  "customers": {
+    "title": "顧客一覧",
+    "count": "{{count}} 件",
+    "createButton": "新規作成",
+    "error": "顧客データの取得に失敗しました",
+    "form": {
+      "title": "顧客作成",
+      "externalId": "外部ID",
+      "type": "種別",
+      "countryCode": "国コード",
+      "submit": "作成"
+    },
+    "search": {
+      "placeholder": "ID・名前・国コードで検索..."
+    },
+    "filter": {
+      "allTiers": "全リスクティア"
+    },
+    "tier": {
+      "low": "低リスク",
+      "medium": "中リスク",
+      "high": "高リスク"
+    },
+    "tierShort": {
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "type": {
+      "individual": "個人",
+      "corporateDomestic": "国内法人",
+      "corporateForeign": "海外法人"
+    },
+    "table": {
+      "header": {
+        "externalId": "外部ID",
+        "type": "種別",
+        "country": "国",
+        "riskScore": "リスクスコア",
+        "riskTier": "リスクティア",
+        "lastScored": "最終スコアリング"
+      },
+      "unscored": "未スコア",
+      "empty": "顧客データがありません"
+    }
+  },
+  "transactions": {
+    "title": "取引一覧",
+    "count": "{{count}} 件",
+    "createButton": "新規登録",
+    "error": "取引データの取得に失敗しました",
+    "form": {
+      "title": "取引登録",
+      "customerId": "顧客ID",
+      "externalId": "外部ID",
+      "amount": "金額",
+      "currency": "通貨",
+      "direction": "方向",
+      "counterpartyCountry": "相手先国",
+      "channel": "チャネル",
+      "submit": "登録"
+    },
+    "direction": {
+      "inbound": "入金",
+      "outbound": "出金",
+      "internal": "内部"
+    },
+    "table": {
+      "header": {
+        "direction": "方向",
+        "customerId": "顧客ID",
+        "amount": "金額",
+        "counterpartyCountry": "相手先国",
+        "channel": "チャネル",
+        "executedAt": "実行日時"
+      },
+      "empty": "取引データがありません"
+    }
+  },
+  "transactionDetail": {
+    "backToList": "取引一覧に戻る",
+    "back": "戻る",
+    "error": "取引データの取得に失敗しました",
+    "info": {
+      "title": "取引情報",
+      "internalId": "内部ID",
+      "externalId": "外部ID",
+      "customerId": "顧客ID",
+      "direction": "方向"
+    },
+    "amountRoute": {
+      "title": "金額・経路",
+      "amount": "金額",
+      "currency": "通貨",
+      "counterpartyCountry": "相手先国",
+      "channel": "チャネル",
+      "executedAt": "実行日時",
+      "createdAt": "登録日時"
+    }
+  },
+  "customerDetail": {
+    "backToList": "顧客一覧に戻る",
+    "back": "戻る",
+    "error": "顧客データの取得に失敗しました",
+    "basicInfo": {
+      "title": "基本情報",
+      "internalId": "内部ID",
+      "type": "種別",
+      "countryCode": "国コード",
+      "save": "保存",
+      "products": "プロダクト",
+      "createdAt": "作成日",
+      "updatedAt": "更新日"
+    },
+    "riskAssessment": {
+      "title": "リスク評価",
+      "screenButton": "スクリーニング",
+      "scoreButton": "スコアリング",
+      "riskScore": "リスクスコア",
+      "riskTier": "リスクティア",
+      "unscored": "未スコア",
+      "lastScored": "最終スコアリング"
+    },
+    "screening": {
+      "title": "スクリーニング結果",
+      "hit": "ヒットあり",
+      "noHit": "ヒットなし",
+      "summary": "チェック済みリスト: {{count}}件 | 実行日時: {{time}}",
+      "table": {
+        "list": "リスト",
+        "matchedName": "一致名",
+        "similarity": "類似度",
+        "type": "種別",
+        "source": "ソース"
+      }
+    },
+    "attributes": {
+      "title": "属性"
+    },
+    "scoreHistory": {
+      "title": "スコア履歴",
+      "empty": "スコア履歴がありません",
+      "table": {
+        "score": "スコア",
+        "tier": "ティア",
+        "ruleSet": "ルールセット",
+        "version": "バージョン",
+        "evaluatedAt": "評価日時"
+      }
+    }
   }
 }
