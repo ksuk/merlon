@@ -340,3 +340,129 @@ func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusCreated, note)
 }
+
+// relatedCase pairs a case with how it was linked to the case under
+// inspection, so the UI can distinguish auto-discovered history from
+// manual links (case-management.md "関連ケースは customer_id で自動抽出し、
+// 追加の手動リンクも可能とする").
+type relatedCase struct {
+	Case     domain.Case `json:"case"`
+	LinkType string      `json:"link_type"`
+}
+
+// handleGetRelatedCases serves GET /api/v1/cases/{id}/related: the same
+// customer's other cases (auto-discovered) plus any manually linked cases
+// recorded in related_case_ids.
+func (s *Server) handleGetRelatedCases(w http.ResponseWriter, r *http.Request) {
+	if s.cases == nil {
+		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	c, err := s.cases.Get(r.Context(), id)
+	if err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, nf.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	sameCustomer, err := s.cases.ListByCustomer(r.Context(), c.CustomerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	seen := map[string]bool{id: true}
+	related := []relatedCase{}
+	for _, other := range sameCustomer {
+		if seen[other.ID] {
+			continue
+		}
+		seen[other.ID] = true
+		related = append(related, relatedCase{Case: other, LinkType: "auto"})
+	}
+	for _, relatedID := range c.RelatedCaseIDs {
+		if seen[relatedID] {
+			continue
+		}
+		seen[relatedID] = true
+		other, err := s.cases.Get(r.Context(), relatedID)
+		if err != nil {
+			continue
+		}
+		related = append(related, relatedCase{Case: *other, LinkType: "manual"})
+	}
+
+	writeJSON(w, http.StatusOK, related)
+}
+
+type addRelatedCaseRequest struct {
+	RelatedCaseID string `json:"related_case_id"`
+}
+
+// handleAddRelatedCase serves POST /api/v1/cases/{id}/related: record a
+// manual link from the case under inspection to related_case_id
+// (case-management.md "追加の手動リンクも可能とする"). The link is
+// one-directional (only the target case's related_case_ids is updated).
+func (s *Server) handleAddRelatedCase(w http.ResponseWriter, r *http.Request) {
+	if s.cases == nil {
+		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	c, err := s.cases.Get(r.Context(), id)
+	if err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, nf.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req addRelatedCaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.RelatedCaseID == "" {
+		writeError(w, http.StatusBadRequest, "related_case_id is required")
+		return
+	}
+	if req.RelatedCaseID == id {
+		writeError(w, http.StatusBadRequest, "a case cannot be linked to itself")
+		return
+	}
+
+	if _, err := s.cases.Get(r.Context(), req.RelatedCaseID); err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, "related case not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	for _, existing := range c.RelatedCaseIDs {
+		if existing == req.RelatedCaseID {
+			writeJSON(w, http.StatusOK, c)
+			return
+		}
+	}
+	c.RelatedCaseIDs = append(c.RelatedCaseIDs, req.RelatedCaseID)
+
+	if err := s.cases.Update(r.Context(), c); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, c)
+}

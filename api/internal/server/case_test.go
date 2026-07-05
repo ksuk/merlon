@@ -476,6 +476,135 @@ func TestHandleUpdateCase_InvalidTransitionReturns400(t *testing.T) {
 	}
 }
 
+func createTestCustomerWithExternalID(t *testing.T, s *Server, externalID string) domain.Customer {
+	t.Helper()
+	body := `{"external_id":"` + externalID + `","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create customer failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var c domain.Customer
+	json.NewDecoder(rec.Body).Decode(&c)
+	return c
+}
+
+func TestHandleGetRelatedCases_ReturnsSameCustomerHistory(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"First case for customer"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var first domain.Case
+	json.NewDecoder(rec.Body).Decode(&first)
+
+	body = `{"customer_id":"` + cust.ID + `","summary":"Second case for customer"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var second domain.Case
+	json.NewDecoder(rec.Body).Decode(&second)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/cases/"+first.ID+"/related", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var related []relatedCase
+	json.NewDecoder(rec.Body).Decode(&related)
+	if len(related) != 1 {
+		t.Fatalf("expected 1 related case, got %d", len(related))
+	}
+	if related[0].Case.ID != second.ID {
+		t.Errorf("related case id = %q, want %q", related[0].Case.ID, second.ID)
+	}
+	if related[0].LinkType != "auto" {
+		t.Errorf("link_type = %q, want %q", related[0].LinkType, "auto")
+	}
+}
+
+func TestHandleGetRelatedCases_IncludesManualLinks(t *testing.T) {
+	s := testServerFull()
+	custA := createTestCustomer(t, s)
+	custB := createTestCustomerWithExternalID(t, s, "CUST_RELATED_B")
+
+	body := `{"customer_id":"` + custA.ID + `","summary":"Case for customer A"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var caseA domain.Case
+	json.NewDecoder(rec.Body).Decode(&caseA)
+
+	body = `{"customer_id":"` + custB.ID + `","summary":"Case for customer B"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var caseB domain.Case
+	json.NewDecoder(rec.Body).Decode(&caseB)
+
+	linkBody := `{"related_case_id":"` + caseB.ID + `"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases/"+caseA.ID+"/related", strings.NewReader(linkBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("link status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/cases/"+caseA.ID+"/related", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var related []relatedCase
+	json.NewDecoder(rec.Body).Decode(&related)
+
+	if len(related) != 1 {
+		t.Fatalf("expected 1 related case, got %d", len(related))
+	}
+	if related[0].Case.ID != caseB.ID {
+		t.Errorf("related case id = %q, want %q", related[0].Case.ID, caseB.ID)
+	}
+	if related[0].LinkType != "manual" {
+		t.Errorf("link_type = %q, want %q", related[0].LinkType, "manual")
+	}
+}
+
+func TestHandleAddRelatedCase_ManualLink(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Case one"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var caseOne domain.Case
+	json.NewDecoder(rec.Body).Decode(&caseOne)
+
+	body = `{"customer_id":"` + cust.ID + `","summary":"Case two"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var caseTwo domain.Case
+	json.NewDecoder(rec.Body).Decode(&caseTwo)
+
+	linkBody := `{"related_case_id":"` + caseTwo.ID + `"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases/"+caseOne.ID+"/related", strings.NewReader(linkBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated domain.Case
+	json.NewDecoder(rec.Body).Decode(&updated)
+	if len(updated.RelatedCaseIDs) != 1 || updated.RelatedCaseIDs[0] != caseTwo.ID {
+		t.Errorf("related_case_ids = %v, want [%q]", updated.RelatedCaseIDs, caseTwo.ID)
+	}
+}
+
 func TestAddCaseNoteEmptyContent(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)

@@ -184,6 +184,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/cases/{id}", s.handleGetCase)
 	s.mux.HandleFunc("PATCH /api/v1/cases/{id}", s.handleUpdateCase)
 	s.mux.HandleFunc("POST /api/v1/cases/{id}/notes", s.handleAddCaseNote)
+	s.mux.HandleFunc("GET /api/v1/cases/{id}/related", s.handleGetRelatedCases)
+	s.mux.HandleFunc("POST /api/v1/cases/{id}/related", s.handleAddRelatedCase)
 
 	// Dashboard
 	s.mux.HandleFunc("GET /api/v1/dashboard", s.handleDashboard)
