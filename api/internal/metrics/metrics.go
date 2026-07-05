@@ -74,6 +74,22 @@ var (
 		Name: "merlon_cdd_event_chain_truncated_total",
 		Help: "Total number of CDD event chains truncated after exceeding the hop limit (cdd-scoring.md safety valve 4).",
 	})
+
+	// AuditIntegrityCheckFailedTotal is incremented by merlon-audit verify
+	// (audit.md §7) whenever it detects an audit_logs anomaly (id gap,
+	// created_at regression, or daily count drop). merlon-audit is a
+	// one-shot CLI, not a long-running process scraped by Prometheus, so
+	// this counter is only meaningful if the deployment pushes it to a
+	// Pushgateway after each run; that wiring is a self-hosting operational
+	// concern documented alongside the recommended daily cron
+	// (docs/compliance/data-retention.md), not implemented here.
+	AuditIntegrityCheckFailedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		// Name matches audit.md §6/§7 verbatim (merlon_audit_integrity_check_failed,
+		// no _total suffix) — that name is the operational-alerting contract
+		// documented for self-hosting deployments.
+		Name: "merlon_audit_integrity_check_failed",
+		Help: "Total number of merlon-audit verify runs that detected an audit_logs integrity anomaly.",
+	})
 )
 
 // knownAlertSeverities/knownCaseStatuses/etc. seed zero-value series for
