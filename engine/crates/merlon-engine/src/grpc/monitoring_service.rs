@@ -9,8 +9,8 @@ use crate::monitoring::engine::{
 use crate::proto::merlon::v1::{
     monitoring_service_server::MonitoringService, Alert, AlertSeverity as ProtoAlertSeverity,
     CustomerType as ProtoCustomerType, EvaluateTransactionsRequest, EvaluateTransactionsResponse,
-    HealthRequest, HealthResponse, RiskTier as ProtoRiskTier, Timestamp,
-    TransactionDirection as ProtoDirection,
+    EvaluationModeFilter as ProtoEvaluationModeFilter, HealthRequest, HealthResponse,
+    RiskTier as ProtoRiskTier, Timestamp, TransactionDirection as ProtoDirection,
 };
 
 pub struct MonitoringServiceImpl {
@@ -67,6 +67,18 @@ fn customer_type_str(customer_type: i32) -> &'static str {
     }
 }
 
+// WS-5 Task6/7: UNSPECIFIED (the field's proto3 zero value, sent by every
+// caller compiled before this field existed) and any unrecognized value map
+// to Realtime, preserving the RPC's original hardcoded behavior for callers
+// that don't set mode_filter.
+fn mode_filter_from_proto(mode_filter: i32) -> EvaluationMode {
+    match ProtoEvaluationModeFilter::try_from(mode_filter) {
+        Ok(ProtoEvaluationModeFilter::Batch) => EvaluationMode::Batch,
+        Ok(ProtoEvaluationModeFilter::Both) => EvaluationMode::Both,
+        _ => EvaluationMode::Realtime,
+    }
+}
+
 fn severity_to_proto(s: &AlertSeverity) -> i32 {
     match s {
         AlertSeverity::Low => ProtoAlertSeverity::Low as i32,
@@ -117,17 +129,18 @@ impl MonitoringService for MonitoringServiceImpl {
             })
             .collect::<Result<Vec<_>, Status>>()?;
 
-        // EvaluateTransactions is invoked on transaction arrival (the
-        // realtime path in transaction-monitoring.md「評価モード」); batch
-        // evaluation goes through the batch scheduler (WS-5 Task6/7)
-        // instead of this RPC.
+        // mode_filter (WS-5 Task6/7) lets the caller pick which
+        // evaluation_mode-tagged scenarios run: the realtime path (transaction
+        // arrival) omits it and gets Realtime by default, while the daily TM
+        // batch scheduler (api/internal/batch) sets BATCH explicitly.
+        let mode_filter = mode_filter_from_proto(req.mode_filter);
         let alerts = self.engine.evaluate_with_mode(
             &req.customer_id,
             customer_type,
             risk_tier,
             &transactions,
             &req.scenario_ids,
-            EvaluationMode::Realtime,
+            mode_filter,
         );
 
         let now = std::time::SystemTime::now()
@@ -243,6 +256,7 @@ mod tests {
             ],
             scenario_ids: vec!["test_structuring".to_string()],
             customer_type: ProtoCustomerType::Individual as i32,
+            mode_filter: 0,
         };
 
         let resp = service
@@ -280,6 +294,7 @@ mod tests {
             }],
             scenario_ids: vec![],
             customer_type: ProtoCustomerType::Individual as i32,
+            mode_filter: 0,
         };
 
         let result = service
@@ -298,6 +313,7 @@ mod tests {
             transactions: vec![],
             scenario_ids: vec![],
             customer_type: ProtoCustomerType::Individual as i32,
+            mode_filter: 0,
         };
 
         let result = service
@@ -305,5 +321,103 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
+    }
+
+    const V2_BATCH_ONLY_SCENARIO: &str = r#"
+schema_version: "2.0"
+scenario_id: test_structuring_batch_only
+name: Batch Only
+description: Test fixture for WS-5 Task6/7 mode_filter RPC plumbing
+type: aggregation
+conditions:
+  threshold:
+    by_customer_type: {}
+evaluation_mode: batch
+severity: HIGH
+"#;
+
+    // WS-5 Task6/7: mode_filter on the gRPC request must reach
+    // TmEngine::evaluate_with_mode, so a batch-only scenario is excluded
+    // when mode_filter is left unset (defaults to Realtime) and included
+    // when the caller (the TM batch scheduler) sets BATCH explicitly.
+    fn structuring_transactions(base: i64) -> Vec<TransactionData> {
+        vec![
+            TransactionData {
+                transaction_id: "T1".to_string(),
+                customer_id: "C001".to_string(),
+                amount: 400_000.0,
+                currency: "JPY".to_string(),
+                counterparty_id: "CP001".to_string(),
+                counterparty_country: "JP".to_string(),
+                direction: ProtoDirection::Outbound as i32,
+                executed_at: Some(Timestamp { seconds: base, nanos: 0 }),
+                channel: "web".to_string(),
+            },
+            TransactionData {
+                transaction_id: "T2".to_string(),
+                customer_id: "C001".to_string(),
+                amount: 350_000.0,
+                currency: "JPY".to_string(),
+                counterparty_id: "CP002".to_string(),
+                counterparty_country: "JP".to_string(),
+                direction: ProtoDirection::Outbound as i32,
+                executed_at: Some(Timestamp { seconds: base + 3600, nanos: 0 }),
+                channel: "web".to_string(),
+            },
+            TransactionData {
+                transaction_id: "T3".to_string(),
+                customer_id: "C001".to_string(),
+                amount: 300_000.0,
+                currency: "JPY".to_string(),
+                counterparty_id: "CP003".to_string(),
+                counterparty_country: "JP".to_string(),
+                direction: ProtoDirection::Outbound as i32,
+                executed_at: Some(Timestamp { seconds: base + 7200, nanos: 0 }),
+                channel: "web".to_string(),
+            },
+        ]
+    }
+
+    #[tokio::test]
+    async fn test_mode_filter_unspecified_excludes_batch_only_scenario() {
+        let config = ScenarioConfig::from_yaml_dual(V2_BATCH_ONLY_SCENARIO).unwrap();
+        let service = MonitoringServiceImpl::new(TmEngine::new(vec![config]).unwrap());
+        let req = EvaluateTransactionsRequest {
+            customer_id: "C001".to_string(),
+            customer_risk_tier: ProtoRiskTier::Medium as i32,
+            transactions: structuring_transactions(1_000_000),
+            scenario_ids: vec![],
+            customer_type: ProtoCustomerType::Individual as i32,
+            mode_filter: 0,
+        };
+
+        let resp = service
+            .evaluate_transactions(Request::new(req))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(resp.alerts.is_empty(), "batch-only scenario should not fire without mode_filter=BATCH");
+    }
+
+    #[tokio::test]
+    async fn test_mode_filter_batch_includes_batch_only_scenario() {
+        let config = ScenarioConfig::from_yaml_dual(V2_BATCH_ONLY_SCENARIO).unwrap();
+        let service = MonitoringServiceImpl::new(TmEngine::new(vec![config]).unwrap());
+        let req = EvaluateTransactionsRequest {
+            customer_id: "C001".to_string(),
+            customer_risk_tier: ProtoRiskTier::Medium as i32,
+            transactions: structuring_transactions(1_000_000),
+            scenario_ids: vec![],
+            customer_type: ProtoCustomerType::Individual as i32,
+            mode_filter: ProtoEvaluationModeFilter::Batch as i32,
+        };
+
+        let resp = service
+            .evaluate_transactions(Request::new(req))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(resp.alerts.len(), 1);
+        assert_eq!(resp.alerts[0].scenario_id, "test_structuring_batch_only");
     }
 }

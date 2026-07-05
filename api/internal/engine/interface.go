@@ -11,7 +11,21 @@ type ScoringEngine interface {
 }
 
 type MonitoringEngine interface {
+	// EvaluateTransactions runs the realtime evaluation pass (mode_filter
+	// unset on the wire, which the engine treats as REALTIME;
+	// transaction-monitoring.md「評価モード」).
 	EvaluateTransactions(
+		ctx context.Context,
+		customerID string,
+		riskTier domain.RiskTier,
+		transactions []domain.Transaction,
+		scenarioIDs []string,
+	) ([]domain.Alert, error)
+	// EvaluateTransactionsBatch runs the daily TM batch evaluation pass
+	// (mode_filter=BATCH), so evaluation_mode=batch/both scenarios (e.g.
+	// aggregation-heavy structuring) are included even though they're
+	// excluded from EvaluateTransactions's realtime pass (WS-5 Task6/7).
+	EvaluateTransactionsBatch(
 		ctx context.Context,
 		customerID string,
 		riskTier domain.RiskTier,

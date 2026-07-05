@@ -29,6 +29,16 @@ func (s *toggleMonitoringEngine) EvaluateTransactions(
 	return nil, nil
 }
 
+func (s *toggleMonitoringEngine) EvaluateTransactionsBatch(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+) ([]domain.Alert, error) {
+	return s.EvaluateTransactions(ctx, customerID, riskTier, transactions, scenarioIDs)
+}
+
 // TestCircuitBreakerFullLifecycle_ClosedOpenHalfOpenClosed is the explicit
 // acceptance-criteria test for "circuit breaker state transition
 // (Closed→Open→Half-Open→Closed)", exercised end-to-end through

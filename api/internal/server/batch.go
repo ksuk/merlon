@@ -197,6 +197,12 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 		Total: len(customers),
 	}
 
+	// reviewRunID labels any AnnotateBatchReviewed call made during this
+	// handler invocation (Task4/Task7 dedup routing); it is not persisted to
+	// batch_runs since this HTTP-triggered pass isn't tracked there (unlike
+	// the scheduled batch.RunTMBatchEvaluation job).
+	reviewRunID := generateID()
+
 	for _, c := range customers {
 		txns, err := s.transactions.ListByCustomer(ctx, c.ID, maxBatchCustomers, 0)
 		if err != nil {
@@ -244,10 +250,22 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
 			a.CreatedAt = now
 			a.UpdatedAt = now
+			if a.DetectedAt.IsZero() {
+				a.DetectedAt = now
+			}
+			windowStart := domain.DailyAggregationWindowStart(a.DetectedAt)
+			a.AggregationWindowStart = &windowStart
 			if _, err := s.applyWhitelistSuppression(ctx, &a); err != nil {
 				continue
 			}
-			if err := s.alerts.Create(ctx, &a); err != nil {
+			created, existing, err := s.alerts.CreateIfNotDuplicate(ctx, &a)
+			if err != nil {
+				continue
+			}
+			if !created {
+				if existing != nil {
+					_ = s.alerts.AnnotateBatchReviewed(ctx, existing.ID, reviewRunID)
+				}
 				continue
 			}
 			recordAlertCreated(&a)

@@ -89,6 +89,25 @@ func (c *Client) EvaluateTransactions(
 	return result, nil
 }
 
+func (c *Client) EvaluateTransactionsBatch(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+) ([]domain.Alert, error) {
+	var result []domain.Alert
+	err := c.cb.Call(ctx, func(callCtx context.Context) error {
+		var err error
+		result, err = c.monitoring.EvaluateTransactionsBatch(callCtx, customerID, riskTier, transactions, scenarioIDs)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (c *Client) ScreenCustomer(ctx context.Context, customer *domain.Customer, listIDs []string) (*domain.ScreenResult, error) {
 	var result *domain.ScreenResult
 	err := c.cb.Call(ctx, func(callCtx context.Context) error {

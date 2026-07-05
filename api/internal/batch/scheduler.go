@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/casemgmt"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 )
@@ -171,17 +172,17 @@ func ProcessCustomersResumably(
 
 // TMBatchEvaluationDeps bundles what RunTMBatchEvaluation needs to evaluate
 // every customer's transactions in one daily batch pass
-// (transaction-monitoring.md「バッチ評価のスケジューリング」). Task 7 extends this
-// job's alert-creation step to route through
-// domain.AlertRepository.CreateIfNotDuplicate and casemgmt.ConsolidateAlert
-// instead of a plain Create, so it shares the dedup constraint with the
-// realtime evaluation path.
+// (transaction-monitoring.md「バッチ評価のスケジューリング」). Alert creation routes
+// through domain.AlertRepository.CreateIfNotDuplicate and (for newly created
+// alerts) casemgmt.ConsolidateAlert, sharing the dedup constraint and case
+// consolidation with the realtime evaluation path (server.handleBatchMonitor).
 type TMBatchEvaluationDeps struct {
 	Runs         domain.BatchRunRepository
 	Customers    domain.CustomerRepository
 	Transactions domain.TransactionRepository
 	Monitoring   engine.MonitoringEngine
 	Alerts       domain.AlertRepository
+	Cases        domain.CaseRepository
 }
 
 // maxTMBatchCustomers bounds how many customers/transactions a single batch
@@ -208,7 +209,7 @@ func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candi
 	}
 
 	err = ProcessCustomersResumably(ctx, deps.Runs, runID, customers, alreadyProcessed, func(ctx context.Context, c *domain.Customer) error {
-		return evaluateCustomerBatch(ctx, deps, c, batchStart)
+		return evaluateCustomerBatch(ctx, deps, c, batchStart, runID)
 	})
 	if err != nil {
 		_ = deps.Runs.Fail(ctx, runID)
@@ -218,7 +219,7 @@ func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candi
 	return deps.Runs.Complete(ctx, runID)
 }
 
-func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *domain.Customer, batchStart time.Time) error {
+func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *domain.Customer, batchStart time.Time, runID string) error {
 	txns, err := deps.Transactions.ListByCustomer(ctx, c.ID, maxTMBatchCustomers, 0)
 	if err != nil {
 		return err
@@ -233,7 +234,7 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 		riskTier = *c.RiskTier
 	}
 
-	alerts, err := deps.Monitoring.EvaluateTransactions(ctx, c.ID, riskTier, txns, nil)
+	alerts, err := deps.Monitoring.EvaluateTransactionsBatch(ctx, c.ID, riskTier, txns, nil)
 	if err != nil {
 		return err
 	}
@@ -244,7 +245,26 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 		now := time.Now()
 		a.CreatedAt = now
 		a.UpdatedAt = now
-		_ = deps.Alerts.Create(ctx, a)
+		if a.DetectedAt.IsZero() {
+			a.DetectedAt = now
+		}
+		windowStart := domain.DailyAggregationWindowStart(a.DetectedAt)
+		a.AggregationWindowStart = &windowStart
+		a.BatchRunID = runID
+
+		created, existing, err := deps.Alerts.CreateIfNotDuplicate(ctx, a)
+		if err != nil {
+			continue
+		}
+		if !created {
+			if existing != nil {
+				_ = deps.Alerts.AnnotateBatchReviewed(ctx, existing.ID, runID)
+			}
+			continue
+		}
+		if deps.Cases != nil {
+			_, _ = casemgmt.ConsolidateAlert(ctx, deps.Cases, a, casemgmt.DefaultConsolidationWindow)
+		}
 	}
 	return nil
 }

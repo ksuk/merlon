@@ -61,6 +61,7 @@ async fn test_metrics_layer_records_evaluate_transactions_duration() {
         }],
         scenario_ids: vec![],
         customer_type: 0,
+        mode_filter: 0,
     });
 
     let request = http::Request::builder()

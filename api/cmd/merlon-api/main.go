@@ -283,6 +283,7 @@ func main() {
 				Transactions: deps.Transactions,
 				Monitoring:   deps.Monitoring,
 				Alerts:       deps.Alerts,
+				Cases:        deps.Cases,
 			}, runID)
 		})
 		if cfg.TMBatchTimezone != "" {
