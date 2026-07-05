@@ -1,6 +1,7 @@
 {
   "language": {
     "en": "英語",
-    "ja": "日本語"
+    "ja": "日本語",
+    "switcherLabel": "言語"
   }
 }

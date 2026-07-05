@@ -32,6 +32,14 @@ i18n.on("languageChanged", (lng) => {
   void loadCatalog(isSupportedLanguage(lng) ? lng : DEFAULT_LANGUAGE)
 })
 
+// Loads the target catalog before switching so react-i18next's
+// languageChanged re-render already has the translations available
+// (addResourceBundle alone does not trigger a re-render).
+export async function changeLanguage(lang: SupportedLanguage): Promise<void> {
+  await loadCatalog(lang)
+  await i18n.changeLanguage(lang)
+}
+
 export async function initI18n(): Promise<typeof i18n> {
   await i18n
     .use(LanguageDetector)

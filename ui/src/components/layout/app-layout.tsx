@@ -1,5 +1,6 @@
 import { Suspense } from "react"
 import { Outlet } from "react-router-dom"
+import { LanguageSwitcher } from "./language-switcher"
 import { Sidebar } from "./sidebar"
 
 function PageLoader() {
@@ -14,11 +15,16 @@ export function AppLayout() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <main className="flex-1 overflow-y-auto bg-background p-6">
-        <Suspense fallback={<PageLoader />}>
-          <Outlet />
-        </Suspense>
-      </main>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-14 shrink-0 items-center justify-end border-b px-6">
+          <LanguageSwitcher />
+        </header>
+        <main className="flex-1 overflow-y-auto bg-background p-6">
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
+        </main>
+      </div>
     </div>
   )
 }

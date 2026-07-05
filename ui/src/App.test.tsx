@@ -1,6 +1,11 @@
 import { render, screen } from '@testing-library/react'
-import { expect, test, vi, beforeEach } from 'vitest'
+import { expect, test, vi, beforeAll, beforeEach } from 'vitest'
+import { initI18n } from '@/i18n'
 import App from './App'
+
+beforeAll(async () => {
+  await initI18n()
+})
 
 beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(
