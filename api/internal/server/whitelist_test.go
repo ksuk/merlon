@@ -474,6 +474,58 @@ func TestHandleCreateWhitelistReview_RevokedExpiresEntry(t *testing.T) {
 	}
 }
 
+func TestAuditRecordsWhitelistOperations(t *testing.T) {
+	s := testServerWithWhitelist()
+	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	analystKey := createAPIKeyAs(t, s, adminKey, "analyst", domain.RoleAnalyst)
+	cust := createWhitelistTestCustomer(t, s, adminKey)
+	validUntil := time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)
+
+	entry := createWhitelistEntry(t, s, analystKey, cust.ID, validUntil)
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist/"+entry.ID+"/approve", nil)
+	approveReq.Header.Set("Authorization", "Bearer "+adminKey)
+	approveRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(approveRec, approveReq)
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("approve: status = %d, body: %s", approveRec.Code, approveRec.Body.String())
+	}
+
+	revokeReq := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist/"+entry.ID+"/revoke", nil)
+	revokeReq.Header.Set("Authorization", "Bearer "+analystKey)
+	revokeRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(revokeRec, revokeReq)
+	if revokeRec.Code != http.StatusOK {
+		t.Fatalf("revoke: status = %d, body: %s", revokeRec.Code, revokeRec.Body.String())
+	}
+
+	auditReq := httptest.NewRequest(http.MethodGet, "/api/v1/audit?resource_type=whitelist", nil)
+	auditReq.Header.Set("Authorization", "Bearer "+adminKey)
+	auditRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(auditRec, auditReq)
+	if auditRec.Code != http.StatusOK {
+		t.Fatalf("audit: status = %d, body: %s", auditRec.Code, auditRec.Body.String())
+	}
+
+	var logEntries []domain.AuditEntry
+	json.NewDecoder(auditRec.Body).Decode(&logEntries)
+
+	wantActions := map[string]bool{"create": false, "approve_whitelist_entry": false, "revoke_whitelist_entry": false}
+	for _, e := range logEntries {
+		if e.ResourceType != "whitelist" {
+			continue
+		}
+		if _, ok := wantActions[e.Action]; ok {
+			wantActions[e.Action] = true
+		}
+	}
+	for action, found := range wantActions {
+		if !found {
+			t.Errorf("expected an audit entry with action %q, got entries: %+v", action, logEntries)
+		}
+	}
+}
+
 func TestHandleCreateWhitelistEntry_PartialExclusion_StoresRuleIDs(t *testing.T) {
 	s := testServerWithWhitelist()
 	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
