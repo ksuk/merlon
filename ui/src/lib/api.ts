@@ -321,6 +321,37 @@ export interface RuleImportItem {
   definition: unknown
 }
 
+export type WhitelistEntryStatus = "pending_approval" | "active" | "expired" | "revoked"
+export type WhitelistReviewDecision = "renewed" | "revoked"
+
+export interface WhitelistEntry {
+  id: string
+  customer_id: string
+  status: WhitelistEntryStatus
+  reason: string
+  excluded_rule_ids?: string[]
+  valid_from: string
+  valid_until: string
+  requested_by: string
+  approved_by?: string
+  approved_at?: string
+  revoked_by?: string
+  revoked_at?: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WhitelistReview {
+  id: string
+  whitelist_entry_id: string
+  reviewed_by: string
+  decision: WhitelistReviewDecision
+  review_notes?: string
+  next_review_date?: string
+  created_at: string
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
@@ -470,6 +501,26 @@ export const api = {
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),
+  },
+  whitelist: {
+    list: (status?: WhitelistEntryStatus) => {
+      const qs = new URLSearchParams()
+      if (status) qs.set("status", status)
+      const q = qs.toString()
+      return request<PaginatedResponse<WhitelistEntry>>(`/whitelist${q ? `?${q}` : ""}`)
+    },
+    get: (id: string) => request<WhitelistEntry>(`/whitelist/${encodeURIComponent(id)}`),
+    create: (data: { customer_id: string; reason: string; valid_until: string; excluded_rule_ids?: string[] }) =>
+      request<WhitelistEntry>("/whitelist", { method: "POST", body: JSON.stringify(data) }),
+    approve: (id: string) =>
+      request<WhitelistEntry>(`/whitelist/${encodeURIComponent(id)}/approve`, { method: "POST" }),
+    revoke: (id: string) =>
+      request<WhitelistEntry>(`/whitelist/${encodeURIComponent(id)}/revoke`, { method: "POST" }),
+    review: (id: string, data: { decision: WhitelistReviewDecision; review_notes?: string; next_review_date?: string; new_valid_until?: string }) =>
+      request<WhitelistReview>(`/whitelist/${encodeURIComponent(id)}/reviews`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
   auth: {
     login: (email: string, password: string) =>

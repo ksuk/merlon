@@ -21,29 +21,31 @@ type DBPinger interface {
 }
 
 type Server struct {
-	mux            *http.ServeMux
-	addr           string
-	customers      domain.CustomerRepository
-	transactions   domain.TransactionRepository
-	alerts         domain.AlertRepository
-	scoring        engine.ScoringEngine
-	monitoring     engine.MonitoringEngine
-	screening      engine.ScreeningEngine
-	backtest       engine.BacktestEngine
-	audit          domain.AuditRepository
-	cases          domain.CaseRepository
-	apikeys        domain.APIKeyRepository
-	webhooks       domain.WebhookRepository
-	configEngine   engine.ConfigEngine
-	engineHealth   engine.HealthChecker
-	limiter        *rateLimiter
-	bootstrapToken string
-	tokenIssuer    *auth.TokenIssuer
-	denylist       auth.Denylist
-	users          domain.UserRepository
-	refreshTokens  domain.RefreshTokenRepository
-	rules          domain.RuleRepository
-	db             DBPinger
+	mux                      *http.ServeMux
+	addr                     string
+	customers                domain.CustomerRepository
+	transactions             domain.TransactionRepository
+	alerts                   domain.AlertRepository
+	scoring                  engine.ScoringEngine
+	monitoring               engine.MonitoringEngine
+	screening                engine.ScreeningEngine
+	backtest                 engine.BacktestEngine
+	audit                    domain.AuditRepository
+	cases                    domain.CaseRepository
+	apikeys                  domain.APIKeyRepository
+	webhooks                 domain.WebhookRepository
+	configEngine             engine.ConfigEngine
+	engineHealth             engine.HealthChecker
+	limiter                  *rateLimiter
+	bootstrapToken           string
+	tokenIssuer              *auth.TokenIssuer
+	denylist                 auth.Denylist
+	users                    domain.UserRepository
+	refreshTokens            domain.RefreshTokenRepository
+	rules                    domain.RuleRepository
+	whitelist                domain.WhitelistRepository
+	whitelistMaxValidDaysCfg int
+	db                       DBPinger
 }
 
 type Deps struct {
@@ -67,33 +69,39 @@ type Deps struct {
 	Users          domain.UserRepository
 	RefreshTokens  domain.RefreshTokenRepository
 	Rules          domain.RuleRepository
-	DB             DBPinger
+	Whitelist      domain.WhitelistRepository
+	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
+	// when positive; zero/negative falls back to the default.
+	WhitelistMaxValidDays int
+	DB                    DBPinger
 }
 
 func New(addr string, deps Deps) *Server {
 	s := &Server{
-		mux:            http.NewServeMux(),
-		addr:           addr,
-		customers:      deps.Customers,
-		transactions:   deps.Transactions,
-		alerts:         deps.Alerts,
-		scoring:        deps.Scoring,
-		monitoring:     deps.Monitoring,
-		screening:      deps.Screening,
-		backtest:       deps.Backtest,
-		audit:          deps.Audit,
-		cases:          deps.Cases,
-		apikeys:        deps.APIKeys,
-		webhooks:       deps.Webhooks,
-		configEngine:   deps.Config,
-		engineHealth:   deps.EngineHealth,
-		bootstrapToken: deps.BootstrapToken,
-		tokenIssuer:    deps.TokenIssuer,
-		denylist:       deps.Denylist,
-		users:          deps.Users,
-		refreshTokens:  deps.RefreshTokens,
-		rules:          deps.Rules,
-		db:             deps.DB,
+		mux:                      http.NewServeMux(),
+		addr:                     addr,
+		customers:                deps.Customers,
+		transactions:             deps.Transactions,
+		alerts:                   deps.Alerts,
+		scoring:                  deps.Scoring,
+		monitoring:               deps.Monitoring,
+		screening:                deps.Screening,
+		backtest:                 deps.Backtest,
+		audit:                    deps.Audit,
+		cases:                    deps.Cases,
+		apikeys:                  deps.APIKeys,
+		webhooks:                 deps.Webhooks,
+		configEngine:             deps.Config,
+		engineHealth:             deps.EngineHealth,
+		bootstrapToken:           deps.BootstrapToken,
+		tokenIssuer:              deps.TokenIssuer,
+		denylist:                 deps.Denylist,
+		users:                    deps.Users,
+		refreshTokens:            deps.RefreshTokens,
+		rules:                    deps.Rules,
+		whitelist:                deps.Whitelist,
+		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
+		db:                       deps.DB,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -189,6 +197,19 @@ func (s *Server) routes() {
 	s.mux.Handle("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
 	s.mux.Handle("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
 	s.mux.Handle("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
+
+	// Whitelist (whitelist.md §1, §3.1): reads are open to all roles; request
+	// and revoke require auth.PermWhitelistRequest, approve requires the
+	// stricter auth.PermWhitelistApprove (segregation of duties, WL-003).
+	s.mux.HandleFunc("GET /api/v1/whitelist", s.handleListWhitelistEntries)
+	s.mux.HandleFunc("GET /api/v1/whitelist/{id}", s.handleGetWhitelistEntry)
+	s.mux.Handle("POST /api/v1/whitelist", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleCreateWhitelistEntry)))
+	s.mux.Handle("POST /api/v1/whitelist/{id}/approve", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleApproveWhitelistEntry)))
+	s.mux.Handle("POST /api/v1/whitelist/{id}/revoke", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleRevokeWhitelistEntry)))
+	// Reviews decide whether to keep suppressing an active entry (renew) or
+	// lapse it (expire), the same authority level as approval, so this shares
+	// auth.PermWhitelistApprove rather than the request-level permission.
+	s.mux.Handle("POST /api/v1/whitelist/{id}/reviews", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleCreateWhitelistReview)))
 
 	// System info
 	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)

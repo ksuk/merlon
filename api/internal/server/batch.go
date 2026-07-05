@@ -203,6 +203,9 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
 			a.CreatedAt = now
 			a.UpdatedAt = now
+			if _, err := s.applyWhitelistSuppression(ctx, &a); err != nil {
+				continue
+			}
 			if err := s.alerts.Create(ctx, &a); err != nil {
 				continue
 			}

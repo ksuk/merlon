@@ -339,16 +339,33 @@ func NewPgAlertRepo(pool *pgxpool.Pool) *PgAlertRepo {
 	return &PgAlertRepo{pool: pool}
 }
 
-func (r *PgAlertRepo) scanAlert(rows pgx.Row) (*domain.Alert, error) {
-	var a domain.Alert
-	err := rows.Scan(
+// alertColumns includes suppressed/suppression_reason (WL-004, additive
+// columns from migrations/010_whitelist.sql).
+const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason"
+
+func scanAlertRow(row interface {
+	Scan(dest ...any) error
+}, a *domain.Alert) error {
+	var suppressionReason *string
+	if err := row.Scan(
 		&a.ID, &a.CustomerID, &a.ScenarioID,
 		&a.Severity, &a.Status, &a.Score, &a.Description,
 		&a.TransactionIDs,
 		&a.DetectedAt, &a.ResolvedAt, &a.ResolvedBy,
 		&a.CreatedAt, &a.UpdatedAt,
-	)
-	if err != nil {
+		&a.Suppressed, &suppressionReason,
+	); err != nil {
+		return err
+	}
+	if suppressionReason != nil {
+		a.SuppressionReason = *suppressionReason
+	}
+	return nil
+}
+
+func (r *PgAlertRepo) scanAlert(row pgx.Row) (*domain.Alert, error) {
+	var a domain.Alert
+	if err := scanAlertRow(row, &a); err != nil {
 		return nil, err
 	}
 	return &a, nil
@@ -356,7 +373,7 @@ func (r *PgAlertRepo) scanAlert(rows pgx.Row) (*domain.Alert, error) {
 
 func (r *PgAlertRepo) Get(ctx context.Context, id string) (*domain.Alert, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+		`SELECT `+alertColumns+`
 		FROM alerts WHERE id = $1`, id,
 	)
 	a, err := r.scanAlert(row)
@@ -371,7 +388,7 @@ func (r *PgAlertRepo) Get(ctx context.Context, id string) (*domain.Alert, error)
 
 func (r *PgAlertRepo) ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
 	return r.listAlerts(ctx,
-		`SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+		`SELECT `+alertColumns+`
 		FROM alerts WHERE customer_id = $1 ORDER BY detected_at DESC LIMIT $2 OFFSET $3`,
 		customerID, limit, offset,
 	)
@@ -379,14 +396,14 @@ func (r *PgAlertRepo) ListByCustomer(ctx context.Context, customerID string, lim
 
 func (r *PgAlertRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Alert, error) {
 	return r.listAlerts(ctx,
-		`SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+		`SELECT `+alertColumns+`
 		FROM alerts WHERE status = 'open' ORDER BY severity DESC, detected_at DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
 }
 
 func (r *PgAlertRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Alert, error) {
-	const baseQuery = `SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+	baseQuery := `SELECT ` + alertColumns + `
 		FROM alerts WHERE customer_id = $1`
 
 	if after == nil {
@@ -397,7 +414,7 @@ func (r *PgAlertRepo) ListByCustomerCursor(ctx context.Context, customerID strin
 }
 
 func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
-	const baseQuery = `SELECT id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at
+	baseQuery := `SELECT ` + alertColumns + `
 		FROM alerts WHERE status = 'open'`
 
 	if after == nil {
@@ -417,13 +434,7 @@ func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any)
 	var alerts []domain.Alert
 	for rows.Next() {
 		var a domain.Alert
-		if err := rows.Scan(
-			&a.ID, &a.CustomerID, &a.ScenarioID,
-			&a.Severity, &a.Status, &a.Score, &a.Description,
-			&a.TransactionIDs,
-			&a.DetectedAt, &a.ResolvedAt, &a.ResolvedBy,
-			&a.CreatedAt, &a.UpdatedAt,
-		); err != nil {
+		if err := scanAlertRow(rows, &a); err != nil {
 			return nil, err
 		}
 		alerts = append(alerts, a)
@@ -433,12 +444,13 @@ func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any)
 
 func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		a.ID, a.CustomerID, a.ScenarioID,
 		string(a.Severity), string(a.Status), a.Score, a.Description,
 		a.TransactionIDs,
 		a.DetectedAt, a.CreatedAt, a.UpdatedAt,
+		a.Suppressed, nullableString(a.SuppressionReason),
 	)
 	return err
 }

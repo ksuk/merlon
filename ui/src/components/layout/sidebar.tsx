@@ -13,6 +13,7 @@ import {
   ScrollText,
   Settings,
   Settings2,
+  ShieldCheck,
   SlidersHorizontal,
   Webhook,
 } from "lucide-react"
@@ -30,6 +31,7 @@ const navItems = [
   { to: "/webhooks", label: "Webhook", icon: Webhook },
   { to: "/apikeys", label: "APIキー", icon: KeyRound },
   { to: "/rules", label: "ルール管理", icon: SlidersHorizontal },
+  { to: "/whitelist", label: "ホワイトリスト", icon: ShieldCheck },
   { to: "/config", label: "設定検証", icon: Settings2 },
   { to: "/audit", label: "監査ログ", icon: ScrollText },
   { to: "/system", label: "システム", icon: Settings },
