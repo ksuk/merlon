@@ -340,13 +340,15 @@ func NewPgAlertRepo(pool *pgxpool.Pool) *PgAlertRepo {
 }
 
 // alertColumns includes suppressed/suppression_reason (WL-004, additive
-// columns from migrations/010_whitelist.sql).
-const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason"
+// columns from migrations/010_whitelist.sql) and aggregation_window_start/
+// batch_run_id/batch_reviewed_at (WS-5 Task4, migrations/012_alert_dedup.sql).
+const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, batch_reviewed_at"
 
 func scanAlertRow(row interface {
 	Scan(dest ...any) error
 }, a *domain.Alert) error {
 	var suppressionReason *string
+	var batchRunID *string
 	if err := row.Scan(
 		&a.ID, &a.CustomerID, &a.ScenarioID,
 		&a.Severity, &a.Status, &a.Score, &a.Description,
@@ -354,11 +356,15 @@ func scanAlertRow(row interface {
 		&a.DetectedAt, &a.ResolvedAt, &a.ResolvedBy,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.Suppressed, &suppressionReason,
+		&a.AggregationWindowStart, &batchRunID, &a.BatchReviewedAt,
 	); err != nil {
 		return err
 	}
 	if suppressionReason != nil {
 		a.SuppressionReason = *suppressionReason
+	}
+	if batchRunID != nil {
+		a.BatchRunID = *batchRunID
 	}
 	return nil
 }
@@ -444,15 +450,66 @@ func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any)
 
 func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		a.ID, a.CustomerID, a.ScenarioID,
 		string(a.Severity), string(a.Status), a.Score, a.Description,
 		a.TransactionIDs,
 		a.DetectedAt, a.CreatedAt, a.UpdatedAt,
 		a.Suppressed, nullableString(a.SuppressionReason),
+		a.AggregationWindowStart, nullableString(a.BatchRunID),
 	)
 	return err
+}
+
+// CreateIfNotDuplicate enforces the (customer_id, scenario_id,
+// aggregation_window_start) partial unique index (idx_alerts_dedup,
+// migrations/012_alert_dedup.sql). A unique_violation means another alert
+// already occupies that window; the caller (Task7's batch routing) is
+// expected to annotate it via AnnotateBatchReviewed rather than treat this
+// as an error.
+func (r *PgAlertRepo) CreateIfNotDuplicate(ctx context.Context, a *domain.Alert) (bool, *domain.Alert, error) {
+	err := r.Create(ctx, a)
+	if err == nil {
+		return true, nil, nil
+	}
+	if !isUniqueViolation(err) {
+		return false, nil, err
+	}
+	existing, getErr := r.getByDedupKey(ctx, a.CustomerID, a.ScenarioID, a.AggregationWindowStart)
+	if getErr != nil {
+		return false, nil, getErr
+	}
+	return false, existing, nil
+}
+
+func (r *PgAlertRepo) getByDedupKey(ctx context.Context, customerID, scenarioID string, windowStart *time.Time) (*domain.Alert, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT `+alertColumns+`
+		FROM alerts WHERE customer_id = $1 AND scenario_id = $2 AND aggregation_window_start = $3`,
+		customerID, scenarioID, windowStart,
+	)
+	return r.scanAlert(row)
+}
+
+// AnnotateBatchReviewed sets batch_reviewed_at without touching status,
+// severity, or any other field (Task4/Task7). batch_run_id is only backfilled
+// via COALESCE if unset, so the realtime creator's original attribution
+// (nil batch_run_id) is preserved rather than overwritten by the reviewing
+// batch run.
+func (r *PgAlertRepo) AnnotateBatchReviewed(ctx context.Context, alertID string, batchRunID string) error {
+	now := time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE alerts SET batch_reviewed_at = $2, batch_run_id = COALESCE(batch_run_id, $3), updated_at = $2 WHERE id = $1`,
+		alertID, now, nullableString(batchRunID),
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "alert", ID: alertID}
+	}
+	return nil
 }
 
 func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain.AlertStatus, resolvedBy string) error {

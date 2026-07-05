@@ -312,6 +312,54 @@ func (r *MemoryAlertRepo) Create(_ context.Context, a *domain.Alert) error {
 	return nil
 }
 
+// dedupConflict reports whether another alert already occupies a's
+// (customer_id, scenario_id, aggregation_window_start) tuple, mirroring
+// idx_alerts_dedup (migrations/012_alert_dedup.sql). A nil
+// AggregationWindowStart is exempt (aggregation_window_start IS NOT NULL in
+// the partial index), so it never conflicts. Caller must hold r.mu.
+func (r *MemoryAlertRepo) dedupConflict(a *domain.Alert) *domain.Alert {
+	if a.AggregationWindowStart == nil {
+		return nil
+	}
+	for _, id := range r.byCustomer[a.CustomerID] {
+		existing := r.data[id]
+		if existing.ScenarioID == a.ScenarioID &&
+			existing.AggregationWindowStart != nil &&
+			existing.AggregationWindowStart.Equal(*a.AggregationWindowStart) {
+			return existing
+		}
+	}
+	return nil
+}
+
+func (r *MemoryAlertRepo) CreateIfNotDuplicate(_ context.Context, a *domain.Alert) (bool, *domain.Alert, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if existing := r.dedupConflict(a); existing != nil {
+		cp := *existing
+		return false, &cp, nil
+	}
+	r.data[a.ID] = a
+	r.byCustomer[a.CustomerID] = append(r.byCustomer[a.CustomerID], a.ID)
+	return true, nil, nil
+}
+
+func (r *MemoryAlertRepo) AnnotateBatchReviewed(_ context.Context, alertID string, batchRunID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[alertID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "alert", ID: alertID}
+	}
+	now := time.Now()
+	a.BatchReviewedAt = &now
+	if a.BatchRunID == "" {
+		a.BatchRunID = batchRunID
+	}
+	a.UpdatedAt = now
+	return nil
+}
+
 func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status domain.AlertStatus, resolvedBy string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

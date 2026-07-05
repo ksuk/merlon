@@ -39,6 +39,18 @@ type AlertRepository interface {
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
 	Create(ctx context.Context, a *Alert) error
 	UpdateStatus(ctx context.Context, id string, status AlertStatus, resolvedBy string) error
+	// CreateIfNotDuplicate inserts a unless another alert already exists for
+	// the same (customer_id, scenario_id, aggregation_window_start) tuple
+	// (transaction-monitoring.md「バッチ/リアルタイム評価の重複アラート防止」).
+	// A nil AggregationWindowStart is exempt from the constraint (scenarios
+	// with no aggregation window), so it always creates. On conflict,
+	// created=false and existing holds the pre-existing alert; on success,
+	// created=true and existing is nil.
+	CreateIfNotDuplicate(ctx context.Context, a *Alert) (created bool, existing *Alert, err error)
+	// AnnotateBatchReviewed records that batchRunID's batch pass reviewed
+	// alertID after finding it already exists for the same scenario/window
+	// (Task4/Task7 dedup routing), without altering its status or severity.
+	AnnotateBatchReviewed(ctx context.Context, alertID string, batchRunID string) error
 }
 
 type ErrNotFound struct {

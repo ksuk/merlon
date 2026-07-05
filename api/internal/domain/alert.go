@@ -45,6 +45,15 @@ type Alert struct {
 	// when Suppressed is true.
 	Suppressed        bool      `json:"suppressed"`
 	SuppressionReason string    `json:"suppression_reason,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	// AggregationWindowStart, BatchRunID, and BatchReviewedAt support alert
+	// deduplication across the realtime/batch evaluation paths
+	// (transaction-monitoring.md「アラート統合ロジック」/「バッチ/リアルタイム
+	// 評価の重複アラート防止」). AggregationWindowStart is nil for scenarios
+	// with no aggregation window (e.g. single-transaction realtime checks),
+	// which are exempt from the dedup constraint.
+	AggregationWindowStart *time.Time `json:"aggregation_window_start,omitempty"`
+	BatchRunID             string     `json:"batch_run_id,omitempty"`
+	BatchReviewedAt        *time.Time `json:"batch_reviewed_at,omitempty"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
