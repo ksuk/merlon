@@ -280,16 +280,31 @@ func NewPgTransactionRepo(pool *pgxpool.Pool) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, executed_at, created_at"
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, executed_at, created_at"
 
 func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
+	var counterpartyJSON, metadataJSON []byte
 	err := row.Scan(
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
 		&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-		&t.Channel, &t.AccountID, &t.ExecutedAt, &t.CreatedAt,
+		&t.Channel, &t.AccountID, &counterpartyJSON, &metadataJSON,
+		&t.ExecutedAt, &t.CreatedAt,
 	)
-	return t, err
+	if err != nil {
+		return t, err
+	}
+	if len(counterpartyJSON) > 0 {
+		if err := json.Unmarshal(counterpartyJSON, &t.Counterparty); err != nil {
+			return t, err
+		}
+	}
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &t.Metadata); err != nil {
+			return t, err
+		}
+	}
+	return t, nil
 }
 
 func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transaction, error) {
@@ -358,12 +373,26 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 }
 
 func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) error {
+	var counterpartyJSON, metadataJSON []byte
+	if t.Counterparty != nil {
+		var err error
+		if counterpartyJSON, err = json.Marshal(t.Counterparty); err != nil {
+			return err
+		}
+	}
+	if t.Metadata != nil {
+		var err error
+		if metadataJSON, err = json.Marshal(t.Metadata); err != nil {
+			return err
+		}
+	}
+
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, executed_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, executed_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
 		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
-		t.Channel, t.AccountID, t.ExecutedAt, t.CreatedAt,
+		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.ExecutedAt, t.CreatedAt,
 	)
 	return err
 }
