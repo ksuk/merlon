@@ -41,6 +41,12 @@ type Customer struct {
 	EddStage1LastSentAt  *time.Time `json:"edd_stage1_last_sent_at,omitempty"`
 	EddStage2NotifiedAt  *time.Time `json:"edd_stage2_notified_at,omitempty"`
 	EddStage3NotifiedAt  *time.Time `json:"edd_stage3_notified_at,omitempty"`
+
+	// AnonymizedAt marks that this customer's direct-PII Attributes fields
+	// have been replaced in response to an APPI deletion request made after
+	// the statutory retention period elapsed (RET-004, data-model.md §3.7).
+	// nil means not anonymized.
+	AnonymizedAt *time.Time `json:"anonymized_at,omitempty"`
 }
 
 type ScoreRecord struct {

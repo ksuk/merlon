@@ -21,7 +21,7 @@ func NewPgCustomerRepo(pool *pgxpool.Pool) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool}
 }
 
-const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at`
+const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, anonymized_at`
 
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
 	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1`, id)
@@ -43,6 +43,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+		&c.AnonymizedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -77,6 +78,7 @@ func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+		&c.AnonymizedAt,
 	); err != nil {
 		return c, err
 	}
@@ -183,12 +185,13 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14 WHERE id=$1`,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14, anonymized_at=$15 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
+		c.AnonymizedAt,
 	)
 	if err != nil {
 		return err
