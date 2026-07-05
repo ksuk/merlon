@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint . && npm run lint:i18n",
+    "lint:i18n": "node scripts/check-hardcoded-cjk.mjs",
     "test": "vitest",
     "preview": "vite preview"
   },
