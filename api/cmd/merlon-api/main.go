@@ -12,8 +12,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/merlon-aml/merlon/api/internal/auth"
+	"github.com/merlon-aml/merlon/api/internal/batch"
 	"github.com/merlon-aml/merlon/api/internal/config"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/engineclient"
 	"github.com/merlon-aml/merlon/api/internal/logging"
 	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
@@ -52,6 +54,7 @@ func main() {
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
 		deps.DB = pool
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
@@ -61,6 +64,7 @@ func main() {
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = store.NewMemoryCaseRepo()
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
@@ -116,9 +120,13 @@ func main() {
 			os.Exit(1)
 		}
 		defer client.Close()
-		deps.Scoring = client
-		deps.Monitoring = client
-		deps.Screening = client
+		// Wrap in a circuit breaker (overview.md §4.4: 3s timeout, 2 retries,
+		// 30s open, half-open allows 1 request) so a stalled engine trips
+		// instead of leaving every caller blocked on a hung gRPC call.
+		cbClient := engineclient.Wrap(client)
+		deps.Scoring = cbClient
+		deps.Monitoring = cbClient
+		deps.Screening = cbClient
 		deps.Backtest = client
 		deps.Config = client
 		deps.EngineHealth = client
@@ -157,11 +165,24 @@ func main() {
 		}
 	}()
 
+	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
+	defer cancelRecovery()
+	if deps.PendingEvaluations != nil && deps.Monitoring != nil {
+		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
+		go func() {
+			if err := recoveryJob.Run(recoveryCtx); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("pending evaluation recovery job stopped", "error", err)
+			}
+		}()
+		slog.Info("pending evaluation recovery job started")
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
 	slog.Info("merlon-api shutting down")
+	cancelRecovery()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
