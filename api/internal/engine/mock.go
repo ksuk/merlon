@@ -31,15 +31,22 @@ func (m *MockScoringEngine) ScoreCustomer(_ context.Context, customer *domain.Cu
 type MockMonitoringEngine struct {
 	Alerts []domain.Alert
 	Err    error
+	// EvaluateFunc, if set, overrides the Alerts/Err fields entirely so
+	// tests can assert on call arguments (e.g. which risk tier or
+	// transactions were passed in).
+	EvaluateFunc func(ctx context.Context, customerID string, riskTier domain.RiskTier, transactions []domain.Transaction, scenarioIDs []string) ([]domain.Alert, error)
 }
 
 func (m *MockMonitoringEngine) EvaluateTransactions(
-	_ context.Context,
-	_ string,
-	_ domain.RiskTier,
-	_ []domain.Transaction,
-	_ []string,
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
 ) ([]domain.Alert, error) {
+	if m.EvaluateFunc != nil {
+		return m.EvaluateFunc(ctx, customerID, riskTier, transactions, scenarioIDs)
+	}
 	if m.Err != nil {
 		return nil, m.Err
 	}

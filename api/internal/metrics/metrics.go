@@ -69,6 +69,11 @@ var (
 		Name: "merlon_batch_evaluation_duration_seconds",
 		Help: "Batch evaluation job execution time in seconds, by job type.",
 	}, []string{"job_type"})
+
+	CDDEventChainTruncatedTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "merlon_cdd_event_chain_truncated_total",
+		Help: "Total number of CDD event chains truncated after exceeding the hop limit (cdd-scoring.md safety valve 4).",
+	})
 )
 
 // knownAlertSeverities/knownCaseStatuses/etc. seed zero-value series for

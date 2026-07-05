@@ -39,6 +39,7 @@ func TestHandleMetricsReturnsPrometheusFormat(t *testing.T) {
 		"merlon_db_pool_active_connections",
 		"merlon_webhook_dlq_depth",
 		"merlon_batch_evaluation_duration_seconds",
+		"merlon_cdd_event_chain_truncated_total",
 	}
 	for _, name := range wantNames {
 		if !strings.Contains(body, name) {

@@ -8,6 +8,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/events"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -45,6 +46,7 @@ type Server struct {
 	rules          domain.RuleRepository
 	db             DBPinger
 	pendingEvals   domain.PendingEvaluationRepository
+	events         events.Bus
 }
 
 type Deps struct {
@@ -70,6 +72,7 @@ type Deps struct {
 	Rules              domain.RuleRepository
 	DB                 DBPinger
 	PendingEvaluations domain.PendingEvaluationRepository
+	Events             events.Bus
 }
 
 func New(addr string, deps Deps) *Server {
@@ -97,6 +100,7 @@ func New(addr string, deps Deps) *Server {
 		rules:          deps.Rules,
 		db:             deps.DB,
 		pendingEvals:   deps.PendingEvaluations,
+		events:         deps.Events,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
