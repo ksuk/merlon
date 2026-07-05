@@ -16,6 +16,15 @@ const (
 	WebhookEventSTRCreated      WebhookEventType = "str.created"
 	WebhookEventScoreChanged    WebhookEventType = "score.changed"
 	WebhookEventScreeningMatch  WebhookEventType = "screening.match"
+
+	// WebhookEventScreeningTruePositive notifies the core system that a
+	// screening_results hit was confirmed a true positive so it can decide
+	// on an immediate transaction freeze (screening.md "TRUE_POSITIVE：制裁
+	// 対象者と同一人物と判定。自動的にケース管理にケースを生成し（severity = CRITICAL）、
+	// 該当顧客の取引を即時凍結の判断を基幹に通知する（Webhook screening_true_positive
+	// イベント）"). Deliberately a distinct event from WebhookEventScreeningMatch,
+	// which fires on the raw single-shot screen call before investigation.
+	WebhookEventScreeningTruePositive WebhookEventType = "screening_true_positive"
 )
 
 type Webhook struct {

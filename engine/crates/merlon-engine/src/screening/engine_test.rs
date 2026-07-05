@@ -135,6 +135,43 @@ fn test_multiple_matches_sorted() {
     }
 }
 
+// PEP-RCA (family/close-associate) entries must pass through list_type
+// unchanged: RCA relationship/name-matching logic is the provider's
+// responsibility, not this engine's (screening.md "RCA 自体の名寄せ・関係性
+// 判定ロジック...は本システムでは実装しない").
+const PEP_RCA_LIST_YAML: &str = r#"
+schema_version: "1.0"
+list_id: pep_rca_provider
+list_type: PEP-RCA
+name: "PEP Family/Close Associate (test)"
+source: "PEP provider (test)"
+entries:
+  - entry_id: "RCA-001"
+    names:
+      - "Jane Relative"
+    country: "JP"
+    type: individual
+"#;
+
+#[test]
+fn test_pep_rca_list_type_preserved() {
+    let list = ScreeningListConfig::from_yaml(PEP_RCA_LIST_YAML).unwrap();
+    let engine = ScreeningEngine::new(vec![list], 0.85).unwrap();
+
+    let input = ScreenInput {
+        customer_id: "C009".to_string(),
+        name: "Jane Relative".to_string(),
+        name_kana: None,
+        country_code: Some("JP".to_string()),
+    };
+
+    let result = engine.screen(&input, &[]);
+    assert!(result.hit);
+    assert_eq!(result.matches.len(), 1);
+    assert_eq!(result.matches[0].list_type, "PEP-RCA");
+    assert_eq!(result.matches[0].entry_id, "RCA-001");
+}
+
 #[test]
 fn test_lists_checked_count() {
     let engine = ScreeningEngine::new(vec![load_test_list()], 0.85).unwrap();
