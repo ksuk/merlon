@@ -48,8 +48,15 @@ export interface DashboardStats {
 export type RiskTier = "low" | "medium" | "high"
 export type AlertSeverity = "low" | "medium" | "high" | "critical"
 export type AlertStatus = "open" | "investigating" | "escalated" | "closed_true_positive" | "closed_false_positive"
-export type CaseStatus = "open" | "investigating" | "escalated" | "closed"
-export type CasePriority = "low" | "medium" | "high"
+export type CaseStatus =
+  | "open"
+  | "new"
+  | "investigating"
+  | "escalated"
+  | "closed"
+  | "reopened"
+  | "str_filed"
+export type CasePriority = "low" | "medium" | "high" | "critical"
 
 export interface Customer {
   id: string
@@ -63,6 +70,12 @@ export interface Customer {
   last_scored_at?: string
   created_at: string
   updated_at: string
+  // EDD 3段階エスカレーション（case-management.md §EDD未実施継続時の段階的
+  // 措置）。edd_requested_at が未設定なら EDD 要求状態にない。
+  edd_requested_at?: string
+  edd_stage1_last_sent_at?: string
+  edd_stage2_notified_at?: string
+  edd_stage3_notified_at?: string
 }
 
 export interface Alert {
@@ -90,6 +103,8 @@ export interface Case {
   assigned_to?: string
   summary: string
   notes?: CaseNote[]
+  reopen_reason?: string
+  related_case_ids?: string[]
   created_at: string
   updated_at: string
   closed_at?: string
@@ -100,6 +115,13 @@ export interface CaseNote {
   author: string
   content: string
   created_at: string
+}
+
+// RelatedCase pairs a case with how it was linked (case-management.md
+// §ケース間の関連付け: 同一顧客の自動抽出 or 手動リンク).
+export interface RelatedCase {
+  case: Case
+  link_type: "auto" | "manual"
 }
 
 export interface Transaction {
@@ -149,7 +171,8 @@ export interface AuditEntry {
 export type WebhookEventType =
   | "alert.created" | "alert.resolved"
   | "case.created" | "case.updated" | "case.closed"
-  | "str.created" | "score.changed" | "screening.match"
+  | "str.created" | "score.changed" | "screening.match" | "screening_true_positive"
+  | "edd_required" | "transaction_restriction_recommended" | "relationship_decline_recommended"
 
 export interface Webhook {
   id: string
@@ -170,6 +193,21 @@ export interface WebhookDelivery {
   success: boolean
   error?: string
   created_at: string
+  event_id: string
+  attempt_count: number
+  next_attempt_at?: string
+}
+
+export interface WebhookDLQEntry {
+  id: string
+  webhook_id: string
+  event_id: string
+  event: WebhookEventType
+  payload: string
+  attempt_count: number
+  last_error?: string
+  failed_at: string
+  reprocessed_at?: string
 }
 
 export interface STRReport {
@@ -406,7 +444,7 @@ export const api = {
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
       request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string }) =>
+    update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string; reason?: string }) =>
       request<Case>(`/cases/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -415,6 +453,12 @@ export const api = {
       request<CaseNote>(`/cases/${encodeURIComponent(id)}/notes`, {
         method: "POST",
         body: JSON.stringify({ author, content }),
+      }),
+    related: (id: string) => request<RelatedCase[]>(`/cases/${encodeURIComponent(id)}/related`),
+    addRelated: (id: string, relatedCaseId: string) =>
+      request<Case>(`/cases/${encodeURIComponent(id)}/related`, {
+        method: "POST",
+        body: JSON.stringify({ related_case_id: relatedCaseId }),
       }),
   },
   transactions: {
@@ -472,6 +516,11 @@ export const api = {
       request<{ status: string }>(`/webhooks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     deliveries: (id: string) =>
       request<WebhookDelivery[]>(`/webhooks/${encodeURIComponent(id)}/deliveries`),
+    listDLQ: () => request<WebhookDLQEntry[]>("/webhooks/dlq"),
+    reprocessDLQ: (id: string) =>
+      request<{ success: boolean; status_code: number }>(`/webhooks/dlq/${encodeURIComponent(id)}/reprocess`, {
+        method: "POST",
+      }),
   },
   admin: {
     apikeys: {
