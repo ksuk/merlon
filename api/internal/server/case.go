@@ -7,17 +7,21 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/metrics"
 )
 
 // openCaseStatuses are the sub-statuses merlon_cases_open (OPS-003,
-// overview.md §4.4) tracks. "closed" is deliberately absent: a closed case
-// is not an open case, so it is only ever decremented from, never counted.
+// overview.md §4.4) tracks. "closed" and "str_filed" are deliberately absent:
+// neither is an open case, so they are only ever decremented from, never
+// counted.
 var openCaseStatuses = map[domain.CaseStatus]bool{
 	domain.CaseStatusOpen:          true,
+	domain.CaseStatusNew:           true,
 	domain.CaseStatusInvestigating: true,
 	domain.CaseStatusEscalated:     true,
+	domain.CaseStatusReopened:      true,
 }
 
 // adjustCasesOpenGauge updates merlon_cases_open for a case status
@@ -44,6 +48,9 @@ type updateCaseRequest struct {
 	Status     domain.CaseStatus `json:"status,omitempty"`
 	AssignedTo string            `json:"assigned_to,omitempty"`
 	Summary    string            `json:"summary,omitempty"`
+	// Reason is required when Status is CaseStatusReopened (case-management.md
+	// "再オープン時は理由（テキスト、必須）を記録する").
+	Reason string `json:"reason,omitempty"`
 }
 
 type addNoteRequest struct {
@@ -93,7 +100,7 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		ID:         generateID(),
 		CustomerID: req.CustomerID,
 		AlertIDs:   req.AlertIDs,
-		Status:     domain.CaseStatusOpen,
+		Status:     domain.CaseStatusNew,
 		Priority:   priority,
 		AssignedTo: req.AssignedTo,
 		Summary:    req.Summary,
@@ -231,6 +238,29 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 
 	oldStatus := c.Status
 	if req.Status != "" {
+		if !domain.ValidCaseStatusTransition(oldStatus, req.Status) {
+			writeError(w, http.StatusBadRequest, "invalid case status transition")
+			return
+		}
+
+		if req.Status == domain.CaseStatusReopened {
+			if req.Reason == "" {
+				writeError(w, http.StatusBadRequest, "reason is required to reopen a case")
+				return
+			}
+			// Reopen requires Analyst or above (case-management.md "再オープン
+			// 権限は Analyst 以上"). WS-1's auth package is available, but this
+			// endpoint serves every status transition, not just reopen, so we
+			// gate inline rather than via auth.RequirePermission at the route
+			// level; a missing role (auth not configured, e.g. dev mode) is
+			// treated as unrestricted.
+			if role, ok := auth.RoleFromContext(r.Context()); ok && role == domain.RoleViewer {
+				writeError(w, http.StatusForbidden, "reopen requires analyst role or above")
+				return
+			}
+			c.ReopenReason = req.Reason
+		}
+
 		c.Status = req.Status
 		if req.Status == domain.CaseStatusClosed {
 			now := time.Now()
@@ -309,4 +339,130 @@ func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, note)
+}
+
+// relatedCase pairs a case with how it was linked to the case under
+// inspection, so the UI can distinguish auto-discovered history from
+// manual links (case-management.md "関連ケースは customer_id で自動抽出し、
+// 追加の手動リンクも可能とする").
+type relatedCase struct {
+	Case     domain.Case `json:"case"`
+	LinkType string      `json:"link_type"`
+}
+
+// handleGetRelatedCases serves GET /api/v1/cases/{id}/related: the same
+// customer's other cases (auto-discovered) plus any manually linked cases
+// recorded in related_case_ids.
+func (s *Server) handleGetRelatedCases(w http.ResponseWriter, r *http.Request) {
+	if s.cases == nil {
+		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	c, err := s.cases.Get(r.Context(), id)
+	if err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, nf.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	sameCustomer, err := s.cases.ListByCustomer(r.Context(), c.CustomerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	seen := map[string]bool{id: true}
+	related := []relatedCase{}
+	for _, other := range sameCustomer {
+		if seen[other.ID] {
+			continue
+		}
+		seen[other.ID] = true
+		related = append(related, relatedCase{Case: other, LinkType: "auto"})
+	}
+	for _, relatedID := range c.RelatedCaseIDs {
+		if seen[relatedID] {
+			continue
+		}
+		seen[relatedID] = true
+		other, err := s.cases.Get(r.Context(), relatedID)
+		if err != nil {
+			continue
+		}
+		related = append(related, relatedCase{Case: *other, LinkType: "manual"})
+	}
+
+	writeJSON(w, http.StatusOK, related)
+}
+
+type addRelatedCaseRequest struct {
+	RelatedCaseID string `json:"related_case_id"`
+}
+
+// handleAddRelatedCase serves POST /api/v1/cases/{id}/related: record a
+// manual link from the case under inspection to related_case_id
+// (case-management.md "追加の手動リンクも可能とする"). The link is
+// one-directional (only the target case's related_case_ids is updated).
+func (s *Server) handleAddRelatedCase(w http.ResponseWriter, r *http.Request) {
+	if s.cases == nil {
+		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	c, err := s.cases.Get(r.Context(), id)
+	if err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, nf.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req addRelatedCaseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.RelatedCaseID == "" {
+		writeError(w, http.StatusBadRequest, "related_case_id is required")
+		return
+	}
+	if req.RelatedCaseID == id {
+		writeError(w, http.StatusBadRequest, "a case cannot be linked to itself")
+		return
+	}
+
+	if _, err := s.cases.Get(r.Context(), req.RelatedCaseID); err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, "related case not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	for _, existing := range c.RelatedCaseIDs {
+		if existing == req.RelatedCaseID {
+			writeJSON(w, http.StatusOK, c)
+			return
+		}
+	}
+	c.RelatedCaseIDs = append(c.RelatedCaseIDs, req.RelatedCaseID)
+
+	if err := s.cases.Update(r.Context(), c); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, c)
 }

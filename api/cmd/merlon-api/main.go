@@ -22,6 +22,7 @@ import (
 	_ "github.com/merlon-aml/merlon/api/internal/events/nats"
 	_ "github.com/merlon-aml/merlon/api/internal/events/pgnotify"
 	"github.com/merlon-aml/merlon/api/internal/logging"
+	"github.com/merlon-aml/merlon/api/internal/notify"
 	"github.com/merlon-aml/merlon/api/internal/screening"
 	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
@@ -33,6 +34,18 @@ import (
 // job itself (batch.RunWhitelistExpiryJob) is idempotent, so an hourly
 // cadence is safe regardless of exact expiry timing.
 const whitelistExpiryCheckInterval = time.Hour
+
+// webhookRetryCheckInterval governs how often the retry worker polls for
+// deliveries whose next_attempt_at is due (api.md §3.1). 30s matches the
+// shortest possible backoff (attempt 1) so a due retry isn't delayed further
+// than necessary.
+const webhookRetryCheckInterval = 30 * time.Second
+
+// eddEscalationCheckInterval governs how often RunEDDEscalationJob runs
+// (case-management.md §EDD未実施継続時の段階的措置). Its finest granularity
+// is one calendar day (stage 1 dedup), so hourly is more than sufficient and
+// harmless since the job is idempotent.
+const eddEscalationCheckInterval = time.Hour
 
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (screening.md §リスト自動取り込み table).
@@ -50,6 +63,33 @@ func main() {
 	deps := server.Deps{}
 
 	var batchRuns domain.BatchRunRepository
+
+	// Email notifications (NOTIF-001/NOTIF-003, WS-8 Task 5). A blank
+	// SMTPHost disables the mailer entirely rather than attempting an
+	// unconfigured SMTP connection.
+	if cfg.SMTPHost != "" {
+		deps.Notifier = notify.NewMailer(notify.SMTPConfig{
+			Host:     cfg.SMTPHost,
+			Port:     cfg.SMTPPort,
+			Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword,
+			From:     cfg.SMTPFrom,
+			To:       cfg.SMTPTo,
+			UseTLS:   cfg.SMTPUseTLS,
+		})
+		slog.Info("email notifications enabled", "smtp_host", cfg.SMTPHost)
+	}
+	if cfg.NotifyRoutingPath != "" {
+		rules, err := notify.LoadRoutingRules(cfg.NotifyRoutingPath)
+		if err != nil {
+			slog.Warn("notify routing rules load failed, using defaults", "path", cfg.NotifyRoutingPath, "error", err)
+			rules = notify.DefaultRoutingRules()
+		}
+		deps.RoutingRules = rules
+	} else {
+		deps.RoutingRules = notify.DefaultRoutingRules()
+	}
+	deps.PublicURL = cfg.PublicURL
 
 	var pool *pgxpool.Pool
 	if os.Getenv("MERLON_DATABASE_URL") != "" {
@@ -243,6 +283,17 @@ func main() {
 
 	srv := server.New(cfg.HTTPAddr, deps)
 
+	if deps.Customers != nil && deps.Cases != nil {
+		batch.StartEDDEscalationTicker(jobsCtx, batch.EDDEscalationDeps{
+			Customers:  deps.Customers,
+			Cases:      deps.Cases,
+			Webhook:    srv.DispatchWebhook,
+			Stage2Days: cfg.EDDStage2Days,
+			Stage3Days: cfg.EDDStage3Days,
+		}, eddEscalationCheckInterval)
+		slog.Info("EDD escalation job enabled", "stage2_days", cfg.EDDStage2Days, "stage3_days", cfg.EDDStage3Days)
+	}
+
 	if cfg.UIDir != "" {
 		srv.SetUIDir(cfg.UIDir)
 		slog.Info("serving UI", "dir", cfg.UIDir)
@@ -263,6 +314,14 @@ func main() {
 
 	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
 	defer cancelRecovery()
+
+	webhookRetryCtx, cancelWebhookRetry := context.WithCancel(context.Background())
+	defer cancelWebhookRetry()
+	if deps.Webhooks != nil {
+		go srv.RunWebhookRetryWorker(webhookRetryCtx, webhookRetryCheckInterval)
+		slog.Info("webhook retry worker started", "interval", webhookRetryCheckInterval)
+	}
+
 	if deps.PendingEvaluations != nil && deps.Monitoring != nil {
 		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
 		go func() {
@@ -317,6 +376,7 @@ func main() {
 	slog.Info("merlon-api shutting down")
 	cancelRecovery()
 	cancelTMBatch()
+	cancelWebhookRetry()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

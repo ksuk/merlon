@@ -52,6 +52,59 @@ test("renders case detail with notes and transitions", async () => {
   expect(screen.getByText("クローズ")).toBeDefined()
 })
 
+test("shows related cases section", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+  fetchMock.mockImplementation((input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.includes("/related")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify([
+            {
+              case: {
+                id: "case-old",
+                customer_id: "c1",
+                alert_ids: [],
+                status: "str_filed",
+                priority: "high",
+                summary: "過去のSTR対象ケース",
+                created_at: "2024-06-01T09:00:00Z",
+                updated_at: "2024-06-02T09:00:00Z",
+              },
+              link_type: "auto",
+            },
+          ]),
+        ),
+      )
+    }
+    if (url.includes("/customers/")) {
+      return Promise.resolve(new Response(JSON.stringify({ id: "c1", external_id: "EXT1" })))
+    }
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({
+          id: "case1",
+          customer_id: "c1",
+          alert_ids: [],
+          status: "investigating",
+          priority: "high",
+          summary: "不審な取引パターン",
+          notes: [],
+          created_at: "2025-01-15T10:00:00Z",
+          updated_at: "2025-01-15T10:00:00Z",
+        }),
+      ),
+    )
+  })
+
+  renderWithRoute("case1")
+
+  expect(await screen.findByText("関連ケース")).toBeDefined()
+  expect(await screen.findByText("case-old")).toBeDefined()
+  expect(screen.getByText("自動抽出（同一顧客）")).toBeDefined()
+  expect(screen.getByText("STR対象")).toBeDefined()
+})
+
 test("hides note form for closed case", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(

@@ -9,6 +9,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/merlon-aml/merlon/api/internal/notify"
 	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
@@ -59,6 +60,13 @@ type Server struct {
 	db           DBPinger
 	pendingEvals domain.PendingEvaluationRepository
 	events       events.Bus
+
+	// notifier/routingRules/publicURL back alert-created email notifications
+	// (NOTIF-001/NOTIF-003, WS-8 Task 5). notifier is nil when no SMTP host
+	// is configured, in which case notifyAlertCreated is a no-op.
+	notifier     notify.Notifier
+	routingRules []notify.RoutingRule
+	publicURL    string
 }
 
 type Deps struct {
@@ -95,6 +103,16 @@ type Deps struct {
 	DB                 DBPinger
 	PendingEvaluations domain.PendingEvaluationRepository
 	Events             events.Bus
+
+	// Notifier/RoutingRules/PublicURL wire alert-created email notifications
+	// (NOTIF-001/NOTIF-003, WS-8 Task 5). Notifier nil disables email
+	// entirely (e.g. no SMTP host configured); RoutingRules nil falls back
+	// to notify.DefaultRoutingRules() behavior only if the caller passes it
+	// explicitly — main.go always resolves a concrete rule set before
+	// constructing Deps.
+	Notifier     notify.Notifier
+	RoutingRules []notify.RoutingRule
+	PublicURL    string
 }
 
 func New(addr string, deps Deps) *Server {
@@ -131,6 +149,10 @@ func New(addr string, deps Deps) *Server {
 		db:           deps.DB,
 		pendingEvals: deps.PendingEvaluations,
 		events:       deps.Events,
+
+		notifier:     deps.Notifier,
+		routingRules: deps.RoutingRules,
+		publicURL:    deps.PublicURL,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -168,6 +190,8 @@ func (s *Server) routes() {
 
 	// Alerts
 	s.mux.HandleFunc("GET /api/v1/alerts", s.handleListAlerts)
+	s.mux.HandleFunc("POST /api/v1/alerts/bulk-close", s.handleBulkCloseAlerts)
+	s.mux.HandleFunc("POST /api/v1/alerts/bulk-case", s.handleBulkCaseAssignment)
 	s.mux.HandleFunc("GET /api/v1/alerts/{id}", s.handleGetAlert)
 	s.mux.HandleFunc("PATCH /api/v1/alerts/{id}", s.handleUpdateAlertStatus)
 
@@ -184,6 +208,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/cases/{id}", s.handleGetCase)
 	s.mux.HandleFunc("PATCH /api/v1/cases/{id}", s.handleUpdateCase)
 	s.mux.HandleFunc("POST /api/v1/cases/{id}/notes", s.handleAddCaseNote)
+	s.mux.HandleFunc("GET /api/v1/cases/{id}/related", s.handleGetRelatedCases)
+	s.mux.HandleFunc("POST /api/v1/cases/{id}/related", s.handleAddRelatedCase)
 
 	// Dashboard
 	s.mux.HandleFunc("GET /api/v1/dashboard", s.handleDashboard)
@@ -198,6 +224,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/webhooks/{id}", s.handleGetWebhook)
 	s.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleDeleteWebhook)
 	s.mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", s.handleListWebhookDeliveries)
+	s.mux.HandleFunc("GET /api/v1/webhooks/dlq", s.handleListDLQEntries)
+	s.mux.HandleFunc("POST /api/v1/webhooks/dlq/{id}/reprocess", s.handleReprocessDLQEntry)
 
 	// API Keys (admin only, requires admin API key or bootstrap token)
 	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)

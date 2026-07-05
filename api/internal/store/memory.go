@@ -146,6 +146,18 @@ func (r *MemoryCustomerRepo) Update(_ context.Context, c *domain.Customer) error
 	return nil
 }
 
+func (r *MemoryCustomerRepo) ListEDDPending(_ context.Context) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []domain.Customer
+	for _, c := range r.data {
+		if c.RiskTier != nil && *c.RiskTier == domain.RiskTierHigh && c.EddRequestedAt != nil {
+			out = append(out, *c)
+		}
+	}
+	return out, nil
+}
+
 func (r *MemoryCustomerRepo) SaveScoreRecord(_ context.Context, rec *domain.ScoreRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -302,6 +314,32 @@ func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *
 		func(a domain.Alert) time.Time { return a.CreatedAt },
 		func(a domain.Alert) string { return a.ID },
 	), nil
+}
+
+func (r *MemoryAlertRepo) ListByFilter(_ context.Context, f domain.AlertBulkFilter) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []domain.Alert
+	for _, a := range r.data {
+		if f.ScenarioID != "" && a.ScenarioID != f.ScenarioID {
+			continue
+		}
+		if f.Severity != "" && a.Severity != f.Severity {
+			continue
+		}
+		if f.PeriodFrom != nil && a.DetectedAt.Before(*f.PeriodFrom) {
+			continue
+		}
+		if f.PeriodTo != nil && a.DetectedAt.After(*f.PeriodTo) {
+			continue
+		}
+		out = append(out, *a)
+	}
+	sortByCreatedAtDesc(out,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return out, nil
 }
 
 func (r *MemoryAlertRepo) Create(_ context.Context, a *domain.Alert) error {
@@ -572,6 +610,7 @@ type MemoryWebhookRepo struct {
 	mu         sync.RWMutex
 	webhooks   map[string]*domain.Webhook
 	deliveries []domain.WebhookDelivery
+	dlq        []domain.DLQEntry
 }
 
 func NewMemoryWebhookRepo() *MemoryWebhookRepo {
@@ -666,6 +705,87 @@ func (r *MemoryWebhookRepo) ListDeliveries(_ context.Context, webhookID string, 
 		}
 	}
 	return result, nil
+}
+
+func (r *MemoryWebhookRepo) UpdateDelivery(_ context.Context, d *domain.WebhookDelivery) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.deliveries {
+		if r.deliveries[i].ID == d.ID {
+			r.deliveries[i] = *d
+			return nil
+		}
+	}
+	return &domain.ErrNotFound{Entity: "webhook_delivery", ID: d.ID}
+}
+
+// ListPendingRetries returns failed deliveries whose NextAttemptAt is due
+// (webhook_retry.go's background worker polls this).
+func (r *MemoryWebhookRepo) ListPendingRetries(_ context.Context, before time.Time) ([]domain.WebhookDelivery, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.WebhookDelivery
+	for _, d := range r.deliveries {
+		if d.NextAttemptAt != nil && !d.NextAttemptAt.After(before) {
+			result = append(result, d)
+		}
+	}
+	return result, nil
+}
+
+func (r *MemoryWebhookRepo) CreateDLQEntry(_ context.Context, entry *domain.DLQEntry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dlq = append(r.dlq, *entry)
+	return nil
+}
+
+func (r *MemoryWebhookRepo) GetDLQEntry(_ context.Context, id string) (*domain.DLQEntry, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, e := range r.dlq {
+		if e.ID == id {
+			cp := e
+			return &cp, nil
+		}
+	}
+	return nil, &domain.ErrNotFound{Entity: "webhook_dlq_entry", ID: id}
+}
+
+// ListDLQEntries returns all DLQ entries, oldest first, including already
+// reprocessed ones (ReprocessedAt distinguishes them for the UI).
+func (r *MemoryWebhookRepo) ListDLQEntries(_ context.Context) ([]domain.DLQEntry, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]domain.DLQEntry, len(r.dlq))
+	copy(result, r.dlq)
+	return result, nil
+}
+
+// CountDLQEntries counts entries not yet reprocessed, for the depth metric
+// and 80% capacity warning (Task 4).
+func (r *MemoryWebhookRepo) CountDLQEntries(_ context.Context) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, e := range r.dlq {
+		if e.ReprocessedAt == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *MemoryWebhookRepo) MarkDLQEntryReprocessed(_ context.Context, id string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.dlq {
+		if r.dlq[i].ID == id {
+			r.dlq[i].ReprocessedAt = &at
+			return nil
+		}
+	}
+	return &domain.ErrNotFound{Entity: "webhook_dlq_entry", ID: id}
 }
 
 // MemoryRuleRepo stores rule definitions keyed by name, each holding every

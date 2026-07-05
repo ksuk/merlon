@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -51,6 +52,32 @@ type Config struct {
 	// an IANA location name (e.g. "Asia/Tokyo"); empty means time.Local.
 	TMBatchSchedule string
 	TMBatchTimezone string
+
+	// SMTP (WS-8 Task 5, NOTIF-001): mail server settings for alert email
+	// notifications (notifications.md §1: "SMTP設定（ホスト、ポート、認証、
+	// TLS）はシステム設定で構成する"). An empty SMTPHost disables the mailer.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPTo       []string
+	SMTPUseTLS   bool
+
+	// NotifyRoutingPath points at a YAML file of notify.RoutingRule entries
+	// (NOTIF-003). Empty uses notify.DefaultRoutingRules().
+	NotifyRoutingPath string
+
+	// PublicURL is the base URL of this Merlon instance, prefixed to alert
+	// IDs to build the link carried in notification emails (notifications.md
+	// §1: "ケース/アラートIDと本システムへのリンクのみを記載する").
+	PublicURL string
+
+	// EDD 3-stage escalation (case-management.md §EDD未実施継続時の段階的
+	// 措置). Stage 1 (reminder) is fixed at 30 days; stages 2/3 are
+	// "デフォルト、設定可" so they are configurable here.
+	EDDStage2Days int
+	EDDStage3Days int
 }
 
 func (c *Config) Validate() error {
@@ -94,6 +121,20 @@ func Load() *Config {
 
 		TMBatchSchedule: getEnv("MERLON_TM_BATCH_SCHEDULE", "02:00"),
 		TMBatchTimezone: getEnv("MERLON_TM_BATCH_TIMEZONE", ""),
+
+		SMTPHost:     getEnv("MERLON_SMTP_HOST", ""),
+		SMTPPort:     getEnvInt("MERLON_SMTP_PORT", 587),
+		SMTPUsername: getEnv("MERLON_SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("MERLON_SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("MERLON_SMTP_FROM", ""),
+		SMTPTo:       getEnvList("MERLON_SMTP_TO"),
+		SMTPUseTLS:   getEnv("MERLON_SMTP_USE_TLS", "") == "true",
+
+		NotifyRoutingPath: getEnv("MERLON_NOTIFY_ROUTING_PATH", ""),
+		PublicURL:         getEnv("MERLON_PUBLIC_URL", ""),
+
+		EDDStage2Days: getEnvInt("MERLON_EDD_STAGE2_DAYS", 60),
+		EDDStage3Days: getEnvInt("MERLON_EDD_STAGE3_DAYS", 90),
 	}
 }
 
@@ -104,6 +145,23 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+// getEnvList splits a comma-separated env var into trimmed, non-empty
+// entries (e.g. MERLON_SMTP_TO="a@example.com,b@example.com").
+func getEnvList(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func getEnvInt(key string, fallback int) int {

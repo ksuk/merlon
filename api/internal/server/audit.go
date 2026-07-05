@@ -136,6 +136,9 @@ func resolveAction(method, path string) string {
 		if strings.Contains(path, "/whitelist/") && strings.HasSuffix(path, "/reviews") {
 			return "review_whitelist_entry"
 		}
+		if strings.Contains(path, "/webhooks/dlq/") && strings.HasSuffix(path, "/reprocess") {
+			return "reprocess_dlq_entry"
+		}
 		return "create"
 	case http.MethodPut:
 		return "update"
@@ -152,6 +155,12 @@ func resolveResource(path string) (string, string) {
 	parts := strings.Split(strings.TrimPrefix(path, "/api/v1/"), "/")
 	if len(parts) == 0 {
 		return "unknown", ""
+	}
+
+	// webhooks/dlq/{id}/reprocess nests the id one level deeper than the
+	// generic resource/{id} shape the fallback below assumes.
+	if len(parts) >= 3 && parts[0] == "webhooks" && parts[1] == "dlq" {
+		return "webhook_dlq", parts[2]
 	}
 
 	resourceType := parts[0]

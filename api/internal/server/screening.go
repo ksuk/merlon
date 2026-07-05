@@ -126,7 +126,7 @@ func (s *Server) onScreeningTruePositive(ctx context.Context, record *domain.Scr
 		c := &domain.Case{
 			ID:         generateID(),
 			CustomerID: record.CustomerID,
-			Status:     domain.CaseStatusOpen,
+			Status:     domain.CaseStatusNew,
 			Priority:   domain.CasePriorityHigh,
 			Summary:    fmt.Sprintf("Screening true positive: %s matched %s (%s)", record.MatchedName, record.ListID, record.ListType),
 			CreatedAt:  now,

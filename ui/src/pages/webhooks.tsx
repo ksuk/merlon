@@ -10,9 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type WebhookDelivery, type WebhookEventType } from "@/lib/api"
+import { api, type WebhookDLQEntry, type WebhookDelivery, type WebhookEventType } from "@/lib/api"
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 const ALL_EVENTS: { value: WebhookEventType; label: string }[] = [
   { value: "alert.created", label: "アラート作成" },
@@ -23,7 +23,15 @@ const ALL_EVENTS: { value: WebhookEventType; label: string }[] = [
   { value: "str.created", label: "STR作成" },
   { value: "score.changed", label: "スコア変更" },
   { value: "screening.match", label: "スクリーニング一致" },
+  { value: "screening_true_positive", label: "スクリーニング真陽性" },
+  { value: "edd_required", label: "EDD要求" },
+  { value: "transaction_restriction_recommended", label: "取引制限推奨" },
+  { value: "relationship_decline_recommended", label: "取引謝絶推奨" },
 ]
+
+function eventLabel(event: WebhookEventType) {
+  return ALL_EVENTS.find((ae) => ae.value === event)?.label ?? event
+}
 
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString("ja-JP")
@@ -38,6 +46,38 @@ export function WebhooksPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([])
   const [loadingDeliveries, setLoadingDeliveries] = useState(false)
+
+  // DLQ タブ（api.md §3.1「DLQ内イベントの再処理はUI上から実行可能」）。
+  const [tab, setTab] = useState<"webhooks" | "dlq">("webhooks")
+  const [dlqEntries, setDlqEntries] = useState<WebhookDLQEntry[] | null>(null)
+  const [loadingDlq, setLoadingDlq] = useState(false)
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null)
+
+  async function loadDlq() {
+    setLoadingDlq(true)
+    try {
+      const entries = await api.webhooks.listDLQ()
+      setDlqEntries(entries)
+    } finally {
+      setLoadingDlq(false)
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "dlq") {
+      loadDlq()
+    }
+  }, [tab])
+
+  async function handleReprocess(id: string) {
+    setReprocessingId(id)
+    try {
+      await api.webhooks.reprocessDLQ(id)
+      await loadDlq()
+    } finally {
+      setReprocessingId(null)
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -95,13 +135,84 @@ export function WebhooksPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Webhook管理</h1>
-        <Button size="sm" onClick={() => setShowForm(!showForm)}>
-          <Plus className="h-4 w-4" />
-          新規作成
-        </Button>
+        {tab === "webhooks" && (
+          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+            <Plus className="h-4 w-4" />
+            新規作成
+          </Button>
+        )}
       </div>
 
-      {showForm && (
+      <div className="flex gap-2 border-b">
+        <button
+          type="button"
+          onClick={() => setTab("webhooks")}
+          className={`border-b-2 px-3 py-2 text-sm font-medium ${
+            tab === "webhooks" ? "border-primary text-foreground" : "border-transparent text-muted-foreground"
+          }`}
+        >
+          Webhook
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("dlq")}
+          className={`border-b-2 px-3 py-2 text-sm font-medium ${
+            tab === "dlq" ? "border-primary text-foreground" : "border-transparent text-muted-foreground"
+          }`}
+        >
+          DLQ
+        </button>
+      </div>
+
+      {tab === "dlq" ? (
+        loadingDlq ? (
+          <div className="h-48 animate-pulse rounded-xl border bg-muted" />
+        ) : dlqEntries && dlqEntries.length > 0 ? (
+          <div className="rounded-xl border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>イベント</TableHead>
+                  <TableHead>試行回数</TableHead>
+                  <TableHead>最終エラー</TableHead>
+                  <TableHead>失敗日時</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dlqEntries.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell className="text-xs">{eventLabel(entry.event)}</TableCell>
+                    <TableCell>{entry.attempt_count}</TableCell>
+                    <TableCell className="max-w-[300px] truncate text-xs text-destructive">
+                      {entry.last_error ?? "-"}
+                    </TableCell>
+                    <TableCell className="text-xs">{formatDateTime(entry.failed_at)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={reprocessingId === entry.id}
+                        onClick={() => handleReprocess(entry.id)}
+                      >
+                        再処理
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <Card>
+            <CardContent className="p-8 text-center text-sm text-muted-foreground">
+              DLQに退避されたイベントはありません
+            </CardContent>
+          </Card>
+        )
+      ) : (
+        <>
+          {showForm && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Webhook作成</CardTitle>
@@ -161,7 +272,7 @@ export function WebhooksPage() {
                     <div className="flex flex-wrap gap-1">
                       {w.events.map((e) => (
                         <Badge key={e} variant="outline" className="text-xs">
-                          {ALL_EVENTS.find((ae) => ae.value === e)?.label ?? e}
+                          {eventLabel(e)}
                         </Badge>
                       ))}
                     </div>
@@ -197,7 +308,7 @@ export function WebhooksPage() {
                           {deliveries.map((d) => (
                             <TableRow key={d.id}>
                               <TableCell className="text-xs">
-                                {ALL_EVENTS.find((ae) => ae.value === d.event)?.label ?? d.event}
+                                {eventLabel(d.event)}
                               </TableCell>
                               <TableCell>{d.status_code || "-"}</TableCell>
                               <TableCell>
@@ -226,7 +337,9 @@ export function WebhooksPage() {
             </CardContent>
           </Card>
         )}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

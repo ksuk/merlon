@@ -22,6 +22,11 @@ type CustomerRepository interface {
 	Update(ctx context.Context, c *Customer) error
 	SaveScoreRecord(ctx context.Context, r *ScoreRecord) error
 	ListScoreHistory(ctx context.Context, customerID string, limit int) ([]ScoreRecord, error)
+	// ListEDDPending returns High-tier customers with an open EDD requirement
+	// (edd_requested_at set), for RunEDDEscalationJob (case-management.md §EDD
+	// 未実施継続時の段階的措置). The job itself computes elapsed days per
+	// customer and decides which stage (if any) applies.
+	ListEDDPending(ctx context.Context) ([]Customer, error)
 }
 
 type TransactionRepository interface {
@@ -29,6 +34,16 @@ type TransactionRepository interface {
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Transaction, error)
 	ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Transaction, error)
 	Create(ctx context.Context, t *Transaction) error
+}
+
+// AlertBulkFilter narrows ListByFilter's results for bulk alert operations
+// (case-management.md §アラートの一括処理: "フィルタ条件（シナリオID、期間、
+// severity）"). Zero-value fields are wildcards (no restriction on that axis).
+type AlertBulkFilter struct {
+	ScenarioID string
+	PeriodFrom *time.Time
+	PeriodTo   *time.Time
+	Severity   AlertSeverity
 }
 
 type AlertRepository interface {
@@ -51,6 +66,8 @@ type AlertRepository interface {
 	// alertID after finding it already exists for the same scenario/window
 	// (Task4/Task7 dedup routing), without altering its status or severity.
 	AnnotateBatchReviewed(ctx context.Context, alertID string, batchRunID string) error
+	// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7).
+	ListByFilter(ctx context.Context, f AlertBulkFilter) ([]Alert, error)
 }
 
 type ErrNotFound struct {

@@ -15,23 +15,30 @@ import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
-const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high"> = {
+const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critical"> = {
   low: "low",
   medium: "medium",
   high: "high",
+  critical: "critical",
 }
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: "低",
   medium: "中",
   high: "高",
+  critical: "重大",
 }
 
+// new/reopened/str_filed は WS-8 Task 1（ケースステータス拡張）で追加。
+// open は new のエイリアスとして受理され続ける（Contract Stability）。
 const STATUS_LABELS: Record<CaseStatus, string> = {
-  open: "未対応",
+  open: "新規",
+  new: "新規",
   investigating: "調査中",
   escalated: "エスカレーション",
   closed: "完了",
+  reopened: "再オープン",
+  str_filed: "STR対象",
 }
 
 function formatDateTime(iso: string) {

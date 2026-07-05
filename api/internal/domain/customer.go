@@ -30,6 +30,17 @@ type Customer struct {
 	LastScoredAt *time.Time        `json:"last_scored_at,omitempty"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
+
+	// EDD escalation tracking (case-management.md §EDD未実施継続時の段階的
+	// 措置). EddRequestedAt marks when the customer entered the current
+	// High-tier EDD requirement window (nil when not in that state).
+	// StageNotifiedAt fields make RunEDDEscalationJob idempotent: stage 2/3
+	// fire at most once (never re-sent), stage 1 re-fires at most once per
+	// calendar day.
+	EddRequestedAt       *time.Time `json:"edd_requested_at,omitempty"`
+	EddStage1LastSentAt  *time.Time `json:"edd_stage1_last_sent_at,omitempty"`
+	EddStage2NotifiedAt  *time.Time `json:"edd_stage2_notified_at,omitempty"`
+	EddStage3NotifiedAt  *time.Time `json:"edd_stage3_notified_at,omitempty"`
 }
 
 type ScoreRecord struct {

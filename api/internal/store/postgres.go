@@ -21,12 +21,14 @@ func NewPgCustomerRepo(pool *pgxpool.Pool) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool}
 }
 
+const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at`
+
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
-	return r.scanCustomer(ctx, `SELECT id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at FROM customers WHERE id = $1`, id)
+	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1`, id)
 }
 
 func (r *PgCustomerRepo) GetByExternalID(ctx context.Context, externalID string) (*domain.Customer, error) {
-	return r.scanCustomer(ctx, `SELECT id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at FROM customers WHERE external_id = $1`, externalID)
+	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE external_id = $1`, externalID)
 }
 
 func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any) (*domain.Customer, error) {
@@ -40,6 +42,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 		&products, &attrs,
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
+		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -60,9 +63,39 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	return &c, nil
 }
 
+// scanCustomerRows scans a single customers row using customerColumns'
+// column order, shared by List/ListByCursor/ListEDDPending.
+func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
+	var c domain.Customer
+	var attrs []byte
+	var products []string
+	var riskTier *string
+
+	if err := rows.Scan(
+		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
+		&products, &attrs,
+		&c.RiskScore, &riskTier, &c.LastScoredAt,
+		&c.CreatedAt, &c.UpdatedAt,
+		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+	); err != nil {
+		return c, err
+	}
+
+	c.ProductTypes = products
+	c.Attributes = make(map[string]string)
+	if len(attrs) > 0 {
+		json.Unmarshal(attrs, &c.Attributes)
+	}
+	if riskTier != nil {
+		rt := domain.RiskTier(*riskTier)
+		c.RiskTier = &rt
+	}
+	return c, nil
+}
+
 func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.Customer, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at FROM customers ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		`SELECT `+customerColumns+` FROM customers ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
 	if err != nil {
@@ -72,28 +105,9 @@ func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.
 
 	var customers []domain.Customer
 	for rows.Next() {
-		var c domain.Customer
-		var attrs []byte
-		var products []string
-		var riskTier *string
-
-		if err := rows.Scan(
-			&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
-			&products, &attrs,
-			&c.RiskScore, &riskTier, &c.LastScoredAt,
-			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanCustomerRows(rows)
+		if err != nil {
 			return nil, err
-		}
-
-		c.ProductTypes = products
-		c.Attributes = make(map[string]string)
-		if len(attrs) > 0 {
-			json.Unmarshal(attrs, &c.Attributes)
-		}
-		if riskTier != nil {
-			rt := domain.RiskTier(*riskTier)
-			c.RiskTier = &rt
 		}
 		customers = append(customers, c)
 	}
@@ -101,7 +115,7 @@ func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.
 }
 
 func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Customer, error) {
-	const baseQuery = `SELECT id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at FROM customers`
+	baseQuery := `SELECT ` + customerColumns + ` FROM customers`
 
 	var (
 		rows pgx.Rows
@@ -120,28 +134,31 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 
 	var customers []domain.Customer
 	for rows.Next() {
-		var c domain.Customer
-		var attrs []byte
-		var products []string
-		var riskTier *string
-
-		if err := rows.Scan(
-			&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
-			&products, &attrs,
-			&c.RiskScore, &riskTier, &c.LastScoredAt,
-			&c.CreatedAt, &c.UpdatedAt,
-		); err != nil {
+		c, err := scanCustomerRows(rows)
+		if err != nil {
 			return nil, err
 		}
+		customers = append(customers, c)
+	}
+	return customers, rows.Err()
+}
 
-		c.ProductTypes = products
-		c.Attributes = make(map[string]string)
-		if len(attrs) > 0 {
-			json.Unmarshal(attrs, &c.Attributes)
-		}
-		if riskTier != nil {
-			rt := domain.RiskTier(*riskTier)
-			c.RiskTier = &rt
+// ListEDDPending returns High-tier customers with an open EDD requirement
+// (case-management.md §EDD未実施継続時の段階的措置).
+func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+customerColumns+` FROM customers WHERE risk_tier = 'high' AND edd_requested_at IS NOT NULL`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var customers []domain.Customer
+	for rows.Next() {
+		c, err := scanCustomerRows(rows)
+		if err != nil {
+			return nil, err
 		}
 		customers = append(customers, c)
 	}
@@ -151,12 +168,13 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO customers (id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO customers (id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
+		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
 	)
 	return err
 }
@@ -165,11 +183,12 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10 WHERE id=$1`,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
+		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
 	)
 	if err != nil {
 		return err
@@ -430,6 +449,43 @@ func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *do
 		after.CreatedAt, after.ID, limit)
 }
 
+// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7,
+// case-management.md §アラートの一括処理).
+func (r *PgAlertRepo) ListByFilter(ctx context.Context, f domain.AlertBulkFilter) ([]domain.Alert, error) {
+	query := `SELECT ` + alertColumns + ` FROM alerts`
+	var args []any
+	var conditions []string
+	argIdx := 1
+
+	if f.ScenarioID != "" {
+		conditions = append(conditions, fmt.Sprintf("scenario_id = $%d", argIdx))
+		args = append(args, f.ScenarioID)
+		argIdx++
+	}
+	if f.Severity != "" {
+		conditions = append(conditions, fmt.Sprintf("severity = $%d", argIdx))
+		args = append(args, string(f.Severity))
+		argIdx++
+	}
+	if f.PeriodFrom != nil {
+		conditions = append(conditions, fmt.Sprintf("detected_at >= $%d", argIdx))
+		args = append(args, *f.PeriodFrom)
+		argIdx++
+	}
+	if f.PeriodTo != nil {
+		conditions = append(conditions, fmt.Sprintf("detected_at <= $%d", argIdx))
+		args = append(args, *f.PeriodTo)
+		argIdx++
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY detected_at DESC"
+
+	return r.listAlerts(ctx, query, args...)
+}
+
 func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any) ([]domain.Alert, error) {
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -620,9 +676,9 @@ func NewPgCaseRepo(pool *pgxpool.Pool) *PgCaseRepo {
 func (r *PgCaseRepo) Get(ctx context.Context, id string) (*domain.Case, error) {
 	var c domain.Case
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE id = $1`, id,
-	).Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt)
+	).Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.ReopenReason, &c.RelatedCaseIDs, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &domain.ErrNotFound{Entity: "case", ID: id}
@@ -640,18 +696,18 @@ func (r *PgCaseRepo) Get(ctx context.Context, id string) (*domain.Case, error) {
 
 func (r *PgCaseRepo) ListByCustomer(ctx context.Context, customerID string) ([]domain.Case, error) {
 	return r.listCases(ctx,
-		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE customer_id = $1 ORDER BY created_at DESC`, customerID)
 }
 
 func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Case, error) {
 	return r.listCases(ctx,
-		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE status != 'closed' ORDER BY priority DESC, created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 }
 
 func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
-	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE status != 'closed'`
 
 	if after == nil {
@@ -671,7 +727,7 @@ func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) (
 	var cases []domain.Case
 	for rows.Next() {
 		var c domain.Case
-		if err := rows.Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.ReopenReason, &c.RelatedCaseIDs, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt); err != nil {
 			return nil, err
 		}
 		cases = append(cases, c)
@@ -681,17 +737,17 @@ func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) (
 
 func (r *PgCaseRepo) Create(ctx context.Context, c *domain.Case) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		c.ID, c.CustomerID, c.AlertIDs, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.CreatedAt, c.UpdatedAt)
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		c.ID, c.CustomerID, c.AlertIDs, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, c.CreatedAt, c.UpdatedAt)
 	return err
 }
 
 func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, updated_at=$6, closed_at=$7 WHERE id=$1`,
-		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.UpdatedAt, c.ClosedAt)
+		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9 WHERE id=$1`,
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, c.UpdatedAt, c.ClosedAt)
 	if err != nil {
 		return err
 	}
