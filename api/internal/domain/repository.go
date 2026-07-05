@@ -22,6 +22,11 @@ type CustomerRepository interface {
 	Update(ctx context.Context, c *Customer) error
 	SaveScoreRecord(ctx context.Context, r *ScoreRecord) error
 	ListScoreHistory(ctx context.Context, customerID string, limit int) ([]ScoreRecord, error)
+	// ListEDDPending returns High-tier customers with an open EDD requirement
+	// (edd_requested_at set), for RunEDDEscalationJob (case-management.md §EDD
+	// 未実施継続時の段階的措置). The job itself computes elapsed days per
+	// customer and decides which stage (if any) applies.
+	ListEDDPending(ctx context.Context) ([]Customer, error)
 }
 
 type TransactionRepository interface {

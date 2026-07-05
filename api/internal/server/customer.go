@@ -250,6 +250,22 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	now := record.ScoredAt
 	c.LastScoredAt = &now
 
+	// EDD escalation window (case-management.md §EDD未実施継続時の段階的
+	// 措置): entering High tier starts the clock (kept if already running,
+	// so a re-score at High doesn't reset stage progress); leaving High tier
+	// closes the window, since EDD is no longer required.
+	if record.Tier == domain.RiskTierHigh {
+		if c.EddRequestedAt == nil {
+			eddAt := record.ScoredAt
+			c.EddRequestedAt = &eddAt
+		}
+	} else {
+		c.EddRequestedAt = nil
+		c.EddStage1LastSentAt = nil
+		c.EddStage2NotifiedAt = nil
+		c.EddStage3NotifiedAt = nil
+	}
+
 	if err := s.customers.Update(r.Context(), c); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

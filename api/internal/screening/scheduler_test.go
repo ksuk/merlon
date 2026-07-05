@@ -139,6 +139,10 @@ func (r *fakeCustomerRepo) ListScoreHistory(_ context.Context, _ string, _ int) 
 	return nil, nil
 }
 
+func (r *fakeCustomerRepo) ListEDDPending(_ context.Context) ([]domain.Customer, error) {
+	return nil, nil
+}
+
 // fakeScreeningEngine records the order and set of customers screened, and
 // lets tests inject an onCall hook (e.g. to mutate the customer repo
 // mid-batch) or return preset matches per customer.

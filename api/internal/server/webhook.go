@@ -25,6 +25,13 @@ type webhookPayload struct {
 	Data      any                     `json:"data"`
 }
 
+// DispatchWebhook exposes dispatchWebhook to out-of-package callers (e.g.
+// batch.RunEDDEscalationJob in internal/batch, which cannot depend on the
+// server package to avoid an import cycle).
+func (s *Server) DispatchWebhook(ctx context.Context, event domain.WebhookEventType, data any) {
+	s.dispatchWebhook(ctx, event, data)
+}
+
 func (s *Server) dispatchWebhook(ctx context.Context, event domain.WebhookEventType, data any) {
 	if s.webhooks == nil {
 		return

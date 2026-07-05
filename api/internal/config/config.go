@@ -66,6 +66,12 @@ type Config struct {
 	// IDs to build the link carried in notification emails (notifications.md
 	// §1: "ケース/アラートIDと本システムへのリンクのみを記載する").
 	PublicURL string
+
+	// EDD 3-stage escalation (case-management.md §EDD未実施継続時の段階的
+	// 措置). Stage 1 (reminder) is fixed at 30 days; stages 2/3 are
+	// "デフォルト、設定可" so they are configurable here.
+	EDDStage2Days int
+	EDDStage3Days int
 }
 
 func (c *Config) Validate() error {
@@ -117,6 +123,9 @@ func Load() *Config {
 
 		NotifyRoutingPath: getEnv("MERLON_NOTIFY_ROUTING_PATH", ""),
 		PublicURL:         getEnv("MERLON_PUBLIC_URL", ""),
+
+		EDDStage2Days: getEnvInt("MERLON_EDD_STAGE2_DAYS", 60),
+		EDDStage3Days: getEnvInt("MERLON_EDD_STAGE3_DAYS", 90),
 	}
 }
 

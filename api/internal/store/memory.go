@@ -146,6 +146,18 @@ func (r *MemoryCustomerRepo) Update(_ context.Context, c *domain.Customer) error
 	return nil
 }
 
+func (r *MemoryCustomerRepo) ListEDDPending(_ context.Context) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []domain.Customer
+	for _, c := range r.data {
+		if c.RiskTier != nil && *c.RiskTier == domain.RiskTierHigh && c.EddRequestedAt != nil {
+			out = append(out, *c)
+		}
+	}
+	return out, nil
+}
+
 func (r *MemoryCustomerRepo) SaveScoreRecord(_ context.Context, rec *domain.ScoreRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

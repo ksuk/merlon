@@ -143,6 +143,30 @@ func TestLoadNotifyRoutingAndPublicURLFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadEDDStageDaysDefaults(t *testing.T) {
+	cfg := Load()
+	if cfg.EDDStage2Days != 60 {
+		t.Errorf("EDDStage2Days = %d, want 60", cfg.EDDStage2Days)
+	}
+	if cfg.EDDStage3Days != 90 {
+		t.Errorf("EDDStage3Days = %d, want 90", cfg.EDDStage3Days)
+	}
+}
+
+func TestLoadEDDStageDaysFromEnv(t *testing.T) {
+	t.Setenv("MERLON_EDD_STAGE2_DAYS", "45")
+	t.Setenv("MERLON_EDD_STAGE3_DAYS", "75")
+
+	cfg := Load()
+
+	if cfg.EDDStage2Days != 45 {
+		t.Errorf("EDDStage2Days = %d, want 45", cfg.EDDStage2Days)
+	}
+	if cfg.EDDStage3Days != 75 {
+		t.Errorf("EDDStage3Days = %d, want 75", cfg.EDDStage3Days)
+	}
+}
+
 func TestValidateProductionWithoutAuth(t *testing.T) {
 	cfg := &Config{Env: "production", AuthEnabled: false}
 	if err := cfg.Validate(); err == nil {

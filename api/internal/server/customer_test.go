@@ -386,6 +386,105 @@ func TestScoreCustomer_PublishesTierChangeEvent(t *testing.T) {
 	}
 }
 
+// TestScoreCustomer_SetsEddRequestedAtOnHighTier verifies WS-8 Task 6: a
+// scoring call that promotes a customer to High tier starts the EDD
+// escalation window (case-management.md §EDD未実施継続時の段階的措置),
+// and a second High-tier re-score does not reset it.
+func TestScoreCustomer_SetsEddRequestedAtOnHighTier(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh},
+		Monitoring:   &engine.MockMonitoringEngine{},
+		Screening:    &engine.MockScreeningEngine{},
+	})
+
+	body := `{"external_id":"EDD001","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	scoreBody := `{"rule_set_id":"test"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	c, err := s.customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if c.EddRequestedAt == nil {
+		t.Fatal("expected EddRequestedAt to be set after entering High tier")
+	}
+	firstEddAt := *c.EddRequestedAt
+
+	// Re-score at High again: the window must not reset.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	c, err = s.customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if c.EddRequestedAt == nil || !c.EddRequestedAt.Equal(firstEddAt) {
+		t.Errorf("EddRequestedAt changed on re-score at High: got %v, want %v", c.EddRequestedAt, firstEddAt)
+	}
+}
+
+// TestScoreCustomer_ClearsEddRequestedAtOnTierDowngrade verifies the EDD
+// escalation window closes once the customer is no longer High tier, so a
+// later re-entry into High tier starts a fresh window rather than resuming a
+// stale one.
+func TestScoreCustomer_ClearsEddRequestedAtOnTierDowngrade(t *testing.T) {
+	scoring := &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh}
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Scoring:      scoring,
+		Monitoring:   &engine.MockMonitoringEngine{},
+		Screening:    &engine.MockScreeningEngine{},
+	})
+
+	body := `{"external_id":"EDD002","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Customer
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	scoreBody := `{"rule_set_id":"test"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	scoring.Tier = domain.RiskTierMedium
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(scoreBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	c, err := s.customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if c.EddRequestedAt != nil {
+		t.Errorf("EddRequestedAt = %v, want nil after downgrade below High", c.EddRequestedAt)
+	}
+}
+
 func TestScoreCustomerNotFound(t *testing.T) {
 	s := testServer()
 

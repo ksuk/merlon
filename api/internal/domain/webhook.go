@@ -8,14 +8,14 @@ import (
 type WebhookEventType string
 
 const (
-	WebhookEventAlertCreated    WebhookEventType = "alert.created"
-	WebhookEventAlertResolved   WebhookEventType = "alert.resolved"
-	WebhookEventCaseCreated     WebhookEventType = "case.created"
-	WebhookEventCaseUpdated     WebhookEventType = "case.updated"
-	WebhookEventCaseClosed      WebhookEventType = "case.closed"
-	WebhookEventSTRCreated      WebhookEventType = "str.created"
-	WebhookEventScoreChanged    WebhookEventType = "score.changed"
-	WebhookEventScreeningMatch  WebhookEventType = "screening.match"
+	WebhookEventAlertCreated   WebhookEventType = "alert.created"
+	WebhookEventAlertResolved  WebhookEventType = "alert.resolved"
+	WebhookEventCaseCreated    WebhookEventType = "case.created"
+	WebhookEventCaseUpdated    WebhookEventType = "case.updated"
+	WebhookEventCaseClosed     WebhookEventType = "case.closed"
+	WebhookEventSTRCreated     WebhookEventType = "str.created"
+	WebhookEventScoreChanged   WebhookEventType = "score.changed"
+	WebhookEventScreeningMatch WebhookEventType = "screening.match"
 
 	// WebhookEventScreeningTruePositive notifies the core system that a
 	// screening_results hit was confirmed a true positive so it can decide
@@ -25,16 +25,24 @@ const (
 	// イベント）"). Deliberately a distinct event from WebhookEventScreeningMatch,
 	// which fires on the raw single-shot screen call before investigation.
 	WebhookEventScreeningTruePositive WebhookEventType = "screening_true_positive"
+
+	// EDD 3-stage escalation events (case-management.md §EDD未実施継続時の
+	// 段階的措置). The actual restriction/decline decision and execution
+	// remains the core system's responsibility (CONST-002); Merlon only
+	// detects the elapsed-time thresholds and notifies.
+	WebhookEventEDDRequired                       WebhookEventType = "edd_required"
+	WebhookEventTransactionRestrictionRecommended WebhookEventType = "transaction_restriction_recommended"
+	WebhookEventRelationshipDeclineRecommended    WebhookEventType = "relationship_decline_recommended"
 )
 
 type Webhook struct {
-	ID         string             `json:"id"`
-	URL        string             `json:"url"`
-	Events     []WebhookEventType `json:"events"`
-	Secret     string             `json:"-"`
-	Active     bool               `json:"active"`
-	CreatedAt  time.Time          `json:"created_at"`
-	UpdatedAt  time.Time          `json:"updated_at"`
+	ID        string             `json:"id"`
+	URL       string             `json:"url"`
+	Events    []WebhookEventType `json:"events"`
+	Secret    string             `json:"-"`
+	Active    bool               `json:"active"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
 }
 
 type WebhookDelivery struct {

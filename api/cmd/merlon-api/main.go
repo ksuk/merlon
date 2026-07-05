@@ -41,6 +41,12 @@ const whitelistExpiryCheckInterval = time.Hour
 // than necessary.
 const webhookRetryCheckInterval = 30 * time.Second
 
+// eddEscalationCheckInterval governs how often RunEDDEscalationJob runs
+// (case-management.md §EDD未実施継続時の段階的措置). Its finest granularity
+// is one calendar day (stage 1 dedup), so hourly is more than sufficient and
+// harmless since the job is idempotent.
+const eddEscalationCheckInterval = time.Hour
+
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (screening.md §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
@@ -272,6 +278,17 @@ func main() {
 	}
 
 	srv := server.New(cfg.HTTPAddr, deps)
+
+	if deps.Customers != nil && deps.Cases != nil {
+		batch.StartEDDEscalationTicker(jobsCtx, batch.EDDEscalationDeps{
+			Customers:  deps.Customers,
+			Cases:      deps.Cases,
+			Webhook:    srv.DispatchWebhook,
+			Stage2Days: cfg.EDDStage2Days,
+			Stage3Days: cfg.EDDStage3Days,
+		}, eddEscalationCheckInterval)
+		slog.Info("EDD escalation job enabled", "stage2_days", cfg.EDDStage2Days, "stage3_days", cfg.EDDStage3Days)
+	}
 
 	if cfg.UIDir != "" {
 		srv.SetUIDir(cfg.UIDir)
