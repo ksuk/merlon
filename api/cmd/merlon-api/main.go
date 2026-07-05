@@ -181,7 +181,7 @@ func main() {
 			os.Exit(1)
 		}
 		deps.Events = bus
-		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts)
+		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases)
 		if err := bus.Subscribe(jobsCtx, "cdd.tier_changed", tierChangeHandler); err != nil {
 			slog.Error("event bus subscribe", "topic", "cdd.tier_changed", "error", err)
 			os.Exit(1)

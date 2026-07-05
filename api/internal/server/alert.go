@@ -1,11 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 
+	"github.com/merlon-aml/merlon/api/internal/casemgmt"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/metrics"
 )
@@ -24,6 +27,24 @@ func alertCursor(a domain.Alert) Cursor {
 // right after its creation is confirmed, to avoid double-counting.
 func recordAlertCreated(a *domain.Alert) {
 	metrics.AlertsTotal.WithLabelValues(a.ScenarioID, string(a.Severity)).Inc()
+}
+
+// consolidateAlertIntoCase joins a into an existing open case for the same
+// customer within casemgmt.DefaultConsolidationWindow, or creates a new one
+// (transaction-monitoring.md「アラート統合ロジック」). Call this once per
+// newly created alert, after it has been persisted. A failure here (e.g.
+// the case store being unavailable) is logged and does not roll back or
+// fail the alert creation itself; the alert still exists and can be
+// consolidated later on retry/manual review (Fail-Alert: never lose an
+// alert over a case-management side effect).
+func (s *Server) consolidateAlertIntoCase(ctx context.Context, a *domain.Alert) {
+	if s.cases == nil {
+		return
+	}
+	if _, err := casemgmt.ConsolidateAlert(ctx, s.cases, a, casemgmt.DefaultConsolidationWindow); err != nil {
+		slog.Error("failed to consolidate alert into case",
+			"alert_id", a.ID, "customer_id", a.CustomerID, "error", err)
+	}
 }
 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {

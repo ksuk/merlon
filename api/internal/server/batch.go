@@ -251,6 +251,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			recordAlertCreated(&a)
+			s.consolidateAlertIntoCase(ctx, &a)
 			s.dispatchWebhook(ctx, domain.WebhookEventAlertCreated, a)
 		}
 
