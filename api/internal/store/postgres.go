@@ -52,7 +52,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	}
 
 	c.ProductTypes = products
-	c.Attributes = make(map[string]string)
+	c.Attributes = make(map[string]any)
 	if len(attrs) > 0 {
 		json.Unmarshal(attrs, &c.Attributes)
 	}
@@ -82,7 +82,7 @@ func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
 	}
 
 	c.ProductTypes = products
-	c.Attributes = make(map[string]string)
+	c.Attributes = make(map[string]any)
 	if len(attrs) > 0 {
 		json.Unmarshal(attrs, &c.Attributes)
 	}

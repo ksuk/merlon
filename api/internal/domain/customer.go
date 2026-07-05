@@ -8,6 +8,18 @@ const (
 	CustomerTypeIndividual        CustomerType = "individual"
 	CustomerTypeCorporateDomestic CustomerType = "corporate_domestic"
 	CustomerTypeCorporateForeign  CustomerType = "corporate_foreign"
+	// CustomerTypeTrust, CustomerTypePartnership, CustomerTypeNPO,
+	// CustomerTypeGovernment, and CustomerTypeForeignLegalArrangement extend
+	// customer_type for non-natural-person entities beyond ordinary
+	// corporations (data-model.md §1.1.1). Beneficial-owner confirmation is
+	// required for all of these except CustomerTypeGovernment (犯収法上の取引
+	// 時確認義務は原則免除、ただし制裁リスト照合は実施) — that distinction is
+	// screening-scheduler policy (WS-7), not encoded in this type.
+	CustomerTypeTrust                   CustomerType = "trust"
+	CustomerTypePartnership             CustomerType = "partnership"
+	CustomerTypeNPO                     CustomerType = "npo"
+	CustomerTypeGovernment              CustomerType = "government"
+	CustomerTypeForeignLegalArrangement CustomerType = "foreign_legal_arrangement"
 )
 
 type RiskTier string
@@ -31,18 +43,26 @@ const (
 )
 
 type Customer struct {
-	ID           string            `json:"id"`
-	ExternalID   string            `json:"external_id"`
-	CustomerType CustomerType      `json:"customer_type"`
-	CountryCode  string            `json:"country_code"`
-	ProductTypes []string          `json:"product_types"`
-	Status       CustomerStatus    `json:"status"`
-	Attributes   map[string]string `json:"attributes"`
-	RiskScore    *float64          `json:"risk_score,omitempty"`
-	RiskTier     *RiskTier         `json:"risk_tier,omitempty"`
-	LastScoredAt *time.Time        `json:"last_scored_at,omitempty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	ID           string         `json:"id"`
+	ExternalID   string         `json:"external_id"`
+	CustomerType CustomerType   `json:"customer_type"`
+	CountryCode  string         `json:"country_code"`
+	ProductTypes []string       `json:"product_types"`
+	Status       CustomerStatus `json:"status"`
+	// Attributes holds business-scalar fields (occupation, industry, etc.) as
+	// strings, plus structured fields that are arrays/objects of their own —
+	// notably attributes.trust_parties (data-model.md §1.1.1: JSONB array of
+	// settlor/trustee/beneficiary entries for trust/partnership/
+	// foreign_legal_arrangement customers) and the direct-PII fields WS-11
+	// Task 7 encrypts in place. any (rather than string) is required to round
+	// -trip that structure through JSONB without a lossy flatten-to-string
+	// step.
+	Attributes   map[string]any `json:"attributes"`
+	RiskScore    *float64       `json:"risk_score,omitempty"`
+	RiskTier     *RiskTier      `json:"risk_tier,omitempty"`
+	LastScoredAt *time.Time     `json:"last_scored_at,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 
 	// EDD escalation tracking (case-management.md §EDD未実施継続時の段階的
 	// 措置). EddRequestedAt marks when the customer entered the current

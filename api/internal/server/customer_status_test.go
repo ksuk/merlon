@@ -42,7 +42,7 @@ func newStatusTestCustomer(t *testing.T, repo domain.CustomerRepository, externa
 		CustomerType: domain.CustomerTypeIndividual,
 		CountryCode:  "JP",
 		Status:       domain.CustomerStatusActive,
-		Attributes:   map[string]string{},
+		Attributes:   map[string]any{},
 		CreatedAt:    time.Now(),
 		UpdatedAt:    time.Now(),
 	}

@@ -24,35 +24,35 @@ func Run(ctx context.Context, repos Repos) {
 			ID: "cust-001", ExternalID: "EXT-TANAKA-001",
 			CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP",
 			ProductTypes: []string{"deposit", "remittance"},
-			Attributes:   map[string]string{"name": "田中太郎", "branch": "東京本店"},
+			Attributes:   map[string]any{"name": "田中太郎", "branch": "東京本店"},
 			CreatedAt:    now.Add(-90 * 24 * time.Hour), UpdatedAt: now.Add(-2 * 24 * time.Hour),
 		},
 		{
 			ID: "cust-002", ExternalID: "EXT-SUZUKI-002",
 			CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP",
 			ProductTypes: []string{"deposit", "foreign_exchange"},
-			Attributes:   map[string]string{"name": "鈴木花子", "branch": "大阪支店"},
+			Attributes:   map[string]any{"name": "鈴木花子", "branch": "大阪支店"},
 			CreatedAt:    now.Add(-60 * 24 * time.Hour), UpdatedAt: now.Add(-1 * 24 * time.Hour),
 		},
 		{
 			ID: "cust-003", ExternalID: "EXT-GLOBALCORP-003",
 			CustomerType: domain.CustomerTypeCorporateForeign, CountryCode: "HK",
 			ProductTypes: []string{"trade_finance", "remittance"},
-			Attributes:   map[string]string{"name": "Global Trade Corp", "branch": "東京本店", "industry": "trading"},
+			Attributes:   map[string]any{"name": "Global Trade Corp", "branch": "東京本店", "industry": "trading"},
 			CreatedAt:    now.Add(-120 * 24 * time.Hour), UpdatedAt: now.Add(-5 * 24 * time.Hour),
 		},
 		{
 			ID: "cust-004", ExternalID: "EXT-YAMAMOTO-004",
 			CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP",
 			ProductTypes: []string{"deposit"},
-			Attributes:   map[string]string{"name": "山本一郎", "branch": "名古屋支店"},
+			Attributes:   map[string]any{"name": "山本一郎", "branch": "名古屋支店"},
 			CreatedAt:    now.Add(-30 * 24 * time.Hour), UpdatedAt: now.Add(-3 * 24 * time.Hour),
 		},
 		{
 			ID: "cust-005", ExternalID: "EXT-NIPPONSHOJI-005",
 			CustomerType: domain.CustomerTypeCorporateDomestic, CountryCode: "JP",
 			ProductTypes: []string{"deposit", "loan"},
-			Attributes:   map[string]string{"name": "日本商事株式会社", "branch": "東京本店", "industry": "manufacturing"},
+			Attributes:   map[string]any{"name": "日本商事株式会社", "branch": "東京本店", "industry": "manufacturing"},
 			CreatedAt:    now.Add(-180 * 24 * time.Hour), UpdatedAt: now.Add(-10 * 24 * time.Hour),
 		},
 	}
@@ -109,30 +109,30 @@ func Run(ctx context.Context, repos Repos) {
 		{
 			ID: "alert-001", CustomerID: "cust-001", ScenarioID: "SC-LARGE-CROSS-BORDER",
 			Severity: domain.AlertSeverityHigh, Status: domain.AlertStatusOpen, Score: 78.5,
-			Description: "短期間での高額海外送金（フィリピン宛）",
+			Description:    "短期間での高額海外送金（フィリピン宛）",
 			TransactionIDs: []string{"txn-002"},
-			DetectedAt: now.Add(-5 * 24 * time.Hour), CreatedAt: now.Add(-5 * 24 * time.Hour), UpdatedAt: now.Add(-5 * 24 * time.Hour),
+			DetectedAt:     now.Add(-5 * 24 * time.Hour), CreatedAt: now.Add(-5 * 24 * time.Hour), UpdatedAt: now.Add(-5 * 24 * time.Hour),
 		},
 		{
 			ID: "alert-002", CustomerID: "cust-003", ScenarioID: "SC-PASS-THROUGH",
 			Severity: domain.AlertSeverityCritical, Status: domain.AlertStatusEscalated, Score: 92.0,
-			Description: "入金後短時間での同額出金（パススルー疑い：HK→SG）",
+			Description:    "入金後短時間での同額出金（パススルー疑い：HK→SG）",
 			TransactionIDs: []string{"txn-004", "txn-005"},
-			DetectedAt: now.Add(-3 * 24 * time.Hour), CreatedAt: now.Add(-3 * 24 * time.Hour), UpdatedAt: now.Add(-2 * 24 * time.Hour),
+			DetectedAt:     now.Add(-3 * 24 * time.Hour), CreatedAt: now.Add(-3 * 24 * time.Hour), UpdatedAt: now.Add(-2 * 24 * time.Hour),
 		},
 		{
 			ID: "alert-003", CustomerID: "cust-004", ScenarioID: "SC-STRUCTURING",
 			Severity: domain.AlertSeverityMedium, Status: domain.AlertStatusInvestigating, Score: 65.0,
-			Description: "100万円未満の連続ATM入金（ストラクチャリング疑い）",
+			Description:    "100万円未満の連続ATM入金（ストラクチャリング疑い）",
 			TransactionIDs: []string{"txn-006", "txn-007", "txn-008"},
-			DetectedAt: now.Add(-2 * 24 * time.Hour), CreatedAt: now.Add(-2 * 24 * time.Hour), UpdatedAt: now.Add(-1 * 24 * time.Hour),
+			DetectedAt:     now.Add(-2 * 24 * time.Hour), CreatedAt: now.Add(-2 * 24 * time.Hour), UpdatedAt: now.Add(-1 * 24 * time.Hour),
 		},
 		{
 			ID: "alert-004", CustomerID: "cust-002", ScenarioID: "SC-LARGE-FX",
 			Severity: domain.AlertSeverityLow, Status: domain.AlertStatusOpen, Score: 42.0,
-			Description: "大口外国為替取引（中国元転換）",
+			Description:    "大口外国為替取引（中国元転換）",
 			TransactionIDs: []string{"txn-003"},
-			DetectedAt: now.Add(-4 * 24 * time.Hour), CreatedAt: now.Add(-4 * 24 * time.Hour), UpdatedAt: now.Add(-4 * 24 * time.Hour),
+			DetectedAt:     now.Add(-4 * 24 * time.Hour), CreatedAt: now.Add(-4 * 24 * time.Hour), UpdatedAt: now.Add(-4 * 24 * time.Hour),
 		},
 	}
 
@@ -190,4 +190,3 @@ func Run(ctx context.Context, repos Repos) {
 	log.Printf("seed: loaded %d customers, %d transactions, %d alerts, %d cases",
 		len(customers), len(transactions), len(alerts), len(cases))
 }
-
