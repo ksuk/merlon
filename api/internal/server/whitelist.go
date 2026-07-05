@@ -228,6 +228,105 @@ func (s *Server) handleGetWhitelistEntry(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, entry)
 }
 
+type createWhitelistReviewRequest struct {
+	Decision       domain.WhitelistReviewDecision `json:"decision"`
+	ReviewNotes    string                         `json:"review_notes,omitempty"`
+	NextReviewDate string                         `json:"next_review_date,omitempty"`
+	// NewValidUntil is required when decision=renewed (whitelist.md §7.2
+	// "有効期限を延長"); the spec does not pin a fixed extension length, so
+	// the reviewer supplies the new expiry explicitly, validated against the
+	// same max-period-from-now rule as initial registration (WL-002).
+	NewValidUntil string `json:"new_valid_until,omitempty"`
+}
+
+// handleCreateWhitelistReview is the periodic review step (WL-006,
+// whitelist.md §7.2): decision=renewed extends valid_until and records
+// next_review_date; decision=revoked lapses ("失効させる") the entry to
+// status=expired. Both the review row and the entry update are written
+// atomically via CreateReviewAndApply.
+func (s *Server) handleCreateWhitelistReview(w http.ResponseWriter, r *http.Request) {
+	if s.whitelist == nil {
+		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	entry, err := s.whitelist.Get(r.Context(), id)
+	if err != nil {
+		var nf *domain.ErrNotFound
+		if errors.As(err, &nf) {
+			writeError(w, http.StatusNotFound, nf.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if entry.Status != domain.WhitelistEntryStatusActive {
+		writeError(w, http.StatusConflict, "whitelist entry is not active")
+		return
+	}
+
+	var req createWhitelistReviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	now := time.Now()
+	review := &domain.WhitelistReview{
+		ID:               generateID(),
+		WhitelistEntryID: entry.ID,
+		ReviewedBy:       resolveAuditUserID(r),
+		Decision:         req.Decision,
+		ReviewNotes:      req.ReviewNotes,
+		CreatedAt:        now,
+	}
+
+	switch req.Decision {
+	case domain.WhitelistReviewDecisionRenewed:
+		if req.NewValidUntil == "" {
+			writeError(w, http.StatusBadRequest, "new_valid_until is required when decision is renewed")
+			return
+		}
+		newValidUntil, err := time.Parse(time.RFC3339, req.NewValidUntil)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "new_valid_until must be an RFC3339 timestamp")
+			return
+		}
+		if !newValidUntil.After(now) {
+			writeError(w, http.StatusBadRequest, "new_valid_until must be in the future")
+			return
+		}
+		if newValidUntil.After(now.Add(defaultWhitelistMaxValidDays * 24 * time.Hour)) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("new_valid_until must be within %d days", defaultWhitelistMaxValidDays))
+			return
+		}
+		if req.NextReviewDate != "" {
+			nextReviewDate, err := time.Parse(time.DateOnly, req.NextReviewDate)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "next_review_date must be a YYYY-MM-DD date")
+				return
+			}
+			review.NextReviewDate = &nextReviewDate
+		}
+		entry.ValidUntil = newValidUntil
+	case domain.WhitelistReviewDecisionRevoked:
+		entry.Status = domain.WhitelistEntryStatusExpired
+	default:
+		writeError(w, http.StatusBadRequest, `decision must be "renewed" or "revoked"`)
+		return
+	}
+
+	expectedVersion := entry.Version
+	if err := s.whitelist.CreateReviewAndApply(r.Context(), review, entry, expectedVersion); err != nil {
+		writeWhitelistUpdateError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, review)
+}
+
 func whitelistEntryCursor(e domain.WhitelistEntry) Cursor {
 	return Cursor{CreatedAt: e.CreatedAt, ID: e.ID}
 }

@@ -73,4 +73,10 @@ type WhitelistRepository interface {
 	UpdateWithVersion(ctx context.Context, e *WhitelistEntry, expectedVersion int) error
 	CreateReview(ctx context.Context, r *WhitelistReview) error
 	ListReviews(ctx context.Context, entryID string) ([]WhitelistReview, error)
+	// CreateReviewAndApply atomically inserts review and persists the caller's
+	// already-decided update to the reviewed entry (extended valid_until for
+	// "renewed", or status=expired for "revoked"), so a crash between the two
+	// writes cannot happen (whitelist.md §7.2, Task 5). It uses the same
+	// optimistic locking as UpdateWithVersion.
+	CreateReviewAndApply(ctx context.Context, review *WhitelistReview, entry *WhitelistEntry, expectedVersion int) error
 }

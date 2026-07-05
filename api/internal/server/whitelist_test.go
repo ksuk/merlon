@@ -347,3 +347,122 @@ func TestHandleListWhitelistEntries(t *testing.T) {
 		t.Errorf("expected at least 1 entry, got %d", len(entries))
 	}
 }
+
+// createActiveWhitelistEntryViaAPI drives the request+approve flow through
+// the HTTP handlers so review tests exercise a real status=active entry.
+func createActiveWhitelistEntryViaAPI(t *testing.T, s *Server, adminKey, requesterKey, customerID, validUntil string) domain.WhitelistEntry {
+	t.Helper()
+	entry := createWhitelistEntry(t, s, requesterKey, customerID, validUntil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist/"+entry.ID+"/approve", nil)
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("approve entry failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var approved domain.WhitelistEntry
+	json.NewDecoder(rec.Body).Decode(&approved)
+	return approved
+}
+
+func getWhitelistEntry(t *testing.T, s *Server, key, id string) domain.WhitelistEntry {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/whitelist/"+id, nil)
+	req.Header.Set("Authorization", "Bearer "+key)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get entry failed: %d %s", rec.Code, rec.Body.String())
+	}
+	var e domain.WhitelistEntry
+	json.NewDecoder(rec.Body).Decode(&e)
+	return e
+}
+
+func TestHandleCreateWhitelistReview_RenewedExtendsValidUntil(t *testing.T) {
+	s := testServerWithWhitelist()
+	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	analystKey := createAPIKeyAs(t, s, adminKey, "analyst", domain.RoleAnalyst)
+	cust := createWhitelistTestCustomer(t, s, adminKey)
+	validUntil := time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	entry := createActiveWhitelistEntryViaAPI(t, s, adminKey, analystKey, cust.ID, validUntil)
+
+	newValidUntil := time.Now().Add(300 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	body := `{"decision":"renewed","review_notes":"still trustworthy","next_review_date":"2027-01-15","new_valid_until":"` + newValidUntil + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist/"+entry.ID+"/reviews", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var review domain.WhitelistReview
+	json.NewDecoder(rec.Body).Decode(&review)
+	if review.Decision != domain.WhitelistReviewDecisionRenewed {
+		t.Errorf("Decision = %q, want %q", review.Decision, domain.WhitelistReviewDecisionRenewed)
+	}
+	if review.NextReviewDate == nil {
+		t.Error("expected next_review_date to be recorded")
+	}
+
+	updated := getWhitelistEntry(t, s, adminKey, entry.ID)
+	if updated.Status != domain.WhitelistEntryStatusActive {
+		t.Errorf("Status = %q, want %q", updated.Status, domain.WhitelistEntryStatusActive)
+	}
+	wantValidUntil, _ := time.Parse(time.RFC3339, newValidUntil)
+	if !updated.ValidUntil.Equal(wantValidUntil) {
+		t.Errorf("ValidUntil = %v, want %v", updated.ValidUntil, wantValidUntil)
+	}
+}
+
+func TestHandleCreateWhitelistReview_RevokedExpiresEntry(t *testing.T) {
+	s := testServerWithWhitelist()
+	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	analystKey := createAPIKeyAs(t, s, adminKey, "analyst", domain.RoleAnalyst)
+	cust := createWhitelistTestCustomer(t, s, adminKey)
+	validUntil := time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	entry := createActiveWhitelistEntryViaAPI(t, s, adminKey, analystKey, cust.ID, validUntil)
+
+	body := `{"decision":"revoked","review_notes":"no longer trusted"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist/"+entry.ID+"/reviews", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	updated := getWhitelistEntry(t, s, adminKey, entry.ID)
+	if updated.Status != domain.WhitelistEntryStatusExpired {
+		t.Errorf("Status = %q, want %q", updated.Status, domain.WhitelistEntryStatusExpired)
+	}
+}
+
+func TestHandleCreateWhitelistEntry_PartialExclusion_StoresRuleIDs(t *testing.T) {
+	s := testServerWithWhitelist()
+	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	cust := createWhitelistTestCustomer(t, s, adminKey)
+	validUntil := time.Now().Add(90 * 24 * time.Hour).UTC().Format(time.RFC3339)
+
+	body := `{"customer_id":"` + cust.ID + `","reason":"partial exclusion","valid_until":"` + validUntil + `","excluded_rule_ids":["rule-a","rule-b"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created domain.WhitelistEntry
+	json.NewDecoder(rec.Body).Decode(&created)
+	if len(created.ExcludedRuleIDs) != 2 {
+		t.Fatalf("ExcludedRuleIDs = %v, want 2 entries", created.ExcludedRuleIDs)
+	}
+
+	fetched := getWhitelistEntry(t, s, adminKey, created.ID)
+	if len(fetched.ExcludedRuleIDs) != 2 || fetched.ExcludedRuleIDs[0] != "rule-a" || fetched.ExcludedRuleIDs[1] != "rule-b" {
+		t.Errorf("fetched ExcludedRuleIDs = %v, want [rule-a rule-b]", fetched.ExcludedRuleIDs)
+	}
+}

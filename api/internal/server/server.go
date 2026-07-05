@@ -201,6 +201,10 @@ func (s *Server) routes() {
 	s.mux.Handle("POST /api/v1/whitelist", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleCreateWhitelistEntry)))
 	s.mux.Handle("POST /api/v1/whitelist/{id}/approve", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleApproveWhitelistEntry)))
 	s.mux.Handle("POST /api/v1/whitelist/{id}/revoke", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleRevokeWhitelistEntry)))
+	// Reviews decide whether to keep suppressing an active entry (renew) or
+	// lapse it (expire), the same authority level as approval, so this shares
+	// auth.PermWhitelistApprove rather than the request-level permission.
+	s.mux.Handle("POST /api/v1/whitelist/{id}/reviews", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleCreateWhitelistReview)))
 
 	// System info
 	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)

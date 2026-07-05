@@ -152,6 +152,28 @@ func (r *MemoryWhitelistRepo) ListReviews(_ context.Context, entryID string) ([]
 	return out, nil
 }
 
+func (r *MemoryWhitelistRepo) CreateReviewAndApply(_ context.Context, review *domain.WhitelistReview, entry *domain.WhitelistEntry, expectedVersion int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	existing, ok := r.entries[entry.ID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "whitelist_entry", ID: entry.ID}
+	}
+	if existing.Version != expectedVersion {
+		return &domain.ErrConflict{Entity: "whitelist_entry", ID: entry.ID, Reason: "version mismatch"}
+	}
+
+	entry.Version = expectedVersion + 1
+	entry.UpdatedAt = time.Now()
+	entryCp := *entry
+	r.entries[entry.ID] = &entryCp
+
+	reviewCp := *review
+	r.reviews[review.WhitelistEntryID] = append(r.reviews[review.WhitelistEntryID], &reviewCp)
+	return nil
+}
+
 // PgWhitelistRepo implements domain.WhitelistRepository against
 // whitelist_entries/whitelist_reviews (migrations/010_whitelist.sql).
 type PgWhitelistRepo struct {
@@ -342,6 +364,49 @@ func (r *PgWhitelistRepo) ListReviews(ctx context.Context, entryID string) ([]do
 		out = append(out, rev)
 	}
 	return out, rows.Err()
+}
+
+// CreateReviewAndApply inserts the review and updates the reviewed entry in
+// one pgx.Tx (whitelist.md §7.2, Task 5): without a transaction a crash
+// between the two writes could record a review whose decision was never
+// actually applied to the entry (or vice versa). This is the first
+// transaction usage in store/postgres.go; prior repositories only ever
+// needed single-statement writes.
+func (r *PgWhitelistRepo) CreateReviewAndApply(ctx context.Context, review *domain.WhitelistReview, entry *domain.WhitelistEntry, expectedVersion int) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO whitelist_reviews (id, whitelist_entry_id, reviewed_by, decision, review_notes, next_review_date, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		review.ID, review.WhitelistEntryID, review.ReviewedBy, string(review.Decision),
+		nullableString(review.ReviewNotes), review.NextReviewDate, review.CreatedAt,
+	); err != nil {
+		return err
+	}
+
+	entry.UpdatedAt = time.Now()
+	tag, err := tx.Exec(ctx,
+		`UPDATE whitelist_entries SET status = $3, valid_until = $4, version = $5, updated_at = $6
+		WHERE id = $1 AND version = $2`,
+		entry.ID, expectedVersion,
+		string(entry.Status), entry.ValidUntil, expectedVersion+1, entry.UpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, getErr := r.Get(ctx, entry.ID); getErr != nil {
+			return &domain.ErrNotFound{Entity: "whitelist_entry", ID: entry.ID}
+		}
+		return &domain.ErrConflict{Entity: "whitelist_entry", ID: entry.ID, Reason: "version mismatch"}
+	}
+	entry.Version = expectedVersion + 1
+
+	return tx.Commit(ctx)
 }
 
 // isUniqueViolation reports whether err is a Postgres unique_violation

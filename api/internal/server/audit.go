@@ -133,6 +133,9 @@ func resolveAction(method, path string) string {
 		if strings.Contains(path, "/whitelist/") && strings.HasSuffix(path, "/revoke") {
 			return "revoke_whitelist_entry"
 		}
+		if strings.Contains(path, "/whitelist/") && strings.HasSuffix(path, "/reviews") {
+			return "review_whitelist_entry"
+		}
 		return "create"
 	case http.MethodPut:
 		return "update"

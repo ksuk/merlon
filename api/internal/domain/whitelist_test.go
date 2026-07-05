@@ -61,3 +61,6 @@ func (f *fakeWhitelistRepo) CreateReview(ctx context.Context, r *WhitelistReview
 func (f *fakeWhitelistRepo) ListReviews(ctx context.Context, entryID string) ([]WhitelistReview, error) {
 	return nil, nil
 }
+func (f *fakeWhitelistRepo) CreateReviewAndApply(ctx context.Context, review *WhitelistReview, entry *WhitelistEntry, expectedVersion int) error {
+	return nil
+}
