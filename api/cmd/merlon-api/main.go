@@ -12,13 +12,21 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/merlon-aml/merlon/api/internal/auth"
+	"github.com/merlon-aml/merlon/api/internal/batch"
 	"github.com/merlon-aml/merlon/api/internal/config"
+	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/logging"
 	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
+
+// whitelistExpiryCheckInterval governs how often the ticker checks for
+// overdue/soon-to-expire whitelist entries (whitelist.md §2, WL-006). The
+// job itself (batch.RunWhitelistExpiryJob) is idempotent, so an hourly
+// cadence is safe regardless of exact expiry timing.
+const whitelistExpiryCheckInterval = time.Hour
 
 func main() {
 	slog.SetDefault(logging.NewLogger(os.Stdout))
@@ -52,6 +60,7 @@ func main() {
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.DB = pool
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
@@ -61,6 +70,7 @@ func main() {
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = store.NewMemoryCaseRepo()
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
@@ -134,6 +144,16 @@ func main() {
 			Alerts:       deps.Alerts,
 			Cases:        deps.Cases,
 			Audit:        deps.Audit,
+		})
+	}
+
+	jobsCtx, cancelJobs := context.WithCancel(context.Background())
+	defer cancelJobs()
+	if deps.Whitelist != nil {
+		batch.StartExpiryTicker(jobsCtx, deps.Whitelist, whitelistExpiryCheckInterval, func(entries []domain.WhitelistEntry) {
+			for _, e := range entries {
+				slog.Info("whitelist entry expiring soon", "id", e.ID, "customer_id", e.CustomerID, "valid_until", e.ValidUntil)
+			}
 		})
 	}
 
