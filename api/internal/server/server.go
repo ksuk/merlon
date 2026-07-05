@@ -8,6 +8,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -44,7 +45,15 @@ type Server struct {
 	refreshTokens    domain.RefreshTokenRepository
 	rules            domain.RuleRepository
 	screeningResults domain.ScreeningResultRepository
-	db               DBPinger
+
+	// screeningListStore/screeningFailureTracker/screeningListIDs back the
+	// dashboard's list-freshness display (screening.md; Task 4). Nil until
+	// Task 6 wires the import job's concrete instances into main.go.
+	screeningListStore      screening.ListStore
+	screeningFailureTracker screening.FailureTracker
+	screeningListIDs        []string
+
+	db DBPinger
 }
 
 type Deps struct {
@@ -69,7 +78,12 @@ type Deps struct {
 	RefreshTokens    domain.RefreshTokenRepository
 	Rules            domain.RuleRepository
 	ScreeningResults domain.ScreeningResultRepository
-	DB               DBPinger
+
+	ScreeningListStore      screening.ListStore
+	ScreeningFailureTracker screening.FailureTracker
+	ScreeningListIDs        []string
+
+	DB DBPinger
 }
 
 func New(addr string, deps Deps) *Server {
@@ -96,7 +110,12 @@ func New(addr string, deps Deps) *Server {
 		refreshTokens:    deps.RefreshTokens,
 		rules:            deps.Rules,
 		screeningResults: deps.ScreeningResults,
-		db:               deps.DB,
+
+		screeningListStore:      deps.ScreeningListStore,
+		screeningFailureTracker: deps.ScreeningFailureTracker,
+		screeningListIDs:        deps.ScreeningListIDs,
+
+		db: deps.DB,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)

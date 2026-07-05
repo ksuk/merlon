@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
-import { AlertTriangle, ArrowLeftRight, FolderOpen, Users } from "lucide-react"
+import { AlertTriangle, ArrowLeftRight, FolderOpen, ShieldAlert, Users } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -42,6 +42,12 @@ const SEVERITY_LABELS: Record<string, string> = {
   medium: "中",
   high: "高",
   critical: "重大",
+}
+
+const LIST_TYPE_LABELS: Record<string, string> = {
+  sanctions: "制裁リスト",
+  pep: "PEPリスト",
+  "pep-rca": "PEP家族・近親者リスト",
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -158,6 +164,30 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {stats.screening_list_freshness && stats.screening_list_freshness.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="h-4 w-4" />
+              制裁・PEPリストの鮮度
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-4">
+              {stats.screening_list_freshness.map((list) => (
+                <div key={list.list_id} className="flex items-center gap-2">
+                  <Badge variant="outline">{LIST_TYPE_LABELS[list.list_type] ?? list.list_type}</Badge>
+                  <span className="text-sm text-muted-foreground">{list.list_id}</span>
+                  <Badge variant={list.needs_operational_alert ? "destructive" : "secondary"}>
+                    {list.stale_days === 0 ? "最新" : `${list.stale_days}日経過`}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {caseStatusData.length > 0 && (
         <Card>

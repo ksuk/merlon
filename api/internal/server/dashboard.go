@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -53,5 +55,41 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if s.screeningListStore != nil && s.screeningFailureTracker != nil {
+		stats.ScreeningListFreshness = s.screeningListFreshness(ctx)
+	}
+
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// screeningListFreshness reports each configured list's staleness
+// (screening.md "リストの鮮度情報（最終更新日時）をダッシュボードに表示する"). A list
+// that has never completed an import yet is omitted rather than shown as
+// freshly imported.
+func (s *Server) screeningListFreshness(ctx context.Context) []domain.ScreeningListFreshnessStat {
+	statuses := make([]screening.ListImportStatus, 0, len(s.screeningListIDs))
+	for _, listID := range s.screeningListIDs {
+		data, err := s.screeningListStore.GetList(ctx, listID)
+		if err != nil {
+			continue
+		}
+		lastSuccess, err := s.screeningFailureTracker.LastSuccessAt(ctx, listID)
+		if err != nil {
+			continue
+		}
+		statuses = append(statuses, screening.ListImportStatus{
+			ListID: listID, ListType: data.ListType, LastSuccessAt: lastSuccess,
+		})
+	}
+
+	out := make([]domain.ScreeningListFreshnessStat, 0, len(statuses))
+	for _, f := range screening.ComputeListFreshness(statuses) {
+		out = append(out, domain.ScreeningListFreshnessStat{
+			ListID:                f.ListID,
+			ListType:              f.ListType,
+			StaleDays:             f.StaleDays,
+			NeedsOperationalAlert: f.NeedsOperationalAlert,
+		})
+	}
+	return out
 }

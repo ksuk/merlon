@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
 )
 
 // ListStore persists the current, last-successfully-imported content of a
@@ -26,6 +27,10 @@ type FailureTracker interface {
 	RecordSuccess(ctx context.Context, listID string) error
 	RecordFailure(ctx context.Context, listID string) (consecutiveFailures int, err error)
 	ConsecutiveFailures(ctx context.Context, listID string) (int, error)
+	// LastSuccessAt returns the timestamp of the most recent RecordSuccess
+	// call for listID, used to publish merlon_screening_list_stale_days
+	// (freshness.go).
+	LastSuccessAt(ctx context.Context, listID string) (time.Time, error)
 }
 
 // staleFailureThreshold is the default number of consecutive fetch failures
@@ -72,7 +77,29 @@ func RunImportJob(ctx context.Context, adapters map[string]ListAdapter, store Li
 		}
 		result.Outcomes = append(result.Outcomes, outcome)
 	}
+
+	recordFreshnessMetrics(ctx, listIDs, store, failureTracker)
 	return result, nil
+}
+
+// recordFreshnessMetrics publishes merlon_screening_list_stale_days
+// (freshness.go) for every configured list that has succeeded at least
+// once; a list that has never succeeded has no known freshness yet and is
+// left unreported rather than misreported as freshly imported.
+func recordFreshnessMetrics(ctx context.Context, listIDs []string, listStore ListStore, failureTracker FailureTracker) {
+	statuses := make([]ListImportStatus, 0, len(listIDs))
+	for _, listID := range listIDs {
+		data, err := listStore.GetList(ctx, listID)
+		if err != nil {
+			continue
+		}
+		lastSuccess, err := failureTracker.LastSuccessAt(ctx, listID)
+		if err != nil {
+			continue
+		}
+		statuses = append(statuses, ListImportStatus{ListID: listID, ListType: data.ListType, LastSuccessAt: lastSuccess})
+	}
+	RecordListFreshnessMetrics(ComputeListFreshness(statuses))
 }
 
 func importOne(ctx context.Context, listID string, adapter ListAdapter, store ListStore, failureTracker FailureTracker) (ListImportOutcome, error) {
@@ -143,21 +170,35 @@ func (s *MemoryListStore) GetList(_ context.Context, listID string) (*RawListDat
 
 var errListNotFound = errors.New("screening list not found")
 
+var errNoSuccessYet = errors.New("list has never been successfully imported")
+
 // MemoryFailureTracker is the dev/test-only FailureTracker.
 type MemoryFailureTracker struct {
 	mu     sync.Mutex
 	counts map[string]int
+	lastOK map[string]time.Time
 }
 
 func NewMemoryFailureTracker() *MemoryFailureTracker {
-	return &MemoryFailureTracker{counts: make(map[string]int)}
+	return &MemoryFailureTracker{counts: make(map[string]int), lastOK: make(map[string]time.Time)}
 }
 
 func (t *MemoryFailureTracker) RecordSuccess(_ context.Context, listID string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.counts[listID] = 0
+	t.lastOK[listID] = time.Now()
 	return nil
+}
+
+func (t *MemoryFailureTracker) LastSuccessAt(_ context.Context, listID string) (time.Time, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ts, ok := t.lastOK[listID]
+	if !ok {
+		return time.Time{}, fmt.Errorf("list %q: %w", listID, errNoSuccessYet)
+	}
+	return ts, nil
 }
 
 func (t *MemoryFailureTracker) RecordFailure(_ context.Context, listID string) (int, error) {
