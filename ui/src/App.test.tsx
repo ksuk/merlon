@@ -1,10 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import { expect, test, vi, beforeAll, beforeEach } from 'vitest'
-import { initI18n } from '@/i18n'
+import { changeLanguage, initI18n } from '@/i18n'
 import App from './App'
 
 beforeAll(async () => {
   await initI18n()
+  await changeLanguage('ja')
 })
 
 beforeEach(() => {

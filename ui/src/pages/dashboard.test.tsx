@@ -1,19 +1,20 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { DashboardPage } from "./dashboard"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
   vi.restoreAllMocks()
 })
 
-test("shows loading skeleton initially", () => {
+test("shows loading skeleton initially", async () => {
   vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}))
-  renderWithRouter(<DashboardPage />)
+  await renderWithRouter(<DashboardPage />)
   const skeletons = document.querySelectorAll(".animate-pulse")
   expect(skeletons.length).toBeGreaterThan(0)
 })
@@ -34,7 +35,7 @@ test("renders stat cards after data loads", async () => {
     ),
   )
 
-  renderWithRouter(<DashboardPage />)
+  await renderWithRouter(<DashboardPage />)
 
   expect(await screen.findByText("17")).toBeDefined()
   expect(screen.getByText("4")).toBeDefined()
@@ -62,7 +63,7 @@ test("shows screening list freshness card when data is present", async () => {
     ),
   )
 
-  renderWithRouter(<DashboardPage />)
+  await renderWithRouter(<DashboardPage />)
 
   expect(await screen.findByText("ofac_sdn")).toBeDefined()
   expect(screen.getByText("pep_provider")).toBeDefined()
@@ -85,7 +86,7 @@ test("hides screening list freshness card when no data is present", async () => 
     ),
   )
 
-  renderWithRouter(<DashboardPage />)
+  await renderWithRouter(<DashboardPage />)
 
   await screen.findByText("ダッシュボード")
   expect(screen.queryByText("制裁・PEPリストの鮮度")).toBeNull()
@@ -94,7 +95,7 @@ test("hides screening list freshness card when no data is present", async () => 
 test("shows error message on fetch failure", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"))
 
-  renderWithRouter(<DashboardPage />)
+  await renderWithRouter(<DashboardPage />)
 
   expect(await screen.findByText(/データの取得に失敗しました/)).toBeDefined()
 })

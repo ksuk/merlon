@@ -3,5 +3,73 @@
     "en": "英語",
     "ja": "日本語",
     "switcherLabel": "言語"
+  },
+  "nav": {
+    "dashboard": "ダッシュボード",
+    "customers": "顧客",
+    "alerts": "アラート",
+    "cases": "ケース",
+    "transactions": "取引",
+    "batch": "一括処理",
+    "reports": "STRレポート",
+    "backtest": "バックテスト",
+    "webhooks": "Webhook",
+    "apikeys": "APIキー",
+    "rules": "ルール管理",
+    "whitelist": "ホワイトリスト",
+    "config": "設定検証",
+    "audit": "監査ログ",
+    "system": "システム",
+    "tagline": "AML/CFT Compliance Platform"
+  },
+  "dashboard": {
+    "title": "ダッシュボード",
+    "errorPrefix": "データの取得に失敗しました: {{error}}",
+    "noData": "データなし",
+    "stats": {
+      "customers": "顧客数",
+      "alerts": "アラート",
+      "alertsDescription": "未解決",
+      "cases": "ケース",
+      "casesDescription": "オープン",
+      "recentTransactions": "直近の取引",
+      "whitelistExpiringSoon": "ホワイトリスト期限切れ間近",
+      "whitelistExpiringSoonDescription": "{{days}}日以内"
+    },
+    "charts": {
+      "riskDistribution": "顧客リスク分布",
+      "severityDistribution": "アラート深刻度",
+      "screeningFreshness": "制裁・PEPリストの鮮度",
+      "caseStatusTitle": "ケースステータス"
+    },
+    "risk": {
+      "low": "低リスク",
+      "medium": "中リスク",
+      "high": "高リスク",
+      "unscored": "未スコア"
+    },
+    "severity": {
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "critical": "重大"
+    },
+    "listType": {
+      "sanctions": "制裁リスト",
+      "pep": "PEPリスト",
+      "pepRca": "PEP家族・近親者リスト"
+    },
+    "caseStatusLabel": {
+      "open": "未対応",
+      "investigating": "調査中",
+      "escalated": "エスカレーション",
+      "closed": "完了",
+      "closedTruePositive": "完了(真陽性)",
+      "closedFalsePositive": "完了(偽陽性)"
+    },
+    "freshness": {
+      "upToDate": "最新",
+      "staleDays": "{{days}}日経過"
+    }
   }
 }

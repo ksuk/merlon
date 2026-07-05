@@ -3,5 +3,73 @@
     "en": "English",
     "ja": "Japanese",
     "switcherLabel": "Language"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "customers": "Customers",
+    "alerts": "Alerts",
+    "cases": "Cases",
+    "transactions": "Transactions",
+    "batch": "Batch",
+    "reports": "STR reports",
+    "backtest": "Backtest",
+    "webhooks": "Webhooks",
+    "apikeys": "API keys",
+    "rules": "Rule management",
+    "whitelist": "Whitelist",
+    "config": "Config validation",
+    "audit": "Audit log",
+    "system": "System",
+    "tagline": "AML/CFT Compliance Platform"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "errorPrefix": "Failed to fetch data: {{error}}",
+    "noData": "No data",
+    "stats": {
+      "customers": "Customers",
+      "alerts": "Alerts",
+      "alertsDescription": "Open",
+      "cases": "Cases",
+      "casesDescription": "Open",
+      "recentTransactions": "Recent transactions",
+      "whitelistExpiringSoon": "Whitelist expiring soon",
+      "whitelistExpiringSoonDescription": "Within {{days}} days"
+    },
+    "charts": {
+      "riskDistribution": "Customer risk distribution",
+      "severityDistribution": "Alert severity",
+      "screeningFreshness": "Sanctions/PEP list freshness",
+      "caseStatusTitle": "Case status"
+    },
+    "risk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk",
+      "unscored": "Unscored"
+    },
+    "severity": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "listType": {
+      "sanctions": "Sanctions list",
+      "pep": "PEP list",
+      "pepRca": "PEP family/RCA list"
+    },
+    "caseStatusLabel": {
+      "open": "Open",
+      "investigating": "Investigating",
+      "escalated": "Escalated",
+      "closed": "Closed",
+      "closedTruePositive": "Closed (true positive)",
+      "closedFalsePositive": "Closed (false positive)"
+    },
+    "freshness": {
+      "upToDate": "Up to date",
+      "staleDays": "{{days}} days stale"
+    }
   }
 }
