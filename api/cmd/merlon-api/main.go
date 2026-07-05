@@ -34,6 +34,12 @@ import (
 // cadence is safe regardless of exact expiry timing.
 const whitelistExpiryCheckInterval = time.Hour
 
+// webhookRetryCheckInterval governs how often the retry worker polls for
+// deliveries whose next_attempt_at is due (api.md §3.1). 30s matches the
+// shortest possible backoff (attempt 1) so a due retry isn't delayed further
+// than necessary.
+const webhookRetryCheckInterval = 30 * time.Second
+
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (screening.md §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
@@ -259,6 +265,14 @@ func main() {
 
 	recoveryCtx, cancelRecovery := context.WithCancel(context.Background())
 	defer cancelRecovery()
+
+	webhookRetryCtx, cancelWebhookRetry := context.WithCancel(context.Background())
+	defer cancelWebhookRetry()
+	if deps.Webhooks != nil {
+		go srv.RunWebhookRetryWorker(webhookRetryCtx, webhookRetryCheckInterval)
+		slog.Info("webhook retry worker started", "interval", webhookRetryCheckInterval)
+	}
+
 	if deps.PendingEvaluations != nil && deps.Monitoring != nil {
 		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
 		go func() {
@@ -275,6 +289,7 @@ func main() {
 
 	slog.Info("merlon-api shutting down")
 	cancelRecovery()
+	cancelWebhookRetry()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,40 +46,84 @@ func (s *Server) dispatchWebhook(ctx context.Context, event domain.WebhookEventT
 		return
 	}
 
+	// eventID is generated once per dispatched event and reused across every
+	// hook and every retry attempt (api.md §4.2 webhook output idempotency).
+	eventID := generateID()
 	for _, hook := range hooks {
-		go s.deliverWebhook(hook, event, body)
+		go s.deliverWebhook(hook, event, eventID, body)
 	}
 }
 
-func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventType, body []byte) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hook.URL, bytes.NewReader(body))
-	if err != nil {
-		s.recordDelivery(hook.ID, event, string(body), 0, false, err.Error())
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Merlon-Event", string(event))
-
+// webhookHeaders builds the headers api.md §3 requires on every delivery
+// attempt: X-Merlon-Event-Id and X-Merlon-Timestamp stay identical across
+// retries (only the timestamp is refreshed to reflect the actual send time),
+// while X-Merlon-Signature is recomputed from the (unchanged) body each time.
+func webhookHeaders(hook domain.Webhook, event domain.WebhookEventType, eventID string, body []byte) http.Header {
+	h := http.Header{}
+	h.Set("Content-Type", "application/json")
+	h.Set("X-Merlon-Event", string(event))
+	h.Set("X-Merlon-Event-Id", eventID)
+	h.Set("X-Merlon-Timestamp", strconv.FormatInt(time.Now().Unix(), 10))
 	if hook.Secret != "" {
 		mac := hmac.New(sha256.New, []byte(hook.Secret))
 		mac.Write(body)
-		sig := hex.EncodeToString(mac.Sum(nil))
-		req.Header.Set("X-Merlon-Signature", sig)
+		h.Set("X-Merlon-Signature", hex.EncodeToString(mac.Sum(nil)))
 	}
+	return h
+}
 
+// sendWebhookRequest POSTs body to rawURL with the given headers and returns
+// the response status code (0 if the request could not be sent at all).
+func sendWebhookRequest(ctx context.Context, rawURL string, body []byte, headers http.Header) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header = headers
 	resp, err := webhookHTTPClient().Do(req)
 	if err != nil {
-		s.recordDelivery(hook.ID, event, string(body), 0, false, err.Error())
-		return
+		return 0, err
 	}
 	defer resp.Body.Close()
+	return resp.StatusCode, nil
+}
 
-	success := resp.StatusCode >= 200 && resp.StatusCode < 300
-	s.recordDelivery(hook.ID, event, string(body), resp.StatusCode, success, "")
+// deliverWebhook makes the first delivery attempt (attempt_count=1) for
+// event/eventID against hook, and persists a WebhookDelivery recording the
+// result. On failure it schedules attempt 2 via NextAttemptAt so the retry
+// worker (processDueRetries) picks it up (api.md §3.1 exponential backoff).
+func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventType, eventID string, body []byte) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	headers := webhookHeaders(hook, event, eventID, body)
+	statusCode, err := sendWebhookRequest(ctx, hook.URL, body, headers)
+
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+	success := err == nil && statusCode >= 200 && statusCode < 300
+
+	d := &domain.WebhookDelivery{
+		ID:           generateID(),
+		WebhookID:    hook.ID,
+		Event:        event,
+		EventID:      eventID,
+		Payload:      string(body),
+		StatusCode:   statusCode,
+		Success:      success,
+		Error:        errMsg,
+		AttemptCount: 1,
+		CreatedAt:    time.Now(),
+	}
+	if !success {
+		next := time.Now().Add(computeBackoff(1))
+		d.NextAttemptAt = &next
+	}
+	if s.webhooks != nil {
+		s.webhooks.CreateDelivery(context.Background(), d)
+	}
 }
 
 func postWebhook(ctx context.Context, rawURL string, body []byte, headers http.Header) error {
@@ -128,23 +173,6 @@ func webhookHTTPClient() *http.Client {
 			return validatePublicHTTPURL(req.URL)
 		},
 	}
-}
-
-func (s *Server) recordDelivery(webhookID string, event domain.WebhookEventType, payload string, statusCode int, success bool, errMsg string) {
-	if s.webhooks == nil {
-		return
-	}
-	d := &domain.WebhookDelivery{
-		ID:         generateID(),
-		WebhookID:  webhookID,
-		Event:      event,
-		Payload:    payload,
-		StatusCode: statusCode,
-		Success:    success,
-		Error:      errMsg,
-		CreatedAt:  time.Now(),
-	}
-	s.webhooks.CreateDelivery(context.Background(), d)
 }
 
 // Webhook CRUD handlers
@@ -332,6 +360,15 @@ func validatePublicHTTPURL(u *url.URL) error {
 	return nil
 }
 
+// webhookAllowLoopbackForTests disables the SSRF private-IP guard so unit
+// tests can exercise real webhook delivery against httptest.NewServer, which
+// always binds to loopback. Production code never touches this; only test
+// files in this package set it, scoped with t.Cleanup.
+var webhookAllowLoopbackForTests = false
+
 func isPublicIP(ip net.IP) bool {
+	if webhookAllowLoopbackForTests {
+		return true
+	}
 	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified())
 }

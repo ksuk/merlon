@@ -524,6 +524,7 @@ type MemoryWebhookRepo struct {
 	mu         sync.RWMutex
 	webhooks   map[string]*domain.Webhook
 	deliveries []domain.WebhookDelivery
+	dlq        []domain.DLQEntry
 }
 
 func NewMemoryWebhookRepo() *MemoryWebhookRepo {
@@ -618,6 +619,87 @@ func (r *MemoryWebhookRepo) ListDeliveries(_ context.Context, webhookID string, 
 		}
 	}
 	return result, nil
+}
+
+func (r *MemoryWebhookRepo) UpdateDelivery(_ context.Context, d *domain.WebhookDelivery) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.deliveries {
+		if r.deliveries[i].ID == d.ID {
+			r.deliveries[i] = *d
+			return nil
+		}
+	}
+	return &domain.ErrNotFound{Entity: "webhook_delivery", ID: d.ID}
+}
+
+// ListPendingRetries returns failed deliveries whose NextAttemptAt is due
+// (webhook_retry.go's background worker polls this).
+func (r *MemoryWebhookRepo) ListPendingRetries(_ context.Context, before time.Time) ([]domain.WebhookDelivery, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.WebhookDelivery
+	for _, d := range r.deliveries {
+		if d.NextAttemptAt != nil && !d.NextAttemptAt.After(before) {
+			result = append(result, d)
+		}
+	}
+	return result, nil
+}
+
+func (r *MemoryWebhookRepo) CreateDLQEntry(_ context.Context, entry *domain.DLQEntry) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.dlq = append(r.dlq, *entry)
+	return nil
+}
+
+func (r *MemoryWebhookRepo) GetDLQEntry(_ context.Context, id string) (*domain.DLQEntry, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, e := range r.dlq {
+		if e.ID == id {
+			cp := e
+			return &cp, nil
+		}
+	}
+	return nil, &domain.ErrNotFound{Entity: "webhook_dlq_entry", ID: id}
+}
+
+// ListDLQEntries returns all DLQ entries, oldest first, including already
+// reprocessed ones (ReprocessedAt distinguishes them for the UI).
+func (r *MemoryWebhookRepo) ListDLQEntries(_ context.Context) ([]domain.DLQEntry, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	result := make([]domain.DLQEntry, len(r.dlq))
+	copy(result, r.dlq)
+	return result, nil
+}
+
+// CountDLQEntries counts entries not yet reprocessed, for the depth metric
+// and 80% capacity warning (Task 4).
+func (r *MemoryWebhookRepo) CountDLQEntries(_ context.Context) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for _, e := range r.dlq {
+		if e.ReprocessedAt == nil {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *MemoryWebhookRepo) MarkDLQEntryReprocessed(_ context.Context, id string, at time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.dlq {
+		if r.dlq[i].ID == id {
+			r.dlq[i].ReprocessedAt = &at
+			return nil
+		}
+	}
+	return &domain.ErrNotFound{Entity: "webhook_dlq_entry", ID: id}
 }
 
 // MemoryRuleRepo stores rule definitions keyed by name, each holding every

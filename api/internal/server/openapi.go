@@ -14,31 +14,34 @@ func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 			{"url": "/api/v1", "description": "API v1"},
 		},
 		"paths": map[string]any{
-			"/healthz":                         pathGET("Health check"),
-			"/api/v1/customers":                pathListCreate("Customer"),
-			"/api/v1/customers/{id}":           pathGetPut("Customer"),
-			"/api/v1/customers/{id}/score":     pathPOST("Score customer risk"),
-			"/api/v1/customers/{id}/screen":    pathPOST("Screen customer against sanctions lists"),
-			"/api/v1/customers/{id}/scores":    pathGET("Get customer score history"),
-			"/api/v1/transactions":             pathListCreate("Transaction"),
-			"/api/v1/transactions/{id}":        pathGET("Get transaction"),
-			"/api/v1/alerts":                   pathListPaginated("List alerts"),
-			"/api/v1/alerts/{id}":              pathGetPatch("Alert"),
-			"/api/v1/backtest":                 pathPOST("Run backtest"),
-			"/api/v1/reports/str":              pathPOST("Create STR report"),
-			"/api/v1/reports/str/export":       pathGET("Export STR report"),
-			"/api/v1/cases":                    pathListCreate("Case"),
-			"/api/v1/cases/{id}":               pathGetPatch("Case"),
-			"/api/v1/cases/{id}/notes":         pathPOST("Add case note"),
-			"/api/v1/dashboard":                pathGET("Dashboard statistics"),
-			"/api/v1/batch/score":              pathPOST("Batch score customers"),
-			"/api/v1/batch/monitor":            pathPOST("Batch monitor transactions"),
-			"/api/v1/webhooks":                 pathCRUD("Webhook", "webhooks"),
-			"/api/v1/webhooks/{id}":            pathGetDelete("Webhook"),
-			"/api/v1/webhooks/{id}/deliveries": pathGET("List webhook deliveries"),
-			"/api/v1/admin/apikeys":            pathCRUD("API Key", "apikeys"),
-			"/api/v1/admin/apikeys/{id}":       pathDELETE("Revoke API key"),
-			"/api/v1/audit":                    pathGET("List audit logs"),
+			"/healthz":                            pathGET("Health check"),
+			"/api/v1/customers":                   pathListCreate("Customer"),
+			"/api/v1/customers/{id}":              pathGetPut("Customer"),
+			"/api/v1/customers/{id}/score":        pathPOST("Score customer risk"),
+			"/api/v1/customers/{id}/screen":       pathPOST("Screen customer against sanctions lists"),
+			"/api/v1/customers/{id}/scores":       pathGET("Get customer score history"),
+			"/api/v1/transactions":                pathListCreate("Transaction"),
+			"/api/v1/transactions/{id}":           pathGET("Get transaction"),
+			"/api/v1/alerts":                      pathListPaginated("List alerts"),
+			"/api/v1/alerts/{id}":                 pathGetPatch("Alert"),
+			"/api/v1/backtest":                    pathPOST("Run backtest"),
+			"/api/v1/reports/str":                 pathPOST("Create STR report"),
+			"/api/v1/reports/str/export":          pathGET("Export STR report"),
+			"/api/v1/cases":                       pathListCreate("Case"),
+			"/api/v1/cases/{id}":                  pathGetPatch("Case"),
+			"/api/v1/cases/{id}/notes":            pathPOST("Add case note"),
+			"/api/v1/cases/{id}/related":          pathGetPost("List related cases", "Add manual related case link"),
+			"/api/v1/dashboard":                   pathGET("Dashboard statistics"),
+			"/api/v1/batch/score":                 pathPOST("Batch score customers"),
+			"/api/v1/batch/monitor":               pathPOST("Batch monitor transactions"),
+			"/api/v1/webhooks":                    pathCRUD("Webhook", "webhooks"),
+			"/api/v1/webhooks/{id}":               pathGetDelete("Webhook"),
+			"/api/v1/webhooks/{id}/deliveries":    pathGET("List webhook deliveries"),
+			"/api/v1/webhooks/dlq":                pathGET("List undelivered DLQ entries"),
+			"/api/v1/webhooks/dlq/{id}/reprocess": pathPOST("Reprocess a DLQ entry"),
+			"/api/v1/admin/apikeys":               pathCRUD("API Key", "apikeys"),
+			"/api/v1/admin/apikeys/{id}":          pathDELETE("Revoke API key"),
+			"/api/v1/audit":                       pathGET("List audit logs"),
 		},
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
@@ -180,6 +183,13 @@ func pathGetPatch(resource string) map[string]any {
 	return map[string]any{
 		"get":   map[string]any{"summary": "Get " + resource, "responses": defaultResponses()},
 		"patch": map[string]any{"summary": "Update " + resource, "responses": defaultResponses()},
+	}
+}
+
+func pathGetPost(getSummary, postSummary string) map[string]any {
+	return map[string]any{
+		"get":  map[string]any{"summary": getSummary, "responses": defaultResponses()},
+		"post": map[string]any{"summary": postSummary, "responses": defaultResponses()},
 	}
 }
 

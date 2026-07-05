@@ -200,6 +200,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/webhooks/{id}", s.handleGetWebhook)
 	s.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleDeleteWebhook)
 	s.mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", s.handleListWebhookDeliveries)
+	s.mux.HandleFunc("GET /api/v1/webhooks/dlq", s.handleListDLQEntries)
+	s.mux.HandleFunc("POST /api/v1/webhooks/dlq/{id}/reprocess", s.handleReprocessDLQEntry)
 
 	// API Keys (admin only, requires admin API key or bootstrap token)
 	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
