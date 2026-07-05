@@ -41,6 +41,7 @@ impl Scenario for StructuringScenario {
             .config
             .adjusted_f64("individual_below", risk_tier)
             .unwrap_or(500_000.0);
+        let absolute_threshold = self.config.absolute_threshold();
 
         let customer_txns: Vec<&TransactionInput> = transactions
             .iter()
@@ -71,14 +72,41 @@ impl Scenario for StructuringScenario {
             if window_txns.len() >= min_txns {
                 let total: f64 = window_txns.iter().map(|t| t.amount).sum();
 
-                if total >= threshold {
+                // absolute_threshold is a safety valve independent of the
+                // tier-based threshold (transaction-monitoring.md「絶対閾値
+                // の安全弁」): it can fire alone, and never produces a
+                // second alert when the tier threshold already fired.
+                let breaches_tier_threshold = total >= threshold;
+                let breaches_absolute_threshold = total >= absolute_threshold;
+
+                if breaches_tier_threshold || breaches_absolute_threshold {
                     let tx_ids: Vec<String> =
                         window_txns.iter().map(|t| t.transaction_id.clone()).collect();
 
-                    let severity = if total >= threshold * 2.0 {
+                    let severity = if breaches_absolute_threshold || total >= threshold * 2.0 {
                         AlertSeverity::High
                     } else {
                         AlertSeverity::Medium
+                    };
+
+                    let description = if breaches_absolute_threshold {
+                        format!(
+                            "{} transactions totaling {:.0} within {} hours, each below {:.0} \
+                             (absolute_threshold safety valve, threshold={:.0})",
+                            window_txns.len(),
+                            total,
+                            window_hours,
+                            individual_below,
+                            absolute_threshold
+                        )
+                    } else {
+                        format!(
+                            "{} transactions totaling {:.0} within {} hours, each below {:.0}",
+                            window_txns.len(),
+                            total,
+                            window_hours,
+                            individual_below
+                        )
                     };
 
                     let alert = AlertOutput {
@@ -86,13 +114,7 @@ impl Scenario for StructuringScenario {
                         severity,
                         customer_id: customer_id.to_string(),
                         transaction_ids: tx_ids,
-                        description: format!(
-                            "{} transactions totaling {:.0} within {} hours, each below {:.0}",
-                            window_txns.len(),
-                            total,
-                            window_hours,
-                            individual_below
-                        ),
+                        description,
                         score: total / threshold,
                     };
                     alerts.push(alert);

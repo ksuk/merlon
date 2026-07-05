@@ -119,6 +119,11 @@ const RISK_TIERS: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
 /// legacy "threshold_amount" convention used by the shipped v1 content.
 const V1_THRESHOLD_KEYS: [&str; 2] = ["threshold", "threshold_amount"];
 
+/// System default for the absolute_threshold safety valve
+/// (`tm.default_absolute_threshold`, transaction-monitoring.md「絶対閾値の
+/// 安全弁」), applied whenever a scenario doesn't specify its own.
+const DEFAULT_ABSOLUTE_THRESHOLD: f64 = 10_000_000.0;
+
 #[derive(Debug, Deserialize)]
 struct V2Raw {
     schema_version: String,
@@ -270,11 +275,11 @@ impl ScenarioConfig {
             }
         }
 
-        self.absolute_threshold = self
-            .parameters
-            .values()
-            .filter_map(|v| v.as_f64())
-            .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.max(v))));
+        // v1 has no absolute_threshold concept at all (rule-schema.md
+        // §3.1 migration item 3), so it is left unspecified here and
+        // resolved to the system default by `absolute_threshold()`,
+        // exactly like an omitted v2 `conditions.absolute_threshold`.
+        self.absolute_threshold = None;
 
         self.by_customer_type = CUSTOMER_TYPES
             .into_iter()
@@ -322,6 +327,16 @@ impl ScenarioConfig {
     /// known one).
     pub fn evaluation_mode_kind(&self) -> EvaluationMode {
         EvaluationMode::from_config_str(&self.evaluation_mode)
+    }
+
+    /// Resolves the absolute_threshold safety valve (transaction-monitoring.md
+    /// 「絶対閾値の安全弁」), falling back to the system default
+    /// (`tm.default_absolute_threshold`, 1,000万円) when the scenario
+    /// doesn't specify one (v2 `conditions.absolute_threshold` omitted, or
+    /// v1 content, which has no such field at all).
+    pub fn absolute_threshold(&self) -> f64 {
+        self.absolute_threshold
+            .unwrap_or(DEFAULT_ABSOLUTE_THRESHOLD)
     }
 
     pub fn resolve_threshold(&self, customer_type: &str, risk_tier: &str) -> Option<f64> {

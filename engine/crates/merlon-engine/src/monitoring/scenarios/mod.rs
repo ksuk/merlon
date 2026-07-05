@@ -28,3 +28,7 @@ pub fn build_scenario(config: ScenarioConfig) -> Option<Box<dyn Scenario>> {
         None
     }
 }
+
+#[cfg(test)]
+#[path = "absolute_threshold_test.rs"]
+mod absolute_threshold_tests;
