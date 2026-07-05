@@ -278,11 +278,26 @@ impl ScenarioConfig {
 
     /// Resolves a threshold for a given customer_type/risk_tier regardless
     /// of whether this config was loaded from v1 or v2 content.
+    ///
+    /// An unrecognized customer_type falls back to the strictest (lowest)
+    /// threshold configured for that risk_tier across all known
+    /// customer_types, rather than skipping evaluation (Fail-Alert
+    /// principle: an unmapped type must never be more lenient than a
+    /// known one).
     pub fn resolve_threshold(&self, customer_type: &str, risk_tier: &str) -> Option<f64> {
-        self.by_customer_type
+        if let Some(value) = self
+            .by_customer_type
             .get(customer_type)
             .and_then(|tiers| tiers.get(risk_tier))
+        {
+            return Some(*value);
+        }
+
+        self.by_customer_type
+            .values()
+            .filter_map(|tiers| tiers.get(risk_tier))
             .copied()
+            .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.min(v))))
     }
 }
 

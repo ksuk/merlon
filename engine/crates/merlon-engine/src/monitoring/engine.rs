@@ -80,6 +80,7 @@ impl TmEngine {
     pub fn evaluate(
         &self,
         customer_id: &str,
+        customer_type: &str,
         risk_tier: &str,
         transactions: &[TransactionInput],
         scenario_ids: &[String],
@@ -90,7 +91,8 @@ impl TmEngine {
             {
                 continue;
             }
-            let mut scenario_alerts = scenario.evaluate(customer_id, risk_tier, transactions);
+            let mut scenario_alerts =
+                scenario.evaluate(customer_id, customer_type, risk_tier, transactions);
             alerts.append(&mut scenario_alerts);
         }
         alerts

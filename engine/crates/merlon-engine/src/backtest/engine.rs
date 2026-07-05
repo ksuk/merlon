@@ -12,6 +12,7 @@ pub struct BacktestInput {
 
 pub struct BacktestCustomer {
     pub customer_id: String,
+    pub customer_type: String,
     pub risk_tier: String,
 }
 
@@ -52,6 +53,11 @@ impl<'a> BacktestEngine<'a> {
             .iter()
             .map(|c| (c.customer_id.as_str(), c.risk_tier.as_str()))
             .collect();
+        let customer_types: HashMap<&str, &str> = input
+            .customers
+            .iter()
+            .map(|c| (c.customer_id.as_str(), c.customer_type.as_str()))
+            .collect();
 
         let txns_by_customer = group_transactions(&input.transactions);
 
@@ -62,10 +68,14 @@ impl<'a> BacktestEngine<'a> {
                 .get(customer_id.as_str())
                 .copied()
                 .unwrap_or("MEDIUM");
+            let customer_type = customer_types
+                .get(customer_id.as_str())
+                .copied()
+                .unwrap_or("individual");
 
-            let alerts = self
-                .tm_engine
-                .evaluate(customer_id, risk_tier, txns, &input.scenario_ids);
+            let alerts =
+                self.tm_engine
+                    .evaluate(customer_id, customer_type, risk_tier, txns, &input.scenario_ids);
 
             all_alerts.extend(alerts);
         }

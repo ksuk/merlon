@@ -20,6 +20,7 @@ impl Scenario for StructuringScenario {
     fn evaluate(
         &self,
         customer_id: &str,
+        _customer_type: &str,
         risk_tier: &str,
         transactions: &[TransactionInput],
     ) -> Vec<AlertOutput> {

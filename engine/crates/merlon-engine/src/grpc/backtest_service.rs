@@ -7,8 +7,8 @@ use crate::backtest::engine::{
 };
 use crate::monitoring::engine::{TmEngine, TransactionDirection, TransactionInput};
 use crate::proto::merlon::v1::{
-    backtest_service_server::BacktestService, HealthRequest, HealthResponse,
-    RunBacktestRequest, RunBacktestResponse, ScenarioResult as ProtoScenarioResult,
+    backtest_service_server::BacktestService, CustomerType as ProtoCustomerType, HealthRequest,
+    HealthResponse, RunBacktestRequest, RunBacktestResponse, ScenarioResult as ProtoScenarioResult,
 };
 
 pub struct BacktestServiceImpl {
@@ -42,6 +42,17 @@ fn risk_tier_from_proto(t: i32) -> String {
     }
 }
 
+// See monitoring_service::customer_type_str: unrecognized values map to a
+// key absent from by_customer_type on purpose (Fail-Alert fallback).
+fn customer_type_from_proto(t: i32) -> String {
+    match ProtoCustomerType::try_from(t) {
+        Ok(ProtoCustomerType::Individual) => "individual".to_string(),
+        Ok(ProtoCustomerType::CorporateDomestic) => "corporate_domestic".to_string(),
+        Ok(ProtoCustomerType::CorporateForeign) => "corporate_foreign".to_string(),
+        _ => "unspecified".to_string(),
+    }
+}
+
 #[tonic::async_trait]
 impl BacktestService for BacktestServiceImpl {
     async fn run_backtest(
@@ -68,6 +79,7 @@ impl BacktestService for BacktestServiceImpl {
             .iter()
             .map(|c| BacktestCustomer {
                 customer_id: c.customer_id.clone(),
+                customer_type: customer_type_from_proto(c.customer_type),
                 risk_tier: risk_tier_from_proto(c.risk_tier),
             })
             .collect();

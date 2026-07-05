@@ -51,7 +51,7 @@ fn test_structuring_detected() {
         make_txn("T3", "C001", 300_000.0, TransactionDirection::Outbound, base + 7200),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].scenario_id, "test_structuring");
     assert_eq!(alerts[0].transaction_ids.len(), 3);
@@ -68,7 +68,7 @@ fn test_structuring_not_detected_below_threshold() {
         make_txn("T3", "C001", 200_000.0, TransactionDirection::Outbound, base + 7200),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -81,7 +81,7 @@ fn test_structuring_not_detected_too_few_txns() {
         make_txn("T2", "C001", 400_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -96,7 +96,7 @@ fn test_structuring_high_risk_lower_threshold() {
         make_txn("T2", "C001", 250_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "HIGH", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "HIGH", &txns, &[]);
     assert_eq!(alerts.len(), 1);
 }
 
@@ -114,7 +114,7 @@ fn test_structuring_low_risk_higher_threshold() {
         make_txn("T5", "C001", 300_000.0, TransactionDirection::Outbound, base + 4000),
     ];
 
-    let alerts = engine.evaluate("C001", "LOW", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "LOW", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -130,7 +130,7 @@ fn test_structuring_outside_window() {
         make_txn("T3", "C001", 400_000.0, TransactionDirection::Outbound, base + 2 * day_secs + 1),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -143,7 +143,7 @@ fn test_rapid_movement_detected() {
         make_txn("T2", "C001", 5_500_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].scenario_id, "test_rapid_movement");
     // ratio = 5.5M / 6M ≈ 0.917 → HIGH severity
@@ -159,7 +159,7 @@ fn test_rapid_movement_critical_severity() {
         make_txn("T2", "C001", 5_900_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert_eq!(alerts.len(), 1);
     // ratio = 5.9M / 6M ≈ 0.983 → CRITICAL
     assert_eq!(alerts[0].severity, AlertSeverity::Critical);
@@ -174,7 +174,7 @@ fn test_rapid_movement_not_detected_low_ratio() {
         make_txn("T2", "C001", 3_000_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -188,7 +188,7 @@ fn test_rapid_movement_high_risk_lower_threshold() {
         make_txn("T2", "C001", 2_300_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "HIGH", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "HIGH", &txns, &[]);
     assert_eq!(alerts.len(), 1);
 }
 
@@ -205,6 +205,7 @@ fn test_scenario_filter() {
     // Only run rapid_movement → structuring should not fire
     let alerts = engine.evaluate(
         "C001",
+        "individual",
         "MEDIUM",
         &txns,
         &["test_rapid_movement".to_string()],
@@ -214,6 +215,7 @@ fn test_scenario_filter() {
     // Only run structuring
     let alerts = engine.evaluate(
         "C001",
+        "individual",
         "MEDIUM",
         &txns,
         &["test_structuring".to_string()],
@@ -232,6 +234,6 @@ fn test_different_customer_ids() {
     ];
 
     // C001 only has 2 txns → below min_transactions=3
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }

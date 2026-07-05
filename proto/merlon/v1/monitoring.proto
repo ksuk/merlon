@@ -49,6 +49,9 @@ message EvaluateTransactionsRequest {
   RiskTier customer_risk_tier = 2;
   repeated TransactionData transactions = 3;
   repeated string scenario_ids = 4;
+  // TM-004a: customer type axis for threshold.by_customer_type resolution
+  // (transaction-monitoring.md). Additive field, WS-5 Task1.
+  CustomerType customer_type = 5;
 }
 
 message Alert {

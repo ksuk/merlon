@@ -7,8 +7,9 @@ use crate::monitoring::engine::{
 };
 use crate::proto::merlon::v1::{
     monitoring_service_server::MonitoringService, Alert, AlertSeverity as ProtoAlertSeverity,
-    EvaluateTransactionsRequest, EvaluateTransactionsResponse, HealthRequest, HealthResponse,
-    RiskTier as ProtoRiskTier, Timestamp, TransactionDirection as ProtoDirection,
+    CustomerType as ProtoCustomerType, EvaluateTransactionsRequest, EvaluateTransactionsResponse,
+    HealthRequest, HealthResponse, RiskTier as ProtoRiskTier, Timestamp,
+    TransactionDirection as ProtoDirection,
 };
 
 pub struct MonitoringServiceImpl {
@@ -52,6 +53,19 @@ fn risk_tier_str(tier: i32) -> &'static str {
     }
 }
 
+// TM-004a: CUSTOMER_TYPE_UNSPECIFIED (and any unrecognized value) maps to a
+// key absent from ScenarioConfig::by_customer_type on purpose, so
+// resolve_threshold's Fail-Alert fallback (strictest known threshold) kicks
+// in rather than silently defaulting to a specific, possibly lenient, type.
+fn customer_type_str(customer_type: i32) -> &'static str {
+    match ProtoCustomerType::try_from(customer_type) {
+        Ok(ProtoCustomerType::Individual) => "individual",
+        Ok(ProtoCustomerType::CorporateDomestic) => "corporate_domestic",
+        Ok(ProtoCustomerType::CorporateForeign) => "corporate_foreign",
+        _ => "unspecified",
+    }
+}
+
 fn severity_to_proto(s: &AlertSeverity) -> i32 {
     match s {
         AlertSeverity::Low => ProtoAlertSeverity::Low as i32,
@@ -81,6 +95,7 @@ impl MonitoringService for MonitoringServiceImpl {
         }
 
         let risk_tier = risk_tier_str(req.customer_risk_tier);
+        let customer_type = customer_type_str(req.customer_type);
 
         #[allow(clippy::result_large_err)]
         let transactions: Vec<TransactionInput> = req
@@ -101,9 +116,13 @@ impl MonitoringService for MonitoringServiceImpl {
             })
             .collect::<Result<Vec<_>, Status>>()?;
 
-        let alerts = self
-            .engine
-            .evaluate(&req.customer_id, risk_tier, &transactions, &req.scenario_ids);
+        let alerts = self.engine.evaluate(
+            &req.customer_id,
+            customer_type,
+            risk_tier,
+            &transactions,
+            &req.scenario_ids,
+        );
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -217,6 +236,7 @@ mod tests {
                 },
             ],
             scenario_ids: vec!["test_structuring".to_string()],
+            customer_type: ProtoCustomerType::Individual as i32,
         };
 
         let resp = service
@@ -253,6 +273,7 @@ mod tests {
                 channel: String::new(),
             }],
             scenario_ids: vec![],
+            customer_type: ProtoCustomerType::Individual as i32,
         };
 
         let result = service
@@ -270,6 +291,7 @@ mod tests {
             customer_risk_tier: ProtoRiskTier::Medium as i32,
             transactions: vec![],
             scenario_ids: vec![],
+            customer_type: ProtoCustomerType::Individual as i32,
         };
 
         let result = service

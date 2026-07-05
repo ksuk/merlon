@@ -41,8 +41,16 @@ severity: HIGH
         config.resolve_threshold("corporate_domestic", "HIGH"),
         Some(5_000_000.0)
     );
-    // customer_type not present in the fixture resolves to no threshold.
-    assert_eq!(config.resolve_threshold("corporate_foreign", "HIGH"), None);
+    // WS-5 Task1: a customer_type absent from the fixture (here
+    // corporate_foreign) falls back to the strictest (lowest) threshold
+    // configured for that risk_tier among the customer_types that are
+    // present, rather than resolving to no threshold (Fail-Alert
+    // principle). See test_resolve_threshold_unknown_customer_type_falls_back
+    // for the dedicated case.
+    assert_eq!(
+        config.resolve_threshold("corporate_foreign", "HIGH"),
+        Some(1_000_000.0)
+    );
 }
 
 #[test]
@@ -82,6 +90,51 @@ severity: LOW
 "#;
     let config = ScenarioConfig::from_yaml_dual(yaml).unwrap();
     assert_eq!(config.evaluation_mode, "batch");
+}
+
+// WS-5 Task1: by_customer_type -> by_risk_tier resolution against the
+// canonical structuring example (transaction-monitoring.md TM-004a).
+
+#[test]
+fn test_resolve_threshold_individual_high_tier() {
+    let config = ScenarioConfig::load_dual("testdata/tm_structuring_v2.yaml").unwrap();
+    assert_eq!(
+        config.resolve_threshold("individual", "HIGH"),
+        Some(1_000_000.0)
+    );
+}
+
+#[test]
+fn test_resolve_threshold_corporate_domestic_low_tier() {
+    let config = ScenarioConfig::load_dual("testdata/tm_structuring_v2.yaml").unwrap();
+    assert_eq!(
+        config.resolve_threshold("corporate_domestic", "LOW"),
+        Some(20_000_000.0)
+    );
+}
+
+#[test]
+fn test_resolve_threshold_corporate_foreign_medium_tier() {
+    let config = ScenarioConfig::load_dual("testdata/tm_structuring_v2.yaml").unwrap();
+    assert_eq!(
+        config.resolve_threshold("corporate_foreign", "MEDIUM"),
+        Some(10_000_000.0)
+    );
+}
+
+#[test]
+fn test_resolve_threshold_unknown_customer_type_falls_back() {
+    // Fail-Alert: an unrecognized customer_type must not silently skip
+    // evaluation. resolve_threshold falls back to the strictest (lowest)
+    // threshold configured for the risk_tier across known customer_types,
+    // so an unknown type never gets a more lenient threshold than any
+    // known one. For HIGH: individual=1,000,000 < corporate_foreign=3,000,000
+    // < corporate_domestic=5,000,000, so the fallback is 1,000,000.
+    let config = ScenarioConfig::load_dual("testdata/tm_structuring_v2.yaml").unwrap();
+    assert_eq!(
+        config.resolve_threshold("unknown_type", "HIGH"),
+        Some(1_000_000.0)
+    );
 }
 
 #[test]
