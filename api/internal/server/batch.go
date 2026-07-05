@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -102,23 +103,55 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// queuePendingReview records a customer's transactions as PENDING_REVIEW
+// (OPS-005, overview.md §4.4 Fail-Alert) when the monitoring engine call
+// fails, so detection resumes automatically via the recovery job instead of
+// being dropped. It returns false (leaving the caller to treat the call as
+// a hard failure) if no PendingEvaluationRepository is configured or the
+// queue write itself fails.
+func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txns []domain.Transaction, cause error) bool {
+	if s.pendingEvals == nil {
+		return false
+	}
+
+	txIDs := make([]string, len(txns))
+	for i, t := range txns {
+		txIDs[i] = t.ID
+	}
+
+	pe := &domain.PendingEvaluation{
+		ID:             generateID(),
+		CustomerID:     c.ID,
+		TransactionIDs: txIDs,
+		Status:         domain.PendingEvaluationStatusPendingReview,
+		Reason:         "engine unavailable: " + cause.Error(),
+	}
+
+	if err := s.pendingEvals.Create(ctx, pe); err != nil {
+		return false
+	}
+	return true
+}
+
 type batchMonitorRequest struct {
 	CustomerIDs []string `json:"customer_ids,omitempty"`
 }
 
 type batchMonitorResult struct {
-	CustomerID   string `json:"customer_id"`
-	AlertsRaised int    `json:"alerts_raised"`
-	Error        string `json:"error,omitempty"`
+	CustomerID    string `json:"customer_id"`
+	AlertsRaised  int    `json:"alerts_raised"`
+	PendingReview bool   `json:"pending_review,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 type batchMonitorResponse struct {
-	Total       int                  `json:"total"`
-	Succeeded   int                  `json:"succeeded"`
-	Failed      int                  `json:"failed"`
-	AlertsTotal int                  `json:"alerts_total"`
-	Results     []batchMonitorResult `json:"results"`
-	Duration    string               `json:"duration"`
+	Total           int                  `json:"total"`
+	Succeeded       int                  `json:"succeeded"`
+	Failed          int                  `json:"failed"`
+	QueuedForReview int                  `json:"queued_for_review"`
+	AlertsTotal     int                  `json:"alerts_total"`
+	Results         []batchMonitorResult `json:"results"`
+	Duration        string               `json:"duration"`
 }
 
 func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
@@ -190,6 +223,14 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 		alerts, err := s.monitoring.EvaluateTransactions(ctx, c.ID, riskTier, txns, nil)
 		if err != nil {
+			if s.queuePendingReview(ctx, &c, txns, err) {
+				resp.QueuedForReview++
+				resp.Results = append(resp.Results, batchMonitorResult{
+					CustomerID:    c.ID,
+					PendingReview: true,
+				})
+				continue
+			}
 			resp.Failed++
 			resp.Results = append(resp.Results, batchMonitorResult{
 				CustomerID: c.ID,

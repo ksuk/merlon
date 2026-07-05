@@ -44,30 +44,32 @@ type Server struct {
 	refreshTokens  domain.RefreshTokenRepository
 	rules          domain.RuleRepository
 	db             DBPinger
+	pendingEvals   domain.PendingEvaluationRepository
 }
 
 type Deps struct {
-	Customers      domain.CustomerRepository
-	Transactions   domain.TransactionRepository
-	Alerts         domain.AlertRepository
-	Scoring        engine.ScoringEngine
-	Monitoring     engine.MonitoringEngine
-	Screening      engine.ScreeningEngine
-	Backtest       engine.BacktestEngine
-	Audit          domain.AuditRepository
-	Cases          domain.CaseRepository
-	APIKeys        domain.APIKeyRepository
-	Webhooks       domain.WebhookRepository
-	Config         engine.ConfigEngine
-	EngineHealth   engine.HealthChecker
-	RateLimit      int
-	BootstrapToken string
-	TokenIssuer    *auth.TokenIssuer
-	Denylist       auth.Denylist
-	Users          domain.UserRepository
-	RefreshTokens  domain.RefreshTokenRepository
-	Rules          domain.RuleRepository
-	DB             DBPinger
+	Customers          domain.CustomerRepository
+	Transactions       domain.TransactionRepository
+	Alerts             domain.AlertRepository
+	Scoring            engine.ScoringEngine
+	Monitoring         engine.MonitoringEngine
+	Screening          engine.ScreeningEngine
+	Backtest           engine.BacktestEngine
+	Audit              domain.AuditRepository
+	Cases              domain.CaseRepository
+	APIKeys            domain.APIKeyRepository
+	Webhooks           domain.WebhookRepository
+	Config             engine.ConfigEngine
+	EngineHealth       engine.HealthChecker
+	RateLimit          int
+	BootstrapToken     string
+	TokenIssuer        *auth.TokenIssuer
+	Denylist           auth.Denylist
+	Users              domain.UserRepository
+	RefreshTokens      domain.RefreshTokenRepository
+	Rules              domain.RuleRepository
+	DB                 DBPinger
+	PendingEvaluations domain.PendingEvaluationRepository
 }
 
 func New(addr string, deps Deps) *Server {
@@ -94,6 +96,7 @@ func New(addr string, deps Deps) *Server {
 		refreshTokens:  deps.RefreshTokens,
 		rules:          deps.Rules,
 		db:             deps.DB,
+		pendingEvals:   deps.PendingEvaluations,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
