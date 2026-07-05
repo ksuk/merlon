@@ -1019,3 +1019,84 @@ func (r *MemoryScreeningResultRepo) ListPastFalsePositives(_ context.Context, en
 	)
 	return all, nil
 }
+
+// MemoryAccountRepo (WS-11 Task 4, data-model.md §1.1.3). RepresentativeRiskScore
+// reads customerRepo directly (same package) rather than duplicating
+// risk_score storage, mirroring PgAccountRepo's JOIN against customers.
+type MemoryAccountRepo struct {
+	mu           sync.RWMutex
+	accounts     map[string]*domain.Account
+	customers    map[string][]domain.AccountCustomer // accountID -> links
+	customerRepo *MemoryCustomerRepo
+}
+
+func NewMemoryAccountRepo(customerRepo *MemoryCustomerRepo) *MemoryAccountRepo {
+	return &MemoryAccountRepo{
+		accounts:     make(map[string]*domain.Account),
+		customers:    make(map[string][]domain.AccountCustomer),
+		customerRepo: customerRepo,
+	}
+}
+
+func (r *MemoryAccountRepo) Create(_ context.Context, a *domain.Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	a.CreatedAt = now
+	a.UpdatedAt = now
+	cp := *a
+	r.accounts[a.ID] = &cp
+	return nil
+}
+
+func (r *MemoryAccountRepo) Get(_ context.Context, id string) (*domain.Account, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	a, ok := r.accounts[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "account", ID: id}
+	}
+	cp := *a
+	return &cp, nil
+}
+
+func (r *MemoryAccountRepo) AddCustomer(_ context.Context, accountID, customerID string, role domain.AccountRole) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.accounts[accountID]; !ok {
+		return &domain.ErrNotFound{Entity: "account", ID: accountID}
+	}
+	r.customers[accountID] = append(r.customers[accountID], domain.AccountCustomer{
+		AccountID:  accountID,
+		CustomerID: customerID,
+		Role:       role,
+	})
+	return nil
+}
+
+func (r *MemoryAccountRepo) ListCustomers(_ context.Context, accountID string) ([]domain.AccountCustomer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.AccountCustomer, len(r.customers[accountID]))
+	copy(out, r.customers[accountID])
+	return out, nil
+}
+
+func (r *MemoryAccountRepo) RepresentativeRiskScore(ctx context.Context, accountID string) (*float64, error) {
+	r.mu.RLock()
+	links := make([]domain.AccountCustomer, len(r.customers[accountID]))
+	copy(links, r.customers[accountID])
+	r.mu.RUnlock()
+
+	var max *float64
+	for _, link := range links {
+		c, err := r.customerRepo.Get(ctx, link.CustomerID)
+		if err != nil || c.RiskScore == nil {
+			continue
+		}
+		if max == nil || *c.RiskScore > *max {
+			max = c.RiskScore
+		}
+	}
+	return max, nil
+}

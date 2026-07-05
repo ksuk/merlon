@@ -20,6 +20,10 @@ type Transaction struct {
 	CounterpartyID      string               `json:"counterparty_id,omitempty"`
 	CounterpartyCountry string               `json:"counterparty_country,omitempty"`
 	Channel             string               `json:"channel,omitempty"`
-	ExecutedAt          time.Time            `json:"executed_at"`
-	CreatedAt           time.Time            `json:"created_at"`
+	// AccountID optionally links this transaction to a joint account
+	// (data-model.md §1.1.3, WS-11 Task 4). Nil preserves the pre-existing
+	// single-customer-account model.
+	AccountID  *string   `json:"account_id,omitempty"`
+	ExecutedAt time.Time `json:"executed_at"`
+	CreatedAt  time.Time `json:"created_at"`
 }

@@ -11,15 +11,16 @@ import (
 )
 
 type CreateTransactionRequest struct {
-	CustomerID          string                   `json:"customer_id"`
-	ExternalID          string                   `json:"external_id"`
-	Amount              float64                  `json:"amount"`
-	Currency            string                   `json:"currency"`
+	CustomerID          string                      `json:"customer_id"`
+	ExternalID          string                      `json:"external_id"`
+	Amount              float64                     `json:"amount"`
+	Currency            string                      `json:"currency"`
 	Direction           domain.TransactionDirection `json:"direction"`
-	CounterpartyID      string                   `json:"counterparty_id"`
-	CounterpartyCountry string                   `json:"counterparty_country"`
-	Channel             string                   `json:"channel"`
-	ExecutedAt          time.Time                `json:"executed_at"`
+	CounterpartyID      string                      `json:"counterparty_id"`
+	CounterpartyCountry string                      `json:"counterparty_country"`
+	Channel             string                      `json:"channel"`
+	AccountID           *string                     `json:"account_id,omitempty"`
+	ExecutedAt          time.Time                   `json:"executed_at"`
 }
 
 func transactionCursor(t domain.Transaction) Cursor {
@@ -155,6 +156,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		CounterpartyID:      req.CounterpartyID,
 		CounterpartyCountry: req.CounterpartyCountry,
 		Channel:             req.Channel,
+		AccountID:           req.AccountID,
 		ExecutedAt:          executedAt,
 		CreatedAt:           now,
 	}

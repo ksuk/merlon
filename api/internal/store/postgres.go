@@ -280,15 +280,22 @@ func NewPgTransactionRepo(pool *pgxpool.Pool) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transaction, error) {
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, executed_at, created_at"
+
+func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at FROM transactions WHERE id = $1`, id,
-	).Scan(
+	err := row.Scan(
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
 		&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-		&t.Channel, &t.ExecutedAt, &t.CreatedAt,
+		&t.Channel, &t.AccountID, &t.ExecutedAt, &t.CreatedAt,
 	)
+	return t, err
+}
+
+func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transaction, error) {
+	t, err := scanTransaction(r.pool.QueryRow(ctx,
+		`SELECT `+transactionColumns+` FROM transactions WHERE id = $1`, id,
+	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &domain.ErrNotFound{Entity: "transaction", ID: id}
@@ -300,7 +307,7 @@ func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transac
 
 func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]domain.Transaction, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at
+		`SELECT `+transactionColumns+`
 		FROM transactions WHERE customer_id = $1 ORDER BY executed_at DESC LIMIT $2 OFFSET $3`,
 		customerID, limit, offset,
 	)
@@ -311,12 +318,8 @@ func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID strin
 
 	var txns []domain.Transaction
 	for rows.Next() {
-		var t domain.Transaction
-		if err := rows.Scan(
-			&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
-			&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-			&t.Channel, &t.ExecutedAt, &t.CreatedAt,
-		); err != nil {
+		t, err := scanTransaction(rows)
+		if err != nil {
 			return nil, err
 		}
 		txns = append(txns, t)
@@ -325,7 +328,7 @@ func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID strin
 }
 
 func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Transaction, error) {
-	const baseQuery = `SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at
+	baseQuery := `SELECT ` + transactionColumns + `
 		FROM transactions WHERE customer_id = $1`
 
 	var (
@@ -345,12 +348,8 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 
 	var txns []domain.Transaction
 	for rows.Next() {
-		var t domain.Transaction
-		if err := rows.Scan(
-			&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
-			&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-			&t.Channel, &t.ExecutedAt, &t.CreatedAt,
-		); err != nil {
+		t, err := scanTransaction(rows)
+		if err != nil {
 			return nil, err
 		}
 		txns = append(txns, t)
@@ -360,11 +359,11 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 
 func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, executed_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
 		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
-		t.Channel, t.ExecutedAt, t.CreatedAt,
+		t.Channel, t.AccountID, t.ExecutedAt, t.CreatedAt,
 	)
 	return err
 }

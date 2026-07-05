@@ -49,6 +49,7 @@ type Server struct {
 	whitelist                domain.WhitelistRepository
 	whitelistMaxValidDaysCfg int
 	screeningResults         domain.ScreeningResultRepository
+	accounts                 domain.AccountRepository
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
 	// dashboard's list-freshness display (screening.md; Task 4). Nil until
@@ -95,6 +96,7 @@ type Deps struct {
 	// when positive; zero/negative falls back to the default.
 	WhitelistMaxValidDays int
 	ScreeningResults      domain.ScreeningResultRepository
+	Accounts              domain.AccountRepository
 
 	ScreeningListStore      screening.ListStore
 	ScreeningFailureTracker screening.FailureTracker
@@ -141,6 +143,7 @@ func New(addr string, deps Deps) *Server {
 		whitelist:                deps.Whitelist,
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		screeningResults:         deps.ScreeningResults,
+		accounts:                 deps.Accounts,
 
 		screeningListStore:      deps.ScreeningListStore,
 		screeningFailureTracker: deps.ScreeningFailureTracker,
@@ -182,6 +185,12 @@ func (s *Server) routes() {
 	// Screening (WS-7)
 	s.mux.HandleFunc("POST /api/v1/screening/check", s.handleScreeningCheck)
 	s.mux.HandleFunc("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
+
+	// Accounts (joint accounts, data-model.md §1.1.3)
+	s.mux.HandleFunc("POST /api/v1/accounts", s.handleCreateAccount)
+	s.mux.HandleFunc("GET /api/v1/accounts/{id}", s.handleGetAccount)
+	s.mux.HandleFunc("POST /api/v1/accounts/{id}/customers", s.handleAddAccountCustomer)
+	s.mux.HandleFunc("GET /api/v1/accounts/{id}/customers", s.handleListAccountCustomers)
 
 	// Transactions
 	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)
