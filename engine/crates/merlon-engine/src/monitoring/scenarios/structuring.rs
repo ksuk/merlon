@@ -1,4 +1,4 @@
-use crate::monitoring::config::ScenarioConfig;
+use crate::monitoring::config::{EvaluationMode, ScenarioConfig};
 use crate::monitoring::engine::{AlertOutput, AlertSeverity, TransactionInput};
 use crate::monitoring::scenarios::Scenario;
 
@@ -15,6 +15,10 @@ impl StructuringScenario {
 impl Scenario for StructuringScenario {
     fn scenario_id(&self) -> &str {
         &self.config.scenario_id
+    }
+
+    fn evaluation_mode(&self) -> EvaluationMode {
+        self.config.evaluation_mode_kind()
     }
 
     fn evaluate(

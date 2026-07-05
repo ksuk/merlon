@@ -1,11 +1,13 @@
 pub mod rapid_movement;
 pub mod structuring;
 
-use super::config::ScenarioConfig;
+use super::config::{EvaluationMode, ScenarioConfig};
 use super::engine::{AlertOutput, TransactionInput};
 
 pub trait Scenario: Send + Sync {
     fn scenario_id(&self) -> &str;
+
+    fn evaluation_mode(&self) -> EvaluationMode;
 
     fn evaluate(
         &self,

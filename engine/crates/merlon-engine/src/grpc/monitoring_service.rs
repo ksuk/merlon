@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
 
+use crate::monitoring::config::EvaluationMode;
 use crate::monitoring::engine::{
     AlertSeverity, TmEngine, TransactionDirection, TransactionInput,
 };
@@ -116,12 +117,17 @@ impl MonitoringService for MonitoringServiceImpl {
             })
             .collect::<Result<Vec<_>, Status>>()?;
 
-        let alerts = self.engine.evaluate(
+        // EvaluateTransactions is invoked on transaction arrival (the
+        // realtime path in transaction-monitoring.md「評価モード」); batch
+        // evaluation goes through the batch scheduler (WS-5 Task6/7)
+        // instead of this RPC.
+        let alerts = self.engine.evaluate_with_mode(
             &req.customer_id,
             customer_type,
             risk_tier,
             &transactions,
             &req.scenario_ids,
+            EvaluationMode::Realtime,
         );
 
         let now = std::time::SystemTime::now()

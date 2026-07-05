@@ -1,4 +1,4 @@
-use super::config::{ConfigError, ScenarioConfig};
+use super::config::{ConfigError, EvaluationMode, ScenarioConfig};
 use super::scenarios::{self, Scenario};
 
 #[derive(Debug, Clone)]
@@ -89,6 +89,37 @@ impl TmEngine {
         for scenario in &self.scenarios {
             if !scenario_ids.is_empty() && !scenario_ids.contains(&scenario.scenario_id().to_string())
             {
+                continue;
+            }
+            let mut scenario_alerts =
+                scenario.evaluate(customer_id, customer_type, risk_tier, transactions);
+            alerts.append(&mut scenario_alerts);
+        }
+        alerts
+    }
+
+    /// Like `evaluate`, but additionally restricts scenarios to those whose
+    /// `evaluation_mode` runs under `mode_filter` (rule-schema.md §1.2,
+    /// transaction-monitoring.md「評価モード」). `evaluate` remains for
+    /// callers that don't need mode filtering (e.g. backtesting historical
+    /// data against every configured scenario regardless of mode).
+    #[allow(clippy::too_many_arguments)]
+    pub fn evaluate_with_mode(
+        &self,
+        customer_id: &str,
+        customer_type: &str,
+        risk_tier: &str,
+        transactions: &[TransactionInput],
+        scenario_ids: &[String],
+        mode_filter: EvaluationMode,
+    ) -> Vec<AlertOutput> {
+        let mut alerts = Vec::new();
+        for scenario in &self.scenarios {
+            if !scenario_ids.is_empty() && !scenario_ids.contains(&scenario.scenario_id().to_string())
+            {
+                continue;
+            }
+            if !scenario.evaluation_mode().runs_under(mode_filter) {
                 continue;
             }
             let mut scenario_alerts =

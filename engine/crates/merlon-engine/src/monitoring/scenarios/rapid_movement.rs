@@ -1,4 +1,4 @@
-use crate::monitoring::config::ScenarioConfig;
+use crate::monitoring::config::{EvaluationMode, ScenarioConfig};
 use crate::monitoring::engine::{
     AlertOutput, AlertSeverity, TransactionDirection, TransactionInput,
 };
@@ -17,6 +17,10 @@ impl RapidMovementScenario {
 impl Scenario for RapidMovementScenario {
     fn scenario_id(&self) -> &str {
         &self.config.scenario_id
+    }
+
+    fn evaluation_mode(&self) -> EvaluationMode {
+        self.config.evaluation_mode_kind()
     }
 
     fn evaluate(

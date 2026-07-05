@@ -75,6 +75,39 @@ fn default_evaluation_mode() -> String {
     "both".to_string()
 }
 
+/// Which evaluation pass(es) a scenario runs under (rule-schema.md §1.2,
+/// transaction-monitoring.md「評価モード」).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EvaluationMode {
+    Realtime,
+    Batch,
+    Both,
+}
+
+impl EvaluationMode {
+    /// Unrecognized strings fall back to `Both` (Fail-Alert: never
+    /// silently drop a scenario from a pass because its mode was
+    /// unparseable).
+    fn from_config_str(s: &str) -> Self {
+        match s {
+            "realtime" => EvaluationMode::Realtime,
+            "batch" => EvaluationMode::Batch,
+            _ => EvaluationMode::Both,
+        }
+    }
+
+    /// Whether a scenario configured with `self` as its evaluation_mode
+    /// should run under a pass filtering for `filter`.
+    pub fn runs_under(self, filter: EvaluationMode) -> bool {
+        match filter {
+            EvaluationMode::Both => true,
+            EvaluationMode::Realtime => self != EvaluationMode::Batch,
+            EvaluationMode::Batch => self != EvaluationMode::Realtime,
+        }
+    }
+}
+
 const CUSTOMER_TYPES: [&str; 3] = ["individual", "corporate_domestic", "corporate_foreign"];
 const RISK_TIERS: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
 
@@ -146,7 +179,10 @@ impl ScenarioConfig {
                 "scenario_id must not be empty".to_string(),
             ));
         }
-        if self.parameters.is_empty() {
+        // v2 content carries its threshold in by_customer_type rather than
+        // the flat v1 parameters map, so parameters is legitimately empty
+        // for a well-formed v2 scenario (see from_v2_raw).
+        if self.schema_version_kind == ScenarioSchemaVersion::V1 && self.parameters.is_empty() {
             return Err(ConfigError::Validation(
                 "parameters must not be empty".to_string(),
             ));
@@ -284,6 +320,10 @@ impl ScenarioConfig {
     /// customer_types, rather than skipping evaluation (Fail-Alert
     /// principle: an unmapped type must never be more lenient than a
     /// known one).
+    pub fn evaluation_mode_kind(&self) -> EvaluationMode {
+        EvaluationMode::from_config_str(&self.evaluation_mode)
+    }
+
     pub fn resolve_threshold(&self, customer_type: &str, risk_tier: &str) -> Option<f64> {
         if let Some(value) = self
             .by_customer_type
