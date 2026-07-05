@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,26 @@ type Config struct {
 	ScreeningUNURL           string
 	ScreeningMOFURL          string
 	ScreeningPEPURL          string
+
+	// SMTP (WS-8 Task 5, NOTIF-001): mail server settings for alert email
+	// notifications (notifications.md §1: "SMTP設定（ホスト、ポート、認証、
+	// TLS）はシステム設定で構成する"). An empty SMTPHost disables the mailer.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPTo       []string
+	SMTPUseTLS   bool
+
+	// NotifyRoutingPath points at a YAML file of notify.RoutingRule entries
+	// (NOTIF-003). Empty uses notify.DefaultRoutingRules().
+	NotifyRoutingPath string
+
+	// PublicURL is the base URL of this Merlon instance, prefixed to alert
+	// IDs to build the link carried in notification emails (notifications.md
+	// §1: "ケース/アラートIDと本システムへのリンクのみを記載する").
+	PublicURL string
 }
 
 func (c *Config) Validate() error {
@@ -85,6 +106,17 @@ func Load() *Config {
 		ScreeningUNURL:           getEnv("MERLON_SCREENING_UN_URL", ""),
 		ScreeningMOFURL:          getEnv("MERLON_SCREENING_MOF_URL", ""),
 		ScreeningPEPURL:          getEnv("MERLON_SCREENING_PEP_URL", ""),
+
+		SMTPHost:     getEnv("MERLON_SMTP_HOST", ""),
+		SMTPPort:     getEnvInt("MERLON_SMTP_PORT", 587),
+		SMTPUsername: getEnv("MERLON_SMTP_USERNAME", ""),
+		SMTPPassword: getEnv("MERLON_SMTP_PASSWORD", ""),
+		SMTPFrom:     getEnv("MERLON_SMTP_FROM", ""),
+		SMTPTo:       getEnvList("MERLON_SMTP_TO"),
+		SMTPUseTLS:   getEnv("MERLON_SMTP_USE_TLS", "") == "true",
+
+		NotifyRoutingPath: getEnv("MERLON_NOTIFY_ROUTING_PATH", ""),
+		PublicURL:         getEnv("MERLON_PUBLIC_URL", ""),
 	}
 }
 
@@ -95,6 +127,23 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 		}
 	}
 	return fallback
+}
+
+// getEnvList splits a comma-separated env var into trimmed, non-empty
+// entries (e.g. MERLON_SMTP_TO="a@example.com,b@example.com").
+func getEnvList(key string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func getEnvInt(key string, fallback int) int {

@@ -22,6 +22,7 @@ import (
 	_ "github.com/merlon-aml/merlon/api/internal/events/nats"
 	_ "github.com/merlon-aml/merlon/api/internal/events/pgnotify"
 	"github.com/merlon-aml/merlon/api/internal/logging"
+	"github.com/merlon-aml/merlon/api/internal/notify"
 	"github.com/merlon-aml/merlon/api/internal/screening"
 	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
@@ -54,6 +55,33 @@ func main() {
 	}
 
 	deps := server.Deps{}
+
+	// Email notifications (NOTIF-001/NOTIF-003, WS-8 Task 5). A blank
+	// SMTPHost disables the mailer entirely rather than attempting an
+	// unconfigured SMTP connection.
+	if cfg.SMTPHost != "" {
+		deps.Notifier = notify.NewMailer(notify.SMTPConfig{
+			Host:     cfg.SMTPHost,
+			Port:     cfg.SMTPPort,
+			Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword,
+			From:     cfg.SMTPFrom,
+			To:       cfg.SMTPTo,
+			UseTLS:   cfg.SMTPUseTLS,
+		})
+		slog.Info("email notifications enabled", "smtp_host", cfg.SMTPHost)
+	}
+	if cfg.NotifyRoutingPath != "" {
+		rules, err := notify.LoadRoutingRules(cfg.NotifyRoutingPath)
+		if err != nil {
+			slog.Warn("notify routing rules load failed, using defaults", "path", cfg.NotifyRoutingPath, "error", err)
+			rules = notify.DefaultRoutingRules()
+		}
+		deps.RoutingRules = rules
+	} else {
+		deps.RoutingRules = notify.DefaultRoutingRules()
+	}
+	deps.PublicURL = cfg.PublicURL
 
 	var pool *pgxpool.Pool
 	if os.Getenv("MERLON_DATABASE_URL") != "" {
