@@ -7,6 +7,7 @@ package pgnotify
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -14,6 +15,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/merlon-aml/merlon/api/internal/events"
 )
+
+func init() {
+	events.Register("pg_notify", func(cfg events.Config) (events.Bus, error) {
+		if cfg.InstanceCount > 1 {
+			slog.Warn("pg_notify event bus does not fan out across multiple API instances; set EVENT_BUS=nats for horizontal scaling", "instance_count", cfg.InstanceCount)
+		}
+		return New(cfg.Pool), nil
+	})
+}
 
 // defaultGapWait is how long Subscribe waits for a missing sequence number
 // to arrive before falling back to a source-of-truth requery (overview.md
