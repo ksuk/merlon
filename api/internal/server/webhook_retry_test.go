@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // createTestWebhook registers a webhook pointing at a loopback
@@ -212,6 +214,57 @@ func TestHandleListDLQEntries_ReturnsUndeliveredEvents(t *testing.T) {
 	}
 	if entries[0].ID != "dlq-pending" {
 		t.Errorf("entry id = %q, want %q", entries[0].ID, "dlq-pending")
+	}
+}
+
+// TestDLQDepthWarning_TriggersAt80PercentOfCapacity verifies the 80%
+// capacity warning threshold (ws08-notify-case.md Task 4: 10,000 capacity,
+// 8,000 = 80% warning).
+func TestDLQDepthWarning_TriggersAt80PercentOfCapacity(t *testing.T) {
+	if dlqDepthWarning(webhookDLQWarningThreshold - 1) {
+		t.Errorf("dlqDepthWarning(%d) = true, want false (below threshold)", webhookDLQWarningThreshold-1)
+	}
+	if !dlqDepthWarning(webhookDLQWarningThreshold) {
+		t.Errorf("dlqDepthWarning(%d) = false, want true (at 80%% of capacity)", webhookDLQWarningThreshold)
+	}
+	if !dlqDepthWarning(webhookDLQCapacity) {
+		t.Errorf("dlqDepthWarning(%d) = false, want true (at full capacity)", webhookDLQCapacity)
+	}
+}
+
+// TestDLQDepthMetric_ReflectsCurrentCount drives a delivery through
+// webhookMaxAttempts failed retries (the real production path that moves an
+// event to the DLQ) and checks merlon_webhook_dlq_depth increments by
+// exactly 1. Since the gauge is a shared package-level metric, the
+// assertion uses a before/after delta rather than an absolute value so it
+// stays correct regardless of what other tests in this package have done.
+func TestDLQDepthMetric_ReflectsCurrentCount(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer failing.Close()
+
+	s := testServerWithWebhooks()
+	hook := createTestWebhook(t, s, failing.URL, []string{"alert.created"})
+
+	ctx := context.Background()
+	before := testutil.ToFloat64(metrics.WebhookDLQDepth)
+
+	s.deliverWebhook(hook, domain.WebhookEventAlertCreated, "evt-depth-metric", []byte(`{"id":"a1"}`))
+	deliveries, _ := s.webhooks.ListDeliveries(ctx, hook.ID, 1)
+	if len(deliveries) != 1 {
+		t.Fatalf("expected 1 delivery, got %d", len(deliveries))
+	}
+	d := deliveries[0]
+	for d.AttemptCount < webhookMaxAttempts {
+		if err := s.retryFailedDelivery(ctx, &d); err != nil {
+			t.Fatalf("retryFailedDelivery: %v", err)
+		}
+	}
+
+	after := testutil.ToFloat64(metrics.WebhookDLQDepth)
+	if after != before+1 {
+		t.Errorf("merlon_webhook_dlq_depth after 1 entry reaches DLQ = %v, want %v", after, before+1)
 	}
 }
 

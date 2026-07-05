@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/merlon-aml/merlon/api/internal/metrics"
 )
 
 const (
@@ -18,6 +20,13 @@ const (
 	webhookBaseBackoff = 30 * time.Second
 	// webhookMaxBackoff caps the exponential backoff (api.md §3.1 "最大6時間").
 	webhookMaxBackoff = 6 * time.Hour
+
+	// webhookDLQCapacity and webhookDLQWarningThreshold (80% of capacity):
+	// neither notifications.md nor api.md specifies a DLQ capacity number, so
+	// per ws08-notify-case.md Task 4 these are taken from the task document
+	// itself (its designated fallback source of truth for this value).
+	webhookDLQCapacity         = 10000
+	webhookDLQWarningThreshold = 8000
 )
 
 // computeBackoff returns the delay to wait after `attempt` failed delivery
@@ -85,12 +94,39 @@ func (s *Server) retryFailedDelivery(ctx context.Context, d *domain.WebhookDeliv
 		if err := s.webhooks.CreateDLQEntry(ctx, entry); err != nil {
 			return err
 		}
+		metrics.WebhookDLQDepth.Inc()
+		s.checkDLQDepthWarning(ctx)
 		return s.webhooks.UpdateDelivery(ctx, d)
 	}
 
 	next := time.Now().Add(computeBackoff(d.AttemptCount))
 	d.NextAttemptAt = &next
 	return s.webhooks.UpdateDelivery(ctx, d)
+}
+
+// dlqDepthWarning reports whether count has reached the 80% capacity warning
+// threshold (ws08-notify-case.md Task 4).
+func dlqDepthWarning(count int) bool {
+	return count >= webhookDLQWarningThreshold
+}
+
+// checkDLQDepthWarning logs once the 80% capacity warning threshold is
+// crossed, so operators are alerted before the DLQ fills up. The
+// merlon_webhook_dlq_depth gauge itself is adjusted with Inc/Dec at the
+// two call sites (DLQ entry created / reprocessed) rather than Set from a
+// recount here, mirroring adjustCasesOpenGauge's pattern.
+func (s *Server) checkDLQDepthWarning(ctx context.Context) {
+	if s.webhooks == nil {
+		return
+	}
+	count, err := s.webhooks.CountDLQEntries(ctx)
+	if err != nil {
+		return
+	}
+	if dlqDepthWarning(count) {
+		slog.WarnContext(ctx, "webhook DLQ depth exceeds 80% capacity warning threshold",
+			"count", count, "capacity", webhookDLQCapacity, "warning_threshold", webhookDLQWarningThreshold)
+	}
 }
 
 // processDueRetries retries every delivery whose NextAttemptAt is due. It is
@@ -218,6 +254,7 @@ func (s *Server) handleReprocessDLQEntry(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	metrics.WebhookDLQDepth.Dec()
 
 	writeJSON(w, http.StatusOK, reprocessDLQEntryResponse{Success: success, StatusCode: statusCode})
 }
