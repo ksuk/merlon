@@ -218,6 +218,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/batch/score", s.handleBatchScore)
 	s.mux.HandleFunc("POST /api/v1/batch/monitor", s.handleBatchMonitor)
 
+	// Inbound webhooks (core system notifications, data-model.md §1.1.2)
+	s.mux.HandleFunc("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
+
 	// Webhooks
 	s.mux.HandleFunc("POST /api/v1/webhooks", s.handleCreateWebhook)
 	s.mux.HandleFunc("GET /api/v1/webhooks", s.handleListWebhooks)

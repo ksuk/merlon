@@ -133,7 +133,9 @@ func (r *fakeCustomerRepo) Update(_ context.Context, c *domain.Customer) error {
 	return nil
 }
 
-func (r *fakeCustomerRepo) SaveScoreRecord(_ context.Context, _ *domain.ScoreRecord) error { return nil }
+func (r *fakeCustomerRepo) SaveScoreRecord(_ context.Context, _ *domain.ScoreRecord) error {
+	return nil
+}
 
 func (r *fakeCustomerRepo) ListScoreHistory(_ context.Context, _ string, _ int) ([]domain.ScoreRecord, error) {
 	return nil, nil
@@ -141,6 +143,18 @@ func (r *fakeCustomerRepo) ListScoreHistory(_ context.Context, _ string, _ int) 
 
 func (r *fakeCustomerRepo) ListEDDPending(_ context.Context) ([]domain.Customer, error) {
 	return nil, nil
+}
+
+func (r *fakeCustomerRepo) UpdateStatus(_ context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "customer", ID: id}
+	}
+	c.Status = status
+	cp := *c
+	return &cp, nil
 }
 
 // fakeScreeningEngine records the order and set of customers screened, and
@@ -293,6 +307,47 @@ func TestRunRescreeningBatch_PriorityOrderHighMediumLow(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("callOrder = %v, want %v (High -> Medium -> Low)", got, want)
 		}
+	}
+}
+
+// TestDormantCustomerContinuesScreeningSkipsTMWithoutTransaction verifies the
+// screening half of data-model.md §1.1.2's per-status table: closed
+// customers stop periodic rescreening entirely, while dormant customers
+// continue to be screened (undetected sanctions listing during a dormant
+// period is exactly what this cadence exists to catch). The TM half — that
+// dormant is evaluated only "取引発生時" rather than on the scheduled batch —
+// is covered separately in
+// api/internal/batch/tm_batch_job_test.go:TestRunTMBatchEvaluation_SkipsClosedAndDormantCustomers.
+func TestDormantCustomerContinuesScreeningSkipsTMWithoutTransaction(t *testing.T) {
+	active := domain.Customer{ID: "cust-active", RiskTier: riskTier(domain.RiskTierLow), Status: domain.CustomerStatusActive}
+	dormant := domain.Customer{ID: "cust-dormant", RiskTier: riskTier(domain.RiskTierLow), Status: domain.CustomerStatusDormant}
+	closed := domain.Customer{ID: "cust-closed", RiskTier: riskTier(domain.RiskTierLow), Status: domain.CustomerStatusClosed}
+	repo := newFakeCustomerRepo(active, dormant, closed)
+	engine := &fakeScreeningEngine{}
+
+	deps := SchedulerDeps{
+		Customers: repo,
+		Screening: engine,
+		Results:   store.NewMemoryScreeningResultRepo(),
+		Now:       func() time.Time { return time.Now() },
+	}
+
+	if _, err := RunRescreeningBatch(context.Background(), deps, TriggerListUpdated); err != nil {
+		t.Fatalf("RunRescreeningBatch: %v", err)
+	}
+
+	screened := map[string]bool{}
+	for _, id := range engine.callOrder() {
+		screened[id] = true
+	}
+	if !screened["cust-active"] {
+		t.Error("active customer was not screened, want screened")
+	}
+	if !screened["cust-dormant"] {
+		t.Error("dormant customer was not screened, want screened (periodic rescreening continues while dormant)")
+	}
+	if screened["cust-closed"] {
+		t.Error("closed customer was screened, want excluded")
 	}
 }
 

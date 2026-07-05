@@ -208,3 +208,69 @@ func TestRunTMBatchEvaluation_ExcludesTransactionsIngestedDuringBatch(t *testing
 		}
 	}
 }
+
+// TestRunTMBatchEvaluation_SkipsClosedAndDormantCustomers verifies
+// data-model.md §1.1.2's per-status scheduled-TM-batch scope: closed
+// customers stop TM evaluation entirely, and dormant customers are
+// evaluated only "取引発生時" (the realtime path, WS-11 Task 2's
+// handleBatchMonitor) rather than on this periodic 02:00 schedule — even
+// though both have outstanding transactions the way an active customer
+// would (TestDormantCustomerContinuesScreeningSkipsTMWithoutTransaction:
+// dormant continues periodic screening rescreening, covered separately in
+// the screening package, but skips this scheduled TM pass).
+func TestRunTMBatchEvaluation_SkipsClosedAndDormantCustomers(t *testing.T) {
+	ctx := context.Background()
+	customers := store.NewMemoryCustomerRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	alerts := store.NewMemoryAlertRepo()
+	runs := store.NewMemoryBatchRunRepo()
+
+	active, _ := seedBatchCustomerAndTransaction(t, customers, transactions, "TB201", time.Now().Add(-time.Hour))
+	closed, _ := seedBatchCustomerAndTransaction(t, customers, transactions, "TB202", time.Now().Add(-time.Hour))
+	dormant, _ := seedBatchCustomerAndTransaction(t, customers, transactions, "TB203", time.Now().Add(-time.Hour))
+
+	closed.Status = domain.CustomerStatusClosed
+	if err := customers.Update(ctx, closed); err != nil {
+		t.Fatalf("update closed customer: %v", err)
+	}
+	dormant.Status = domain.CustomerStatusDormant
+	if err := customers.Update(ctx, dormant); err != nil {
+		t.Fatalf("update dormant customer: %v", err)
+	}
+
+	var evaluatedCustomers []string
+	monitoring := &engine.MockMonitoringEngine{
+		EvaluateFunc: func(_ context.Context, customerID string, _ domain.RiskTier, _ []domain.Transaction, _ []string) ([]domain.Alert, error) {
+			evaluatedCustomers = append(evaluatedCustomers, customerID)
+			return nil, nil
+		},
+	}
+
+	deps := TMBatchEvaluationDeps{
+		Runs:         runs,
+		Customers:    customers,
+		Transactions: transactions,
+		Monitoring:   monitoring,
+		Alerts:       alerts,
+	}
+
+	if err := RunTMBatchEvaluation(ctx, deps, "run-status-scope"); err != nil {
+		t.Fatalf("RunTMBatchEvaluation: %v", err)
+	}
+
+	foundActive := false
+	for _, id := range evaluatedCustomers {
+		if id == closed.ID {
+			t.Errorf("closed customer %s was evaluated, want excluded", closed.ID)
+		}
+		if id == dormant.ID {
+			t.Errorf("dormant customer %s was evaluated on the scheduled batch, want excluded", dormant.ID)
+		}
+		if id == active.ID {
+			foundActive = true
+		}
+	}
+	if !foundActive {
+		t.Errorf("active customer %s was not evaluated, want included", active.ID)
+	}
+}

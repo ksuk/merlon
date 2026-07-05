@@ -146,6 +146,19 @@ func (r *MemoryCustomerRepo) Update(_ context.Context, c *domain.Customer) error
 	return nil
 }
 
+func (r *MemoryCustomerRepo) UpdateStatus(_ context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "customer", ID: id}
+	}
+	c.Status = status
+	c.UpdatedAt = time.Now()
+	cp := *c
+	return &cp, nil
+}
+
 func (r *MemoryCustomerRepo) ListEDDPending(_ context.Context) ([]domain.Customer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -410,6 +423,18 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 	now := time.Now()
 	a.ResolvedAt = &now
 	a.UpdatedAt = now
+	return nil
+}
+
+func (r *MemoryAlertRepo) EscalateSeverity(_ context.Context, id string, severity domain.AlertSeverity) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "alert", ID: id}
+	}
+	a.Severity = severity
+	a.UpdatedAt = time.Now()
 	return nil
 }
 

@@ -27,6 +27,12 @@ type CustomerRepository interface {
 	// 未実施継続時の段階的措置). The job itself computes elapsed days per
 	// customer and decides which stage (if any) applies.
 	ListEDDPending(ctx context.Context) ([]Customer, error)
+	// UpdateStatus reflects a customer_status_changed notification from the
+	// core system (data-model.md §1.1.2). This system does not judge
+	// transition validity; it records whatever status it is told (Adapter
+	// Isolation). reason is stored by the caller for the audit log entry,
+	// not persisted on the customer row itself.
+	UpdateStatus(ctx context.Context, id string, status CustomerStatus, reason string) (*Customer, error)
 }
 
 type TransactionRepository interface {
@@ -68,6 +74,10 @@ type AlertRepository interface {
 	AnnotateBatchReviewed(ctx context.Context, alertID string, batchRunID string) error
 	// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7).
 	ListByFilter(ctx context.Context, f AlertBulkFilter) ([]Alert, error)
+	// EscalateSeverity raises a single alert's severity (data-model.md
+	// §1.1.2: customer death -> frozen escalates all of that customer's
+	// alerts to HIGH), independent of its status.
+	EscalateSeverity(ctx context.Context, id string, severity AlertSeverity) error
 }
 
 type ErrNotFound struct {

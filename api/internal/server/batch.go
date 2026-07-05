@@ -204,6 +204,20 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	reviewRunID := generateID()
 
 	for _, c := range customers {
+		// data-model.md §1.1.2: a closed customer's TM evaluation stops
+		// entirely (existing records are kept for the retention period, but
+		// no further scoring/alerting happens). This handler represents the
+		// realtime "取引発生時" path, so frozen/dormant customers are still
+		// evaluated here — only closed is excluded.
+		if c.EffectiveStatus() == domain.CustomerStatusClosed {
+			resp.Succeeded++
+			resp.Results = append(resp.Results, batchMonitorResult{
+				CustomerID:   c.ID,
+				AlertsRaised: 0,
+			})
+			continue
+		}
+
 		txns, err := s.transactions.ListByCustomer(ctx, c.ID, maxBatchCustomers, 0)
 		if err != nil {
 			resp.Failed++

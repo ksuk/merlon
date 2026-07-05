@@ -133,6 +133,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		CustomerType: req.CustomerType,
 		CountryCode:  req.CountryCode,
 		ProductTypes: req.ProductTypes,
+		Status:       domain.CustomerStatusActive,
 		Attributes:   req.Attributes,
 		CreatedAt:    now,
 		UpdatedAt:    now,

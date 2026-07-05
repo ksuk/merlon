@@ -21,7 +21,7 @@ func NewPgCustomerRepo(pool *pgxpool.Pool) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool}
 }
 
-const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at`
+const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at`
 
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
 	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1`, id)
@@ -38,7 +38,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	var riskTier *string
 
 	err := r.pool.QueryRow(ctx, query, arg).Scan(
-		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
+		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode, &c.Status,
 		&products, &attrs,
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
@@ -72,7 +72,7 @@ func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
 	var riskTier *string
 
 	if err := rows.Scan(
-		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
+		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode, &c.Status,
 		&products, &attrs,
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
@@ -167,10 +167,14 @@ func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer,
 
 func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
+	status := c.Status
+	if status == "" {
+		status = domain.CustomerStatusActive
+	}
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO customers (id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
+		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
@@ -183,8 +187,8 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14 WHERE id=$1`,
-		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15 WHERE id=$1`,
+		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
@@ -197,6 +201,23 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
 	}
 	return nil
+}
+
+// UpdateStatus reflects a customer_status_changed webhook (data-model.md
+// §1.1.2). reason is not persisted on the row; callers attach it to the
+// audit log entry.
+func (r *PgCustomerRepo) UpdateStatus(ctx context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE customers SET status=$2, updated_at=now() WHERE id=$1`,
+		id, status,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, &domain.ErrNotFound{Entity: "customer", ID: id}
+	}
+	return r.Get(ctx, id)
 }
 
 func (r *PgCustomerRepo) SaveScoreRecord(ctx context.Context, rec *domain.ScoreRecord) error {
@@ -573,6 +594,20 @@ func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE alerts SET status=$2, resolved_by=$3, resolved_at=$4, updated_at=$5 WHERE id=$1`,
 		id, string(status), resolvedBy, now, now,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "alert", ID: id}
+	}
+	return nil
+}
+
+func (r *PgAlertRepo) EscalateSeverity(ctx context.Context, id string, severity domain.AlertSeverity) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE alerts SET severity=$2, updated_at=now() WHERE id=$1`,
+		id, string(severity),
 	)
 	if err != nil {
 		return err

@@ -189,6 +189,12 @@ func selectCustomersForTrigger(ctx context.Context, deps SchedulerDeps, all []do
 
 	filtered := make([]domain.Customer, 0, len(all))
 	for _, c := range all {
+		// data-model.md §1.1.2: closed customers stop periodic rescreening;
+		// dormant continues (undetected sanctions listing during dormancy is
+		// exactly the risk this rescreening cadence exists to catch).
+		if c.EffectiveStatus() == domain.CustomerStatusClosed {
+			continue
+		}
 		if isScheduled {
 			if c.RiskTier == nil || *c.RiskTier != tier {
 				continue
