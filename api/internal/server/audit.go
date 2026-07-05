@@ -141,6 +141,9 @@ func resolveAction(method, path string) string {
 		}
 		return "create"
 	case http.MethodPut:
+		if strings.Contains(path, "/admin/retention-policies/") {
+			return "update_retention_policy"
+		}
 		return "update"
 	case http.MethodPatch:
 		return "update_status"
@@ -161,6 +164,13 @@ func resolveResource(path string) (string, string) {
 	// generic resource/{id} shape the fallback below assumes.
 	if len(parts) >= 3 && parts[0] == "webhooks" && parts[1] == "dlq" {
 		return "webhook_dlq", parts[2]
+	}
+
+	// admin/retention-policies/{category} likewise nests one level deeper
+	// than the generic admin/{resource} shape (ALD-002: resource_type should
+	// read "retention_policy", not "admin").
+	if len(parts) >= 3 && parts[0] == "admin" && parts[1] == "retention-policies" {
+		return "retention_policy", parts[2]
 	}
 
 	resourceType := parts[0]

@@ -49,6 +49,7 @@ type Server struct {
 	whitelist                domain.WhitelistRepository
 	whitelistMaxValidDaysCfg int
 	screeningResults         domain.ScreeningResultRepository
+	retention                domain.RetentionRepository
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
 	// dashboard's list-freshness display (screening.md; Task 4). Nil until
@@ -95,6 +96,7 @@ type Deps struct {
 	// when positive; zero/negative falls back to the default.
 	WhitelistMaxValidDays int
 	ScreeningResults      domain.ScreeningResultRepository
+	Retention             domain.RetentionRepository
 
 	ScreeningListStore      screening.ListStore
 	ScreeningFailureTracker screening.FailureTracker
@@ -141,6 +143,7 @@ func New(addr string, deps Deps) *Server {
 		whitelist:                deps.Whitelist,
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		screeningResults:         deps.ScreeningResults,
+		retention:                deps.Retention,
 
 		screeningListStore:      deps.ScreeningListStore,
 		screeningFailureTracker: deps.ScreeningFailureTracker,
@@ -234,6 +237,12 @@ func (s *Server) routes() {
 
 	// Users (admin only)
 	s.mux.HandleFunc("GET /api/v1/admin/users", s.handleListUsers)
+
+	// Retention policies (admin only via /api/v1/admin/ prefix gate,
+	// audit.md RET-001/RET-002). Update additionally enforces
+	// shorten-prevention in handleUpdateRetentionPolicy.
+	s.mux.HandleFunc("GET /api/v1/admin/retention-policies", s.handleListRetentionPolicies)
+	s.mux.HandleFunc("PUT /api/v1/admin/retention-policies/{category}", s.handleUpdateRetentionPolicy)
 
 	// Session (JWT login/logout/refresh/me)
 	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
