@@ -9,34 +9,34 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
+import { useTranslation } from "react-i18next"
 
-const ACTION_LABELS: Record<string, string> = {
-  create: "作成",
-  update: "更新",
-  update_status: "ステータス変更",
-  delete: "削除",
-  score_customer: "スコアリング",
-  screen_customer: "スクリーニング",
-  run_backtest: "バックテスト",
-  create_str: "STR作成",
-}
-
-const RESOURCE_LABELS: Record<string, string> = {
-  customers: "顧客",
-  transactions: "取引",
-  alerts: "アラート",
-  cases: "ケース",
-  webhooks: "Webhook",
-  batch: "バッチ",
-  reports: "レポート",
-  admin: "管理",
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function AuditPage() {
+  const { t, i18n } = useTranslation()
+  const actionLabels: Record<string, string> = {
+    create: t("audit.action.create"),
+    update: t("audit.action.update"),
+    update_status: t("audit.action.update_status"),
+    delete: t("audit.action.delete"),
+    score_customer: t("audit.action.score_customer"),
+    screen_customer: t("audit.action.screen_customer"),
+    run_backtest: t("audit.action.run_backtest"),
+    create_str: t("audit.action.create_str"),
+  }
+  const resourceLabels: Record<string, string> = {
+    customers: t("audit.resource.customers"),
+    transactions: t("audit.resource.transactions"),
+    alerts: t("audit.resource.alerts"),
+    cases: t("audit.resource.cases"),
+    webhooks: t("audit.resource.webhooks"),
+    batch: t("audit.resource.batch"),
+    reports: t("audit.resource.reports"),
+    admin: t("audit.resource.admin"),
+  }
   const { data: entries, loading, error } = useApi(api.audit.list)
 
   if (loading) {
@@ -44,26 +44,26 @@ export function AuditPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">監査ログの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("audit.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">監査ログ</h1>
-        <p className="text-sm text-muted-foreground">{entries?.length ?? 0} 件</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("audit.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("audit.count", { count: entries?.length ?? 0 })}</p>
       </div>
 
       <div className="rounded-xl border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>日時</TableHead>
-              <TableHead>操作</TableHead>
-              <TableHead>リソース</TableHead>
-              <TableHead>リソースID</TableHead>
-              <TableHead>ユーザー</TableHead>
-              <TableHead>IPアドレス</TableHead>
+              <TableHead>{t("audit.table.header.timestamp")}</TableHead>
+              <TableHead>{t("audit.table.header.action")}</TableHead>
+              <TableHead>{t("audit.table.header.resource")}</TableHead>
+              <TableHead>{t("audit.table.header.resourceId")}</TableHead>
+              <TableHead>{t("audit.table.header.user")}</TableHead>
+              <TableHead>{t("audit.table.header.ipAddress")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -71,15 +71,15 @@ export function AuditPage() {
               entries.map((e) => (
                 <TableRow key={e.id}>
                   <TableCell className="whitespace-nowrap text-sm">
-                    {formatDateTime(e.created_at)}
+                    {formatDateTime(e.created_at, i18n.language)}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">
-                      {ACTION_LABELS[e.action] ?? e.action}
+                      {actionLabels[e.action] ?? e.action}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {RESOURCE_LABELS[e.resource_type] ?? e.resource_type}
+                    {resourceLabels[e.resource_type] ?? e.resource_type}
                   </TableCell>
                   <TableCell className="font-mono text-sm">
                     {e.resource_id || "-"}
@@ -93,7 +93,7 @@ export function AuditPage() {
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  監査ログがありません
+                  {t("audit.table.empty")}
                 </TableCell>
               </TableRow>
             )}

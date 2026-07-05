@@ -118,6 +118,202 @@
       "empty": "No customer data"
     }
   },
+  "casePriority": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical"
+  },
+  "caseStatus": {
+    "open": "New",
+    "new": "New",
+    "investigating": "Investigating",
+    "escalated": "Escalated",
+    "closed": "Closed",
+    "reopened": "Reopened",
+    "str_filed": "STR filed"
+  },
+  "cases": {
+    "title": "Cases",
+    "count": "{{count}} items",
+    "createButton": "Create new",
+    "error": "Failed to fetch case data",
+    "form": {
+      "title": "Create case",
+      "customerId": "Customer ID",
+      "alertIds": "Alert IDs (comma-separated)",
+      "assignedTo": "Assigned to",
+      "priority": "Priority",
+      "summary": "Summary",
+      "summaryPlaceholder": "Case summary...",
+      "submit": "Create"
+    },
+    "table": {
+      "header": {
+        "priority": "Priority",
+        "status": "Status",
+        "customerId": "Customer ID",
+        "assignedTo": "Assigned to",
+        "summary": "Summary",
+        "createdAt": "Created at"
+      },
+      "empty": "No cases"
+    }
+  },
+  "caseDetail": {
+    "backToList": "Back to case list",
+    "back": "Back",
+    "error": "Failed to fetch case data",
+    "title": "Case detail",
+    "info": {
+      "title": "Case info",
+      "customerId": "Customer ID",
+      "assignedTo": "Assigned to",
+      "createdAt": "Created at",
+      "closedAt": "Closed at"
+    },
+    "summary": {
+      "title": "Summary",
+      "relatedAlerts": "Related alerts"
+    },
+    "transitions": {
+      "title": "Status change",
+      "startInvestigation": "Start investigation",
+      "escalate": "Escalate",
+      "close": "Close",
+      "fileStr": "File as STR",
+      "rollback": "Roll back (to investigating)",
+      "reinvestigate": "Resume investigation"
+    },
+    "reopen": {
+      "title": "Reopen",
+      "placeholder": "Reason for reopening (required)",
+      "submit": "Reopen"
+    },
+    "reopenReason": {
+      "title": "Reopen reason"
+    },
+    "relatedCases": {
+      "title": "Related cases",
+      "empty": "No related cases",
+      "auto": "Auto-linked (same customer)",
+      "manual": "Manually linked"
+    },
+    "notes": {
+      "title": "Notes",
+      "empty": "No notes",
+      "placeholder": "Add a note..."
+    },
+    "edd": {
+      "stage3": "Stage 3: Transaction refusal recommended",
+      "stage2": "Stage 2: Transaction restriction recommended",
+      "stage1": "Stage 1: Reminder sent",
+      "requested": "EDD requested (pre-escalation)"
+    }
+  },
+  "alertSeverity": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical"
+  },
+  "alertStatus": {
+    "open": "Open",
+    "investigating": "Investigating",
+    "escalated": "Escalated",
+    "closed_true_positive": "Closed (true positive)",
+    "closed_false_positive": "Closed (false positive)"
+  },
+  "alerts": {
+    "title": "Alerts",
+    "count": "{{count}} items",
+    "error": "Failed to fetch alert data",
+    "bulkClose": {
+      "label": "Bulk close",
+      "scenarioIdPlaceholder": "Scenario ID (optional)",
+      "severityPlaceholder": "Severity (optional)",
+      "reasonPlaceholder": "Reason (required)",
+      "submit": "Close matching alerts"
+    },
+    "bulkCase": {
+      "selectedCount": "{{count}} selected",
+      "submit": "Combine selected alerts into a case"
+    },
+    "table": {
+      "header": {
+        "severity": "Severity",
+        "status": "Status",
+        "customerId": "Customer ID",
+        "scenario": "Scenario",
+        "score": "Score",
+        "description": "Description",
+        "detectedAt": "Detected at"
+      },
+      "empty": "No alerts"
+    }
+  },
+  "alertDetail": {
+    "backToList": "Back to alert list",
+    "back": "Back",
+    "error": "Failed to fetch alert data",
+    "title": "Alert detail",
+    "info": {
+      "title": "Alert info",
+      "customerId": "Customer ID",
+      "scenario": "Scenario",
+      "score": "Score",
+      "detectedAt": "Detected at",
+      "resolvedAt": "Resolved at",
+      "resolvedBy": "Resolved by"
+    },
+    "description": {
+      "title": "Description",
+      "relatedTransactions": "Related transactions"
+    },
+    "transitions": {
+      "title": "Status change",
+      "startInvestigation": "Start investigation",
+      "escalate": "Escalate",
+      "closeTruePositive": "Close as true positive",
+      "closeFalsePositive": "Close as false positive"
+    }
+  },
+  "audit": {
+    "title": "Audit log",
+    "count": "{{count}} items",
+    "error": "Failed to fetch audit log",
+    "action": {
+      "create": "Create",
+      "update": "Update",
+      "update_status": "Update status",
+      "delete": "Delete",
+      "score_customer": "Score",
+      "screen_customer": "Screen",
+      "run_backtest": "Backtest",
+      "create_str": "Create STR"
+    },
+    "resource": {
+      "customers": "Customers",
+      "transactions": "Transactions",
+      "alerts": "Alerts",
+      "cases": "Cases",
+      "webhooks": "Webhooks",
+      "batch": "Batch",
+      "reports": "Reports",
+      "admin": "Admin"
+    },
+    "table": {
+      "header": {
+        "timestamp": "Timestamp",
+        "action": "Action",
+        "resource": "Resource",
+        "resourceId": "Resource ID",
+        "user": "User",
+        "ipAddress": "IP address"
+      },
+      "empty": "No audit log entries"
+    }
+  },
   "transactions": {
     "title": "Transactions",
     "count": "{{count}} items",

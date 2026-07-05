@@ -118,6 +118,202 @@
       "empty": "顧客データがありません"
     }
   },
+  "casePriority": {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "critical": "重大"
+  },
+  "caseStatus": {
+    "open": "新規",
+    "new": "新規",
+    "investigating": "調査中",
+    "escalated": "エスカレーション",
+    "closed": "完了",
+    "reopened": "再オープン",
+    "str_filed": "STR対象"
+  },
+  "cases": {
+    "title": "ケース一覧",
+    "count": "{{count}} 件",
+    "createButton": "新規作成",
+    "error": "ケースデータの取得に失敗しました",
+    "form": {
+      "title": "ケース作成",
+      "customerId": "顧客ID",
+      "alertIds": "アラートID（カンマ区切り）",
+      "assignedTo": "担当者",
+      "priority": "優先度",
+      "summary": "概要",
+      "summaryPlaceholder": "ケースの概要...",
+      "submit": "作成"
+    },
+    "table": {
+      "header": {
+        "priority": "優先度",
+        "status": "ステータス",
+        "customerId": "顧客ID",
+        "assignedTo": "担当者",
+        "summary": "概要",
+        "createdAt": "作成日時"
+      },
+      "empty": "ケースがありません"
+    }
+  },
+  "caseDetail": {
+    "backToList": "ケース一覧に戻る",
+    "back": "戻る",
+    "error": "ケースデータの取得に失敗しました",
+    "title": "ケース詳細",
+    "info": {
+      "title": "ケース情報",
+      "customerId": "顧客ID",
+      "assignedTo": "担当者",
+      "createdAt": "作成日時",
+      "closedAt": "クローズ日時"
+    },
+    "summary": {
+      "title": "概要",
+      "relatedAlerts": "関連アラート"
+    },
+    "transitions": {
+      "title": "ステータス変更",
+      "startInvestigation": "調査開始",
+      "escalate": "エスカレーション",
+      "close": "クローズ",
+      "fileStr": "STR対象として届出",
+      "rollback": "差し戻し（調査中に戻す）",
+      "reinvestigate": "調査再開"
+    },
+    "reopen": {
+      "title": "再オープン",
+      "placeholder": "再オープンの理由（必須）",
+      "submit": "再オープン"
+    },
+    "reopenReason": {
+      "title": "再オープン理由"
+    },
+    "relatedCases": {
+      "title": "関連ケース",
+      "empty": "関連ケースはありません",
+      "auto": "自動抽出（同一顧客）",
+      "manual": "手動リンク"
+    },
+    "notes": {
+      "title": "ノート",
+      "empty": "ノートがありません",
+      "placeholder": "ノートを追加..."
+    },
+    "edd": {
+      "stage3": "ステージ3: 取引謝絶推奨済み",
+      "stage2": "ステージ2: 取引制限推奨済み",
+      "stage1": "ステージ1: リマインダー送信済み",
+      "requested": "EDD要求中（エスカレーション前）"
+    }
+  },
+  "alertSeverity": {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "critical": "重大"
+  },
+  "alertStatus": {
+    "open": "未対応",
+    "investigating": "調査中",
+    "escalated": "エスカレーション",
+    "closed_true_positive": "完了(真陽性)",
+    "closed_false_positive": "完了(偽陽性)"
+  },
+  "alerts": {
+    "title": "アラート一覧",
+    "count": "{{count}} 件",
+    "error": "アラートデータの取得に失敗しました",
+    "bulkClose": {
+      "label": "一括クローズ",
+      "scenarioIdPlaceholder": "シナリオID（任意）",
+      "severityPlaceholder": "深刻度（任意）",
+      "reasonPlaceholder": "判断理由（必須）",
+      "submit": "条件に一致するアラートをクローズ"
+    },
+    "bulkCase": {
+      "selectedCount": "選択中: {{count}} 件",
+      "submit": "選択したアラートをケースにまとめる"
+    },
+    "table": {
+      "header": {
+        "severity": "深刻度",
+        "status": "ステータス",
+        "customerId": "顧客ID",
+        "scenario": "シナリオ",
+        "score": "スコア",
+        "description": "説明",
+        "detectedAt": "検出日時"
+      },
+      "empty": "アラートがありません"
+    }
+  },
+  "alertDetail": {
+    "backToList": "アラート一覧に戻る",
+    "back": "戻る",
+    "error": "アラートデータの取得に失敗しました",
+    "title": "アラート詳細",
+    "info": {
+      "title": "アラート情報",
+      "customerId": "顧客ID",
+      "scenario": "シナリオ",
+      "score": "スコア",
+      "detectedAt": "検出日時",
+      "resolvedAt": "解決日時",
+      "resolvedBy": "解決者"
+    },
+    "description": {
+      "title": "説明",
+      "relatedTransactions": "関連取引"
+    },
+    "transitions": {
+      "title": "ステータス変更",
+      "startInvestigation": "調査開始",
+      "escalate": "エスカレーション",
+      "closeTruePositive": "真陽性として完了",
+      "closeFalsePositive": "偽陽性として完了"
+    }
+  },
+  "audit": {
+    "title": "監査ログ",
+    "count": "{{count}} 件",
+    "error": "監査ログの取得に失敗しました",
+    "action": {
+      "create": "作成",
+      "update": "更新",
+      "update_status": "ステータス変更",
+      "delete": "削除",
+      "score_customer": "スコアリング",
+      "screen_customer": "スクリーニング",
+      "run_backtest": "バックテスト",
+      "create_str": "STR作成"
+    },
+    "resource": {
+      "customers": "顧客",
+      "transactions": "取引",
+      "alerts": "アラート",
+      "cases": "ケース",
+      "webhooks": "Webhook",
+      "batch": "バッチ",
+      "reports": "レポート",
+      "admin": "管理"
+    },
+    "table": {
+      "header": {
+        "timestamp": "日時",
+        "action": "操作",
+        "resource": "リソース",
+        "resourceId": "リソースID",
+        "user": "ユーザー",
+        "ipAddress": "IPアドレス"
+      },
+      "empty": "監査ログがありません"
+    }
+  },
   "transactions": {
     "title": "取引一覧",
     "count": "{{count}} 件",

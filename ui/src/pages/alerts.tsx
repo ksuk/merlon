@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table"
 import { api, type Alert, type AlertSeverity, type AlertStatus } from "@/lib/api"
 import { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
 const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "critical"> = {
@@ -19,26 +20,25 @@ const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "criti
   critical: "critical",
 }
 
-const SEVERITY_LABELS: Record<string, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
-  critical: "重大",
-}
-
-const STATUS_LABELS: Record<AlertStatus, string> = {
-  open: "未対応",
-  investigating: "調査中",
-  escalated: "エスカレーション",
-  closed_true_positive: "完了(真陽性)",
-  closed_false_positive: "完了(偽陽性)",
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function AlertsPage() {
+  const { t, i18n } = useTranslation()
+  const severityLabels: Record<string, string> = {
+    low: t("alertSeverity.low"),
+    medium: t("alertSeverity.medium"),
+    high: t("alertSeverity.high"),
+    critical: t("alertSeverity.critical"),
+  }
+  const statusLabels: Record<AlertStatus, string> = {
+    open: t("alertStatus.open"),
+    investigating: t("alertStatus.investigating"),
+    escalated: t("alertStatus.escalated"),
+    closed_true_positive: t("alertStatus.closed_true_positive"),
+    closed_false_positive: t("alertStatus.closed_false_positive"),
+  }
   const [alerts, setAlerts] = useState<Alert[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -132,21 +132,21 @@ export function AlertsPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">アラートデータの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("alerts.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">アラート一覧</h1>
-        <p className="text-sm text-muted-foreground">{alerts?.length ?? 0} 件</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("alerts.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("alerts.count", { count: alerts?.length ?? 0 })}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-muted/40 p-4">
-        <span className="text-sm font-medium">一括クローズ</span>
+        <span className="text-sm font-medium">{t("alerts.bulkClose.label")}</span>
         <input
           type="text"
-          placeholder="シナリオID（任意）"
+          placeholder={t("alerts.bulkClose.scenarioIdPlaceholder")}
           value={closeScenarioId}
           onChange={(e) => setCloseScenarioId(e.target.value)}
           className="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
@@ -156,15 +156,15 @@ export function AlertsPage() {
           onChange={(e) => setCloseSeverity(e.target.value as AlertSeverity | "")}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
         >
-          <option value="">深刻度（任意）</option>
-          <option value="low">低</option>
-          <option value="medium">中</option>
-          <option value="high">高</option>
-          <option value="critical">重大</option>
+          <option value="">{t("alerts.bulkClose.severityPlaceholder")}</option>
+          <option value="low">{t("alertSeverity.low")}</option>
+          <option value="medium">{t("alertSeverity.medium")}</option>
+          <option value="high">{t("alertSeverity.high")}</option>
+          <option value="critical">{t("alertSeverity.critical")}</option>
         </select>
         <input
           type="text"
-          placeholder="判断理由（必須）"
+          placeholder={t("alerts.bulkClose.reasonPlaceholder")}
           value={closeReason}
           onChange={(e) => setCloseReason(e.target.value)}
           className="h-9 flex-1 min-w-[200px] rounded-md border border-input bg-background px-3 text-sm"
@@ -175,15 +175,15 @@ export function AlertsPage() {
           disabled={busy || !closeReason.trim()}
           onClick={handleBulkClose}
         >
-          条件に一致するアラートをクローズ
+          {t("alerts.bulkClose.submit")}
         </Button>
       </div>
 
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-muted/40 p-4">
-          <span className="text-sm font-medium">選択中: {selected.size} 件</span>
+          <span className="text-sm font-medium">{t("alerts.bulkCase.selectedCount", { count: selected.size })}</span>
           <Button size="sm" variant="outline" disabled={busy} onClick={handleBulkCase}>
-            選択したアラートをケースにまとめる
+            {t("alerts.bulkCase.submit")}
           </Button>
         </div>
       )}
@@ -195,13 +195,13 @@ export function AlertsPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
-              <TableHead>深刻度</TableHead>
-              <TableHead>ステータス</TableHead>
-              <TableHead>顧客ID</TableHead>
-              <TableHead>シナリオ</TableHead>
-              <TableHead>スコア</TableHead>
-              <TableHead>説明</TableHead>
-              <TableHead>検出日時</TableHead>
+              <TableHead>{t("alerts.table.header.severity")}</TableHead>
+              <TableHead>{t("alerts.table.header.status")}</TableHead>
+              <TableHead>{t("alerts.table.header.customerId")}</TableHead>
+              <TableHead>{t("alerts.table.header.scenario")}</TableHead>
+              <TableHead>{t("alerts.table.header.score")}</TableHead>
+              <TableHead>{t("alerts.table.header.description")}</TableHead>
+              <TableHead>{t("alerts.table.header.detectedAt")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -219,26 +219,26 @@ export function AlertsPage() {
                   <TableCell>
                     <Link to={`/alerts/${a.id}`}>
                       <Badge variant={SEVERITY_VARIANT[a.severity]}>
-                        {SEVERITY_LABELS[a.severity] ?? a.severity}
+                        {severityLabels[a.severity] ?? a.severity}
                       </Badge>
                     </Link>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {STATUS_LABELS[a.status] ?? a.status}
+                      {statusLabels[a.status] ?? a.status}
                     </Badge>
                   </TableCell>
                   <TableCell className="font-mono text-sm">{a.customer_id}</TableCell>
                   <TableCell className="font-mono text-sm">{a.scenario_id}</TableCell>
                   <TableCell>{a.score.toFixed(1)}</TableCell>
                   <TableCell className="max-w-[300px] truncate">{a.description}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDateTime(a.detected_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDateTime(a.detected_at, i18n.language)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
                 <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                  アラートがありません
+                  {t("alerts.table.empty")}
                 </TableCell>
               </TableRow>
             )}

@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { AuditPage } from "./audit"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -37,7 +38,7 @@ test("renders audit log entries", async () => {
     ),
   )
 
-  renderWithRouter(<AuditPage />)
+  await renderWithRouter(<AuditPage />)
 
   expect(await screen.findByText("監査ログ")).toBeDefined()
   expect(screen.getByText("作成")).toBeDefined()
@@ -48,7 +49,7 @@ test("renders audit log entries", async () => {
 test("shows empty state when no entries", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
 
-  renderWithRouter(<AuditPage />)
+  await renderWithRouter(<AuditPage />)
 
   expect(await screen.findByText("監査ログがありません")).toBeDefined()
 })
