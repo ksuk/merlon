@@ -75,6 +75,39 @@ fn default_evaluation_mode() -> String {
     "both".to_string()
 }
 
+/// Which evaluation pass(es) a scenario runs under (rule-schema.md §1.2,
+/// transaction-monitoring.md「評価モード」).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EvaluationMode {
+    Realtime,
+    Batch,
+    Both,
+}
+
+impl EvaluationMode {
+    /// Unrecognized strings fall back to `Both` (Fail-Alert: never
+    /// silently drop a scenario from a pass because its mode was
+    /// unparseable).
+    fn from_config_str(s: &str) -> Self {
+        match s {
+            "realtime" => EvaluationMode::Realtime,
+            "batch" => EvaluationMode::Batch,
+            _ => EvaluationMode::Both,
+        }
+    }
+
+    /// Whether a scenario configured with `self` as its evaluation_mode
+    /// should run under a pass filtering for `filter`.
+    pub fn runs_under(self, filter: EvaluationMode) -> bool {
+        match filter {
+            EvaluationMode::Both => true,
+            EvaluationMode::Realtime => self != EvaluationMode::Batch,
+            EvaluationMode::Batch => self != EvaluationMode::Realtime,
+        }
+    }
+}
+
 const CUSTOMER_TYPES: [&str; 3] = ["individual", "corporate_domestic", "corporate_foreign"];
 const RISK_TIERS: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
 
@@ -85,6 +118,11 @@ const RISK_TIERS: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
 /// migrated scenario is expected to use going forward, falling back to the
 /// legacy "threshold_amount" convention used by the shipped v1 content.
 const V1_THRESHOLD_KEYS: [&str; 2] = ["threshold", "threshold_amount"];
+
+/// System default for the absolute_threshold safety valve
+/// (`tm.default_absolute_threshold`, transaction-monitoring.md「絶対閾値の
+/// 安全弁」), applied whenever a scenario doesn't specify its own.
+const DEFAULT_ABSOLUTE_THRESHOLD: f64 = 10_000_000.0;
 
 #[derive(Debug, Deserialize)]
 struct V2Raw {
@@ -114,6 +152,14 @@ struct V2Conditions {
     threshold: Option<V2Threshold>,
     #[serde(default)]
     absolute_threshold: Option<f64>,
+    /// Free-form scenario-specific parameters (content/schema/tm_scenario_v2.json
+    /// `conditions.additional`) beyond the fixed threshold/absolute_threshold
+    /// shape, e.g. a velocity scenario's window/count parameters or a
+    /// high-risk-country list. Fed into ScenarioConfig::parameters so
+    /// get_f64/get_i64/adjusted_f64/adjusted_i64/get_string_list work
+    /// identically for v1 and v2 content.
+    #[serde(default)]
+    additional: HashMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -146,7 +192,10 @@ impl ScenarioConfig {
                 "scenario_id must not be empty".to_string(),
             ));
         }
-        if self.parameters.is_empty() {
+        // v2 content carries its threshold in by_customer_type rather than
+        // the flat v1 parameters map, so parameters is legitimately empty
+        // for a well-formed v2 scenario (see from_v2_raw).
+        if self.schema_version_kind == ScenarioSchemaVersion::V1 && self.parameters.is_empty() {
             return Err(ConfigError::Validation(
                 "parameters must not be empty".to_string(),
             ));
@@ -160,6 +209,18 @@ impl ScenarioConfig {
 
     pub fn get_i64(&self, key: &str) -> Option<i64> {
         self.parameters.get(key).and_then(|v| v.as_i64())
+    }
+
+    /// Reads a YAML sequence-of-strings parameter (e.g. a high-risk country
+    /// list), returning an empty Vec if the key is absent or not a sequence
+    /// of strings (Global Constraints: no hardcoded fallback list, since an
+    /// unconfigured list means the scenario has nothing to check against).
+    pub fn get_string_list(&self, key: &str) -> Vec<String> {
+        self.parameters
+            .get(key)
+            .and_then(|v| v.as_sequence())
+            .map(|seq| seq.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default()
     }
 
     pub fn adjusted_f64(&self, key: &str, risk_tier: &str) -> Option<f64> {
@@ -234,11 +295,11 @@ impl ScenarioConfig {
             }
         }
 
-        self.absolute_threshold = self
-            .parameters
-            .values()
-            .filter_map(|v| v.as_f64())
-            .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.max(v))));
+        // v1 has no absolute_threshold concept at all (rule-schema.md
+        // §3.1 migration item 3), so it is left unspecified here and
+        // resolved to the system default by `absolute_threshold()`,
+        // exactly like an omitted v2 `conditions.absolute_threshold`.
+        self.absolute_threshold = None;
 
         self.by_customer_type = CUSTOMER_TYPES
             .into_iter()
@@ -253,8 +314,8 @@ impl ScenarioConfig {
             ));
         }
 
-        let by_customer_type = raw
-            .conditions
+        let conditions = raw.conditions;
+        let by_customer_type = conditions
             .threshold
             .unwrap_or_default()
             .by_customer_type
@@ -267,22 +328,51 @@ impl ScenarioConfig {
             scenario_id: raw.scenario_id,
             name: raw.name,
             description: raw.description,
-            parameters: HashMap::new(),
+            parameters: conditions.additional,
             risk_tier_adjustments: HashMap::new(),
             schema_version_kind: ScenarioSchemaVersion::V2,
             evaluation_mode: raw.evaluation_mode,
-            absolute_threshold: raw.conditions.absolute_threshold,
+            absolute_threshold: conditions.absolute_threshold,
             by_customer_type,
         })
     }
 
     /// Resolves a threshold for a given customer_type/risk_tier regardless
     /// of whether this config was loaded from v1 or v2 content.
+    ///
+    /// An unrecognized customer_type falls back to the strictest (lowest)
+    /// threshold configured for that risk_tier across all known
+    /// customer_types, rather than skipping evaluation (Fail-Alert
+    /// principle: an unmapped type must never be more lenient than a
+    /// known one).
+    pub fn evaluation_mode_kind(&self) -> EvaluationMode {
+        EvaluationMode::from_config_str(&self.evaluation_mode)
+    }
+
+    /// Resolves the absolute_threshold safety valve (transaction-monitoring.md
+    /// 「絶対閾値の安全弁」), falling back to the system default
+    /// (`tm.default_absolute_threshold`, 1,000万円) when the scenario
+    /// doesn't specify one (v2 `conditions.absolute_threshold` omitted, or
+    /// v1 content, which has no such field at all).
+    pub fn absolute_threshold(&self) -> f64 {
+        self.absolute_threshold
+            .unwrap_or(DEFAULT_ABSOLUTE_THRESHOLD)
+    }
+
     pub fn resolve_threshold(&self, customer_type: &str, risk_tier: &str) -> Option<f64> {
-        self.by_customer_type
+        if let Some(value) = self
+            .by_customer_type
             .get(customer_type)
             .and_then(|tiers| tiers.get(risk_tier))
+        {
+            return Some(*value);
+        }
+
+        self.by_customer_type
+            .values()
+            .filter_map(|tiers| tiers.get(risk_tier))
             .copied()
+            .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.min(v))))
     }
 }
 

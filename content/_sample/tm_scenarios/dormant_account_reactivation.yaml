@@ -1,0 +1,42 @@
+# tm_scenario_v2 (rule-schema.md §1). WS-5 Task8: flags a customer resuming
+# activity, above a threshold amount, after a long gap with no transactions.
+schema_version: "2.0"
+scenario_id: tm_dormant_account_reactivation
+name: "休眠口座急活性化検知"
+description: "長期間取引のなかった口座が急に高額取引を再開した場合に検知する"
+type: aggregation
+conditions:
+  transaction_type:
+    - deposit
+    - transfer_in
+    - transfer_out
+  aggregation:
+    field: amount
+    function: sum
+    period: 24h
+    group_by: customer_id
+  threshold:
+    by_customer_type:
+      individual:
+        by_risk_tier:
+          LOW: 3000000
+          MEDIUM: 2000000
+          HIGH: 1000000
+      corporate_domestic:
+        by_risk_tier:
+          LOW: 3000000
+          MEDIUM: 2000000
+          HIGH: 1000000
+      corporate_foreign:
+        by_risk_tier:
+          LOW: 3000000
+          MEDIUM: 2000000
+          HIGH: 1000000
+  additional:
+    dormant_days: 180
+    reactivation_threshold: 1000000
+evaluation_mode: batch
+severity: MEDIUM
+tags:
+  - dormant
+  - sample

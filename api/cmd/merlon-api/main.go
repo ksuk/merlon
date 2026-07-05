@@ -49,6 +49,8 @@ func main() {
 
 	deps := server.Deps{}
 
+	var batchRuns domain.BatchRunRepository
+
 	var pool *pgxpool.Pool
 	if os.Getenv("MERLON_DATABASE_URL") != "" {
 		var err error
@@ -74,6 +76,7 @@ func main() {
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
 		deps.DB = pool
+		batchRuns = store.NewPgBatchRunRepo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
 		deps.Customers = store.NewMemoryCustomerRepo()
@@ -85,6 +88,7 @@ func main() {
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
 		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
+		batchRuns = store.NewMemoryBatchRunRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
@@ -181,7 +185,7 @@ func main() {
 			os.Exit(1)
 		}
 		deps.Events = bus
-		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts)
+		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases)
 		if err := bus.Subscribe(jobsCtx, "cdd.tier_changed", tierChangeHandler); err != nil {
 			slog.Error("event bus subscribe", "topic", "cdd.tier_changed", "error", err)
 			os.Exit(1)
@@ -269,12 +273,50 @@ func main() {
 		slog.Info("pending evaluation recovery job started")
 	}
 
+	tmBatchCtx, cancelTMBatch := context.WithCancel(context.Background())
+	defer cancelTMBatch()
+	if deps.Monitoring != nil {
+		tmScheduler := batch.NewScheduler(cfg.TMBatchSchedule, func(ctx context.Context, runID string) error {
+			return batch.RunTMBatchEvaluation(ctx, batch.TMBatchEvaluationDeps{
+				Runs:         batchRuns,
+				Customers:    deps.Customers,
+				Transactions: deps.Transactions,
+				Monitoring:   deps.Monitoring,
+				Alerts:       deps.Alerts,
+				Cases:        deps.Cases,
+			}, runID)
+		})
+		if cfg.TMBatchTimezone != "" {
+			if loc, err := time.LoadLocation(cfg.TMBatchTimezone); err == nil {
+				tmScheduler.Location = loc
+			} else {
+				slog.Warn("invalid MERLON_TM_BATCH_TIMEZONE, falling back to time.Local", "value", cfg.TMBatchTimezone, "error", err)
+			}
+		}
+
+		// Resume a run left behind by a killed process immediately, rather
+		// than waiting for the next scheduled time (overview.md §4.4「再起動時
+		// は未処理分のみを再開」).
+		if existing, err := batchRuns.GetLatestRunning(tmBatchCtx, batch.TMBatchEvaluationJobType); err == nil && existing != nil {
+			slog.Info("resuming interrupted TM batch evaluation run", "batch_run_id", existing.ID)
+			go func() {
+				if _, err := tmScheduler.RunNow(tmBatchCtx); err != nil {
+					slog.Error("TM batch evaluation resume failed", "error", err)
+				}
+			}()
+		}
+
+		go tmScheduler.Start(tmBatchCtx)
+		slog.Info("TM batch evaluation scheduler started", "schedule", cfg.TMBatchSchedule)
+	}
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
 	slog.Info("merlon-api shutting down")
 	cancelRecovery()
+	cancelTMBatch()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

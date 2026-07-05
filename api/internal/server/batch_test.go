@@ -161,6 +161,51 @@ func TestBatchMonitorAll(t *testing.T) {
 	}
 }
 
+// TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow verifies
+// Task4/Task7's dedup routing: calling /api/v1/batch/monitor twice for a
+// customer whose transactions keep triggering the same scenario must not
+// create a second alert for the same (customer_id, scenario_id,
+// aggregation_window_start) tuple (transaction-monitoring.md「バッチ/リアルタイム
+//評価の重複アラート防止」).
+func TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow(t *testing.T) {
+	s := testServerWithAllEngines()
+	s.monitoring = &engine.MockMonitoringEngine{
+		EvaluateFunc: func(_ context.Context, customerID string, _ domain.RiskTier, _ []domain.Transaction, _ []string) ([]domain.Alert, error) {
+			return []domain.Alert{{CustomerID: customerID, ScenarioID: "structuring", Severity: domain.AlertSeverityHigh, Description: "test"}}, nil
+		},
+	}
+
+	body := `{"external_id":"BMDEDUP001","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var cust domain.Customer
+	json.NewDecoder(rec.Body).Decode(&cust)
+
+	txBody := `{"customer_id":"` + cust.ID + `","external_id":"TX_BMDEDUP001","amount":100000,"currency":"JPY","direction":"inbound","channel":"web","counterparty_id":"CP1","counterparty_country":"JP"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(txBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	for i := 0; i < 2; i++ {
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+		rec = httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("pass %d: status = %d, want %d, body: %s", i, rec.Code, http.StatusOK, rec.Body.String())
+		}
+	}
+
+	alerts, err := s.alerts.ListByCustomer(context.Background(), cust.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("ListByCustomer: %v", err)
+	}
+	if len(alerts) != 1 {
+		t.Fatalf("alerts count = %d, want 1 (second batch/monitor pass must not duplicate the alert)", len(alerts))
+	}
+}
+
 // TestBatchMonitor_EngineDown_QueuesPendingReview verifies OPS-005 /
 // Fail-Alert (overview.md §4.4): when the monitoring engine call fails, the
 // affected customer's transactions are queued as PENDING_REVIEW instead of

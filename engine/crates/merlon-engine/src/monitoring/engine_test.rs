@@ -1,5 +1,5 @@
 use super::*;
-use super::super::config::ScenarioConfig;
+use super::super::config::{EvaluationMode, ScenarioConfig};
 
 fn load_structuring() -> ScenarioConfig {
     ScenarioConfig::load("testdata/tm_structuring.yaml").unwrap()
@@ -51,7 +51,7 @@ fn test_structuring_detected() {
         make_txn("T3", "C001", 300_000.0, TransactionDirection::Outbound, base + 7200),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].scenario_id, "test_structuring");
     assert_eq!(alerts[0].transaction_ids.len(), 3);
@@ -68,7 +68,7 @@ fn test_structuring_not_detected_below_threshold() {
         make_txn("T3", "C001", 200_000.0, TransactionDirection::Outbound, base + 7200),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -81,7 +81,7 @@ fn test_structuring_not_detected_too_few_txns() {
         make_txn("T2", "C001", 400_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -96,7 +96,7 @@ fn test_structuring_high_risk_lower_threshold() {
         make_txn("T2", "C001", 250_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "HIGH", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "HIGH", &txns, &[]);
     assert_eq!(alerts.len(), 1);
 }
 
@@ -114,7 +114,7 @@ fn test_structuring_low_risk_higher_threshold() {
         make_txn("T5", "C001", 300_000.0, TransactionDirection::Outbound, base + 4000),
     ];
 
-    let alerts = engine.evaluate("C001", "LOW", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "LOW", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -130,7 +130,7 @@ fn test_structuring_outside_window() {
         make_txn("T3", "C001", 400_000.0, TransactionDirection::Outbound, base + 2 * day_secs + 1),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -143,7 +143,7 @@ fn test_rapid_movement_detected() {
         make_txn("T2", "C001", 5_500_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert_eq!(alerts.len(), 1);
     assert_eq!(alerts[0].scenario_id, "test_rapid_movement");
     // ratio = 5.5M / 6M ≈ 0.917 → HIGH severity
@@ -159,7 +159,7 @@ fn test_rapid_movement_critical_severity() {
         make_txn("T2", "C001", 5_900_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert_eq!(alerts.len(), 1);
     // ratio = 5.9M / 6M ≈ 0.983 → CRITICAL
     assert_eq!(alerts[0].severity, AlertSeverity::Critical);
@@ -174,7 +174,7 @@ fn test_rapid_movement_not_detected_low_ratio() {
         make_txn("T2", "C001", 3_000_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
 }
 
@@ -188,7 +188,7 @@ fn test_rapid_movement_high_risk_lower_threshold() {
         make_txn("T2", "C001", 2_300_000.0, TransactionDirection::Outbound, base + 3600),
     ];
 
-    let alerts = engine.evaluate("C001", "HIGH", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "HIGH", &txns, &[]);
     assert_eq!(alerts.len(), 1);
 }
 
@@ -205,6 +205,7 @@ fn test_scenario_filter() {
     // Only run rapid_movement → structuring should not fire
     let alerts = engine.evaluate(
         "C001",
+        "individual",
         "MEDIUM",
         &txns,
         &["test_rapid_movement".to_string()],
@@ -214,6 +215,7 @@ fn test_scenario_filter() {
     // Only run structuring
     let alerts = engine.evaluate(
         "C001",
+        "individual",
         "MEDIUM",
         &txns,
         &["test_structuring".to_string()],
@@ -232,6 +234,125 @@ fn test_different_customer_ids() {
     ];
 
     // C001 only has 2 txns → below min_transactions=3
-    let alerts = engine.evaluate("C001", "MEDIUM", &txns, &[]);
+    let alerts = engine.evaluate("C001", "individual", "MEDIUM", &txns, &[]);
     assert!(alerts.is_empty());
+}
+
+// WS-5 Task2: evaluation_mode filtering (rule-schema.md §1.2,
+// transaction-monitoring.md「評価モード」).
+
+const V2_STRUCTURING_REALTIME: &str = r#"
+schema_version: "2.0"
+scenario_id: test_structuring_realtime
+name: Structuring Realtime Only
+description: Test fixture
+type: aggregation
+conditions:
+  threshold:
+    by_customer_type: {}
+evaluation_mode: realtime
+severity: MEDIUM
+"#;
+
+const V2_RAPID_MOVEMENT_BATCH: &str = r#"
+schema_version: "2.0"
+scenario_id: test_rapid_movement_batch
+name: Rapid Movement Batch Only
+description: Test fixture
+type: aggregation
+conditions:
+  threshold:
+    by_customer_type: {}
+evaluation_mode: batch
+severity: HIGH
+"#;
+
+#[test]
+fn test_realtime_filter_excludes_batch_only_scenarios() {
+    let structuring = ScenarioConfig::from_yaml_dual(V2_STRUCTURING_REALTIME).unwrap();
+    let rapid = ScenarioConfig::from_yaml_dual(V2_RAPID_MOVEMENT_BATCH).unwrap();
+    let engine = TmEngine::new(vec![structuring, rapid]).unwrap();
+
+    let base = 1_000_000i64;
+    // Triggers both scenarios' default thresholds: structuring
+    // (3 outbound txns totaling >= 1M) and rapid_movement
+    // (inbound >= 5M and outbound >= 5M at ratio >= 0.80).
+    let txns = vec![
+        make_txn("T1", "C001", 400_000.0, TransactionDirection::Outbound, base),
+        make_txn("T2", "C001", 350_000.0, TransactionDirection::Outbound, base + 3600),
+        make_txn("T3", "C001", 300_000.0, TransactionDirection::Outbound, base + 7200),
+        make_txn("T4", "C001", 6_000_000.0, TransactionDirection::Inbound, base),
+        make_txn("T5", "C001", 5_500_000.0, TransactionDirection::Outbound, base + 100),
+    ];
+
+    let alerts = engine.evaluate_with_mode(
+        "C001",
+        "individual",
+        "MEDIUM",
+        &txns,
+        &[],
+        EvaluationMode::Realtime,
+    );
+
+    assert!(
+        alerts.iter().all(|a| a.scenario_id == "test_structuring_realtime"),
+        "batch-only scenario should be excluded from realtime pass, got: {:?}",
+        alerts.iter().map(|a| &a.scenario_id).collect::<Vec<_>>()
+    );
+    assert!(
+        alerts.iter().any(|a| a.scenario_id == "test_structuring_realtime"),
+        "realtime scenario should still fire"
+    );
+}
+
+#[test]
+fn test_batch_filter_includes_both_mode_scenarios() {
+    // v1 content has no evaluation_mode concept and defaults to "both"
+    // (rule-schema.md §3.1 migration item 3), so it must still run under
+    // a Batch-filtered pass.
+    let engine = TmEngine::new(vec![load_structuring()]).unwrap();
+    let base = 1_000_000i64;
+    let txns = vec![
+        make_txn("T1", "C001", 400_000.0, TransactionDirection::Outbound, base),
+        make_txn("T2", "C001", 350_000.0, TransactionDirection::Outbound, base + 3600),
+        make_txn("T3", "C001", 300_000.0, TransactionDirection::Outbound, base + 7200),
+    ];
+
+    let alerts = engine.evaluate_with_mode(
+        "C001",
+        "individual",
+        "MEDIUM",
+        &txns,
+        &[],
+        EvaluationMode::Batch,
+    );
+
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0].scenario_id, "test_structuring");
+}
+
+#[test]
+fn test_v1_content_defaults_to_both() {
+    // Same v1 scenario must fire under a Realtime-filtered pass too, since
+    // unspecified evaluation_mode is treated as "both" for backward
+    // compatibility (rule-schema.md §3.1 migration item 3).
+    let engine = TmEngine::new(vec![load_structuring()]).unwrap();
+    let base = 1_000_000i64;
+    let txns = vec![
+        make_txn("T1", "C001", 400_000.0, TransactionDirection::Outbound, base),
+        make_txn("T2", "C001", 350_000.0, TransactionDirection::Outbound, base + 3600),
+        make_txn("T3", "C001", 300_000.0, TransactionDirection::Outbound, base + 7200),
+    ];
+
+    let alerts = engine.evaluate_with_mode(
+        "C001",
+        "individual",
+        "MEDIUM",
+        &txns,
+        &[],
+        EvaluationMode::Realtime,
+    );
+
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0].scenario_id, "test_structuring");
 }

@@ -73,7 +73,7 @@ func TestTierChangeHandler_UpgradeTriggersRetroactiveReevaluation(t *testing.T) 
 		return nil, nil
 	}
 
-	handler := NewTierChangeHandler(transactions, monitoring, alerts)
+	handler := NewTierChangeHandler(transactions, monitoring, alerts, store.NewMemoryCaseRepo())
 	handler(newTierChangeEvent(t, TierChangeEvent{
 		CustomerID: "cust1",
 		OldTier:    riskTier(domain.RiskTierMedium),
@@ -103,7 +103,7 @@ func TestTierChangeHandler_DowngradeDoesNotRetroactivelyReevaluate(t *testing.T)
 		return nil, nil
 	}
 
-	handler := NewTierChangeHandler(transactions, monitoring, alerts)
+	handler := NewTierChangeHandler(transactions, monitoring, alerts, store.NewMemoryCaseRepo())
 	handler(newTierChangeEvent(t, TierChangeEvent{
 		CustomerID: "cust1",
 		OldTier:    riskTier(domain.RiskTierHigh),
@@ -129,7 +129,7 @@ func TestTierChangeHandler_NewAlertsGeneratedOnReevaluation(t *testing.T) {
 		return []domain.Alert{{CustomerID: "cust1", ScenarioID: "S1", Severity: domain.AlertSeverityHigh, Description: "retroactive hit"}}, nil
 	}
 
-	handler := NewTierChangeHandler(transactions, monitoring, alerts)
+	handler := NewTierChangeHandler(transactions, monitoring, alerts, store.NewMemoryCaseRepo())
 	handler(newTierChangeEvent(t, TierChangeEvent{
 		CustomerID: "cust1",
 		OldTier:    riskTier(domain.RiskTierLow),
@@ -168,7 +168,7 @@ func TestTierChangeHandler_EventChainTruncatedAfterThreeHops(t *testing.T) {
 
 	before := testutil.ToFloat64(metrics.CDDEventChainTruncatedTotal)
 
-	handler := NewTierChangeHandler(transactions, monitoring, alerts)
+	handler := NewTierChangeHandler(transactions, monitoring, alerts, store.NewMemoryCaseRepo())
 	handler(newTierChangeEvent(t, TierChangeEvent{
 		CustomerID: "cust1",
 		OldTier:    riskTier(domain.RiskTierMedium),

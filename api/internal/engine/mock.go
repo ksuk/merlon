@@ -44,6 +44,29 @@ func (m *MockMonitoringEngine) EvaluateTransactions(
 	transactions []domain.Transaction,
 	scenarioIDs []string,
 ) ([]domain.Alert, error) {
+	return m.evaluate(ctx, customerID, riskTier, transactions, scenarioIDs)
+}
+
+// EvaluateTransactionsBatch shares MockMonitoringEngine's Alerts/Err/EvaluateFunc
+// with EvaluateTransactions: tests that need to distinguish realtime vs batch
+// calls can do so via EvaluateFunc's arguments/closures.
+func (m *MockMonitoringEngine) EvaluateTransactionsBatch(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+) ([]domain.Alert, error) {
+	return m.evaluate(ctx, customerID, riskTier, transactions, scenarioIDs)
+}
+
+func (m *MockMonitoringEngine) evaluate(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+) ([]domain.Alert, error) {
 	if m.EvaluateFunc != nil {
 		return m.EvaluateFunc(ctx, customerID, riskTier, transactions, scenarioIDs)
 	}

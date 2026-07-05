@@ -32,6 +32,16 @@ func (s *stubMonitoringEngine) EvaluateTransactions(
 	return s.alerts, nil
 }
 
+func (s *stubMonitoringEngine) EvaluateTransactionsBatch(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+) ([]domain.Alert, error) {
+	return s.EvaluateTransactions(ctx, customerID, riskTier, transactions, scenarioIDs)
+}
+
 func TestClientRetriesWithExponentialBackoff(t *testing.T) {
 	stub := &stubMonitoringEngine{failuresBeforeSuccess: 1, alerts: []domain.Alert{{ID: "a1"}}}
 	c := newClientForTest(stub, circuitBreakerConfig{

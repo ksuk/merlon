@@ -45,6 +45,12 @@ type Config struct {
 	ScreeningUNURL           string
 	ScreeningMOFURL          string
 	ScreeningPEPURL          string
+
+	// TM batch evaluation scheduler (WS-5 Task6,
+	// transaction-monitoring.md「バッチ評価のスケジューリング」). TMBatchTimezone is
+	// an IANA location name (e.g. "Asia/Tokyo"); empty means time.Local.
+	TMBatchSchedule string
+	TMBatchTimezone string
 }
 
 func (c *Config) Validate() error {
@@ -85,6 +91,9 @@ func Load() *Config {
 		ScreeningUNURL:           getEnv("MERLON_SCREENING_UN_URL", ""),
 		ScreeningMOFURL:          getEnv("MERLON_SCREENING_MOF_URL", ""),
 		ScreeningPEPURL:          getEnv("MERLON_SCREENING_PEP_URL", ""),
+
+		TMBatchSchedule: getEnv("MERLON_TM_BATCH_SCHEDULE", "02:00"),
+		TMBatchTimezone: getEnv("MERLON_TM_BATCH_TIMEZONE", ""),
 	}
 }
 

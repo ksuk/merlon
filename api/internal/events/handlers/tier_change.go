@@ -7,8 +7,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/casemgmt"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/events"
@@ -50,6 +52,7 @@ func NewTierChangeHandler(
 	transactions domain.TransactionRepository,
 	monitoring engine.MonitoringEngine,
 	alerts domain.AlertRepository,
+	cases domain.CaseRepository,
 ) func(events.Event) {
 	return func(e events.Event) {
 		if e.ChainHopCount >= maxChainHops {
@@ -98,7 +101,15 @@ func NewTierChangeHandler(
 			now := time.Now()
 			a.CreatedAt = now
 			a.UpdatedAt = now
-			_ = alerts.Create(ctx, &a)
+			if err := alerts.Create(ctx, &a); err != nil {
+				continue
+			}
+			if cases != nil {
+				if _, err := casemgmt.ConsolidateAlert(ctx, cases, &a, casemgmt.DefaultConsolidationWindow); err != nil {
+					slog.Error("failed to consolidate tier-change alert into case",
+						"alert_id", a.ID, "customer_id", a.CustomerID, "error", err)
+				}
+			}
 		}
 	}
 }

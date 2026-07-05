@@ -37,6 +37,7 @@ fn test_backtest_no_alerts() {
     let input = BacktestInput {
         customers: vec![BacktestCustomer {
             customer_id: "C001".to_string(),
+            customer_type: "individual".to_string(),
             risk_tier: "MEDIUM".to_string(),
         }],
         transactions: vec![make_transaction(
@@ -70,6 +71,7 @@ fn test_backtest_structuring_detection() {
     let input = BacktestInput {
         customers: vec![BacktestCustomer {
             customer_id: "C001".to_string(),
+            customer_type: "individual".to_string(),
             risk_tier: "MEDIUM".to_string(),
         }],
         transactions: vec![
@@ -101,10 +103,12 @@ fn test_backtest_multiple_customers() {
         customers: vec![
             BacktestCustomer {
                 customer_id: "C001".to_string(),
+                customer_type: "individual".to_string(),
                 risk_tier: "MEDIUM".to_string(),
             },
             BacktestCustomer {
                 customer_id: "C002".to_string(),
+                customer_type: "individual".to_string(),
                 risk_tier: "HIGH".to_string(),
             },
         ],
@@ -133,6 +137,7 @@ fn test_backtest_scenario_filter() {
     let input = BacktestInput {
         customers: vec![BacktestCustomer {
             customer_id: "C001".to_string(),
+            customer_type: "individual".to_string(),
             risk_tier: "MEDIUM".to_string(),
         }],
         transactions: vec![
@@ -164,6 +169,7 @@ fn test_backtest_rapid_movement_detection() {
     let input = BacktestInput {
         customers: vec![BacktestCustomer {
             customer_id: "C001".to_string(),
+            customer_type: "individual".to_string(),
             risk_tier: "MEDIUM".to_string(),
         }],
         transactions: vec![
@@ -192,6 +198,7 @@ fn test_backtest_severity_counts() {
     let input = BacktestInput {
         customers: vec![BacktestCustomer {
             customer_id: "C001".to_string(),
+            customer_type: "individual".to_string(),
             risk_tier: "MEDIUM".to_string(),
         }],
         transactions: vec![

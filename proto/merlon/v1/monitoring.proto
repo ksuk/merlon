@@ -44,11 +44,28 @@ enum AlertSeverity {
   ALERT_SEVERITY_CRITICAL = 4;
 }
 
+// EvaluationModeFilter selects which evaluation_mode-tagged scenarios run
+// for a given EvaluateTransactions call (rule-schema.md §1.2,
+// transaction-monitoring.md「評価モード」). UNSPECIFIED (the proto3 zero
+// value) maps to REALTIME so existing callers that don't set mode_filter
+// keep today's behavior (WS-5 Task6/7, additive field).
+enum EvaluationModeFilter {
+  EVALUATION_MODE_FILTER_UNSPECIFIED = 0;
+  EVALUATION_MODE_FILTER_REALTIME = 1;
+  EVALUATION_MODE_FILTER_BATCH = 2;
+  EVALUATION_MODE_FILTER_BOTH = 3;
+}
+
 message EvaluateTransactionsRequest {
   string customer_id = 1;
   RiskTier customer_risk_tier = 2;
   repeated TransactionData transactions = 3;
   repeated string scenario_ids = 4;
+  // TM-004a: customer type axis for threshold.by_customer_type resolution
+  // (transaction-monitoring.md). Additive field, WS-5 Task1.
+  CustomerType customer_type = 5;
+  // WS-5 Task6/7: which evaluation_mode-tagged scenarios to include.
+  EvaluationModeFilter mode_filter = 6;
 }
 
 message Alert {

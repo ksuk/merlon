@@ -241,6 +241,27 @@ func (c *Client) EvaluateTransactions(
 	riskTier domain.RiskTier,
 	transactions []domain.Transaction,
 	scenarioIDs []string,
+) ([]domain.Alert, error) {
+	return c.evaluateTransactions(ctx, customerID, riskTier, transactions, scenarioIDs, pb.EvaluationModeFilter_EVALUATION_MODE_FILTER_REALTIME)
+}
+
+func (c *Client) EvaluateTransactionsBatch(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+) ([]domain.Alert, error) {
+	return c.evaluateTransactions(ctx, customerID, riskTier, transactions, scenarioIDs, pb.EvaluationModeFilter_EVALUATION_MODE_FILTER_BATCH)
+}
+
+func (c *Client) evaluateTransactions(
+	ctx context.Context,
+	customerID string,
+	riskTier domain.RiskTier,
+	transactions []domain.Transaction,
+	scenarioIDs []string,
+	modeFilter pb.EvaluationModeFilter,
 ) (_ []domain.Alert, err error) {
 	defer observeGRPCCall("EvaluateTransactions", time.Now(), &err)()
 
@@ -267,6 +288,7 @@ func (c *Client) EvaluateTransactions(
 		CustomerRiskTier: riskTierToProto(riskTier),
 		Transactions:     pbTxns,
 		ScenarioIds:      scenarioIDs,
+		ModeFilter:       modeFilter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("monitoring rpc: %w", err)
