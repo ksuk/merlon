@@ -1,0 +1,23 @@
+package events
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Event is the unit of propagation on the Bus. Payload carries only the
+// data needed to identify what changed; consumers re-query the
+// source-of-truth table for full detail (api.md §5, overview.md §4.4 event
+// delivery guarantees — NOTIFY payloads are size-limited, so they are
+// notifications, not the event content itself).
+type Event struct {
+	ID          string          `json:"id"`
+	Topic       string          `json:"topic"`
+	Payload     json.RawMessage `json:"payload,omitempty"`
+	SequenceNum int64           `json:"sequence_num"`
+	// ChainID (event_chain_id) links an event to the chain of events that
+	// triggered it, so handlers can cut off unbounded propagation loops
+	// (cdd-scoring.md safety valve 4: circular dependency prevention).
+	ChainID   string    `json:"chain_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
