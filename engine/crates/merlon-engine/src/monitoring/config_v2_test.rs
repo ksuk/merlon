@@ -92,6 +92,52 @@ severity: LOW
     assert_eq!(config.evaluation_mode, "batch");
 }
 
+// WS-5 Task8: conditions.additional (content/schema/tm_scenario_v2.json)
+// feeds ScenarioConfig::parameters, so new v2 scenarios can carry
+// scenario-specific parameters beyond the fixed threshold/absolute_threshold
+// shape, the same way v1's flat `parameters` map always has.
+
+#[test]
+fn test_v2_conditions_additional_populates_parameters() {
+    let yaml = r#"
+schema_version: "2.0"
+scenario_id: v2_additional_test
+name: V2 Additional Params Test
+description: Test fixture
+type: aggregation
+conditions:
+  additional:
+    window_hours: 1
+    count_threshold: 10
+    high_risk_countries: ["KP", "IR"]
+severity: HIGH
+"#;
+    let config = ScenarioConfig::from_yaml_dual(yaml).unwrap();
+    assert_eq!(config.get_i64("window_hours"), Some(1));
+    assert_eq!(config.get_i64("count_threshold"), Some(10));
+    assert_eq!(
+        config.get_string_list("high_risk_countries"),
+        vec!["KP".to_string(), "IR".to_string()]
+    );
+}
+
+#[test]
+fn test_get_string_list_defaults_to_empty_when_absent() {
+    let config = ScenarioConfig::from_yaml_dual(
+        r#"
+schema_version: "2.0"
+scenario_id: v2_no_additional_test
+name: V2 No Additional Test
+description: Test fixture
+type: aggregation
+conditions: {}
+severity: LOW
+"#,
+    )
+    .unwrap();
+    assert!(config.get_string_list("high_risk_countries").is_empty());
+}
+
 // WS-5 Task1: by_customer_type -> by_risk_tier resolution against the
 // canonical structuring example (transaction-monitoring.md TM-004a).
 

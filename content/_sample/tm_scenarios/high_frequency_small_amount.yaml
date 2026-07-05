@@ -1,0 +1,45 @@
+# tm_scenario_v2 (rule-schema.md §1). WS-5 Task8: velocity check distinct
+# from structuring -- flags transaction *count* within a short window
+# regardless of total sum, so many small transfers below the per-transaction
+# cap are caught even if their sum never reaches structuring's threshold.
+schema_version: "2.0"
+scenario_id: tm_high_frequency_small_amount
+name: "高頻度小口取引検知"
+description: "短時間に多数の小口取引が発生した場合に検知する"
+type: aggregation
+conditions:
+  transaction_type:
+    - deposit
+    - transfer_in
+    - transfer_out
+  aggregation:
+    field: amount
+    function: count
+    period: 1h
+    group_by: customer_id
+  threshold:
+    by_customer_type:
+      individual:
+        by_risk_tier:
+          LOW: 15
+          MEDIUM: 10
+          HIGH: 5
+      corporate_domestic:
+        by_risk_tier:
+          LOW: 15
+          MEDIUM: 10
+          HIGH: 5
+      corporate_foreign:
+        by_risk_tier:
+          LOW: 15
+          MEDIUM: 10
+          HIGH: 5
+  additional:
+    window_hours: 1
+    count_threshold: 10
+    max_amount_per_txn: 100000
+evaluation_mode: batch
+severity: MEDIUM
+tags:
+  - velocity
+  - sample

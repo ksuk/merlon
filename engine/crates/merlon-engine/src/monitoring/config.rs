@@ -152,6 +152,14 @@ struct V2Conditions {
     threshold: Option<V2Threshold>,
     #[serde(default)]
     absolute_threshold: Option<f64>,
+    /// Free-form scenario-specific parameters (content/schema/tm_scenario_v2.json
+    /// `conditions.additional`) beyond the fixed threshold/absolute_threshold
+    /// shape, e.g. a velocity scenario's window/count parameters or a
+    /// high-risk-country list. Fed into ScenarioConfig::parameters so
+    /// get_f64/get_i64/adjusted_f64/adjusted_i64/get_string_list work
+    /// identically for v1 and v2 content.
+    #[serde(default)]
+    additional: HashMap<String, serde_yaml::Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -201,6 +209,18 @@ impl ScenarioConfig {
 
     pub fn get_i64(&self, key: &str) -> Option<i64> {
         self.parameters.get(key).and_then(|v| v.as_i64())
+    }
+
+    /// Reads a YAML sequence-of-strings parameter (e.g. a high-risk country
+    /// list), returning an empty Vec if the key is absent or not a sequence
+    /// of strings (Global Constraints: no hardcoded fallback list, since an
+    /// unconfigured list means the scenario has nothing to check against).
+    pub fn get_string_list(&self, key: &str) -> Vec<String> {
+        self.parameters
+            .get(key)
+            .and_then(|v| v.as_sequence())
+            .map(|seq| seq.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default()
     }
 
     pub fn adjusted_f64(&self, key: &str, risk_tier: &str) -> Option<f64> {
@@ -294,8 +314,8 @@ impl ScenarioConfig {
             ));
         }
 
-        let by_customer_type = raw
-            .conditions
+        let conditions = raw.conditions;
+        let by_customer_type = conditions
             .threshold
             .unwrap_or_default()
             .by_customer_type
@@ -308,11 +328,11 @@ impl ScenarioConfig {
             scenario_id: raw.scenario_id,
             name: raw.name,
             description: raw.description,
-            parameters: HashMap::new(),
+            parameters: conditions.additional,
             risk_tier_adjustments: HashMap::new(),
             schema_version_kind: ScenarioSchemaVersion::V2,
             evaluation_mode: raw.evaluation_mode,
-            absolute_threshold: raw.conditions.absolute_threshold,
+            absolute_threshold: conditions.absolute_threshold,
             by_customer_type,
         })
     }
