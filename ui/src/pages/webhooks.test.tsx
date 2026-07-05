@@ -1,10 +1,11 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { WebhooksPage } from "./webhooks"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -27,7 +28,7 @@ test("renders webhook list", async () => {
     ),
   )
 
-  renderWithRouter(<WebhooksPage />)
+  await renderWithRouter(<WebhooksPage />)
 
   expect(await screen.findByText("https://example.com/hook")).toBeDefined()
   expect(screen.getByText("アラート作成")).toBeDefined()
@@ -37,7 +38,7 @@ test("renders webhook list", async () => {
 test("shows empty state", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
 
-  renderWithRouter(<WebhooksPage />)
+  await renderWithRouter(<WebhooksPage />)
 
   expect(await screen.findByText("Webhookが登録されていません")).toBeDefined()
 })
@@ -70,7 +71,7 @@ test("DLQ tab lists failed deliveries and allows reprocess", async () => {
     return Promise.resolve(new Response(JSON.stringify([])))
   })
 
-  renderWithRouter(<WebhooksPage />)
+  await renderWithRouter(<WebhooksPage />)
   await screen.findByText("Webhookが登録されていません")
 
   fireEvent.click(screen.getByText("DLQ"))

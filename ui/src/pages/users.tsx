@@ -2,18 +2,19 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api, type Role } from "@/lib/api"
+import { useTranslation } from "react-i18next"
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: "admin", label: "管理者" },
-  { value: "analyst", label: "アナリスト" },
-  { value: "viewer", label: "閲覧者" },
-]
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function UsersPage() {
+  const { t, i18n } = useTranslation()
+  const roles: { value: Role; label: string }[] = [
+    { value: "admin", label: t("users.roles.admin") },
+    { value: "analyst", label: t("users.roles.analyst") },
+    { value: "viewer", label: t("users.roles.viewer") },
+  ]
   const { data: users, loading, error } = useApi(api.users.list)
 
   if (loading) {
@@ -26,12 +27,12 @@ export function UsersPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">ユーザ一覧の取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("users.error")}</p>
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">ユーザ管理</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t("users.title")}</h1>
 
       <div className="space-y-3">
         {users && users.length > 0 ? (
@@ -42,14 +43,14 @@ export function UsersPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{u.email}</span>
                     <Badge variant={u.active ? "low" : "destructive"}>
-                      {u.active ? "有効" : "無効"}
+                      {u.active ? t("users.status.active") : t("users.status.inactive")}
                     </Badge>
                     <Badge variant="outline">
-                      {ROLES.find((r) => r.value === u.role)?.label ?? u.role}
+                      {roles.find((r) => r.value === u.role)?.label ?? u.role}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    作成: {formatDateTime(u.created_at)}
+                    {t("users.entry.created", { date: formatDateTime(u.created_at, i18n.language) })}
                   </p>
                 </div>
               </CardContent>
@@ -58,7 +59,7 @@ export function UsersPage() {
         ) : (
           <Card>
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              ユーザが登録されていません
+              {t("users.empty")}
             </CardContent>
           </Card>
         )}

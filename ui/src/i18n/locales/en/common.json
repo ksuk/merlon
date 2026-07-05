@@ -418,5 +418,374 @@
         "evaluatedAt": "Evaluated at"
       }
     }
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page for this URL does not exist.",
+    "backToDashboard": "Back to dashboard"
+  },
+  "errorBoundary": {
+    "title": "An error occurred",
+    "retry": "Retry"
+  },
+  "login": {
+    "title": "Log in",
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "submit": "Log in",
+    "error": "Incorrect email or password"
+  },
+  "setup": {
+    "title": "Initial setup",
+    "description": "Create the administrator account. A license key can be applied later.",
+    "emailLabel": "Email address",
+    "passwordLabel": "Initial password (12+ characters)",
+    "submit": "Create administrator account",
+    "error": "Initial setup failed. An administrator account may already exist."
+  },
+  "users": {
+    "title": "User management",
+    "error": "Failed to fetch user list",
+    "roles": {
+      "admin": "Admin",
+      "analyst": "Analyst",
+      "viewer": "Viewer"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "created": "Created: {{date}}"
+    },
+    "empty": "No users registered"
+  },
+  "config": {
+    "title": "Config validation",
+    "form": {
+      "title": "Validate YAML config",
+      "typeLabel": "Config type",
+      "yamlLabel": "YAML",
+      "yamlPlaceholder": "# Enter config in YAML format...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
+      "validating": "Validating...",
+      "submit": "Validate"
+    },
+    "types": {
+      "cddWeights": "CDD weights",
+      "screeningLists": "Screening lists",
+      "scenarioRules": "Scenario rules"
+    },
+    "result": {
+      "successTitle": "Validation succeeded",
+      "validBadge": "Valid",
+      "errorTitle": "Validation error",
+      "errorCount": "{{count}} errors"
+    }
+  },
+  "backtest": {
+    "title": "Backtest",
+    "error": "Failed to fetch data",
+    "form": {
+      "title": "Run test",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Backtest description...",
+      "targetCustomers": "Target customers",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "running": "Running...",
+      "submit": "Run backtest"
+    },
+    "result": {
+      "title": "Result",
+      "customers": "Customers",
+      "transactions": "Transactions",
+      "alerts": "Alerts generated",
+      "executionTime": "Execution time",
+      "table": {
+        "header": {
+          "scenario": "Scenario",
+          "alerts": "Alerts",
+          "high": "High",
+          "medium": "Medium",
+          "low": "Low",
+          "affectedCustomers": "Affected customers"
+        }
+      }
+    }
+  },
+  "batch": {
+    "title": "Batch",
+    "error": "Failed to fetch data",
+    "targetCustomers": {
+      "title": "Target customers",
+      "selectedCount": "{{count}} selected",
+      "allTargeted": "All customers targeted (none selected)",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all"
+    },
+    "actions": {
+      "score": "Bulk scoring",
+      "monitor": "Bulk monitoring"
+    },
+    "scoreResult": {
+      "title": "Scoring result",
+      "stats": {
+        "total": "Total",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "duration": "Duration"
+      },
+      "table": {
+        "header": {
+          "customerId": "Customer ID",
+          "score": "Score",
+          "riskTier": "Risk tier",
+          "error": "Error"
+        }
+      }
+    },
+    "monitorResult": {
+      "title": "Monitoring result",
+      "stats": {
+        "total": "Total",
+        "succeeded": "Succeeded",
+        "alertsTotal": "Alerts generated",
+        "duration": "Duration"
+      },
+      "table": {
+        "header": {
+          "customerId": "Customer ID",
+          "alertsRaised": "Alerts raised",
+          "error": "Error"
+        }
+      }
+    }
+  },
+  "apikeys": {
+    "title": "API keys",
+    "createButton": "Create new",
+    "error": "Failed to fetch API keys",
+    "newKey": {
+      "title": "API key generated (shown only once)",
+      "copy": "Copy"
+    },
+    "form": {
+      "title": "Create API key",
+      "nameLabel": "Name",
+      "namePlaceholder": "Purpose of this API key...",
+      "roleLabel": "Role",
+      "submit": "Create"
+    },
+    "roles": {
+      "admin": "Admin",
+      "analyst": "Analyst",
+      "viewer": "Viewer"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "created": "Created: {{date}}",
+      "lastUsed": " | Last used: {{date}}"
+    },
+    "revoke": "Revoke",
+    "empty": "No API keys registered"
+  },
+  "reports": {
+    "title": "STR reports",
+    "error": "Failed to fetch data",
+    "result": {
+      "title": "STR report created",
+      "idLabel": "ID: {{id}}"
+    },
+    "export": {
+      "csv": "CSV",
+      "json": "JSON"
+    },
+    "form": {
+      "title": "Create STR report",
+      "targetAlert": "Target alert",
+      "noAlerts": "No target alerts",
+      "pointLabel": "Point of suspicious transaction",
+      "pointPlaceholder": "Describe the reason for suspicion...",
+      "createdByLabel": "Created by",
+      "createdByPlaceholder": "Analyst name",
+      "submit": "Create STR report"
+    }
+  },
+  "system": {
+    "title": "System info",
+    "error": "Failed to fetch system info",
+    "stats": {
+      "version": "Version",
+      "endpoints": "API endpoints",
+      "enabledFeatures": "Enabled features"
+    },
+    "components": {
+      "title": "Components",
+      "api": "Go API",
+      "engine": "Rust Engine",
+      "database": "PostgreSQL"
+    },
+    "features": {
+      "title": "Feature status",
+      "auth": "API auth",
+      "audit": "Audit log",
+      "cases": "Case management",
+      "webhooks": "Webhooks",
+      "rate_limit": "Rate limiting",
+      "scoring": "CDD scoring",
+      "monitoring": "Transaction monitoring",
+      "screening": "Screening",
+      "backtest": "Backtest",
+      "config": "Config validation"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    }
+  },
+  "rules": {
+    "title": "Rule management",
+    "error": "Failed to fetch rules",
+    "actions": {
+      "import": "Import",
+      "create": "Create new"
+    },
+    "filter": {
+      "all": "All",
+      "activeOnly": "Active only"
+    },
+    "types": {
+      "tmScenario": "TM scenario",
+      "cddWeight": "CDD weight",
+      "screeningConfig": "Screening config",
+      "countryRisk": "Country risk"
+    },
+    "create": {
+      "title": "Create rule",
+      "typeLabel": "Type",
+      "nameLabel": "Name",
+      "namePlaceholder": "rule_name",
+      "definitionLabel": "Definition (JSON)",
+      "submit": "Create"
+    },
+    "import": {
+      "title": "Bulk import rules",
+      "jsonArrayLabel": "JSON array",
+      "error": "Failed to parse JSON",
+      "submit": "Import"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "updatedAt": "Updated: {{date}}",
+      "export": "Export",
+      "activate": "Activate",
+      "deactivate": "Deactivate"
+    },
+    "empty": "No rules registered"
+  },
+  "webhooks": {
+    "title": "Webhook management",
+    "createButton": "Create new",
+    "error": "Failed to fetch webhook data",
+    "tabs": {
+      "webhooks": "Webhooks",
+      "dlq": "DLQ"
+    },
+    "dlq": {
+      "table": {
+        "header": {
+          "event": "Event",
+          "attemptCount": "Attempts",
+          "lastError": "Last error",
+          "failedAt": "Failed at"
+        }
+      },
+      "reprocess": "Reprocess",
+      "empty": "No events in the DLQ"
+    },
+    "form": {
+      "title": "Create webhook",
+      "urlLabel": "URL",
+      "eventsLabel": "Events",
+      "submit": "Create"
+    },
+    "events": {
+      "alertCreated": "Alert created",
+      "alertResolved": "Alert resolved",
+      "caseCreated": "Case created",
+      "caseUpdated": "Case updated",
+      "caseClosed": "Case closed",
+      "strCreated": "STR created",
+      "scoreChanged": "Score changed",
+      "screeningMatch": "Screening match",
+      "screeningTruePositive": "Screening true positive",
+      "eddRequired": "EDD required",
+      "transactionRestrictionRecommended": "Transaction restriction recommended",
+      "relationshipDeclineRecommended": "Relationship decline recommended"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "createdAt": "Created: {{date}}",
+      "deliveries": "Delivery history"
+    },
+    "deliveries": {
+      "table": {
+        "header": {
+          "event": "Event",
+          "status": "Status",
+          "result": "Result",
+          "timestamp": "Timestamp"
+        }
+      },
+      "success": "Succeeded",
+      "failure": "Failed",
+      "empty": "No delivery history"
+    },
+    "empty": "No webhooks registered"
+  },
+  "whitelist": {
+    "title": "Whitelist",
+    "requestButton": "Request",
+    "error": "Failed to fetch whitelist data",
+    "form": {
+      "title": "Request whitelist entry",
+      "customerId": "Customer ID",
+      "reason": "Reason",
+      "validUntil": "Valid until",
+      "excludedRuleIds": "Excluded rule IDs (optional, comma-separated; empty excludes all rules)",
+      "excludedRuleIdsPlaceholder": "rule-a, rule-b",
+      "submit": "Submit request"
+    },
+    "status": {
+      "pending_approval": "Pending approval",
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "table": {
+      "header": {
+        "customerId": "Customer ID",
+        "status": "Status",
+        "reason": "Reason",
+        "validUntil": "Valid until",
+        "requestedBy": "Requested by",
+        "actions": "Actions"
+      }
+    },
+    "actions": {
+      "approve": "Approve",
+      "revoke": "Revoke",
+      "approveDisabledTitle": "The requester cannot approve their own request"
+    },
+    "empty": "No whitelist entries"
   }
 }

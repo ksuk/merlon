@@ -3,27 +3,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { CheckCircle, XCircle } from "lucide-react"
-
-const FEATURE_LABELS: Record<string, string> = {
-  auth: "API認証",
-  audit: "監査ログ",
-  cases: "ケース管理",
-  webhooks: "Webhook",
-  rate_limit: "レート制限",
-  scoring: "CDDスコアリング",
-  monitoring: "取引モニタリング",
-  screening: "スクリーニング",
-  backtest: "バックテスト",
-  config: "設定検証",
-}
-
-const COMPONENT_LABELS: Record<string, string> = {
-  api: "Go API",
-  engine: "Rust Engine",
-  database: "PostgreSQL",
-}
+import { useTranslation } from "react-i18next"
 
 export function SystemPage() {
+  const { t } = useTranslation()
+  const featureLabels: Record<string, string> = {
+    auth: t("system.features.auth"),
+    audit: t("system.features.audit"),
+    cases: t("system.features.cases"),
+    webhooks: t("system.features.webhooks"),
+    rate_limit: t("system.features.rate_limit"),
+    scoring: t("system.features.scoring"),
+    monitoring: t("system.features.monitoring"),
+    screening: t("system.features.screening"),
+    backtest: t("system.features.backtest"),
+    config: t("system.features.config"),
+  }
+  const componentLabels: Record<string, string> = {
+    api: t("system.components.api"),
+    engine: t("system.components.engine"),
+    database: t("system.components.database"),
+  }
   const { data: info, loading, error } = useApi(api.system.info)
 
   if (loading) {
@@ -40,7 +40,7 @@ export function SystemPage() {
   }
 
   if (error || !info) {
-    return <p className="p-12 text-center text-destructive">システム情報の取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("system.error")}</p>
   }
 
   const enabledCount = Object.values(info.features).filter(Boolean).length
@@ -48,12 +48,12 @@ export function SystemPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">システム情報</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t("system.title")}</h1>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">バージョン</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t("system.stats.version")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">v{info.version}</p>
@@ -61,7 +61,7 @@ export function SystemPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">APIエンドポイント</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t("system.stats.endpoints")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{info.endpoints}</p>
@@ -69,7 +69,7 @@ export function SystemPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">有効機能</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">{t("system.stats.enabledFeatures")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{enabledCount}/{totalCount}</p>
@@ -80,14 +80,14 @@ export function SystemPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">コンポーネント</CardTitle>
+            <CardTitle className="text-base">{t("system.components.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {info.components.map((c) => (
                 <div key={c} className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm">{COMPONENT_LABELS[c] ?? c}</span>
+                  <span className="text-sm">{componentLabels[c] ?? c}</span>
                 </div>
               ))}
             </div>
@@ -96,7 +96,7 @@ export function SystemPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">機能ステータス</CardTitle>
+            <CardTitle className="text-base">{t("system.features.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
@@ -108,10 +108,10 @@ export function SystemPage() {
                     ) : (
                       <XCircle className="h-4 w-4 text-muted-foreground" />
                     )}
-                    <span className="text-sm">{FEATURE_LABELS[key] ?? key}</span>
+                    <span className="text-sm">{featureLabels[key] ?? key}</span>
                   </div>
                   <Badge variant={enabled ? "low" : "secondary"}>
-                    {enabled ? "有効" : "無効"}
+                    {enabled ? t("system.status.enabled") : t("system.status.disabled")}
                   </Badge>
                 </div>
               ))}

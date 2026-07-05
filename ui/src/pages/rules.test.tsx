@@ -1,10 +1,11 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { RulesPage } from "./rules"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 const sampleRule = {
@@ -44,7 +45,7 @@ beforeEach(() => {
 test("renders rule list", async () => {
   mockFetchRouting(viewerUser, [sampleRule])
 
-  renderWithRouter(<RulesPage />)
+  await renderWithRouter(<RulesPage />)
 
   expect(await screen.findByText("country_risk_sample")).toBeDefined()
   expect(screen.getAllByText("国別リスク").length).toBeGreaterThan(0)
@@ -54,7 +55,7 @@ test("renders rule list", async () => {
 test("shows empty state", async () => {
   mockFetchRouting(viewerUser, [])
 
-  renderWithRouter(<RulesPage />)
+  await renderWithRouter(<RulesPage />)
 
   expect(await screen.findByText("ルールが登録されていません")).toBeDefined()
 })
@@ -62,7 +63,7 @@ test("shows empty state", async () => {
 test("hides create/import actions for non-admin roles", async () => {
   mockFetchRouting(viewerUser, [sampleRule])
 
-  renderWithRouter(<RulesPage />)
+  await renderWithRouter(<RulesPage />)
 
   await screen.findByText("country_risk_sample")
   expect(screen.queryByText("新規作成")).toBeNull()
@@ -73,7 +74,7 @@ test("filters by type by calling the API with the type query param", async () =>
   mockFetchRouting(adminUser, [sampleRule])
   const fetchSpy = vi.spyOn(globalThis, "fetch")
 
-  renderWithRouter(<RulesPage />)
+  await renderWithRouter(<RulesPage />)
   await screen.findByText("country_risk_sample")
 
   fireEvent.click(screen.getByText("CDD重み付け"))
@@ -91,7 +92,7 @@ test("submits the import form", async () => {
   mockFetchRouting(adminUser, [])
   const fetchSpy = vi.spyOn(globalThis, "fetch")
 
-  renderWithRouter(<RulesPage />)
+  await renderWithRouter(<RulesPage />)
   await screen.findByText("ルールが登録されていません")
 
   fireEvent.click(screen.getByText("インポート"))
@@ -120,7 +121,7 @@ test("submits the import form", async () => {
 test("export button links to the export download endpoint", async () => {
   mockFetchRouting(adminUser, [sampleRule])
 
-  renderWithRouter(<RulesPage />)
+  await renderWithRouter(<RulesPage />)
   await screen.findByText("country_risk_sample")
 
   const link = screen.getByText("エクスポート").closest("a")

@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { ReportsPage } from "./reports"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -32,7 +33,7 @@ test("renders STR report form with alerts", async () => {
     ),
   )
 
-  renderWithRouter(<ReportsPage />)
+  await renderWithRouter(<ReportsPage />)
 
   const elements = await screen.findAllByText("STRレポート作成")
   expect(elements.length).toBeGreaterThanOrEqual(1)
@@ -42,7 +43,7 @@ test("renders STR report form with alerts", async () => {
 test("shows empty alert state", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
 
-  renderWithRouter(<ReportsPage />)
+  await renderWithRouter(<ReportsPage />)
 
   expect(await screen.findByText("対象となるアラートがありません")).toBeDefined()
 })
