@@ -36,6 +36,16 @@ type TransactionRepository interface {
 	Create(ctx context.Context, t *Transaction) error
 }
 
+// AlertBulkFilter narrows ListByFilter's results for bulk alert operations
+// (case-management.md §アラートの一括処理: "フィルタ条件（シナリオID、期間、
+// severity）"). Zero-value fields are wildcards (no restriction on that axis).
+type AlertBulkFilter struct {
+	ScenarioID string
+	PeriodFrom *time.Time
+	PeriodTo   *time.Time
+	Severity   AlertSeverity
+}
+
 type AlertRepository interface {
 	Get(ctx context.Context, id string) (*Alert, error)
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Alert, error)
@@ -44,6 +54,8 @@ type AlertRepository interface {
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
 	Create(ctx context.Context, a *Alert) error
 	UpdateStatus(ctx context.Context, id string, status AlertStatus, resolvedBy string) error
+	// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7).
+	ListByFilter(ctx context.Context, f AlertBulkFilter) ([]Alert, error)
 }
 
 type ErrNotFound struct {

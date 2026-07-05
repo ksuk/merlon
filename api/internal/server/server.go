@@ -190,6 +190,8 @@ func (s *Server) routes() {
 
 	// Alerts
 	s.mux.HandleFunc("GET /api/v1/alerts", s.handleListAlerts)
+	s.mux.HandleFunc("POST /api/v1/alerts/bulk-close", s.handleBulkCloseAlerts)
+	s.mux.HandleFunc("POST /api/v1/alerts/bulk-case", s.handleBulkCaseAssignment)
 	s.mux.HandleFunc("GET /api/v1/alerts/{id}", s.handleGetAlert)
 	s.mux.HandleFunc("PATCH /api/v1/alerts/{id}", s.handleUpdateAlertStatus)
 

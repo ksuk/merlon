@@ -390,6 +390,16 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
+    bulkClose: (data: { scenario_id?: string; period_from?: string; period_to?: string; severity?: AlertSeverity; reason: string }) =>
+      request<{ closed_count: number; alert_ids: string[] }>("/alerts/bulk-close", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    bulkCase: (data: { alert_ids: string[]; case_id?: string; customer_id?: string; summary?: string }) =>
+      request<{ case_id: string; created: boolean }>("/alerts/bulk-case", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
   },
   cases: {
     list: () => request<Case[]>("/cases"),

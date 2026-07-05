@@ -443,6 +443,43 @@ func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *do
 		after.CreatedAt, after.ID, limit)
 }
 
+// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7,
+// case-management.md §アラートの一括処理).
+func (r *PgAlertRepo) ListByFilter(ctx context.Context, f domain.AlertBulkFilter) ([]domain.Alert, error) {
+	query := `SELECT ` + alertColumns + ` FROM alerts`
+	var args []any
+	var conditions []string
+	argIdx := 1
+
+	if f.ScenarioID != "" {
+		conditions = append(conditions, fmt.Sprintf("scenario_id = $%d", argIdx))
+		args = append(args, f.ScenarioID)
+		argIdx++
+	}
+	if f.Severity != "" {
+		conditions = append(conditions, fmt.Sprintf("severity = $%d", argIdx))
+		args = append(args, string(f.Severity))
+		argIdx++
+	}
+	if f.PeriodFrom != nil {
+		conditions = append(conditions, fmt.Sprintf("detected_at >= $%d", argIdx))
+		args = append(args, *f.PeriodFrom)
+		argIdx++
+	}
+	if f.PeriodTo != nil {
+		conditions = append(conditions, fmt.Sprintf("detected_at <= $%d", argIdx))
+		args = append(args, *f.PeriodTo)
+		argIdx++
+	}
+
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
+	}
+	query += " ORDER BY detected_at DESC"
+
+	return r.listAlerts(ctx, query, args...)
+}
+
 func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any) ([]domain.Alert, error) {
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {

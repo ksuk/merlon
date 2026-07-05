@@ -316,6 +316,32 @@ func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *
 	), nil
 }
 
+func (r *MemoryAlertRepo) ListByFilter(_ context.Context, f domain.AlertBulkFilter) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []domain.Alert
+	for _, a := range r.data {
+		if f.ScenarioID != "" && a.ScenarioID != f.ScenarioID {
+			continue
+		}
+		if f.Severity != "" && a.Severity != f.Severity {
+			continue
+		}
+		if f.PeriodFrom != nil && a.DetectedAt.Before(*f.PeriodFrom) {
+			continue
+		}
+		if f.PeriodTo != nil && a.DetectedAt.After(*f.PeriodTo) {
+			continue
+		}
+		out = append(out, *a)
+	}
+	sortByCreatedAtDesc(out,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return out, nil
+}
+
 func (r *MemoryAlertRepo) Create(_ context.Context, a *domain.Alert) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
