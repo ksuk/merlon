@@ -316,8 +316,7 @@ func TestHandleReprocessDLQEntry_RedeliversAndRecordsAudit(t *testing.T) {
 	if auditRec.Code != http.StatusOK {
 		t.Fatalf("audit status = %d, want %d, body: %s", auditRec.Code, http.StatusOK, auditRec.Body.String())
 	}
-	var auditEntries []domain.AuditEntry
-	json.NewDecoder(auditRec.Body).Decode(&auditEntries)
+	auditEntries, _ := decodeListResponse[domain.AuditEntry](t, auditRec.Body)
 	if len(auditEntries) < 1 {
 		t.Fatal("expected at least 1 audit entry for the reprocess action")
 	}

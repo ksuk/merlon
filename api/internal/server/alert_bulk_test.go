@@ -124,7 +124,7 @@ func TestHandleBulkCloseAlerts_RecordsIndividualAuditEntries(t *testing.T) {
 	}
 
 	for _, alertID := range []string{a1.ID, a2.ID} {
-		entries, err := s.audit.List(context.Background(), "alert", alertID, 10)
+		entries, err := s.audit.List(context.Background(), domain.AuditListFilter{ResourceType: "alert", ResourceID: alertID, Limit: 10})
 		if err != nil {
 			t.Fatalf("audit List(%s): %v", alertID, err)
 		}

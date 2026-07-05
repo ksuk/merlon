@@ -42,6 +42,7 @@ func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 			"/api/v1/admin/apikeys":               pathCRUD("API Key", "apikeys"),
 			"/api/v1/admin/apikeys/{id}":          pathDELETE("Revoke API key"),
 			"/api/v1/audit":                       pathGET("List audit logs"),
+			"/api/v1/audit/export":                pathGET("Export audit logs (CSV/JSON)"),
 		},
 		"components": map[string]any{
 			"securitySchemes": map[string]any{

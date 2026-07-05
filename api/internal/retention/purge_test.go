@@ -107,7 +107,7 @@ func TestPurgeJobLogsExecutionHistory(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	entries, err := audit.List(context.Background(), "retention_policy", "", 10)
+	entries, err := audit.List(context.Background(), domain.AuditListFilter{ResourceType: "retention_policy", Limit: 10})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

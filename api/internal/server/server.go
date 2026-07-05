@@ -250,8 +250,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/auth/refresh", s.handleRefresh)
 	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleMe)
 
-	// Audit
+	// Audit (ALD-001/002 listing stays open like other list endpoints;
+	// ALD-004/005 export requires auth.PermAuditRead since it extracts the
+	// full filtered result set in one response, a higher-risk action than
+	// browsing a page at a time).
 	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
+	s.mux.Handle("GET /api/v1/audit/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportAuditLogs)))
 
 	// Config validation
 	s.mux.HandleFunc("POST /api/v1/config/validate", s.handleValidateConfig)

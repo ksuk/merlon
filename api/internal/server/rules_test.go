@@ -301,7 +301,7 @@ func TestHandleUpdateRule_RecordsAuditDiff(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	entries, err := s.audit.List(ctx, "rules", "cdd_basic", 10)
+	entries, err := s.audit.List(ctx, domain.AuditListFilter{ResourceType: "rules", ResourceID: "cdd_basic", Limit: 10})
 	if err != nil {
 		t.Fatalf("audit List: %v", err)
 	}

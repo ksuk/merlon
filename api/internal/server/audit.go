@@ -2,9 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/csv"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,7 +83,10 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		aw := &auditResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(aw, r.WithContext(ctx))
 
-		if r.Method == http.MethodGet {
+		// GETs are not recorded, except the audit export endpoint itself
+		// (ALD-006: the export operation must be traceable even though it
+		// is a read).
+		if r.Method == http.MethodGet && r.URL.Path != "/api/v1/audit/export" {
 			return
 		}
 
@@ -105,6 +112,11 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 
 func resolveAction(method, path string) string {
 	switch method {
+	case http.MethodGet:
+		if path == "/api/v1/audit/export" {
+			return "export_audit_logs"
+		}
+		return method
 	case http.MethodPost:
 		if strings.Contains(path, "/score") {
 			return "score_customer"
@@ -183,26 +195,159 @@ func resolveResource(path string) (string, string) {
 	return resourceType, resourceID
 }
 
+func auditCursor(e domain.AuditEntry) Cursor {
+	return Cursor{CreatedAt: e.CreatedAt, ID: strconv.FormatInt(e.ID, 10)}
+}
+
+// parseAuditListFilter reads ALD-001's filter axes (period, actor, resource,
+// operation category) plus pagination from the request's query string.
+// fetchLimit is pageReq.Limit+1 (the BuildPaginationMeta lookahead
+// convention); the caller trims it back down to pageReq.Limit before
+// responding.
+func parseAuditListFilter(r *http.Request) (domain.AuditListFilter, PageRequest, error) {
+	pageReq, err := ParsePageRequest(r)
+	if err != nil {
+		return domain.AuditListFilter{}, PageRequest{}, err
+	}
+
+	q := r.URL.Query()
+	filter := domain.AuditListFilter{
+		ResourceType:   q.Get("resource_type"),
+		ResourceID:     q.Get("resource_id"),
+		UserID:         q.Get("user_id"),
+		ActionCategory: q.Get("action_category"),
+		Cursor:         toDomainCursor(pageReq.Cursor),
+		Limit:          pageReq.Limit + 1,
+	}
+
+	if raw := q.Get("since"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return domain.AuditListFilter{}, PageRequest{}, fmt.Errorf("invalid since: %w", err)
+		}
+		filter.Since = &t
+	}
+	if raw := q.Get("until"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return domain.AuditListFilter{}, PageRequest{}, fmt.Errorf("invalid until: %w", err)
+		}
+		filter.Until = &t
+	}
+
+	return filter, pageReq, nil
+}
+
+// handleListAuditLogs serves ALD-001/002: filtered, paginated audit log
+// listing. Routed behind auth.RequirePermission(auth.PermAuditRead)
+// (ALD-005).
 func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if s.audit == nil {
 		writeError(w, http.StatusServiceUnavailable, "audit not configured")
 		return
 	}
 
-	resourceType := r.URL.Query().Get("resource_type")
-	resourceID := r.URL.Query().Get("resource_id")
-	limit := 50
+	filter, pageReq, err := parseAuditListFilter(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
-	entries, err := s.audit.List(r.Context(), resourceType, resourceID, limit)
+	entries, err := s.audit.List(r.Context(), filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if entries == nil {
-		entries = []domain.AuditEntry{}
+
+	page, meta := BuildPaginationMeta(entries, pageReq.Limit, auditCursor)
+	writePaginatedJSON(w, http.StatusOK, page, meta)
+}
+
+// handleExportAuditLogs serves ALD-004 (CSV/JSON export preserving the same
+// filter as the listing endpoint) and records its own invocation to the
+// audit log (ALD-006). Routed behind auth.RequirePermission(auth.PermAuditRead)
+// (ALD-005).
+func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
+	if s.audit == nil {
+		writeError(w, http.StatusServiceUnavailable, "audit not configured")
+		return
 	}
 
-	writeJSON(w, http.StatusOK, entries)
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "csv"
+	}
+	if format != "csv" && format != "json" {
+		writeError(w, http.StatusBadRequest, "unsupported format: "+format)
+		return
+	}
+
+	// Export has no natural page size (it must return every row matching
+	// the filter), so Limit is left at zero — meaning "no limit" to both
+	// repository implementations, unlike the paginated listing endpoint.
+	q := r.URL.Query()
+	filter := domain.AuditListFilter{
+		ResourceType:   q.Get("resource_type"),
+		ResourceID:     q.Get("resource_id"),
+		UserID:         q.Get("user_id"),
+		ActionCategory: q.Get("action_category"),
+	}
+	if raw := q.Get("since"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid since: "+err.Error())
+			return
+		}
+		filter.Since = &t
+	}
+	if raw := q.Get("until"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid until: "+err.Error())
+			return
+		}
+		filter.Until = &t
+	}
+
+	entries, err := s.audit.List(r.Context(), filter)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	switch format {
+	case "csv":
+		writeAuditCSV(w, entries)
+	case "json":
+		writeJSON(w, http.StatusOK, entries)
+	}
+
+	setAuditDetail(r, "export_format", format)
+	setAuditDetail(r, "export_count", strconv.Itoa(len(entries)))
+}
+
+func writeAuditCSV(w http.ResponseWriter, entries []domain.AuditEntry) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=audit_logs.csv")
+
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	writer.Write([]string{"id", "created_at", "user_id", "action", "resource_type", "resource_id", "details", "ip_address", "user_agent"})
+	for _, e := range entries {
+		details, _ := json.Marshal(e.Details)
+		writer.Write([]string{
+			strconv.FormatInt(e.ID, 10),
+			e.CreatedAt.Format(time.RFC3339),
+			sanitizeCSVCell(e.UserID),
+			sanitizeCSVCell(e.Action),
+			sanitizeCSVCell(e.ResourceType),
+			sanitizeCSVCell(e.ResourceID),
+			sanitizeCSVCell(string(details)),
+			sanitizeCSVCell(e.IPAddress),
+			sanitizeCSVCell(e.UserAgent),
+		})
+	}
 }
 
 func resolveAuditUserID(r *http.Request) string {

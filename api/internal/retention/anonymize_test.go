@@ -139,7 +139,7 @@ func TestAnonymizeRecordsAuditLog(t *testing.T) {
 		t.Fatalf("Anonymize: %v", err)
 	}
 
-	entries, err := audit.List(context.Background(), "customer", customerID, 10)
+	entries, err := audit.List(context.Background(), domain.AuditListFilter{ResourceType: "customer", ResourceID: customerID, Limit: 10})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

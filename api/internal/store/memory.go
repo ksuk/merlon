@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -437,25 +438,70 @@ func (r *MemoryAuditRepo) Create(_ context.Context, entry *domain.AuditEntry) er
 	return nil
 }
 
-func (r *MemoryAuditRepo) List(_ context.Context, resourceType, resourceID string, limit int) ([]domain.AuditEntry, error) {
+// List serves ALD-001/002/004, mirroring PgAuditRepo.List's filter and
+// (created_at, id) DESC keyset pagination semantics (filter.Limit = 0 means
+// unlimited, used by the export endpoint).
+func (r *MemoryAuditRepo) List(_ context.Context, filter domain.AuditListFilter) ([]domain.AuditEntry, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	var categoryTypes map[string]bool
+	if filter.ActionCategory != "" {
+		types := domain.ResourceTypesForCategory(filter.ActionCategory)
+		if len(types) == 0 {
+			return []domain.AuditEntry{}, nil
+		}
+		categoryTypes = make(map[string]bool, len(types))
+		for _, t := range types {
+			categoryTypes[t] = true
+		}
+	}
+
+	var cursorID int64
+	if filter.Cursor != nil {
+		cursorID, _ = strconv.ParseInt(filter.Cursor.ID, 10, 64)
+	}
 
 	var filtered []domain.AuditEntry
 	for i := len(r.entries) - 1; i >= 0; i-- {
 		e := r.entries[i]
-		if resourceType != "" && e.ResourceType != resourceType {
+		if filter.ResourceType != "" && e.ResourceType != filter.ResourceType {
 			continue
 		}
-		if resourceID != "" && e.ResourceID != resourceID {
+		if filter.ResourceID != "" && e.ResourceID != filter.ResourceID {
+			continue
+		}
+		if filter.UserID != "" && e.UserID != filter.UserID {
+			continue
+		}
+		if categoryTypes != nil && !categoryTypes[e.ResourceType] {
+			continue
+		}
+		if filter.Since != nil && e.CreatedAt.Before(*filter.Since) {
+			continue
+		}
+		if filter.Until != nil && e.CreatedAt.After(*filter.Until) {
+			continue
+		}
+		if filter.Cursor != nil && !auditEntryBeforeCursor(e, filter.Cursor.CreatedAt, cursorID) {
 			continue
 		}
 		filtered = append(filtered, e)
-		if limit > 0 && len(filtered) >= limit {
+		if filter.Limit > 0 && len(filtered) >= filter.Limit {
 			break
 		}
 	}
 	return filtered, nil
+}
+
+// auditEntryBeforeCursor reports whether e sorts strictly after the given
+// (created_at, id) keyset cursor in (created_at, id) DESC order, i.e. the
+// same "(created_at, id) < (cursor)" tuple comparison PgAuditRepo.List uses.
+func auditEntryBeforeCursor(e domain.AuditEntry, cursorCreatedAt time.Time, cursorID int64) bool {
+	if e.CreatedAt.Equal(cursorCreatedAt) {
+		return e.ID < cursorID
+	}
+	return e.CreatedAt.Before(cursorCreatedAt)
 }
 
 // MemoryCaseRepo

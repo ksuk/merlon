@@ -134,8 +134,7 @@ func TestRetentionPolicyUpdateRecordsAuditLog(t *testing.T) {
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
-	var entries []domain.AuditEntry
-	json.NewDecoder(rec.Body).Decode(&entries)
+	entries, _ := decodeListResponse[domain.AuditEntry](t, rec.Body)
 	if len(entries) < 1 {
 		t.Fatalf("expected at least 1 audit entry, got %d", len(entries))
 	}
