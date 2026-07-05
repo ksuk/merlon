@@ -115,6 +115,7 @@ func main() {
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
+		deps.Retention = store.NewPgRetentionRepo(pool)
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		slog.Info("database connected", "backend", "postgresql")
@@ -128,6 +129,7 @@ func main() {
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
 		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
+		deps.Retention = store.NewMemoryRetentionRepo()
 		batchRuns = store.NewMemoryBatchRunRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}

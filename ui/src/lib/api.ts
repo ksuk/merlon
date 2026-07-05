@@ -168,6 +168,34 @@ export interface AuditEntry {
   created_at: string
 }
 
+// AuditListParams mirrors ALD-001's filter axes (period, operation
+// category, actor, target resource) plus cursor pagination, shared by
+// audit.list and audit.export so the export preserves whatever filter is
+// currently applied to the list (ALD-004).
+export interface AuditListParams {
+  resourceType?: string
+  resourceId?: string
+  userId?: string
+  actionCategory?: string
+  since?: string
+  until?: string
+  cursor?: string
+  limit?: number
+}
+
+function buildAuditQuery(params?: AuditListParams): string {
+  const qs = new URLSearchParams()
+  if (params?.resourceType) qs.set("resource_type", params.resourceType)
+  if (params?.resourceId) qs.set("resource_id", params.resourceId)
+  if (params?.userId) qs.set("user_id", params.userId)
+  if (params?.actionCategory) qs.set("action_category", params.actionCategory)
+  if (params?.since) qs.set("since", params.since)
+  if (params?.until) qs.set("until", params.until)
+  if (params?.cursor) qs.set("cursor", params.cursor)
+  if (params?.limit) qs.set("limit", String(params.limit))
+  return qs.toString()
+}
+
 export type WebhookEventType =
   | "alert.created" | "alert.resolved"
   | "case.created" | "case.updated" | "case.closed"
@@ -468,12 +496,30 @@ export const api = {
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data) }),
   },
   audit: {
-    list: (resourceType?: string, resourceId?: string) => {
-      const params = new URLSearchParams()
-      if (resourceType) params.set("resource_type", resourceType)
-      if (resourceId) params.set("resource_id", resourceId)
-      const qs = params.toString()
-      return request<AuditEntry[]>(`/audit${qs ? `?${qs}` : ""}`)
+    list: (params?: AuditListParams) => {
+      const qs = buildAuditQuery(params)
+      return request<PaginatedResponse<AuditEntry>>(`/audit${qs ? `?${qs}` : ""}`)
+    },
+    // export downloads the ALD-004 CSV/JSON export, preserving the same
+    // filters as list(), by fetching the blob directly rather than a plain
+    // <a href> (the export route requires auth.PermAuditRead, so it must go
+    // through the same authenticated fetch() path as every other request).
+    export: async (params?: AuditListParams, format: "csv" | "json" = "csv") => {
+      const qs = new URLSearchParams(buildAuditQuery(params))
+      qs.set("format", format)
+      const res = await fetch(`${BASE}/audit/export?${qs.toString()}`)
+      if (!res.ok) {
+        const body = await res.text()
+        throw new Error(`API ${res.status}: ${body}`)
+      }
+      const blob = await res.blob()
+      const link = document.createElement("a")
+      link.href = URL.createObjectURL(blob)
+      link.download = `audit_logs.${format}`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(link.href)
     },
   },
   batch: {

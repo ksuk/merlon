@@ -151,7 +151,7 @@ func TestLogin_RecordsAuditEvent(t *testing.T) {
 
 	doLogin(t, s, "alice@example.com", testUserPassword)
 
-	entries, err := auditRepo.List(context.Background(), "", "", 50)
+	entries, err := auditRepo.List(context.Background(), domain.AuditListFilter{Limit: 50})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestLogin_RecordsAuditEvent(t *testing.T) {
 		t.Fatalf("expected failed login, got status %d", rec.Code)
 	}
 
-	entries, err = auditRepo.List(context.Background(), "", "", 50)
+	entries, err = auditRepo.List(context.Background(), domain.AuditListFilter{Limit: 50})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}

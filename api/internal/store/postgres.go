@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +22,7 @@ func NewPgCustomerRepo(pool *pgxpool.Pool) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool}
 }
 
-const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at`
+const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, anonymized_at`
 
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
 	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1`, id)
@@ -43,6 +44,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+		&c.AnonymizedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -77,6 +79,7 @@ func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+		&c.AnonymizedAt,
 	); err != nil {
 		return c, err
 	}
@@ -183,12 +186,13 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	attrs, _ := json.Marshal(c.Attributes)
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14 WHERE id=$1`,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14, anonymized_at=$15 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
+		c.AnonymizedAt,
 	)
 	if err != nil {
 		return err
@@ -604,29 +608,76 @@ func (r *PgAuditRepo) Create(ctx context.Context, entry *domain.AuditEntry) erro
 	return err
 }
 
-func (r *PgAuditRepo) List(ctx context.Context, resourceType, resourceID string, limit int) ([]domain.AuditEntry, error) {
+// List serves ALD-001/002/004: filtered audit log retrieval for both the
+// paginated listing endpoint (filter.Limit = page size + 1 lookahead) and
+// the export endpoint (filter.Limit = 0, meaning unlimited). Pagination
+// follows the same (created_at, id) DESC keyset convention as the other
+// List*Cursor repository methods (e.g. PgCustomerRepo.ListByCursor).
+func (r *PgAuditRepo) List(ctx context.Context, filter domain.AuditListFilter) ([]domain.AuditEntry, error) {
 	query := `SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs`
 	var args []any
 	var conditions []string
 	argIdx := 1
 
-	if resourceType != "" {
+	if filter.ResourceType != "" {
 		conditions = append(conditions, fmt.Sprintf("resource_type = $%d", argIdx))
-		args = append(args, resourceType)
+		args = append(args, filter.ResourceType)
 		argIdx++
 	}
-	if resourceID != "" {
+	if filter.ResourceID != "" {
 		conditions = append(conditions, fmt.Sprintf("resource_id = $%d", argIdx))
-		args = append(args, resourceID)
+		args = append(args, filter.ResourceID)
 		argIdx++
+	}
+	if filter.UserID != "" {
+		conditions = append(conditions, fmt.Sprintf("user_id = $%d", argIdx))
+		args = append(args, filter.UserID)
+		argIdx++
+	}
+	if filter.ActionCategory != "" {
+		types := domain.ResourceTypesForCategory(filter.ActionCategory)
+		if len(types) == 0 {
+			// Unrecognized category: no resource_type qualifies, so the
+			// result set is empty without needing a round-trip.
+			return []domain.AuditEntry{}, nil
+		}
+		placeholders := make([]string, len(types))
+		for i, t := range types {
+			placeholders[i] = fmt.Sprintf("$%d", argIdx)
+			args = append(args, t)
+			argIdx++
+		}
+		conditions = append(conditions, fmt.Sprintf("resource_type IN (%s)", strings.Join(placeholders, ", ")))
+	}
+	if filter.Since != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", argIdx))
+		args = append(args, *filter.Since)
+		argIdx++
+	}
+	if filter.Until != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", argIdx))
+		args = append(args, *filter.Until)
+		argIdx++
+	}
+	if filter.Cursor != nil {
+		cursorID, err := strconv.ParseInt(filter.Cursor.ID, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid cursor id: %w", err)
+		}
+		conditions = append(conditions, fmt.Sprintf("(created_at, id) < ($%d, $%d)", argIdx, argIdx+1))
+		args = append(args, filter.Cursor.CreatedAt, cursorID)
+		argIdx += 2
 	}
 
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", argIdx)
-	args = append(args, limit)
+	query += " ORDER BY created_at DESC, id DESC"
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", argIdx)
+		args = append(args, filter.Limit)
+	}
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {

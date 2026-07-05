@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -437,25 +438,70 @@ func (r *MemoryAuditRepo) Create(_ context.Context, entry *domain.AuditEntry) er
 	return nil
 }
 
-func (r *MemoryAuditRepo) List(_ context.Context, resourceType, resourceID string, limit int) ([]domain.AuditEntry, error) {
+// List serves ALD-001/002/004, mirroring PgAuditRepo.List's filter and
+// (created_at, id) DESC keyset pagination semantics (filter.Limit = 0 means
+// unlimited, used by the export endpoint).
+func (r *MemoryAuditRepo) List(_ context.Context, filter domain.AuditListFilter) ([]domain.AuditEntry, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	var categoryTypes map[string]bool
+	if filter.ActionCategory != "" {
+		types := domain.ResourceTypesForCategory(filter.ActionCategory)
+		if len(types) == 0 {
+			return []domain.AuditEntry{}, nil
+		}
+		categoryTypes = make(map[string]bool, len(types))
+		for _, t := range types {
+			categoryTypes[t] = true
+		}
+	}
+
+	var cursorID int64
+	if filter.Cursor != nil {
+		cursorID, _ = strconv.ParseInt(filter.Cursor.ID, 10, 64)
+	}
 
 	var filtered []domain.AuditEntry
 	for i := len(r.entries) - 1; i >= 0; i-- {
 		e := r.entries[i]
-		if resourceType != "" && e.ResourceType != resourceType {
+		if filter.ResourceType != "" && e.ResourceType != filter.ResourceType {
 			continue
 		}
-		if resourceID != "" && e.ResourceID != resourceID {
+		if filter.ResourceID != "" && e.ResourceID != filter.ResourceID {
+			continue
+		}
+		if filter.UserID != "" && e.UserID != filter.UserID {
+			continue
+		}
+		if categoryTypes != nil && !categoryTypes[e.ResourceType] {
+			continue
+		}
+		if filter.Since != nil && e.CreatedAt.Before(*filter.Since) {
+			continue
+		}
+		if filter.Until != nil && e.CreatedAt.After(*filter.Until) {
+			continue
+		}
+		if filter.Cursor != nil && !auditEntryBeforeCursor(e, filter.Cursor.CreatedAt, cursorID) {
 			continue
 		}
 		filtered = append(filtered, e)
-		if limit > 0 && len(filtered) >= limit {
+		if filter.Limit > 0 && len(filtered) >= filter.Limit {
 			break
 		}
 	}
 	return filtered, nil
+}
+
+// auditEntryBeforeCursor reports whether e sorts strictly after the given
+// (created_at, id) keyset cursor in (created_at, id) DESC order, i.e. the
+// same "(created_at, id) < (cursor)" tuple comparison PgAuditRepo.List uses.
+func auditEntryBeforeCursor(e domain.AuditEntry, cursorCreatedAt time.Time, cursorID int64) bool {
+	if e.CreatedAt.Equal(cursorCreatedAt) {
+		return e.ID < cursorID
+	}
+	return e.CreatedAt.Before(cursorCreatedAt)
 }
 
 // MemoryCaseRepo
@@ -900,6 +946,77 @@ func deactivateAll(versions []*domain.RuleDefinition) {
 	for _, v := range versions {
 		v.IsActive = false
 	}
+}
+
+// MemoryRetentionRepo is the dev/test-only RetentionRepository
+// (audit.md RET-001/RET-002), pre-seeded with the same five statutory
+// defaults as migrations/017_retention.sql so tests don't depend on Postgres.
+type MemoryRetentionRepo struct {
+	mu   sync.RWMutex
+	data map[string]*domain.RetentionPolicy
+}
+
+func NewMemoryRetentionRepo() *MemoryRetentionRepo {
+	now := time.Now()
+	seed := func(category string, retentionDays int, minRetentionDays *int) *domain.RetentionPolicy {
+		return &domain.RetentionPolicy{
+			ID:               category,
+			DataCategory:     category,
+			RetentionDays:    retentionDays,
+			MinRetentionDays: minRetentionDays,
+			CreatedAt:        now,
+			UpdatedAt:        now,
+		}
+	}
+	statutoryMin := 2555
+	return &MemoryRetentionRepo{
+		data: map[string]*domain.RetentionPolicy{
+			"customer_data":     seed("customer_data", 2555, &statutoryMin),
+			"transaction_data":  seed("transaction_data", 2555, &statutoryMin),
+			"alert_case_data":   seed("alert_case_data", 2555, &statutoryMin),
+			"cdd_score_history": seed("cdd_score_history", 2555, &statutoryMin),
+			"audit_log":         seed("audit_log", 3650, nil),
+		},
+	}
+}
+
+func (r *MemoryRetentionRepo) List(_ context.Context) ([]domain.RetentionPolicy, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.RetentionPolicy, 0, len(r.data))
+	for _, p := range r.data {
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DataCategory < out[j].DataCategory })
+	return out, nil
+}
+
+func (r *MemoryRetentionRepo) Get(_ context.Context, dataCategory string) (*domain.RetentionPolicy, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	p, ok := r.data[dataCategory]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "retention_policy", ID: dataCategory}
+	}
+	cp := *p
+	return &cp, nil
+}
+
+func (r *MemoryRetentionRepo) Update(_ context.Context, dataCategory string, retentionDays int, updatedBy string) (*domain.RetentionPolicy, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.data[dataCategory]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "retention_policy", ID: dataCategory}
+	}
+	if p.MinRetentionDays != nil && retentionDays < *p.MinRetentionDays {
+		return nil, &domain.ErrRetentionShorten{DataCategory: dataCategory, RequestedDays: retentionDays, MinDays: *p.MinRetentionDays}
+	}
+	p.RetentionDays = retentionDays
+	p.UpdatedBy = updatedBy
+	p.UpdatedAt = time.Now()
+	cp := *p
+	return &cp, nil
 }
 
 // MemoryScreeningResultRepo is the dev/test-only ScreeningResultRepository

@@ -507,8 +507,7 @@ func TestAuditRecordsWhitelistOperations(t *testing.T) {
 		t.Fatalf("audit: status = %d, body: %s", auditRec.Code, auditRec.Body.String())
 	}
 
-	var logEntries []domain.AuditEntry
-	json.NewDecoder(auditRec.Body).Decode(&logEntries)
+	logEntries, _ := decodeListResponse[domain.AuditEntry](t, auditRec.Body)
 
 	wantActions := map[string]bool{"create": false, "approve_whitelist_entry": false, "revoke_whitelist_entry": false}
 	for _, e := range logEntries {

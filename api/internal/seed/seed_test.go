@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/store"
 )
 
@@ -65,7 +66,7 @@ func TestSeedPopulatesAllStores(t *testing.T) {
 		t.Errorf("expected at least 1 case, got %d", len(openCases))
 	}
 
-	logs, err := audit.List(context.Background(), "", "", 100)
+	logs, err := audit.List(context.Background(), domain.AuditListFilter{Limit: 100})
 	if err != nil {
 		t.Fatalf("list audit: %v", err)
 	}
