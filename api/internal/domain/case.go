@@ -8,11 +8,53 @@ import (
 type CaseStatus string
 
 const (
-	CaseStatusOpen         CaseStatus = "open"
+	// CaseStatusOpen is the legacy initial status. Contract Stability keeps
+	// it accepted for 12 months as an alias of CaseStatusNew (case-management.md
+	// §ケースのステータス遷移); normalizeCaseStatus treats the two identically.
+	CaseStatusOpen          CaseStatus = "open"
+	CaseStatusNew           CaseStatus = "new"
 	CaseStatusInvestigating CaseStatus = "investigating"
-	CaseStatusEscalated    CaseStatus = "escalated"
-	CaseStatusClosed       CaseStatus = "closed"
+	CaseStatusEscalated     CaseStatus = "escalated"
+	CaseStatusClosed        CaseStatus = "closed"
+	CaseStatusReopened      CaseStatus = "reopened"
+	CaseStatusStrFiled      CaseStatus = "str_filed"
 )
+
+// normalizeCaseStatus collapses the legacy "open" alias to "new" so transition
+// rules only need to be defined once.
+func normalizeCaseStatus(s CaseStatus) CaseStatus {
+	if s == CaseStatusOpen {
+		return CaseStatusNew
+	}
+	return s
+}
+
+// caseStatusTransitions encodes case-management.md's status transition
+// diagram. str_filed has no outgoing edges: it is a terminal state, and any
+// new alert on the same customer becomes a separate case that references
+// this one rather than reopening it.
+var caseStatusTransitions = map[CaseStatus][]CaseStatus{
+	CaseStatusNew:           {CaseStatusInvestigating},
+	CaseStatusInvestigating: {CaseStatusEscalated, CaseStatusClosed, CaseStatusStrFiled},
+	CaseStatusEscalated:     {CaseStatusInvestigating},
+	CaseStatusClosed:        {CaseStatusReopened},
+	CaseStatusReopened:      {CaseStatusInvestigating},
+	CaseStatusStrFiled:      {},
+}
+
+// ValidCaseStatusTransition reports whether a case may move from "from" to
+// "to" per the status transition diagram (case-management.md). The legacy
+// "open" status is treated as equivalent to "new" on both sides.
+func ValidCaseStatusTransition(from, to CaseStatus) bool {
+	from = normalizeCaseStatus(from)
+	to = normalizeCaseStatus(to)
+	for _, allowed := range caseStatusTransitions[from] {
+		if allowed == to {
+			return true
+		}
+	}
+	return false
+}
 
 type CasePriority string
 
@@ -23,17 +65,19 @@ const (
 )
 
 type Case struct {
-	ID          string       `json:"id"`
-	CustomerID  string       `json:"customer_id"`
-	AlertIDs    []string     `json:"alert_ids"`
-	Status      CaseStatus   `json:"status"`
-	Priority    CasePriority `json:"priority"`
-	AssignedTo  string       `json:"assigned_to,omitempty"`
-	Summary     string       `json:"summary"`
-	Notes       []CaseNote   `json:"notes,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-	ClosedAt    *time.Time   `json:"closed_at,omitempty"`
+	ID             string       `json:"id"`
+	CustomerID     string       `json:"customer_id"`
+	AlertIDs       []string     `json:"alert_ids"`
+	Status         CaseStatus   `json:"status"`
+	Priority       CasePriority `json:"priority"`
+	AssignedTo     string       `json:"assigned_to,omitempty"`
+	Summary        string       `json:"summary"`
+	Notes          []CaseNote   `json:"notes,omitempty"`
+	ReopenReason   string       `json:"reopen_reason,omitempty"`
+	RelatedCaseIDs []string     `json:"related_case_ids,omitempty"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	ClosedAt       *time.Time   `json:"closed_at,omitempty"`
 }
 
 type CaseNote struct {

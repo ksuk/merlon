@@ -35,8 +35,8 @@ func TestCreateCase(t *testing.T) {
 	if c.CustomerID != cust.ID {
 		t.Errorf("customer_id = %q, want %q", c.CustomerID, cust.ID)
 	}
-	if c.Status != domain.CaseStatusOpen {
-		t.Errorf("status = %q, want %q", c.Status, domain.CaseStatusOpen)
+	if c.Status != domain.CaseStatusNew {
+		t.Errorf("status = %q, want %q", c.Status, domain.CaseStatusNew)
 	}
 	if c.Priority != domain.CasePriorityHigh {
 		t.Errorf("priority = %q, want %q", c.Priority, domain.CasePriorityHigh)
@@ -201,7 +201,7 @@ func TestCaseStatusChangeUpdatesGauge(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)
 
-	openBefore := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("open"))
+	openBefore := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("new"))
 
 	body := `{"customer_id":"` + cust.ID + `","summary":"Gauge test case"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
@@ -211,9 +211,9 @@ func TestCaseStatusChangeUpdatesGauge(t *testing.T) {
 	var created domain.Case
 	json.NewDecoder(rec.Body).Decode(&created)
 
-	openAfterCreate := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("open"))
+	openAfterCreate := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("new"))
 	if openAfterCreate != openBefore+1 {
-		t.Errorf("merlon_cases_open{status=open} after create = %v, want %v", openAfterCreate, openBefore+1)
+		t.Errorf("merlon_cases_open{status=new} after create = %v, want %v", openAfterCreate, openBefore+1)
 	}
 
 	investigatingBefore := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("investigating"))
@@ -226,9 +226,9 @@ func TestCaseStatusChangeUpdatesGauge(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	openAfterInvestigating := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("open"))
+	openAfterInvestigating := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("new"))
 	if openAfterInvestigating != openAfterCreate-1 {
-		t.Errorf("merlon_cases_open{status=open} after moving to investigating = %v, want %v", openAfterInvestigating, openAfterCreate-1)
+		t.Errorf("merlon_cases_open{status=new} after moving to investigating = %v, want %v", openAfterInvestigating, openAfterCreate-1)
 	}
 	investigatingAfter := testutil.ToFloat64(metrics.CasesOpen.WithLabelValues("investigating"))
 	if investigatingAfter != investigatingBefore+1 {
@@ -265,8 +265,9 @@ func TestCloseCase(t *testing.T) {
 	var created domain.Case
 	json.NewDecoder(rec.Body).Decode(&created)
 
-	body = `{"status":"closed"}`
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(body))
+	closeCase(t, s, created.ID)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/cases/"+created.ID, nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -355,6 +356,123 @@ func TestCaseNoteAuthorFromPrincipal(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&note)
 	if !strings.HasPrefix(note.Author, "apikey:") {
 		t.Errorf("author = %q, want prefix 'apikey:'", note.Author)
+	}
+}
+
+// closeCase moves a freshly created case (status "new") straight to
+// "closed" so reopen tests have a valid starting point (new -> investigating
+// -> closed, since new cannot close directly per the transition diagram).
+func closeCase(t *testing.T, s *Server, caseID string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseID, strings.NewReader(`{"status":"investigating"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move to investigating failed: %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseID, strings.NewReader(`{"status":"closed"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("close failed: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleUpdateCase_ReopenRequiresReason(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Reopen test case"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	closeCase(t, s, created.ID)
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"reopened"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"reopened","reason":"New evidence surfaced"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var reopened domain.Case
+	json.NewDecoder(rec.Body).Decode(&reopened)
+	if reopened.Status != domain.CaseStatusReopened {
+		t.Errorf("status = %q, want %q", reopened.Status, domain.CaseStatusReopened)
+	}
+	if reopened.ReopenReason != "New evidence surfaced" {
+		t.Errorf("reopen_reason = %q, want %q", reopened.ReopenReason, "New evidence surfaced")
+	}
+}
+
+func TestHandleUpdateCase_ReopenRequiresAnalystOrAbove(t *testing.T) {
+	s := testServerWithAuth()
+	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	viewerKey := createAPIKeyAs(t, s, adminKey, "viewer", domain.RoleViewer)
+
+	custBody := `{"external_id":"CASE_REOPEN_PERM","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(custBody))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var cust domain.Customer
+	json.NewDecoder(rec.Body).Decode(&cust)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Reopen perm test"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	for _, status := range []string{"investigating", "closed"} {
+		req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"`+status+`"}`))
+		req.Header.Set("Authorization", "Bearer "+adminKey)
+		rec = httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("move to %s failed: %d %s", status, rec.Code, rec.Body.String())
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"reopened","reason":"test"}`))
+	req.Header.Set("Authorization", "Bearer "+viewerKey)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body: %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestHandleUpdateCase_InvalidTransitionReturns400(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Invalid transition test"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	// "new" cannot jump directly to "closed" per the transition diagram.
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"closed"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 

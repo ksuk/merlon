@@ -563,9 +563,9 @@ func NewPgCaseRepo(pool *pgxpool.Pool) *PgCaseRepo {
 func (r *PgCaseRepo) Get(ctx context.Context, id string) (*domain.Case, error) {
 	var c domain.Case
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE id = $1`, id,
-	).Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt)
+	).Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.ReopenReason, &c.RelatedCaseIDs, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &domain.ErrNotFound{Entity: "case", ID: id}
@@ -583,18 +583,18 @@ func (r *PgCaseRepo) Get(ctx context.Context, id string) (*domain.Case, error) {
 
 func (r *PgCaseRepo) ListByCustomer(ctx context.Context, customerID string) ([]domain.Case, error) {
 	return r.listCases(ctx,
-		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE customer_id = $1 ORDER BY created_at DESC`, customerID)
 }
 
 func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Case, error) {
 	return r.listCases(ctx,
-		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE status != 'closed' ORDER BY priority DESC, created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
 }
 
 func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
-	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at, closed_at
+	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE status != 'closed'`
 
 	if after == nil {
@@ -614,7 +614,7 @@ func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) (
 	var cases []domain.Case
 	for rows.Next() {
 		var c domain.Case
-		if err := rows.Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.CustomerID, &c.AlertIDs, &c.Status, &c.Priority, &c.AssignedTo, &c.Summary, &c.ReopenReason, &c.RelatedCaseIDs, &c.CreatedAt, &c.UpdatedAt, &c.ClosedAt); err != nil {
 			return nil, err
 		}
 		cases = append(cases, c)
@@ -624,17 +624,17 @@ func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) (
 
 func (r *PgCaseRepo) Create(ctx context.Context, c *domain.Case) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, summary, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		c.ID, c.CustomerID, c.AlertIDs, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.CreatedAt, c.UpdatedAt)
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		c.ID, c.CustomerID, c.AlertIDs, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, c.CreatedAt, c.UpdatedAt)
 	return err
 }
 
 func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, updated_at=$6, closed_at=$7 WHERE id=$1`,
-		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.UpdatedAt, c.ClosedAt)
+		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9 WHERE id=$1`,
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, c.UpdatedAt, c.ClosedAt)
 	if err != nil {
 		return err
 	}

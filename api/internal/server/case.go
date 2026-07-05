@@ -7,17 +7,21 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/metrics"
 )
 
 // openCaseStatuses are the sub-statuses merlon_cases_open (OPS-003,
-// overview.md §4.4) tracks. "closed" is deliberately absent: a closed case
-// is not an open case, so it is only ever decremented from, never counted.
+// overview.md §4.4) tracks. "closed" and "str_filed" are deliberately absent:
+// neither is an open case, so they are only ever decremented from, never
+// counted.
 var openCaseStatuses = map[domain.CaseStatus]bool{
 	domain.CaseStatusOpen:          true,
+	domain.CaseStatusNew:           true,
 	domain.CaseStatusInvestigating: true,
 	domain.CaseStatusEscalated:     true,
+	domain.CaseStatusReopened:      true,
 }
 
 // adjustCasesOpenGauge updates merlon_cases_open for a case status
@@ -44,6 +48,9 @@ type updateCaseRequest struct {
 	Status     domain.CaseStatus `json:"status,omitempty"`
 	AssignedTo string            `json:"assigned_to,omitempty"`
 	Summary    string            `json:"summary,omitempty"`
+	// Reason is required when Status is CaseStatusReopened (case-management.md
+	// "再オープン時は理由（テキスト、必須）を記録する").
+	Reason string `json:"reason,omitempty"`
 }
 
 type addNoteRequest struct {
@@ -93,7 +100,7 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		ID:         generateID(),
 		CustomerID: req.CustomerID,
 		AlertIDs:   req.AlertIDs,
-		Status:     domain.CaseStatusOpen,
+		Status:     domain.CaseStatusNew,
 		Priority:   priority,
 		AssignedTo: req.AssignedTo,
 		Summary:    req.Summary,
@@ -231,6 +238,29 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 
 	oldStatus := c.Status
 	if req.Status != "" {
+		if !domain.ValidCaseStatusTransition(oldStatus, req.Status) {
+			writeError(w, http.StatusBadRequest, "invalid case status transition")
+			return
+		}
+
+		if req.Status == domain.CaseStatusReopened {
+			if req.Reason == "" {
+				writeError(w, http.StatusBadRequest, "reason is required to reopen a case")
+				return
+			}
+			// Reopen requires Analyst or above (case-management.md "再オープン
+			// 権限は Analyst 以上"). WS-1's auth package is available, but this
+			// endpoint serves every status transition, not just reopen, so we
+			// gate inline rather than via auth.RequirePermission at the route
+			// level; a missing role (auth not configured, e.g. dev mode) is
+			// treated as unrestricted.
+			if role, ok := auth.RoleFromContext(r.Context()); ok && role == domain.RoleViewer {
+				writeError(w, http.StatusForbidden, "reopen requires analyst role or above")
+				return
+			}
+			c.ReopenReason = req.Reason
+		}
+
 		c.Status = req.Status
 		if req.Status == domain.CaseStatusClosed {
 			now := time.Now()
