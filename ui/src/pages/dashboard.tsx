@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
-import { AlertTriangle, ArrowLeftRight, FolderOpen, Users } from "lucide-react"
+import { AlertTriangle, ArrowLeftRight, FolderOpen, ShieldCheck, Users } from "lucide-react"
 import {
   Bar,
   BarChart,
@@ -53,8 +53,21 @@ const STATUS_LABELS: Record<string, string> = {
   closed_false_positive: "完了(偽陽性)",
 }
 
+// WHITELIST_EXPIRING_SOON_DAYS mirrors the daily expiry job's notification
+// window (api/internal/batch/whitelist_expiry.go, WL-006); it is not
+// currently sourced from the API, so keep the two in sync manually if either
+// changes.
+const WHITELIST_EXPIRING_SOON_DAYS = 30
+
 export function DashboardPage() {
   const { data: stats, loading, error } = useApi(api.dashboard)
+  const { data: activeWhitelist } = useApi(() => api.whitelist.list("active"))
+
+  const expiringSoonCount = (() => {
+    if (!activeWhitelist || !Array.isArray(activeWhitelist.data)) return 0
+    const threshold = Date.now() + WHITELIST_EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000
+    return activeWhitelist.data.filter((e) => new Date(e.valid_until).getTime() < threshold).length
+  })()
 
   if (loading) {
     return <DashboardSkeleton />
@@ -99,6 +112,12 @@ export function DashboardPage() {
           title="直近の取引"
           value={stats.recent_transactions}
           icon={ArrowLeftRight}
+        />
+        <StatCard
+          title="ホワイトリスト期限切れ間近"
+          value={expiringSoonCount}
+          icon={ShieldCheck}
+          description={`${WHITELIST_EXPIRING_SOON_DAYS}日以内`}
         />
       </div>
 

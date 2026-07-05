@@ -63,6 +63,21 @@ func TestLoadBootstrapToken(t *testing.T) {
 	}
 }
 
+func TestLoadWhitelistMaxValidDaysDefault(t *testing.T) {
+	cfg := Load()
+	if cfg.WhitelistMaxValidDays != 365 {
+		t.Errorf("WhitelistMaxValidDays = %d, want 365", cfg.WhitelistMaxValidDays)
+	}
+}
+
+func TestLoadWhitelistMaxValidDaysFromEnv(t *testing.T) {
+	t.Setenv("MERLON_WHITELIST_MAX_VALID_DAYS", "180")
+	cfg := Load()
+	if cfg.WhitelistMaxValidDays != 180 {
+		t.Errorf("WhitelistMaxValidDays = %d, want 180", cfg.WhitelistMaxValidDays)
+	}
+}
+
 func TestValidateProductionWithoutAuth(t *testing.T) {
 	cfg := &Config{Env: "production", AuthEnabled: false}
 	if err := cfg.Validate(); err == nil {

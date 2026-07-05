@@ -106,6 +106,40 @@ func TestHandleCreateWhitelistEntry_RejectsValidUntilBeyondMaxPeriod(t *testing.
 	}
 }
 
+func TestHandleCreateWhitelistEntry_UsesConfiguredMaxValidPeriod(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:             store.NewMemoryCustomerRepo(),
+		Whitelist:             store.NewMemoryWhitelistRepo(),
+		APIKeys:               store.NewMemoryAPIKeyRepo(),
+		BootstrapToken:        testBootstrapToken,
+		WhitelistMaxValidDays: 30,
+	})
+	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	cust := createWhitelistTestCustomer(t, s, adminKey)
+
+	// 60 days exceeds the configured 30-day max, even though it is well
+	// within the 365-day hardcoded default.
+	tooFar := time.Now().Add(60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	body := `{"customer_id":"` + cust.ID + `","reason":"trusted customer","valid_until":"` + tooFar + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+
+	withinConfigured := time.Now().Add(20 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	body2 := `{"customer_id":"` + cust.ID + `","reason":"trusted customer","valid_until":"` + withinConfigured + `"}`
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/whitelist", strings.NewReader(body2))
+	req2.Header.Set("Authorization", "Bearer "+adminKey)
+	rec2 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec2.Code, http.StatusCreated, rec2.Body.String())
+	}
+}
+
 func TestHandleCreateWhitelistEntry_RejectsPastValidUntil(t *testing.T) {
 	s := testServerWithWhitelist()
 	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)

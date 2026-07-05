@@ -111,6 +111,7 @@ func main() {
 	}
 
 	deps.RateLimit = cfg.RateLimit
+	deps.WhitelistMaxValidDays = cfg.WhitelistMaxValidDays
 	if cfg.RateLimit > 0 {
 		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}

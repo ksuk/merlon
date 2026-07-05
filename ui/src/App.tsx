@@ -19,6 +19,7 @@ const WebhooksPage = lazy(() => import("@/pages/webhooks").then((m) => ({ defaul
 const APIKeysPage = lazy(() => import("@/pages/apikeys").then((m) => ({ default: m.APIKeysPage })))
 const ConfigPage = lazy(() => import("@/pages/config").then((m) => ({ default: m.ConfigPage })))
 const RulesPage = lazy(() => import("@/pages/rules").then((m) => ({ default: m.RulesPage })))
+const WhitelistPage = lazy(() => import("@/pages/whitelist").then((m) => ({ default: m.WhitelistPage })))
 const AuditPage = lazy(() => import("@/pages/audit").then((m) => ({ default: m.AuditPage })))
 const SystemPage = lazy(() => import("@/pages/system").then((m) => ({ default: m.SystemPage })))
 const UsersPage = lazy(() => import("@/pages/users").then((m) => ({ default: m.UsersPage })))
@@ -51,6 +52,7 @@ function App() {
               <Route path="users" element={<UsersPage />} />
               <Route path="config" element={<ConfigPage />} />
               <Route path="rules" element={<RulesPage />} />
+              <Route path="whitelist" element={<WhitelistPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="system" element={<SystemPage />} />
               <Route path="*" element={<NotFoundPage />} />

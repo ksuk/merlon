@@ -11,11 +11,21 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
-// defaultWhitelistMaxValidDays is the default maximum validity period (WL-002,
-// whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）").
-// TODO(WS-6 Task 6): make this configurable via system settings; for now it is
-// the fixed default.
+// defaultWhitelistMaxValidDays is the fallback maximum validity period
+// (WL-002, whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）")
+// used when Deps.WhitelistMaxValidDays is unset. TODO(WS-2): once the rule
+// management API supports system-level settings, source this from there
+// instead of the MERLON_WHITELIST_MAX_VALID_DAYS env var (config.go).
 const defaultWhitelistMaxValidDays = 365
+
+// whitelistMaxValidDays resolves the configured maximum validity period,
+// falling back to defaultWhitelistMaxValidDays when unset.
+func (s *Server) whitelistMaxValidDays() int {
+	if s.whitelistMaxValidDaysCfg > 0 {
+		return s.whitelistMaxValidDaysCfg
+	}
+	return defaultWhitelistMaxValidDays
+}
 
 type createWhitelistEntryRequest struct {
 	CustomerID      string   `json:"customer_id"`
@@ -65,9 +75,10 @@ func (s *Server) handleCreateWhitelistEntry(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "valid_until must be in the future")
 		return
 	}
-	maxValidUntil := now.Add(defaultWhitelistMaxValidDays * 24 * time.Hour)
+	maxValidDays := s.whitelistMaxValidDays()
+	maxValidUntil := now.Add(time.Duration(maxValidDays) * 24 * time.Hour)
 	if validUntil.After(maxValidUntil) {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("valid_until must be within %d days", defaultWhitelistMaxValidDays))
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("valid_until must be within %d days", maxValidDays))
 		return
 	}
 
@@ -298,8 +309,9 @@ func (s *Server) handleCreateWhitelistReview(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusBadRequest, "new_valid_until must be in the future")
 			return
 		}
-		if newValidUntil.After(now.Add(defaultWhitelistMaxValidDays * 24 * time.Hour)) {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("new_valid_until must be within %d days", defaultWhitelistMaxValidDays))
+		maxValidDays := s.whitelistMaxValidDays()
+		if newValidUntil.After(now.Add(time.Duration(maxValidDays) * 24 * time.Hour)) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("new_valid_until must be within %d days", maxValidDays))
 			return
 		}
 		if req.NextReviewDate != "" {
