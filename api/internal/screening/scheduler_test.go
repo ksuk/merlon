@@ -343,3 +343,25 @@ func TestRunRescreeningBatch_ListUpdateDuringBatchQueuesNotRestarts(t *testing.T
 		t.Errorf("total batch runs = %d, want exactly 2 (initial + one collapsed queued run)", got)
 	}
 }
+
+func TestScheduler_RunPeriodicStopsOnContextCancellation(t *testing.T) {
+	runFn := func(_ context.Context, _ SchedulerDeps, _ TriggerType) (BatchResult, error) {
+		return BatchResult{}, nil
+	}
+	sched := newTestScheduler(runFn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		sched.RunPeriodic(ctx, time.Millisecond)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunPeriodic did not return after context cancellation")
+	}
+}

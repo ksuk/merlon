@@ -138,6 +138,31 @@ func importOne(ctx context.Context, listID string, adapter ListAdapter, store Li
 	}
 }
 
+// RunImportJobPeriodically runs RunImportJob immediately, then again every
+// interval, until ctx is cancelled. screening.md's default fetch schedule
+// is daily at 03:00 JST; a precise time-of-day cron trigger is left as a
+// future enhancement, so this exposes a tunable interval instead (wired
+// from MERLON_SCREENING_IMPORT_INTERVAL in main.go).
+func RunImportJobPeriodically(ctx context.Context, interval time.Duration, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker) {
+	runOnce := func() {
+		if _, err := RunImportJob(ctx, adapters, store, failureTracker); err != nil {
+			slog.Error("screening list import job failed", "error", err)
+		}
+	}
+	runOnce()
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runOnce()
+		}
+	}
+}
+
 // MemoryListStore is the dev/test-only ListStore, mirroring the store
 // package's Memory*Repo naming convention.
 type MemoryListStore struct {

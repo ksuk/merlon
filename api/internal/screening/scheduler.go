@@ -339,3 +339,42 @@ func (s *Scheduler) runLoop(ctx context.Context, trigger TriggerType) {
 		s.mu.Unlock()
 	}
 }
+
+// RunPeriodic triggers the tier-appropriate scheduled rescreening batch
+// (High=daily/Medium=weekly/Low=monthly, screening.md §CDDティア連動の再照合
+// 頻度) by polling every checkInterval for a UTC day/week/month boundary
+// crossing, until ctx is cancelled. Because Trigger already serializes
+// execution, a batch still running when a boundary is crossed is not
+// interrupted; the new trigger simply queues behind it
+// (screening.md バッチ実行中の排他制御).
+func (s *Scheduler) RunPeriodic(ctx context.Context, checkInterval time.Duration) {
+	now := time.Now().UTC()
+	lastDay := now.YearDay()
+	lastYear := now.Year()
+	lastWeekYear, lastWeek := now.ISOWeek()
+	lastMonth := now.Month()
+
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now().UTC()
+			if now.YearDay() != lastDay || now.Year() != lastYear {
+				lastDay = now.YearDay()
+				s.Trigger(ctx, TriggerScheduledDaily)
+			}
+			if y, w := now.ISOWeek(); y != lastWeekYear || w != lastWeek {
+				lastWeekYear, lastWeek = y, w
+				s.Trigger(ctx, TriggerScheduledWeekly)
+			}
+			if now.Month() != lastMonth || now.Year() != lastYear {
+				lastMonth = now.Month()
+				s.Trigger(ctx, TriggerScheduledMonthly)
+			}
+			lastYear = now.Year()
+		}
+	}
+}

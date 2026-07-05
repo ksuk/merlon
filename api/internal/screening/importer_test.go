@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // fakeAdapter is a test ListAdapter that either returns fixed data or a
@@ -193,5 +194,30 @@ func TestRunImportJob_PEPNotConfiguredIsSkippedNotFailed(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("ConsecutiveFailures = %d, want 0 for a skip", n)
+	}
+}
+
+func TestRunImportJobPeriodically_RunsImmediatelyAndStopsOnCancel(t *testing.T) {
+	store := NewMemoryListStore()
+	tracker := NewMemoryFailureTracker()
+	adapters := map[string]ListAdapter{"ofac_sdn": &fakeAdapter{data: rawList("ofac_sdn", "X-1")}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		RunImportJobPeriodically(ctx, time.Millisecond, adapters, store, tracker)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunImportJobPeriodically did not return after context cancellation")
+	}
+
+	if _, err := store.GetList(context.Background(), "ofac_sdn"); err != nil {
+		t.Errorf("expected list to be imported at least once immediately, GetList error: %v", err)
 	}
 }
