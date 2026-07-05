@@ -42,6 +42,55 @@ test("renders stat cards after data loads", async () => {
   expect(screen.getByText("42")).toBeDefined()
 })
 
+test("shows screening list freshness card when data is present", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        customers_by_risk_tier: {},
+        total_customers: 0,
+        alerts_by_status: {},
+        alerts_by_severity: {},
+        total_alerts: 0,
+        cases_by_status: {},
+        total_cases: 0,
+        recent_transactions: 0,
+        screening_list_freshness: [
+          { list_id: "ofac_sdn", list_type: "sanctions", stale_days: 0, needs_operational_alert: false },
+          { list_id: "pep_provider", list_type: "pep", stale_days: 5, needs_operational_alert: true },
+        ],
+      }),
+    ),
+  )
+
+  renderWithRouter(<DashboardPage />)
+
+  expect(await screen.findByText("ofac_sdn")).toBeDefined()
+  expect(screen.getByText("pep_provider")).toBeDefined()
+  expect(screen.getByText("5日経過")).toBeDefined()
+})
+
+test("hides screening list freshness card when no data is present", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        customers_by_risk_tier: {},
+        total_customers: 0,
+        alerts_by_status: {},
+        alerts_by_severity: {},
+        total_alerts: 0,
+        cases_by_status: {},
+        total_cases: 0,
+        recent_transactions: 0,
+      }),
+    ),
+  )
+
+  renderWithRouter(<DashboardPage />)
+
+  await screen.findByText("ダッシュボード")
+  expect(screen.queryByText("制裁・PEPリストの鮮度")).toBeNull()
+})
+
 test("shows error message on fetch failure", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network error"))
 

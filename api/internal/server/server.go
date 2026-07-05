@@ -8,6 +8,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/merlon-aml/merlon/api/internal/screening"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -45,7 +46,16 @@ type Server struct {
 	rules                    domain.RuleRepository
 	whitelist                domain.WhitelistRepository
 	whitelistMaxValidDaysCfg int
-	db                       DBPinger
+	screeningResults         domain.ScreeningResultRepository
+
+	// screeningListStore/screeningFailureTracker/screeningListIDs back the
+	// dashboard's list-freshness display (screening.md; Task 4). Nil until
+	// Task 6 wires the import job's concrete instances into main.go.
+	screeningListStore      screening.ListStore
+	screeningFailureTracker screening.FailureTracker
+	screeningListIDs        []string
+
+	db DBPinger
 }
 
 type Deps struct {
@@ -73,7 +83,13 @@ type Deps struct {
 	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
 	// when positive; zero/negative falls back to the default.
 	WhitelistMaxValidDays int
-	DB                    DBPinger
+	ScreeningResults      domain.ScreeningResultRepository
+
+	ScreeningListStore      screening.ListStore
+	ScreeningFailureTracker screening.FailureTracker
+	ScreeningListIDs        []string
+
+	DB DBPinger
 }
 
 func New(addr string, deps Deps) *Server {
@@ -101,7 +117,13 @@ func New(addr string, deps Deps) *Server {
 		rules:                    deps.Rules,
 		whitelist:                deps.Whitelist,
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
-		db:                       deps.DB,
+		screeningResults:         deps.ScreeningResults,
+
+		screeningListStore:      deps.ScreeningListStore,
+		screeningFailureTracker: deps.ScreeningFailureTracker,
+		screeningListIDs:        deps.ScreeningListIDs,
+
+		db: deps.DB,
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -127,6 +149,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
 	s.mux.HandleFunc("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
 	s.mux.HandleFunc("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
+
+	// Screening (WS-7)
+	s.mux.HandleFunc("POST /api/v1/screening/check", s.handleScreeningCheck)
+	s.mux.HandleFunc("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
 
 	// Transactions
 	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)

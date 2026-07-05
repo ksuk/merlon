@@ -164,8 +164,8 @@ func (r *MemoryCustomerRepo) ListScoreHistory(_ context.Context, customerID stri
 }
 
 type MemoryTransactionRepo struct {
-	mu   sync.RWMutex
-	data map[string]*domain.Transaction
+	mu         sync.RWMutex
+	data       map[string]*domain.Transaction
 	byCustomer map[string][]string
 }
 
@@ -223,8 +223,8 @@ func (r *MemoryTransactionRepo) Create(_ context.Context, t *domain.Transaction)
 }
 
 type MemoryAlertRepo struct {
-	mu   sync.RWMutex
-	data map[string]*domain.Alert
+	mu         sync.RWMutex
+	data       map[string]*domain.Alert
 	byCustomer map[string][]string
 }
 
@@ -732,4 +732,97 @@ func deactivateAll(versions []*domain.RuleDefinition) {
 	for _, v := range versions {
 		v.IsActive = false
 	}
+}
+
+// MemoryScreeningResultRepo is the dev/test-only ScreeningResultRepository
+// (screening.md §スクリーニングヒット後の調査ワークフロー).
+type MemoryScreeningResultRepo struct {
+	mu   sync.RWMutex
+	data map[string]*domain.ScreeningResultRecord
+}
+
+func NewMemoryScreeningResultRepo() *MemoryScreeningResultRepo {
+	return &MemoryScreeningResultRepo{data: make(map[string]*domain.ScreeningResultRecord)}
+}
+
+func (r *MemoryScreeningResultRepo) Get(_ context.Context, id string) (*domain.ScreeningResultRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	sr, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "screening_result", ID: id}
+	}
+	cp := *sr
+	return &cp, nil
+}
+
+func (r *MemoryScreeningResultRepo) Create(_ context.Context, sr *domain.ScreeningResultRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cp := *sr
+	r.data[sr.ID] = &cp
+	return nil
+}
+
+func (r *MemoryScreeningResultRepo) Update(_ context.Context, sr *domain.ScreeningResultRecord) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.data[sr.ID]; !ok {
+		return &domain.ErrNotFound{Entity: "screening_result", ID: sr.ID}
+	}
+	cp := *sr
+	r.data[sr.ID] = &cp
+	return nil
+}
+
+func (r *MemoryScreeningResultRepo) ListByCustomer(_ context.Context, customerID string, limit, offset int) ([]domain.ScreeningResultRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.ScreeningResultRecord
+	for _, sr := range r.data {
+		if sr.CustomerID == customerID {
+			all = append(all, *sr)
+		}
+	}
+	sortByCreatedAtDesc(all,
+		func(sr domain.ScreeningResultRecord) time.Time { return sr.CreatedAt },
+		func(sr domain.ScreeningResultRecord) string { return sr.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryScreeningResultRepo) ListByStatus(_ context.Context, status domain.ScreeningResultStatus, limit, offset int) ([]domain.ScreeningResultRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.ScreeningResultRecord
+	for _, sr := range r.data {
+		if sr.Status == status {
+			all = append(all, *sr)
+		}
+	}
+	sortByCreatedAtDesc(all,
+		func(sr domain.ScreeningResultRecord) time.Time { return sr.CreatedAt },
+		func(sr domain.ScreeningResultRecord) string { return sr.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
+// ListPastFalsePositives lets a reviewer see prior False Positive
+// determinations against the same list entry (screening.md "同一リストエントリへの
+// 再ヒット時に過去の False Positive 判定を参照可能とする"), regardless of which
+// customer triggered the earlier hit.
+func (r *MemoryScreeningResultRepo) ListPastFalsePositives(_ context.Context, entryID string) ([]domain.ScreeningResultRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.ScreeningResultRecord
+	for _, sr := range r.data {
+		if sr.EntryID == entryID && sr.Status == domain.ScreeningResultStatusFalsePositive {
+			all = append(all, *sr)
+		}
+	}
+	sortByCreatedAtDesc(all,
+		func(sr domain.ScreeningResultRecord) time.Time { return sr.CreatedAt },
+		func(sr domain.ScreeningResultRecord) string { return sr.ID },
+	)
+	return all, nil
 }

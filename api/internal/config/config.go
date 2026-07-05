@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -30,6 +31,20 @@ type Config struct {
 	// TODO(WS-2): move to the rule management API once it supports
 	// system-level settings, rather than an env var.
 	WhitelistMaxValidDays int
+
+	// Screening (WS-7): sanctions/PEP list auto-import and CDD-tier-driven
+	// rescreening job startup, all disabled by default so a fresh
+	// deployment never attempts external endpoint access or background
+	// batches without explicit operator configuration (screening.md).
+	ScreeningImportEnabled   bool
+	ScreeningRescreenEnabled bool
+	ScreeningImportInterval  time.Duration
+	ScreeningCheckInterval   time.Duration
+	ScreeningOFACURL         string
+	ScreeningEUURL           string
+	ScreeningUNURL           string
+	ScreeningMOFURL          string
+	ScreeningPEPURL          string
 }
 
 func (c *Config) Validate() error {
@@ -60,7 +75,26 @@ func Load() *Config {
 		EngineTLSCert:         getEnv("MERLON_ENGINE_TLS_CERT", ""),
 		EngineTLSServerName:   getEnv("MERLON_ENGINE_TLS_SERVER_NAME", ""),
 		WhitelistMaxValidDays: getEnvInt("MERLON_WHITELIST_MAX_VALID_DAYS", 365),
+
+		ScreeningImportEnabled:   getEnv("MERLON_SCREENING_IMPORT_ENABLED", "") == "true",
+		ScreeningRescreenEnabled: getEnv("MERLON_SCREENING_RESCREEN_ENABLED", "") == "true",
+		ScreeningImportInterval:  getEnvDuration("MERLON_SCREENING_IMPORT_INTERVAL", 24*time.Hour),
+		ScreeningCheckInterval:   getEnvDuration("MERLON_SCREENING_CHECK_INTERVAL", time.Hour),
+		ScreeningOFACURL:         getEnv("MERLON_SCREENING_OFAC_URL", ""),
+		ScreeningEUURL:           getEnv("MERLON_SCREENING_EU_URL", ""),
+		ScreeningUNURL:           getEnv("MERLON_SCREENING_UN_URL", ""),
+		ScreeningMOFURL:          getEnv("MERLON_SCREENING_MOF_URL", ""),
+		ScreeningPEPURL:          getEnv("MERLON_SCREENING_PEP_URL", ""),
 	}
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return fallback
 }
 
 func getEnvInt(key string, fallback int) int {

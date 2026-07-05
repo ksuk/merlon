@@ -26,6 +26,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+export interface ScreeningListFreshnessStat {
+  list_id: string
+  list_type: string
+  stale_days: number
+  needs_operational_alert: boolean
+}
+
 export interface DashboardStats {
   customers_by_risk_tier: Record<string, number>
   total_customers: number
@@ -35,6 +42,7 @@ export interface DashboardStats {
   cases_by_status: Record<string, number>
   total_cases: number
   recent_transactions: number
+  screening_list_freshness?: ScreeningListFreshnessStat[]
 }
 
 export type RiskTier = "low" | "medium" | "high"

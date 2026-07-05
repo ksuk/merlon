@@ -17,6 +17,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/logging"
+	"github.com/merlon-aml/merlon/api/internal/screening"
 	"github.com/merlon-aml/merlon/api/internal/seed"
 	"github.com/merlon-aml/merlon/api/internal/server"
 	"github.com/merlon-aml/merlon/api/internal/store"
@@ -27,6 +28,10 @@ import (
 // job itself (batch.RunWhitelistExpiryJob) is idempotent, so an hourly
 // cadence is safe regardless of exact expiry timing.
 const whitelistExpiryCheckInterval = time.Hour
+
+// screeningListIDs are the WS-7 sanctions/PEP lists this deployment
+// imports and screens against (screening.md §リスト自動取り込み table).
+var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
 
 func main() {
 	slog.SetDefault(logging.NewLogger(os.Stdout))
@@ -61,6 +66,7 @@ func main() {
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
+		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.DB = pool
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
@@ -71,6 +77,7 @@ func main() {
 		deps.Cases = store.NewMemoryCaseRepo()
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
+		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
@@ -156,6 +163,44 @@ func main() {
 				slog.Info("whitelist entry expiring soon", "id", e.ID, "customer_id", e.CustomerID, "valid_until", e.ValidUntil)
 			}
 		})
+	}
+
+	if cfg.ScreeningImportEnabled || cfg.ScreeningRescreenEnabled {
+		// Persistent (Postgres-backed) list storage is a future enhancement
+		// (WS-7 Task 2 design note); the in-process store is sufficient for
+		// the import job's own fail-alert continuity within one running
+		// process.
+		listStore := screening.NewMemoryListStore()
+		failureTracker := screening.NewMemoryFailureTracker()
+		deps.ScreeningListStore = listStore
+		deps.ScreeningFailureTracker = failureTracker
+		deps.ScreeningListIDs = screeningListIDs
+
+		if cfg.ScreeningImportEnabled {
+			fetcher := screening.NewDefaultHTTPFetcher(30 * time.Second)
+			adapters := map[string]screening.ListAdapter{
+				"ofac_sdn":     &screening.OFACAdapter{ListID: "ofac_sdn", URL: cfg.ScreeningOFACURL, Fetcher: fetcher},
+				"eu_sanctions": &screening.EUAdapter{ListID: "eu_sanctions", URL: cfg.ScreeningEUURL, Fetcher: fetcher},
+				"un_sc":        &screening.UNAdapter{ListID: "un_sc", URL: cfg.ScreeningUNURL, Fetcher: fetcher},
+				"mof_japan":    &screening.MOFAdapter{ListID: "mof_japan", URL: cfg.ScreeningMOFURL, Fetcher: fetcher},
+				"pep_provider": &screening.PEPAdapter{ListID: "pep_provider", URL: cfg.ScreeningPEPURL, Fetcher: fetcher},
+			}
+			go screening.RunImportJobPeriodically(jobsCtx, cfg.ScreeningImportInterval, adapters, listStore, failureTracker)
+			slog.Info("screening list import job enabled", "interval", cfg.ScreeningImportInterval)
+		}
+
+		if cfg.ScreeningRescreenEnabled && deps.Screening != nil {
+			scheduler := screening.NewScheduler(screening.SchedulerDeps{
+				Customers: deps.Customers,
+				Screening: deps.Screening,
+				Results:   deps.ScreeningResults,
+				ListIDs:   screeningListIDs,
+			})
+			go scheduler.RunPeriodic(jobsCtx, cfg.ScreeningCheckInterval)
+			slog.Info("screening rescreening scheduler enabled", "check_interval", cfg.ScreeningCheckInterval)
+		} else if cfg.ScreeningRescreenEnabled {
+			slog.Warn("MERLON_SCREENING_RESCREEN_ENABLED=true but no engine configured (MERLON_ENGINE_ADDR), rescreening scheduler disabled")
+		}
 	}
 
 	srv := server.New(cfg.HTTPAddr, deps)
