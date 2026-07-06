@@ -92,7 +92,7 @@ func Anonymize(ctx context.Context, customers domain.CustomerRepository, transac
 	}
 
 	if customer.Attributes == nil {
-		customer.Attributes = map[string]string{}
+		customer.Attributes = map[string]any{}
 	}
 	for key := range customer.Attributes {
 		if directPIIAttributeKeys[key] {

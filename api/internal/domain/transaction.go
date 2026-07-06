@@ -20,6 +20,54 @@ type Transaction struct {
 	CounterpartyID      string               `json:"counterparty_id,omitempty"`
 	CounterpartyCountry string               `json:"counterparty_country,omitempty"`
 	Channel             string               `json:"channel,omitempty"`
-	ExecutedAt          time.Time            `json:"executed_at"`
-	CreatedAt           time.Time            `json:"created_at"`
+	// AccountID optionally links this transaction to a joint account
+	// (data-model.md §1.1.3, WS-11 Task 4). Nil preserves the pre-existing
+	// single-customer-account model.
+	AccountID *string `json:"account_id,omitempty"`
+	// Counterparty holds travel-rule (originator/beneficiary) data for
+	// virtual-asset transfers (data-model.md §1.3.1, WS-11 Task 5). Nil for
+	// transactions with no travel-rule counterparty (e.g. domestic fiat).
+	Counterparty *Counterparty `json:"counterparty,omitempty"`
+	// Metadata carries optional out-of-band enrichment such as
+	// chain_analysis_result from an external vendor (data-model.md §1.3.1 —
+	// wallet sanctions screening itself is out of this system's scope; this
+	// field is only a receptacle for the vendor's result).
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	ExecutedAt time.Time      `json:"executed_at"`
+	CreatedAt  time.Time      `json:"created_at"`
+}
+
+// CounterpartyType classifies the counterparty side of a virtual-asset
+// transfer (data-model.md §1.3.1).
+type CounterpartyType string
+
+const (
+	CounterpartyTypeVASP           CounterpartyType = "vasp"
+	CounterpartyTypeUnhostedWallet CounterpartyType = "unhosted_wallet"
+	CounterpartyTypeUnknown        CounterpartyType = "unknown"
+)
+
+// TravelRuleStatus records whether travel-rule originator/beneficiary
+// information is complete for a transfer (data-model.md §1.3.1).
+// Incomplete does not block TM evaluation (Fail-Alert: prefer evaluating
+// with partial data over silently dropping the transaction).
+type TravelRuleStatus string
+
+const (
+	TravelRuleComplete      TravelRuleStatus = "complete"
+	TravelRuleIncomplete    TravelRuleStatus = "incomplete"
+	TravelRuleNotApplicable TravelRuleStatus = "not_applicable"
+)
+
+type CounterpartyParty struct {
+	Name          string `json:"name"`
+	AccountNumber string `json:"account_number"`
+	VASPName      string `json:"vasp_name,omitempty"`
+}
+
+type Counterparty struct {
+	CounterpartyType CounterpartyType  `json:"counterparty_type"`
+	Originator       CounterpartyParty `json:"originator"`
+	Beneficiary      CounterpartyParty `json:"beneficiary"`
+	TravelRuleStatus TravelRuleStatus  `json:"travel_rule_status"`
 }

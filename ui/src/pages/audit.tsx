@@ -15,20 +15,20 @@ import { Fragment, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 // ACTION_CATEGORY_VALUES mirror domain.ResourceTypesForCategory's map keys
-// (audit.md §1 操作カテゴリ, ALD-001's action_category filter axis) and are
-// sent verbatim as the API query parameter, so they must stay in Japanese to
-// match the backend contract; only the displayed label is translated below.
-// i18n-ignore
-const ACTION_CATEGORY_VALUES = ["", "認証", "顧客データ", "ルール管理", "アラート・ケース", "STR", "ホワイトリスト", "管理操作"] as const
+// (audit.md §1 operation category, ALD-001's action_category filter axis)
+// and are sent verbatim as the API query parameter, so they must stay in
+// Japanese to match the backend contract; only the displayed label (via
+// ACTION_CATEGORY_LABEL_KEYS + t()) is translated.
+const ACTION_CATEGORY_VALUES = ["", "認証", "顧客データ", "ルール管理", "アラート・ケース", "STR", "ホワイトリスト", "管理操作"] as const // i18n-ignore
 const ACTION_CATEGORY_LABEL_KEYS: Record<string, string> = {
   "": "all",
-  "認証": "auth",
-  "顧客データ": "customerData",
-  "ルール管理": "ruleManagement",
-  "アラート・ケース": "alertCase",
+  "認証": "auth", // i18n-ignore
+  "顧客データ": "customerData", // i18n-ignore
+  "ルール管理": "ruleManagement", // i18n-ignore
+  "アラート・ケース": "alertCase", // i18n-ignore
   STR: "str",
-  "ホワイトリスト": "whitelist",
-  "管理操作": "adminOp",
+  "ホワイトリスト": "whitelist", // i18n-ignore
+  "管理操作": "adminOp", // i18n-ignore
 }
 
 function formatDateTime(iso: string, locale: string) {

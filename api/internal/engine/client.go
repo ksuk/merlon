@@ -122,7 +122,7 @@ func (c *Client) Close() error {
 }
 
 func customerScreeningName(c *domain.Customer) string {
-	if name, ok := c.Attributes["name"]; ok && name != "" {
+	if name, ok := c.Attributes["name"].(string); ok && name != "" {
 		return name
 	}
 	return c.ExternalID
@@ -136,6 +136,16 @@ func customerTypeToProto(ct domain.CustomerType) pb.CustomerType {
 		return pb.CustomerType_CUSTOMER_TYPE_CORPORATE_DOMESTIC
 	case domain.CustomerTypeCorporateForeign:
 		return pb.CustomerType_CUSTOMER_TYPE_CORPORATE_FOREIGN
+	case domain.CustomerTypeTrust:
+		return pb.CustomerType_CUSTOMER_TYPE_TRUST
+	case domain.CustomerTypePartnership:
+		return pb.CustomerType_CUSTOMER_TYPE_PARTNERSHIP
+	case domain.CustomerTypeNPO:
+		return pb.CustomerType_CUSTOMER_TYPE_NPO
+	case domain.CustomerTypeGovernment:
+		return pb.CustomerType_CUSTOMER_TYPE_GOVERNMENT
+	case domain.CustomerTypeForeignLegalArrangement:
+		return pb.CustomerType_CUSTOMER_TYPE_FOREIGN_LEGAL_ARRANGEMENT
 	default:
 		return pb.CustomerType_CUSTOMER_TYPE_UNSPECIFIED
 	}
@@ -322,7 +332,7 @@ func (c *Client) ScreenCustomer(
 ) (_ *domain.ScreenResult, err error) {
 	defer observeGRPCCall("ScreenCustomer", time.Now(), &err)()
 
-	nameKana := customer.Attributes["name_kana"]
+	nameKana, _ := customer.Attributes["name_kana"].(string)
 
 	resp, err := c.screening.ScreenCustomer(ctx, &pb.ScreenCustomerRequest{
 		CustomerId:  customer.ID,

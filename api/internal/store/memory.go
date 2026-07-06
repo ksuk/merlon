@@ -147,6 +147,19 @@ func (r *MemoryCustomerRepo) Update(_ context.Context, c *domain.Customer) error
 	return nil
 }
 
+func (r *MemoryCustomerRepo) UpdateStatus(_ context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "customer", ID: id}
+	}
+	c.Status = status
+	c.UpdatedAt = time.Now()
+	cp := *c
+	return &cp, nil
+}
+
 func (r *MemoryCustomerRepo) ListEDDPending(_ context.Context) ([]domain.Customer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -414,6 +427,38 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 	return nil
 }
 
+// UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
+// check against expectedUpdatedAt (data-model.md §3.9).
+func (r *MemoryAlertRepo) UpdateStatusIfUnmodified(_ context.Context, id string, status domain.AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "alert", ID: id}
+	}
+	if !a.UpdatedAt.Equal(expectedUpdatedAt) {
+		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
+	}
+	a.Status = status
+	a.ResolvedBy = resolvedBy
+	now := time.Now()
+	a.ResolvedAt = &now
+	a.UpdatedAt = now
+	return nil
+}
+
+func (r *MemoryAlertRepo) EscalateSeverity(_ context.Context, id string, severity domain.AlertSeverity) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "alert", ID: id}
+	}
+	a.Severity = severity
+	a.UpdatedAt = time.Now()
+	return nil
+}
+
 // MemoryAuditRepo
 
 type MemoryAuditRepo struct {
@@ -581,6 +626,23 @@ func (r *MemoryCaseRepo) Update(_ context.Context, c *domain.Case) error {
 	defer r.mu.Unlock()
 	if _, ok := r.data[c.ID]; !ok {
 		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	c.UpdatedAt = time.Now()
+	r.data[c.ID] = c
+	return nil
+}
+
+// UpdateIfUnmodified is Update guarded by an optimistic-lock check against
+// expectedUpdatedAt (data-model.md §3.9).
+func (r *MemoryCaseRepo) UpdateIfUnmodified(_ context.Context, c *domain.Case, expectedUpdatedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	existing, ok := r.data[c.ID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	if !existing.UpdatedAt.Equal(expectedUpdatedAt) {
+		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
 	}
 	c.UpdatedAt = time.Now()
 	r.data[c.ID] = c
@@ -1110,4 +1172,85 @@ func (r *MemoryScreeningResultRepo) ListPastFalsePositives(_ context.Context, en
 		func(sr domain.ScreeningResultRecord) string { return sr.ID },
 	)
 	return all, nil
+}
+
+// MemoryAccountRepo (WS-11 Task 4, data-model.md §1.1.3). RepresentativeRiskScore
+// reads customerRepo directly (same package) rather than duplicating
+// risk_score storage, mirroring PgAccountRepo's JOIN against customers.
+type MemoryAccountRepo struct {
+	mu           sync.RWMutex
+	accounts     map[string]*domain.Account
+	customers    map[string][]domain.AccountCustomer // accountID -> links
+	customerRepo *MemoryCustomerRepo
+}
+
+func NewMemoryAccountRepo(customerRepo *MemoryCustomerRepo) *MemoryAccountRepo {
+	return &MemoryAccountRepo{
+		accounts:     make(map[string]*domain.Account),
+		customers:    make(map[string][]domain.AccountCustomer),
+		customerRepo: customerRepo,
+	}
+}
+
+func (r *MemoryAccountRepo) Create(_ context.Context, a *domain.Account) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	a.CreatedAt = now
+	a.UpdatedAt = now
+	cp := *a
+	r.accounts[a.ID] = &cp
+	return nil
+}
+
+func (r *MemoryAccountRepo) Get(_ context.Context, id string) (*domain.Account, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	a, ok := r.accounts[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "account", ID: id}
+	}
+	cp := *a
+	return &cp, nil
+}
+
+func (r *MemoryAccountRepo) AddCustomer(_ context.Context, accountID, customerID string, role domain.AccountRole) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.accounts[accountID]; !ok {
+		return &domain.ErrNotFound{Entity: "account", ID: accountID}
+	}
+	r.customers[accountID] = append(r.customers[accountID], domain.AccountCustomer{
+		AccountID:  accountID,
+		CustomerID: customerID,
+		Role:       role,
+	})
+	return nil
+}
+
+func (r *MemoryAccountRepo) ListCustomers(_ context.Context, accountID string) ([]domain.AccountCustomer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]domain.AccountCustomer, len(r.customers[accountID]))
+	copy(out, r.customers[accountID])
+	return out, nil
+}
+
+func (r *MemoryAccountRepo) RepresentativeRiskScore(ctx context.Context, accountID string) (*float64, error) {
+	r.mu.RLock()
+	links := make([]domain.AccountCustomer, len(r.customers[accountID]))
+	copy(links, r.customers[accountID])
+	r.mu.RUnlock()
+
+	var max *float64
+	for _, link := range links {
+		c, err := r.customerRepo.Get(ctx, link.CustomerID)
+		if err != nil || c.RiskScore == nil {
+			continue
+		}
+		if max == nil || *c.RiskScore > *max {
+			max = c.RiskScore
+		}
+	}
+	return max, nil
 }

@@ -185,6 +185,125 @@ func TestCreateTransactionMissingDirection(t *testing.T) {
 	}
 }
 
+// TestTransactionAccountIDOptional verifies the pre-existing
+// single-customer-account transaction model still works unchanged after
+// WS-11 Task 4 adds an optional account_id (data-model.md §1.1.3).
+func TestTransactionAccountIDOptional(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-NOACCT","amount":1000,"currency":"JPY","direction":"inbound"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var tx domain.Transaction
+	json.NewDecoder(rec.Body).Decode(&tx)
+	if tx.AccountID != nil {
+		t.Errorf("account_id = %v, want nil", *tx.AccountID)
+	}
+}
+
+func TestTransactionWithAccountIDLinksToAccount(t *testing.T) {
+	s, _ := testServerWithAccountsAndTransactions()
+	cust := createTestCustomer(t, s)
+
+	accBody := `{"external_id":"TX-ACC-001","account_type":"joint"}`
+	accReq := httptest.NewRequest(http.MethodPost, "/api/v1/accounts", strings.NewReader(accBody))
+	accRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(accRec, accReq)
+	if accRec.Code != http.StatusCreated {
+		t.Fatalf("create account status = %d, body: %s", accRec.Code, accRec.Body.String())
+	}
+	var acc domain.Account
+	json.NewDecoder(accRec.Body).Decode(&acc)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-WITHACCT","amount":1000,"currency":"JPY","direction":"inbound","account_id":"` + acc.ID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var tx domain.Transaction
+	json.NewDecoder(rec.Body).Decode(&tx)
+	if tx.AccountID == nil || *tx.AccountID != acc.ID {
+		t.Errorf("account_id = %v, want %q", tx.AccountID, acc.ID)
+	}
+}
+
+// TestTransactionIncompleteTravelRuleDoesNotBlockTMEvaluation verifies
+// data-model.md §1.3.1 / Fail-Alert: an incomplete travel-rule record must
+// not block transaction creation. WS-4's PENDING_REVIEW queue integration
+// (routing incomplete-travel-rule transactions there for TM) is a separate
+// concern verified once that queue exists; this test only asserts creation
+// itself succeeds.
+func TestTransactionIncompleteTravelRuleDoesNotBlockTMEvaluation(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-TRAVEL-INCOMPLETE","amount":500000,"currency":"JPY","direction":"outbound",` +
+		`"counterparty":{"counterparty_type":"unhosted_wallet","originator":{"name":"Taro Yamada","account_number":"123"},"beneficiary":{"account_number":"unknown-wallet"},"travel_rule_status":"incomplete"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var tx domain.Transaction
+	json.NewDecoder(rec.Body).Decode(&tx)
+	if tx.Counterparty == nil || tx.Counterparty.TravelRuleStatus != domain.TravelRuleIncomplete {
+		t.Errorf("counterparty.travel_rule_status = %+v, want incomplete", tx.Counterparty)
+	}
+}
+
+func TestTransactionMetadataChainAnalysisResultOptional(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-CHAIN-META","amount":1000,"currency":"JPY","direction":"outbound",` +
+		`"metadata":{"chain_analysis_result":{"vendor":"example-vendor","risk_score":12.5,"flags":["mixer"]}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var tx domain.Transaction
+	json.NewDecoder(rec.Body).Decode(&tx)
+	if tx.Metadata == nil {
+		t.Fatal("expected non-nil metadata")
+	}
+	result, ok := tx.Metadata["chain_analysis_result"].(map[string]any)
+	if !ok {
+		t.Fatalf("chain_analysis_result = %T, want map[string]any", tx.Metadata["chain_analysis_result"])
+	}
+	if result["vendor"] != "example-vendor" {
+		t.Errorf("vendor = %v, want %q", result["vendor"], "example-vendor")
+	}
+}
+
+func TestTransactionRejectsInvalidCounterpartyType(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-BAD-CTYPE","amount":1000,"direction":"outbound",` +
+		`"counterparty":{"counterparty_type":"bogus","originator":{},"beneficiary":{},"travel_rule_status":"complete"}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
 func TestGetTransaction(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)

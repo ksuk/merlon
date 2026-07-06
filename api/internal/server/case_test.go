@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/metrics"
@@ -624,5 +625,72 @@ func TestAddCaseNoteEmptyContent(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+// TestCaseUpdateSucceedsWithCurrentUpdatedAt verifies a PATCH that supplies
+// the case's current updated_at as expected_updated_at succeeds (WS-11 Task
+// 8, data-model.md §3.9 optimistic locking).
+func TestCaseUpdateSucceedsWithCurrentUpdatedAt(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Optimistic lock case"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	updateBody := `{"status":"investigating","expected_updated_at":"` + created.UpdatedAt.Format(time.RFC3339Nano) + `"}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(updateBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var updated domain.Case
+	json.NewDecoder(rec.Body).Decode(&updated)
+	if updated.Status != domain.CaseStatusInvestigating {
+		t.Errorf("status = %q, want %q", updated.Status, domain.CaseStatusInvestigating)
+	}
+}
+
+// TestCaseUpdateConflictReturns409 verifies a PATCH that supplies a stale
+// expected_updated_at (i.e. another update happened after the client last
+// read the case) is rejected with 409 rather than silently overwriting the
+// intervening change (data-model.md §3.9 "後勝ちを許容せず409").
+func TestCaseUpdateConflictReturns409(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","summary":"Optimistic lock conflict case"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	// Ensure the next update's timestamp is distinguishable from created's.
+	time.Sleep(2 * time.Millisecond)
+
+	// An intervening update (no lock requested) bumps updated_at.
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"assigned_to":"analyst02"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("intervening update status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	// A second client submits an update using the now-stale updated_at it
+	// read before the intervening update.
+	staleBody := `{"status":"investigating","expected_updated_at":"` + created.UpdatedAt.Format(time.RFC3339Nano) + `"}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(staleBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 }

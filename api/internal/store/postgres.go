@@ -11,18 +11,23 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/merlon-aml/merlon/api/internal/crypto"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
 type PgCustomerRepo struct {
 	pool *pgxpool.Pool
+	// encryptor transparently encrypts/decrypts customers.attributes' direct
+	// PII fields (data-model.md §3.1, WS-11 Task 7). Nil disables encryption
+	// entirely (encryption not configured), leaving attributes untouched.
+	encryptor *crypto.Encryptor
 }
 
-func NewPgCustomerRepo(pool *pgxpool.Pool) *PgCustomerRepo {
-	return &PgCustomerRepo{pool: pool}
+func NewPgCustomerRepo(pool *pgxpool.Pool, encryptor *crypto.Encryptor) *PgCustomerRepo {
+	return &PgCustomerRepo{pool: pool, encryptor: encryptor}
 }
 
-const customerColumns = `id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, anonymized_at`
+const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, anonymized_at`
 
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
 	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1`, id)
@@ -39,7 +44,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	var riskTier *string
 
 	err := r.pool.QueryRow(ctx, query, arg).Scan(
-		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
+		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode, &c.Status,
 		&products, &attrs,
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
@@ -54,10 +59,11 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	}
 
 	c.ProductTypes = products
-	c.Attributes = make(map[string]string)
+	c.Attributes = make(map[string]any)
 	if len(attrs) > 0 {
 		json.Unmarshal(attrs, &c.Attributes)
 	}
+	decryptDirectPII(r.encryptor, c.Attributes)
 	if riskTier != nil {
 		rt := domain.RiskTier(*riskTier)
 		c.RiskTier = &rt
@@ -67,14 +73,14 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 
 // scanCustomerRows scans a single customers row using customerColumns'
 // column order, shared by List/ListByCursor/ListEDDPending.
-func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
+func scanCustomerRows(rows pgx.Rows, encryptor *crypto.Encryptor) (domain.Customer, error) {
 	var c domain.Customer
 	var attrs []byte
 	var products []string
 	var riskTier *string
 
 	if err := rows.Scan(
-		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode,
+		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode, &c.Status,
 		&products, &attrs,
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
@@ -85,10 +91,11 @@ func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
 	}
 
 	c.ProductTypes = products
-	c.Attributes = make(map[string]string)
+	c.Attributes = make(map[string]any)
 	if len(attrs) > 0 {
 		json.Unmarshal(attrs, &c.Attributes)
 	}
+	decryptDirectPII(encryptor, c.Attributes)
 	if riskTier != nil {
 		rt := domain.RiskTier(*riskTier)
 		c.RiskTier = &rt
@@ -108,7 +115,7 @@ func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.
 
 	var customers []domain.Customer
 	for rows.Next() {
-		c, err := scanCustomerRows(rows)
+		c, err := scanCustomerRows(rows, r.encryptor)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +144,7 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 
 	var customers []domain.Customer
 	for rows.Next() {
-		c, err := scanCustomerRows(rows)
+		c, err := scanCustomerRows(rows, r.encryptor)
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +166,7 @@ func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer,
 
 	var customers []domain.Customer
 	for rows.Next() {
-		c, err := scanCustomerRows(rows)
+		c, err := scanCustomerRows(rows, r.encryptor)
 		if err != nil {
 			return nil, err
 		}
@@ -169,11 +176,19 @@ func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer,
 }
 
 func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
-	attrs, _ := json.Marshal(c.Attributes)
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO customers (id, external_id, customer_type, country_code, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
+	encryptedAttrs, err := encryptDirectPII(r.encryptor, c.Attributes)
+	if err != nil {
+		return err
+	}
+	attrs, _ := json.Marshal(encryptedAttrs)
+	status := c.Status
+	if status == "" {
+		status = domain.CustomerStatusActive
+	}
+	_, err = r.pool.Exec(ctx,
+		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
@@ -183,11 +198,15 @@ func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 }
 
 func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
-	attrs, _ := json.Marshal(c.Attributes)
+	encryptedAttrs, err := encryptDirectPII(r.encryptor, c.Attributes)
+	if err != nil {
+		return err
+	}
+	attrs, _ := json.Marshal(encryptedAttrs)
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, product_types=$5, attributes=$6, risk_score=$7, risk_tier=$8, last_scored_at=$9, updated_at=$10, edd_requested_at=$11, edd_stage1_last_sent_at=$12, edd_stage2_notified_at=$13, edd_stage3_notified_at=$14, anonymized_at=$15 WHERE id=$1`,
-		c.ID, c.ExternalID, c.CustomerType, c.CountryCode,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, anonymized_at=$16 WHERE id=$1`,
+		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
 		c.ProductTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
@@ -201,6 +220,23 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
 	}
 	return nil
+}
+
+// UpdateStatus reflects a customer_status_changed webhook (data-model.md
+// §1.1.2). reason is not persisted on the row; callers attach it to the
+// audit log entry.
+func (r *PgCustomerRepo) UpdateStatus(ctx context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE customers SET status=$2, updated_at=now() WHERE id=$1`,
+		id, status,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, &domain.ErrNotFound{Entity: "customer", ID: id}
+	}
+	return r.Get(ctx, id)
 }
 
 func (r *PgCustomerRepo) SaveScoreRecord(ctx context.Context, rec *domain.ScoreRecord) error {
@@ -263,15 +299,37 @@ func NewPgTransactionRepo(pool *pgxpool.Pool) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transaction, error) {
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, executed_at, created_at"
+
+func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at FROM transactions WHERE id = $1`, id,
-	).Scan(
+	var counterpartyJSON, metadataJSON []byte
+	err := row.Scan(
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
 		&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-		&t.Channel, &t.ExecutedAt, &t.CreatedAt,
+		&t.Channel, &t.AccountID, &counterpartyJSON, &metadataJSON,
+		&t.ExecutedAt, &t.CreatedAt,
 	)
+	if err != nil {
+		return t, err
+	}
+	if len(counterpartyJSON) > 0 {
+		if err := json.Unmarshal(counterpartyJSON, &t.Counterparty); err != nil {
+			return t, err
+		}
+	}
+	if len(metadataJSON) > 0 {
+		if err := json.Unmarshal(metadataJSON, &t.Metadata); err != nil {
+			return t, err
+		}
+	}
+	return t, nil
+}
+
+func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transaction, error) {
+	t, err := scanTransaction(r.pool.QueryRow(ctx,
+		`SELECT `+transactionColumns+` FROM transactions WHERE id = $1`, id,
+	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &domain.ErrNotFound{Entity: "transaction", ID: id}
@@ -283,7 +341,7 @@ func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transac
 
 func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]domain.Transaction, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at
+		`SELECT `+transactionColumns+`
 		FROM transactions WHERE customer_id = $1 ORDER BY executed_at DESC LIMIT $2 OFFSET $3`,
 		customerID, limit, offset,
 	)
@@ -294,12 +352,8 @@ func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID strin
 
 	var txns []domain.Transaction
 	for rows.Next() {
-		var t domain.Transaction
-		if err := rows.Scan(
-			&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
-			&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-			&t.Channel, &t.ExecutedAt, &t.CreatedAt,
-		); err != nil {
+		t, err := scanTransaction(rows)
+		if err != nil {
 			return nil, err
 		}
 		txns = append(txns, t)
@@ -308,7 +362,7 @@ func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID strin
 }
 
 func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Transaction, error) {
-	const baseQuery = `SELECT id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at
+	baseQuery := `SELECT ` + transactionColumns + `
 		FROM transactions WHERE customer_id = $1`
 
 	var (
@@ -328,12 +382,8 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 
 	var txns []domain.Transaction
 	for rows.Next() {
-		var t domain.Transaction
-		if err := rows.Scan(
-			&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
-			&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
-			&t.Channel, &t.ExecutedAt, &t.CreatedAt,
-		); err != nil {
+		t, err := scanTransaction(rows)
+		if err != nil {
 			return nil, err
 		}
 		txns = append(txns, t)
@@ -342,12 +392,26 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 }
 
 func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) error {
+	var counterpartyJSON, metadataJSON []byte
+	if t.Counterparty != nil {
+		var err error
+		if counterpartyJSON, err = json.Marshal(t.Counterparty); err != nil {
+			return err
+		}
+	}
+	if t.Metadata != nil {
+		var err error
+		if metadataJSON, err = json.Marshal(t.Metadata); err != nil {
+			return err
+		}
+	}
+
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, executed_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, executed_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
 		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
-		t.Channel, t.ExecutedAt, t.CreatedAt,
+		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.ExecutedAt, t.CreatedAt,
 	)
 	return err
 }
@@ -587,6 +651,43 @@ func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain
 	return nil
 }
 
+// UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
+// check against expectedUpdatedAt (data-model.md §3.9). Zero rows affected
+// because of a stale expectedUpdatedAt (row exists but its updated_at
+// moved on) is reported as *domain.ErrConflict; zero rows because the
+// alert doesn't exist at all is reported as *domain.ErrNotFound.
+func (r *PgAlertRepo) UpdateStatusIfUnmodified(ctx context.Context, id string, status domain.AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error {
+	now := time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE alerts SET status=$2, resolved_by=$3, resolved_at=$4, updated_at=$5 WHERE id=$1 AND updated_at=$6`,
+		id, string(status), resolvedBy, now, now, expectedUpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := r.Get(ctx, id); err != nil {
+			return err
+		}
+		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
+	}
+	return nil
+}
+
+func (r *PgAlertRepo) EscalateSeverity(ctx context.Context, id string, severity domain.AlertSeverity) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE alerts SET severity=$2, updated_at=now() WHERE id=$1`,
+		id, string(severity),
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "alert", ID: id}
+	}
+	return nil
+}
+
 // PgAuditRepo
 
 type PgAuditRepo struct {
@@ -805,6 +906,30 @@ func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
 	if tag.RowsAffected() == 0 {
 		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
 	}
+	return nil
+}
+
+// UpdateIfUnmodified is Update guarded by an optimistic-lock check against
+// expectedUpdatedAt (data-model.md §3.9). Zero rows affected because of a
+// stale expectedUpdatedAt (row exists but its updated_at moved on) is
+// reported as *domain.ErrConflict; zero rows because the case doesn't exist
+// at all is reported as *domain.ErrNotFound.
+func (r *PgCaseRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Case, expectedUpdatedAt time.Time) error {
+	newUpdatedAt := time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9
+		WHERE id=$1 AND updated_at=$10`,
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, newUpdatedAt, c.ClosedAt, expectedUpdatedAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := r.Get(ctx, c.ID); err != nil {
+			return err
+		}
+		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
+	}
+	c.UpdatedAt = newUpdatedAt
 	return nil
 }
 

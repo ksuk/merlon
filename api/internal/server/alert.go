@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/merlon-aml/merlon/api/internal/casemgmt"
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -17,6 +18,11 @@ import (
 type UpdateAlertStatusRequest struct {
 	Status     domain.AlertStatus `json:"status"`
 	ResolvedBy string             `json:"resolved_by"`
+	// ExpectedUpdatedAt enables optimistic locking (data-model.md §3.9,
+	// WS-11 Task 8): when set, the update is rejected with 409 if the
+	// alert's stored updated_at no longer matches. Omitted entirely, the
+	// update proceeds unconditionally (legacy callers).
+	ExpectedUpdatedAt *time.Time `json:"expected_updated_at,omitempty"`
 }
 
 func alertCursor(a domain.Alert) Cursor {
@@ -148,7 +154,22 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.alerts.UpdateStatus(r.Context(), id, req.Status, req.ResolvedBy); err != nil {
+	if req.ExpectedUpdatedAt != nil {
+		if err := s.alerts.UpdateStatusIfUnmodified(r.Context(), id, req.Status, req.ResolvedBy, *req.ExpectedUpdatedAt); err != nil {
+			var conflict *domain.ErrConflict
+			if errors.As(err, &conflict) {
+				writeError(w, http.StatusConflict, conflict.Error())
+				return
+			}
+			var notFound *domain.ErrNotFound
+			if errors.As(err, &notFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	} else if err := s.alerts.UpdateStatus(r.Context(), id, req.Status, req.ResolvedBy); err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
 			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())

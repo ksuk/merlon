@@ -52,6 +52,12 @@ type updateCaseRequest struct {
 	// Reason is required when Status is CaseStatusReopened (case-management.md
 	// "再オープン時は理由（テキスト、必須）を記録する").
 	Reason string `json:"reason,omitempty"`
+	// ExpectedUpdatedAt enables optimistic locking (data-model.md §3.9,
+	// WS-11 Task 8): when set, the update is rejected with 409 if the
+	// case's stored updated_at no longer matches. Omitted entirely, the
+	// update proceeds unconditionally (legacy callers, internal batch
+	// jobs).
+	ExpectedUpdatedAt *time.Time `json:"expected_updated_at,omitempty"`
 }
 
 type addNoteRequest struct {
@@ -275,7 +281,22 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		c.Summary = req.Summary
 	}
 
-	if err := s.cases.Update(r.Context(), c); err != nil {
+	if req.ExpectedUpdatedAt != nil {
+		if err := s.cases.UpdateIfUnmodified(r.Context(), c, *req.ExpectedUpdatedAt); err != nil {
+			var conflict *domain.ErrConflict
+			if errors.As(err, &conflict) {
+				writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
+				return
+			}
+			var nf *domain.ErrNotFound
+			if errors.As(err, &nf) {
+				writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
+				return
+			}
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+	} else if err := s.cases.Update(r.Context(), c); err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}

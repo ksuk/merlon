@@ -37,6 +37,17 @@ impl ScoringServiceImpl {
             1 => "individual",
             2 => "corporate_domestic",
             3 => "corporate_foreign",
+            // WS-11 Task 3 (data-model.md §1.1.1): non-natural-person types.
+            // CddWeightConfig's applies_to filtering already treats unknown
+            // customer_type strings as "no type-specific factors apply" (see
+            // CddScoringEngine::evaluate), so passing these through here is
+            // sufficient without new scoring logic — actual per-type CDD
+            // weight configs remain a future scoring-config concern.
+            4 => "trust",
+            5 => "partnership",
+            6 => "npo",
+            7 => "government",
+            8 => "foreign_legal_arrangement",
             _ => return Err(Status::invalid_argument("invalid customer_type")),
         };
 
@@ -234,6 +245,35 @@ mod tests {
 
         assert_eq!(resp.tier, ProtoRiskTier::High as i32);
         assert!(resp.score >= 3.5);
+    }
+
+    #[tokio::test]
+    async fn test_evaluate_customer_risk_accepts_non_natural_person_types() {
+        let service = test_service();
+        for ct in [
+            CustomerType::Trust,
+            CustomerType::Partnership,
+            CustomerType::Npo,
+            CustomerType::Government,
+            CustomerType::ForeignLegalArrangement,
+        ] {
+            let req = EvaluateCustomerRiskRequest {
+                customer: Some(CustomerAttributes {
+                    customer_id: "C-NNP".to_string(),
+                    customer_type: ct as i32,
+                    country_code: "JP".to_string(),
+                    product_types: vec!["deposit".to_string()],
+                }),
+                rule_set_id: "test_preset".to_string(),
+            };
+
+            let result = service.evaluate_customer_risk(Request::new(req)).await;
+            assert!(
+                result.is_ok(),
+                "customer_type {ct:?} should be scoreable, got {:?}",
+                result.err()
+            );
+        }
     }
 
     #[tokio::test]

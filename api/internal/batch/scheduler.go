@@ -220,6 +220,15 @@ func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candi
 }
 
 func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *domain.Customer, batchStart time.Time, runID string) error {
+	// data-model.md §1.1.2: closed customers stop TM evaluation entirely;
+	// dormant customers are evaluated only "取引発生時" (at the moment a
+	// transaction occurs via the realtime path), not on this periodic
+	// schedule. frozen customers continue on existing data as usual.
+	switch c.EffectiveStatus() {
+	case domain.CustomerStatusClosed, domain.CustomerStatusDormant:
+		return nil
+	}
+
 	txns, err := deps.Transactions.ListByCustomer(ctx, c.ID, maxTMBatchCustomers, 0)
 	if err != nil {
 		return err

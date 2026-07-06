@@ -20,7 +20,32 @@ type CreateTransactionRequest struct {
 	CounterpartyID      string                      `json:"counterparty_id"`
 	CounterpartyCountry string                      `json:"counterparty_country"`
 	Channel             string                      `json:"channel"`
+	AccountID           *string                     `json:"account_id,omitempty"`
+	Counterparty        *domain.Counterparty        `json:"counterparty,omitempty"`
+	Metadata            map[string]any              `json:"metadata,omitempty"`
 	ExecutedAt          time.Time                   `json:"executed_at"`
+}
+
+func isValidCounterpartyType(t domain.CounterpartyType) bool {
+	switch t {
+	case domain.CounterpartyTypeVASP, domain.CounterpartyTypeUnhostedWallet, domain.CounterpartyTypeUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// isValidTravelRuleStatus intentionally accepts TravelRuleIncomplete: an
+// incomplete travel-rule record must not block transaction creation or TM
+// evaluation (Fail-Alert, data-model.md §1.3.1 — prefer evaluating with
+// partial data over dropping the transaction).
+func isValidTravelRuleStatus(s domain.TravelRuleStatus) bool {
+	switch s {
+	case domain.TravelRuleComplete, domain.TravelRuleIncomplete, domain.TravelRuleNotApplicable:
+		return true
+	default:
+		return false
+	}
 }
 
 func transactionCursor(t domain.Transaction) Cursor {
@@ -122,6 +147,16 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "direction must be one of: inbound, outbound, internal")
 		return
 	}
+	if req.Counterparty != nil {
+		if !isValidCounterpartyType(req.Counterparty.CounterpartyType) {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "counterparty.counterparty_type must be one of: vasp, unhosted_wallet, unknown")
+			return
+		}
+		if !isValidTravelRuleStatus(req.Counterparty.TravelRuleStatus) {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "counterparty.travel_rule_status must be one of: complete, incomplete, not_applicable")
+			return
+		}
+	}
 
 	// Verify customer exists
 	_, err := s.customers.Get(r.Context(), req.CustomerID)
@@ -156,6 +191,9 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		CounterpartyID:      req.CounterpartyID,
 		CounterpartyCountry: req.CounterpartyCountry,
 		Channel:             req.Channel,
+		AccountID:           req.AccountID,
+		Counterparty:        req.Counterparty,
+		Metadata:            req.Metadata,
 		ExecutedAt:          executedAt,
 		CreatedAt:           now,
 	}

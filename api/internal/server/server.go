@@ -51,6 +51,7 @@ type Server struct {
 	whitelistMaxValidDaysCfg int
 	screeningResults         domain.ScreeningResultRepository
 	retention                domain.RetentionRepository
+	accounts                 domain.AccountRepository
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
 	// dashboard's list-freshness display (screening.md; Task 4). Nil until
@@ -98,6 +99,7 @@ type Deps struct {
 	WhitelistMaxValidDays int
 	ScreeningResults      domain.ScreeningResultRepository
 	Retention             domain.RetentionRepository
+	Accounts              domain.AccountRepository
 
 	ScreeningListStore      screening.ListStore
 	ScreeningFailureTracker screening.FailureTracker
@@ -145,6 +147,7 @@ func New(addr string, deps Deps) *Server {
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
+		accounts:                 deps.Accounts,
 
 		screeningListStore:      deps.ScreeningListStore,
 		screeningFailureTracker: deps.ScreeningFailureTracker,
@@ -187,6 +190,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/screening/check", s.handleScreeningCheck)
 	s.mux.HandleFunc("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
 
+	// Accounts (joint accounts, data-model.md §1.1.3)
+	s.mux.HandleFunc("POST /api/v1/accounts", s.handleCreateAccount)
+	s.mux.HandleFunc("GET /api/v1/accounts/{id}", s.handleGetAccount)
+	s.mux.HandleFunc("POST /api/v1/accounts/{id}/customers", s.handleAddAccountCustomer)
+	s.mux.HandleFunc("GET /api/v1/accounts/{id}/customers", s.handleListAccountCustomers)
+
 	// Transactions
 	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)
 	s.mux.HandleFunc("GET /api/v1/transactions/{id}", s.handleGetTransaction)
@@ -221,6 +230,9 @@ func (s *Server) routes() {
 	// Batch
 	s.mux.HandleFunc("POST /api/v1/batch/score", s.handleBatchScore)
 	s.mux.HandleFunc("POST /api/v1/batch/monitor", s.handleBatchMonitor)
+
+	// Inbound webhooks (core system notifications, data-model.md §1.1.2)
+	s.mux.HandleFunc("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
 
 	// Webhooks
 	s.mux.HandleFunc("POST /api/v1/webhooks", s.handleCreateWebhook)

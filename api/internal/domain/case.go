@@ -98,5 +98,10 @@ type CaseRepository interface {
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
 	Create(ctx context.Context, c *Case) error
 	Update(ctx context.Context, c *Case) error
+	// UpdateIfUnmodified applies the same update as Update, but only if the
+	// case's stored updated_at still equals expectedUpdatedAt (optimistic
+	// locking, data-model.md §3.9: two concurrent updates must not silently
+	// lose one to the other). Returns *ErrConflict on mismatch.
+	UpdateIfUnmodified(ctx context.Context, c *Case, expectedUpdatedAt time.Time) error
 	AddNote(ctx context.Context, caseID string, note *CaseNote) error
 }

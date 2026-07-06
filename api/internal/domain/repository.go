@@ -27,6 +27,12 @@ type CustomerRepository interface {
 	// 未実施継続時の段階的措置). The job itself computes elapsed days per
 	// customer and decides which stage (if any) applies.
 	ListEDDPending(ctx context.Context) ([]Customer, error)
+	// UpdateStatus reflects a customer_status_changed notification from the
+	// core system (data-model.md §1.1.2). This system does not judge
+	// transition validity; it records whatever status it is told (Adapter
+	// Isolation). reason is stored by the caller for the audit log entry,
+	// not persisted on the customer row itself.
+	UpdateStatus(ctx context.Context, id string, status CustomerStatus, reason string) (*Customer, error)
 }
 
 type TransactionRepository interface {
@@ -54,6 +60,11 @@ type AlertRepository interface {
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
 	Create(ctx context.Context, a *Alert) error
 	UpdateStatus(ctx context.Context, id string, status AlertStatus, resolvedBy string) error
+	// UpdateStatusIfUnmodified applies the same update as UpdateStatus, but
+	// only if the alert's stored updated_at still equals expectedUpdatedAt
+	// (optimistic locking, data-model.md §3.9). Returns *ErrConflict on
+	// mismatch.
+	UpdateStatusIfUnmodified(ctx context.Context, id string, status AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error
 	// CreateIfNotDuplicate inserts a unless another alert already exists for
 	// the same (customer_id, scenario_id, aggregation_window_start) tuple
 	// (transaction-monitoring.md「バッチ/リアルタイム評価の重複アラート防止」).
@@ -68,6 +79,10 @@ type AlertRepository interface {
 	AnnotateBatchReviewed(ctx context.Context, alertID string, batchRunID string) error
 	// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7).
 	ListByFilter(ctx context.Context, f AlertBulkFilter) ([]Alert, error)
+	// EscalateSeverity raises a single alert's severity (data-model.md
+	// §1.1.2: customer death -> frozen escalates all of that customer's
+	// alerts to HIGH), independent of its status.
+	EscalateSeverity(ctx context.Context, id string, severity AlertSeverity) error
 }
 
 type ErrNotFound struct {

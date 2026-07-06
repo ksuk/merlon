@@ -24,7 +24,7 @@ func newAnonymizeFixtures(t *testing.T, lastTransactionAt time.Time) (domain.Cus
 		ExternalID:   "EXT-ANON-1",
 		CustomerType: domain.CustomerTypeIndividual,
 		CountryCode:  "JP",
-		Attributes: map[string]string{
+		Attributes: map[string]any{
 			"name":       "Taro Yamada",
 			"address":    "1-1 Chiyoda, Tokyo",
 			"email":      "taro@example.com",

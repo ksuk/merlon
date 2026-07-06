@@ -28,13 +28,13 @@ type CreateCustomerRequest struct {
 	CustomerType domain.CustomerType `json:"customer_type"`
 	CountryCode  string              `json:"country_code"`
 	ProductTypes []string            `json:"product_types"`
-	Attributes   map[string]string   `json:"attributes"`
+	Attributes   map[string]any      `json:"attributes"`
 }
 
 type UpdateCustomerRequest struct {
-	CountryCode  *string           `json:"country_code,omitempty"`
-	ProductTypes *[]string         `json:"product_types,omitempty"`
-	Attributes   map[string]string `json:"attributes,omitempty"`
+	CountryCode  *string        `json:"country_code,omitempty"`
+	ProductTypes *[]string      `json:"product_types,omitempty"`
+	Attributes   map[string]any `json:"attributes,omitempty"`
 }
 
 func customerCursor(c domain.Customer) Cursor {
@@ -134,6 +134,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		CustomerType: req.CustomerType,
 		CountryCode:  req.CountryCode,
 		ProductTypes: req.ProductTypes,
+		Status:       domain.CustomerStatusActive,
 		Attributes:   req.Attributes,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -396,14 +397,16 @@ func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
 
 func isValidCustomerType(ct domain.CustomerType) bool {
 	switch ct {
-	case domain.CustomerTypeIndividual, domain.CustomerTypeCorporateDomestic, domain.CustomerTypeCorporateForeign:
+	case domain.CustomerTypeIndividual, domain.CustomerTypeCorporateDomestic, domain.CustomerTypeCorporateForeign,
+		domain.CustomerTypeTrust, domain.CustomerTypePartnership, domain.CustomerTypeNPO,
+		domain.CustomerTypeGovernment, domain.CustomerTypeForeignLegalArrangement:
 		return true
 	default:
 		return false
 	}
 }
 
-func validateAttributes(attrs map[string]string) error {
+func validateAttributes(attrs map[string]any) error {
 	if len(attrs) > maxAttributes {
 		return fmt.Errorf("too many attributes: %d (max %d)", len(attrs), maxAttributes)
 	}
@@ -411,8 +414,17 @@ func validateAttributes(attrs map[string]string) error {
 		if len(k) > maxAttrKeyLen {
 			return fmt.Errorf("attribute key too long: %d chars (max %d)", len(k), maxAttrKeyLen)
 		}
-		if len(v) > maxAttrValueLen {
-			return fmt.Errorf("attribute value too long for key %q: %d chars (max %d)", k, len(v), maxAttrValueLen)
+		// Scalar string values are checked directly; structured values
+		// (e.g. attributes.trust_parties, data-model.md §1.1.1) are checked
+		// by their serialized JSON size instead.
+		size := 0
+		if s, ok := v.(string); ok {
+			size = len(s)
+		} else if encoded, err := json.Marshal(v); err == nil {
+			size = len(encoded)
+		}
+		if size > maxAttrValueLen {
+			return fmt.Errorf("attribute value too long for key %q: %d chars (max %d)", k, size, maxAttrValueLen)
 		}
 	}
 	return nil

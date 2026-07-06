@@ -14,6 +14,7 @@ import (
 	"github.com/merlon-aml/merlon/api/internal/auth"
 	"github.com/merlon-aml/merlon/api/internal/batch"
 	"github.com/merlon-aml/merlon/api/internal/config"
+	"github.com/merlon-aml/merlon/api/internal/crypto"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 	"github.com/merlon-aml/merlon/api/internal/engine"
 	"github.com/merlon-aml/merlon/api/internal/engineclient"
@@ -91,6 +92,22 @@ func main() {
 	}
 	deps.PublicURL = cfg.PublicURL
 
+	// PII field encryption (security.md §2.1, WS-11 Task 7). An unset key
+	// ring leaves customers.attributes' direct PII fields in plaintext --
+	// acceptable for local/dev use but not production.
+	var encryptor *crypto.Encryptor
+	if os.Getenv("MERLON_ENCRYPTION_KEY_RING") != "" {
+		keyRing, err := crypto.NewKeyRingFromEnv("MERLON_ENCRYPTION_KEY_RING")
+		if err != nil {
+			slog.Error("encryption key ring", "error", err)
+			os.Exit(1)
+		}
+		encryptor = crypto.NewEncryptor(keyRing)
+		slog.Info("customer PII field encryption enabled")
+	} else {
+		slog.Warn("MERLON_ENCRYPTION_KEY_RING not set, customer PII fields will be stored in plaintext")
+	}
+
 	var pool *pgxpool.Pool
 	if os.Getenv("MERLON_DATABASE_URL") != "" {
 		var err error
@@ -106,7 +123,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		deps.Customers = store.NewPgCustomerRepo(pool)
+		deps.Customers = store.NewPgCustomerRepo(pool, encryptor)
 		deps.Transactions = store.NewPgTransactionRepo(pool)
 		deps.Alerts = store.NewPgAlertRepo(pool)
 		deps.Audit = store.NewPgAuditRepo(pool)
@@ -116,11 +133,13 @@ func main() {
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
 		deps.Retention = store.NewPgRetentionRepo(pool)
+		deps.Accounts = store.NewPgAccountRepo(pool)
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
-		deps.Customers = store.NewMemoryCustomerRepo()
+		memCustomers := store.NewMemoryCustomerRepo()
+		deps.Customers = memCustomers
 		deps.Transactions = store.NewMemoryTransactionRepo()
 		deps.Alerts = store.NewMemoryAlertRepo()
 		deps.Audit = store.NewMemoryAuditRepo()
@@ -130,6 +149,7 @@ func main() {
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
 		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
 		deps.Retention = store.NewMemoryRetentionRepo()
+		deps.Accounts = store.NewMemoryAccountRepo(memCustomers)
 		batchRuns = store.NewMemoryBatchRunRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
