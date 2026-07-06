@@ -428,6 +428,21 @@
     "title": "An error occurred",
     "retry": "Retry"
   },
+  "errors": {
+    "not_found": "The requested resource was not found.",
+    "validation_failed": "The submitted data is invalid.",
+    "invalid_state_transition": "This action is not allowed in the current state.",
+    "unauthorized": "You are not authenticated. Please log in again.",
+    "forbidden": "You do not have permission to perform this action.",
+    "conflict": "This action conflicts with the current state of the resource.",
+    "rate_limited": "Too many requests. Please try again later.",
+    "payload_too_large": "The request payload is too large.",
+    "internal_error": "An internal error occurred. Please try again later.",
+    "service_unavailable": "This feature is not currently available.",
+    "engine_error": "The scoring engine could not process this request.",
+    "retention_shorten_forbidden": "The retention period cannot be shortened below the regulatory minimum.",
+    "unknown": "An unexpected error occurred."
+  },
   "login": {
     "title": "Log in",
     "emailLabel": "Email address",

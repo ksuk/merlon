@@ -428,6 +428,21 @@
     "title": "エラーが発生しました",
     "retry": "再試行"
   },
+  "errors": {
+    "not_found": "対象のリソースが見つかりません。",
+    "validation_failed": "入力内容が正しくありません。",
+    "invalid_state_transition": "現在の状態ではこの操作を行えません。",
+    "unauthorized": "認証されていません。再度ログインしてください。",
+    "forbidden": "この操作を行う権限がありません。",
+    "conflict": "この操作はリソースの現在の状態と競合しています。",
+    "rate_limited": "リクエストが多すぎます。しばらくしてから再度お試しください。",
+    "payload_too_large": "リクエストのデータ量が大きすぎます。",
+    "internal_error": "内部エラーが発生しました。しばらくしてから再度お試しください。",
+    "service_unavailable": "この機能は現在利用できません。",
+    "engine_error": "スコアリングエンジンがこのリクエストを処理できませんでした。",
+    "retention_shorten_forbidden": "保持期間を規定の最低期間より短縮することはできません。",
+    "unknown": "予期しないエラーが発生しました。"
+  },
   "login": {
     "title": "ログイン",
     "emailLabel": "メールアドレス",

@@ -9,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { api, type Alert, type AlertSeverity, type AlertStatus } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
@@ -65,7 +66,7 @@ export function AlertsPage() {
       setAlerts(data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(translateApiError(err, t))
     } finally {
       setLoading(false)
     }
@@ -73,6 +74,7 @@ export function AlertsPage() {
 
   useEffect(() => {
     reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function toggleSelected(id: string) {
@@ -102,7 +104,7 @@ export function AlertsPage() {
       setCloseReason("")
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     } finally {
       setBusy(false)
     }
@@ -121,7 +123,7 @@ export function AlertsPage() {
       setSelected(new Set())
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     } finally {
       setBusy(false)
     }

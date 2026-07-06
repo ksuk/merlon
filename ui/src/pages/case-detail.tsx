@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api, type CasePriority, type CaseStatus, type Customer, type RelatedCase } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { ArrowLeft, Send } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -118,7 +119,7 @@ export function CaseDetailPage() {
       await api.cases.update(id, { status: "reopened", reason: reopenReason.trim() })
       window.location.reload()
     } catch (err) {
-      setReopenError(err instanceof Error ? err.message : String(err))
+      setReopenError(translateApiError(err, t))
       setReopening(false)
     }
   }

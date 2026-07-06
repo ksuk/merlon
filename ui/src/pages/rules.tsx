@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { cn } from "@/lib/utils"
 import { api, type RuleDefinition, type RuleType } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { Download, FileUp, Plus, PowerOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -50,7 +51,7 @@ export function RulesPage() {
       setRules(res.data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(translateApiError(err, t))
     } finally {
       setLoading(false)
     }
@@ -104,7 +105,7 @@ export function RulesPage() {
       setShowImport(false)
       await reload()
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : String(err))
+      setImportError(translateApiError(err, t))
     } finally {
       setImporting(false)
     }

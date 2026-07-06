@@ -7,6 +7,22 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+// ApiError carries the server's stable `error_code` (api/internal/apierr)
+// alongside the human-readable message, so callers can branch on `code`
+// (Contract Stability) and translate via errors.{code} instead of matching
+// on message wording, which may change or be translated server-side.
+export class ApiError extends Error {
+  status: number
+  code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+    this.code = code
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase()
   const headers: Record<string, string> = {
@@ -21,7 +37,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, headers })
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`API ${res.status}: ${body}`)
+    let message = body
+    let code: string | undefined
+    try {
+      const parsed: unknown = JSON.parse(body)
+      if (parsed && typeof parsed === "object") {
+        const { error, error_code } = parsed as { error?: unknown; error_code?: unknown }
+        if (typeof error === "string") message = error
+        if (typeof error_code === "string") code = error_code
+      }
+    } catch {
+      // Response body was not JSON (e.g. a proxy error page); fall back to
+      // the raw text as the message.
+    }
+    throw new ApiError(message, res.status, code)
   }
   return res.json()
 }

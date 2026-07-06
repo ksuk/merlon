@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type WhitelistEntry, type WhitelistEntryStatus } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { Plus } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -60,7 +61,7 @@ export function WhitelistPage() {
       setEntries(res.data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(translateApiError(err, t))
     } finally {
       setLoading(false)
     }
@@ -68,6 +69,7 @@ export function WhitelistPage() {
 
   useEffect(() => {
     reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleCreate(e: React.FormEvent) {
@@ -94,7 +96,7 @@ export function WhitelistPage() {
       setShowForm(false)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     } finally {
       setCreating(false)
     }
@@ -106,7 +108,7 @@ export function WhitelistPage() {
       await api.whitelist.approve(id)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     }
   }
 
@@ -116,7 +118,7 @@ export function WhitelistPage() {
       await api.whitelist.revoke(id)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     }
   }
 
