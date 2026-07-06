@@ -17,28 +17,30 @@ import {
   SlidersHorizontal,
   Webhook,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router-dom"
 
 const navItems = [
-  { to: "/", label: "ダッシュボード", icon: LayoutDashboard },
-  { to: "/customers", label: "顧客", icon: Users },
-  { to: "/alerts", label: "アラート", icon: AlertTriangle },
-  { to: "/cases", label: "ケース", icon: FolderOpen },
-  { to: "/transactions", label: "取引", icon: ArrowLeftRight },
-  { to: "/batch", label: "一括処理", icon: Layers },
-  { to: "/reports", label: "STRレポート", icon: FileText },
-  { to: "/backtest", label: "バックテスト", icon: FlaskConical },
-  { to: "/webhooks", label: "Webhook", icon: Webhook },
-  { to: "/apikeys", label: "APIキー", icon: KeyRound },
-  { to: "/rules", label: "ルール管理", icon: SlidersHorizontal },
-  { to: "/whitelist", label: "ホワイトリスト", icon: ShieldCheck },
-  { to: "/config", label: "設定検証", icon: Settings2 },
-  { to: "/audit", label: "監査ログ", icon: ScrollText },
-  { to: "/system", label: "システム", icon: Settings },
+  { to: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { to: "/customers", labelKey: "nav.customers", icon: Users },
+  { to: "/alerts", labelKey: "nav.alerts", icon: AlertTriangle },
+  { to: "/cases", labelKey: "nav.cases", icon: FolderOpen },
+  { to: "/transactions", labelKey: "nav.transactions", icon: ArrowLeftRight },
+  { to: "/batch", labelKey: "nav.batch", icon: Layers },
+  { to: "/reports", labelKey: "nav.reports", icon: FileText },
+  { to: "/backtest", labelKey: "nav.backtest", icon: FlaskConical },
+  { to: "/webhooks", labelKey: "nav.webhooks", icon: Webhook },
+  { to: "/apikeys", labelKey: "nav.apikeys", icon: KeyRound },
+  { to: "/rules", labelKey: "nav.rules", icon: SlidersHorizontal },
+  { to: "/whitelist", labelKey: "nav.whitelist", icon: ShieldCheck },
+  { to: "/config", labelKey: "nav.config", icon: Settings2 },
+  { to: "/audit", labelKey: "nav.audit", icon: ScrollText },
+  { to: "/system", labelKey: "nav.system", icon: Settings },
 ]
 
 export function Sidebar() {
   const location = useLocation()
+  const { t } = useTranslation()
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-sidebar">
@@ -64,14 +66,12 @@ export function Sidebar() {
               )}
             >
               <item.icon className="h-4 w-4" />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           )
         })}
       </nav>
-      <div className="border-t p-4 text-xs text-muted-foreground">
-        AML/CFT Compliance Platform
-      </div>
+      <div className="border-t p-4 text-xs text-muted-foreground">{t("nav.tagline")}</div>
     </aside>
   )
 }

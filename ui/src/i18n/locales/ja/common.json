@@ -1,0 +1,836 @@
+{
+  "language": {
+    "en": "英語",
+    "ja": "日本語",
+    "switcherLabel": "言語"
+  },
+  "nav": {
+    "dashboard": "ダッシュボード",
+    "customers": "顧客",
+    "alerts": "アラート",
+    "cases": "ケース",
+    "transactions": "取引",
+    "batch": "一括処理",
+    "reports": "STRレポート",
+    "backtest": "バックテスト",
+    "webhooks": "Webhook",
+    "apikeys": "APIキー",
+    "rules": "ルール管理",
+    "whitelist": "ホワイトリスト",
+    "config": "設定検証",
+    "audit": "監査ログ",
+    "system": "システム",
+    "tagline": "AML/CFT Compliance Platform"
+  },
+  "dashboard": {
+    "title": "ダッシュボード",
+    "errorPrefix": "データの取得に失敗しました: {{error}}",
+    "noData": "データなし",
+    "stats": {
+      "customers": "顧客数",
+      "alerts": "アラート",
+      "alertsDescription": "未解決",
+      "cases": "ケース",
+      "casesDescription": "オープン",
+      "recentTransactions": "直近の取引",
+      "whitelistExpiringSoon": "ホワイトリスト期限切れ間近",
+      "whitelistExpiringSoonDescription": "{{days}}日以内"
+    },
+    "charts": {
+      "riskDistribution": "顧客リスク分布",
+      "severityDistribution": "アラート深刻度",
+      "screeningFreshness": "制裁・PEPリストの鮮度",
+      "caseStatusTitle": "ケースステータス"
+    },
+    "risk": {
+      "low": "低リスク",
+      "medium": "中リスク",
+      "high": "高リスク",
+      "unscored": "未スコア"
+    },
+    "severity": {
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "critical": "重大"
+    },
+    "listType": {
+      "sanctions": "制裁リスト",
+      "pep": "PEPリスト",
+      "pepRca": "PEP家族・近親者リスト"
+    },
+    "caseStatusLabel": {
+      "open": "未対応",
+      "investigating": "調査中",
+      "escalated": "エスカレーション",
+      "closed": "完了",
+      "closedTruePositive": "完了(真陽性)",
+      "closedFalsePositive": "完了(偽陽性)"
+    },
+    "freshness": {
+      "upToDate": "最新",
+      "staleDays": "{{days}}日経過"
+    }
+  },
+  "customers": {
+    "title": "顧客一覧",
+    "count": "{{count}} 件",
+    "createButton": "新規作成",
+    "error": "顧客データの取得に失敗しました",
+    "form": {
+      "title": "顧客作成",
+      "externalId": "外部ID",
+      "type": "種別",
+      "countryCode": "国コード",
+      "submit": "作成"
+    },
+    "search": {
+      "placeholder": "ID・名前・国コードで検索..."
+    },
+    "filter": {
+      "allTiers": "全リスクティア"
+    },
+    "tier": {
+      "low": "低リスク",
+      "medium": "中リスク",
+      "high": "高リスク"
+    },
+    "tierShort": {
+      "low": "低",
+      "medium": "中",
+      "high": "高"
+    },
+    "type": {
+      "individual": "個人",
+      "corporateDomestic": "国内法人",
+      "corporateForeign": "海外法人"
+    },
+    "table": {
+      "header": {
+        "externalId": "外部ID",
+        "type": "種別",
+        "country": "国",
+        "riskScore": "リスクスコア",
+        "riskTier": "リスクティア",
+        "lastScored": "最終スコアリング"
+      },
+      "unscored": "未スコア",
+      "empty": "顧客データがありません"
+    }
+  },
+  "casePriority": {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "critical": "重大"
+  },
+  "caseStatus": {
+    "open": "新規",
+    "new": "新規",
+    "investigating": "調査中",
+    "escalated": "エスカレーション",
+    "closed": "完了",
+    "reopened": "再オープン",
+    "str_filed": "STR対象"
+  },
+  "cases": {
+    "title": "ケース一覧",
+    "count": "{{count}} 件",
+    "createButton": "新規作成",
+    "error": "ケースデータの取得に失敗しました",
+    "form": {
+      "title": "ケース作成",
+      "customerId": "顧客ID",
+      "alertIds": "アラートID（カンマ区切り）",
+      "assignedTo": "担当者",
+      "priority": "優先度",
+      "summary": "概要",
+      "summaryPlaceholder": "ケースの概要...",
+      "submit": "作成"
+    },
+    "table": {
+      "header": {
+        "priority": "優先度",
+        "status": "ステータス",
+        "customerId": "顧客ID",
+        "assignedTo": "担当者",
+        "summary": "概要",
+        "createdAt": "作成日時"
+      },
+      "empty": "ケースがありません"
+    }
+  },
+  "caseDetail": {
+    "backToList": "ケース一覧に戻る",
+    "back": "戻る",
+    "error": "ケースデータの取得に失敗しました",
+    "title": "ケース詳細",
+    "info": {
+      "title": "ケース情報",
+      "customerId": "顧客ID",
+      "assignedTo": "担当者",
+      "createdAt": "作成日時",
+      "closedAt": "クローズ日時"
+    },
+    "summary": {
+      "title": "概要",
+      "relatedAlerts": "関連アラート"
+    },
+    "transitions": {
+      "title": "ステータス変更",
+      "startInvestigation": "調査開始",
+      "escalate": "エスカレーション",
+      "close": "クローズ",
+      "fileStr": "STR対象として届出",
+      "rollback": "差し戻し（調査中に戻す）",
+      "reinvestigate": "調査再開"
+    },
+    "reopen": {
+      "title": "再オープン",
+      "placeholder": "再オープンの理由（必須）",
+      "submit": "再オープン"
+    },
+    "reopenReason": {
+      "title": "再オープン理由"
+    },
+    "relatedCases": {
+      "title": "関連ケース",
+      "empty": "関連ケースはありません",
+      "auto": "自動抽出（同一顧客）",
+      "manual": "手動リンク"
+    },
+    "notes": {
+      "title": "ノート",
+      "empty": "ノートがありません",
+      "placeholder": "ノートを追加..."
+    },
+    "edd": {
+      "stage3": "ステージ3: 取引謝絶推奨済み",
+      "stage2": "ステージ2: 取引制限推奨済み",
+      "stage1": "ステージ1: リマインダー送信済み",
+      "requested": "EDD要求中（エスカレーション前）"
+    }
+  },
+  "alertSeverity": {
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "critical": "重大"
+  },
+  "alertStatus": {
+    "open": "未対応",
+    "investigating": "調査中",
+    "escalated": "エスカレーション",
+    "closed_true_positive": "完了(真陽性)",
+    "closed_false_positive": "完了(偽陽性)"
+  },
+  "alerts": {
+    "title": "アラート一覧",
+    "count": "{{count}} 件",
+    "error": "アラートデータの取得に失敗しました",
+    "bulkClose": {
+      "label": "一括クローズ",
+      "scenarioIdPlaceholder": "シナリオID（任意）",
+      "severityPlaceholder": "深刻度（任意）",
+      "reasonPlaceholder": "判断理由（必須）",
+      "submit": "条件に一致するアラートをクローズ"
+    },
+    "bulkCase": {
+      "selectedCount": "選択中: {{count}} 件",
+      "submit": "選択したアラートをケースにまとめる"
+    },
+    "table": {
+      "header": {
+        "severity": "深刻度",
+        "status": "ステータス",
+        "customerId": "顧客ID",
+        "scenario": "シナリオ",
+        "score": "スコア",
+        "description": "説明",
+        "detectedAt": "検出日時"
+      },
+      "empty": "アラートがありません"
+    }
+  },
+  "alertDetail": {
+    "backToList": "アラート一覧に戻る",
+    "back": "戻る",
+    "error": "アラートデータの取得に失敗しました",
+    "title": "アラート詳細",
+    "info": {
+      "title": "アラート情報",
+      "customerId": "顧客ID",
+      "scenario": "シナリオ",
+      "score": "スコア",
+      "detectedAt": "検出日時",
+      "resolvedAt": "解決日時",
+      "resolvedBy": "解決者"
+    },
+    "description": {
+      "title": "説明",
+      "relatedTransactions": "関連取引"
+    },
+    "transitions": {
+      "title": "ステータス変更",
+      "startInvestigation": "調査開始",
+      "escalate": "エスカレーション",
+      "closeTruePositive": "真陽性として完了",
+      "closeFalsePositive": "偽陽性として完了"
+    }
+  },
+  "audit": {
+    "title": "監査ログ",
+    "count": "{{count}} 件",
+    "error": "監査ログの取得に失敗しました",
+    "action": {
+      "create": "作成",
+      "update": "更新",
+      "update_status": "ステータス変更",
+      "delete": "削除",
+      "score_customer": "スコアリング",
+      "screen_customer": "スクリーニング",
+      "run_backtest": "バックテスト",
+      "create_str": "STR作成",
+      "export_audit_logs": "監査ログエクスポート"
+    },
+    "resource": {
+      "customers": "顧客",
+      "transactions": "取引",
+      "alerts": "アラート",
+      "cases": "ケース",
+      "webhooks": "Webhook",
+      "batch": "バッチ",
+      "reports": "レポート",
+      "admin": "管理",
+      "rules": "ルール",
+      "audit": "監査ログ"
+    },
+    "table": {
+      "header": {
+        "timestamp": "日時",
+        "action": "操作",
+        "resource": "リソース",
+        "resourceId": "リソースID",
+        "user": "ユーザー",
+        "ipAddress": "IPアドレス"
+      },
+      "empty": "監査ログがありません"
+    },
+    "filter": {
+      "since": "期間（開始）",
+      "until": "期間（終了）",
+      "category": "操作カテゴリ",
+      "user": "操作者",
+      "resourceId": "対象リソースID",
+      "userPlaceholder": "user_id",
+      "resourceIdPlaceholder": "resource_id"
+    },
+    "category": {
+      "all": "全カテゴリ",
+      "auth": "認証",
+      "customerData": "顧客データ",
+      "ruleManagement": "ルール管理",
+      "alertCase": "アラート・ケース",
+      "str": "STR",
+      "whitelist": "ホワイトリスト",
+      "adminOp": "管理操作"
+    },
+    "loadMore": "さらに読み込む",
+    "ruleDiff": {
+      "empty": "差分情報がありません",
+      "parseError": "差分の解析に失敗しました",
+      "noChangedFields": "変更されたフィールドはありません",
+      "before": "変更前",
+      "after": "変更後"
+    }
+  },
+  "transactions": {
+    "title": "取引一覧",
+    "count": "{{count}} 件",
+    "createButton": "新規登録",
+    "error": "取引データの取得に失敗しました",
+    "form": {
+      "title": "取引登録",
+      "customerId": "顧客ID",
+      "externalId": "外部ID",
+      "amount": "金額",
+      "currency": "通貨",
+      "direction": "方向",
+      "counterpartyCountry": "相手先国",
+      "channel": "チャネル",
+      "submit": "登録"
+    },
+    "direction": {
+      "inbound": "入金",
+      "outbound": "出金",
+      "internal": "内部"
+    },
+    "table": {
+      "header": {
+        "direction": "方向",
+        "customerId": "顧客ID",
+        "amount": "金額",
+        "counterpartyCountry": "相手先国",
+        "channel": "チャネル",
+        "executedAt": "実行日時"
+      },
+      "empty": "取引データがありません"
+    }
+  },
+  "transactionDetail": {
+    "backToList": "取引一覧に戻る",
+    "back": "戻る",
+    "error": "取引データの取得に失敗しました",
+    "info": {
+      "title": "取引情報",
+      "internalId": "内部ID",
+      "externalId": "外部ID",
+      "customerId": "顧客ID",
+      "direction": "方向"
+    },
+    "amountRoute": {
+      "title": "金額・経路",
+      "amount": "金額",
+      "currency": "通貨",
+      "counterpartyCountry": "相手先国",
+      "channel": "チャネル",
+      "executedAt": "実行日時",
+      "createdAt": "登録日時"
+    }
+  },
+  "customerDetail": {
+    "backToList": "顧客一覧に戻る",
+    "back": "戻る",
+    "error": "顧客データの取得に失敗しました",
+    "basicInfo": {
+      "title": "基本情報",
+      "internalId": "内部ID",
+      "type": "種別",
+      "countryCode": "国コード",
+      "save": "保存",
+      "products": "プロダクト",
+      "createdAt": "作成日",
+      "updatedAt": "更新日"
+    },
+    "riskAssessment": {
+      "title": "リスク評価",
+      "screenButton": "スクリーニング",
+      "scoreButton": "スコアリング",
+      "riskScore": "リスクスコア",
+      "riskTier": "リスクティア",
+      "unscored": "未スコア",
+      "lastScored": "最終スコアリング"
+    },
+    "screening": {
+      "title": "スクリーニング結果",
+      "hit": "ヒットあり",
+      "noHit": "ヒットなし",
+      "summary": "チェック済みリスト: {{count}}件 | 実行日時: {{time}}",
+      "table": {
+        "list": "リスト",
+        "matchedName": "一致名",
+        "similarity": "類似度",
+        "type": "種別",
+        "source": "ソース"
+      }
+    },
+    "attributes": {
+      "title": "属性"
+    },
+    "scoreHistory": {
+      "title": "スコア履歴",
+      "empty": "スコア履歴がありません",
+      "table": {
+        "score": "スコア",
+        "tier": "ティア",
+        "ruleSet": "ルールセット",
+        "version": "バージョン",
+        "evaluatedAt": "評価日時"
+      }
+    }
+  },
+  "notFound": {
+    "title": "ページが見つかりません",
+    "description": "指定されたURLのページは存在しません。",
+    "backToDashboard": "ダッシュボードに戻る"
+  },
+  "errorBoundary": {
+    "title": "エラーが発生しました",
+    "retry": "再試行"
+  },
+  "errors": {
+    "not_found": "対象のリソースが見つかりません。",
+    "validation_failed": "入力内容が正しくありません。",
+    "invalid_state_transition": "現在の状態ではこの操作を行えません。",
+    "unauthorized": "認証されていません。再度ログインしてください。",
+    "forbidden": "この操作を行う権限がありません。",
+    "conflict": "この操作はリソースの現在の状態と競合しています。",
+    "rate_limited": "リクエストが多すぎます。しばらくしてから再度お試しください。",
+    "payload_too_large": "リクエストのデータ量が大きすぎます。",
+    "internal_error": "内部エラーが発生しました。しばらくしてから再度お試しください。",
+    "service_unavailable": "この機能は現在利用できません。",
+    "engine_error": "スコアリングエンジンがこのリクエストを処理できませんでした。",
+    "retention_shorten_forbidden": "保持期間を規定の最低期間より短縮することはできません。",
+    "unknown": "予期しないエラーが発生しました。"
+  },
+  "login": {
+    "title": "ログイン",
+    "emailLabel": "メールアドレス",
+    "passwordLabel": "パスワード",
+    "submit": "ログイン",
+    "error": "メールアドレスまたはパスワードが正しくありません"
+  },
+  "setup": {
+    "title": "初期セットアップ",
+    "description": "管理者アカウントを作成してください。ライセンスキーの適用は後からでも設定できます。",
+    "emailLabel": "メールアドレス",
+    "passwordLabel": "初期パスワード（12文字以上）",
+    "submit": "管理者アカウントを作成",
+    "error": "初期セットアップに失敗しました。既に管理者アカウントが作成済みの可能性があります"
+  },
+  "users": {
+    "title": "ユーザ管理",
+    "error": "ユーザ一覧の取得に失敗しました",
+    "roles": {
+      "admin": "管理者",
+      "analyst": "アナリスト",
+      "viewer": "閲覧者"
+    },
+    "status": {
+      "active": "有効",
+      "inactive": "無効"
+    },
+    "entry": {
+      "created": "作成: {{date}}"
+    },
+    "empty": "ユーザが登録されていません"
+  },
+  "config": {
+    "title": "設定検証",
+    "form": {
+      "title": "YAML設定の検証",
+      "typeLabel": "設定タイプ",
+      "yamlLabel": "YAML",
+      "yamlPlaceholder": "# 設定をYAML形式で入力...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
+      "validating": "検証中...",
+      "submit": "検証"
+    },
+    "types": {
+      "cddWeights": "CDD重み付け",
+      "screeningLists": "スクリーニングリスト",
+      "scenarioRules": "シナリオルール"
+    },
+    "result": {
+      "successTitle": "検証成功",
+      "validBadge": "有効",
+      "errorTitle": "検証エラー",
+      "errorCount": "{{count}}件"
+    }
+  },
+  "backtest": {
+    "title": "バックテスト",
+    "error": "データの取得に失敗しました",
+    "form": {
+      "title": "テスト実行",
+      "descriptionLabel": "説明",
+      "descriptionPlaceholder": "バックテストの説明...",
+      "targetCustomers": "対象顧客",
+      "selectAll": "全選択",
+      "deselectAll": "全解除",
+      "running": "実行中...",
+      "submit": "バックテスト実行"
+    },
+    "result": {
+      "title": "実行結果",
+      "customers": "顧客数",
+      "transactions": "取引数",
+      "alerts": "生成アラート",
+      "executionTime": "実行時間",
+      "table": {
+        "header": {
+          "scenario": "シナリオ",
+          "alerts": "アラート数",
+          "high": "高",
+          "medium": "中",
+          "low": "低",
+          "affectedCustomers": "影響顧客"
+        }
+      }
+    }
+  },
+  "batch": {
+    "title": "一括処理",
+    "error": "データの取得に失敗しました",
+    "targetCustomers": {
+      "title": "対象顧客",
+      "selectedCount": "{{count}}件選択中",
+      "allTargeted": "全顧客が対象（未選択時）",
+      "selectAll": "全選択",
+      "deselectAll": "全解除"
+    },
+    "actions": {
+      "score": "一括スコアリング",
+      "monitor": "一括モニタリング"
+    },
+    "scoreResult": {
+      "title": "スコアリング結果",
+      "stats": {
+        "total": "合計",
+        "succeeded": "成功",
+        "failed": "失敗",
+        "duration": "実行時間"
+      },
+      "table": {
+        "header": {
+          "customerId": "顧客ID",
+          "score": "スコア",
+          "riskTier": "リスクティア",
+          "error": "エラー"
+        }
+      }
+    },
+    "monitorResult": {
+      "title": "モニタリング結果",
+      "stats": {
+        "total": "合計",
+        "succeeded": "成功",
+        "alertsTotal": "生成アラート",
+        "duration": "実行時間"
+      },
+      "table": {
+        "header": {
+          "customerId": "顧客ID",
+          "alertsRaised": "生成アラート数",
+          "error": "エラー"
+        }
+      }
+    }
+  },
+  "apikeys": {
+    "title": "APIキー管理",
+    "createButton": "新規作成",
+    "error": "APIキーの取得に失敗しました",
+    "newKey": {
+      "title": "APIキーが生成されました（この表示は一度のみ）",
+      "copy": "コピー"
+    },
+    "form": {
+      "title": "APIキー作成",
+      "nameLabel": "名前",
+      "namePlaceholder": "APIキーの用途...",
+      "roleLabel": "ロール",
+      "submit": "作成"
+    },
+    "roles": {
+      "admin": "管理者",
+      "analyst": "アナリスト",
+      "viewer": "閲覧者"
+    },
+    "status": {
+      "active": "有効",
+      "inactive": "無効"
+    },
+    "entry": {
+      "created": "作成: {{date}}",
+      "lastUsed": " | 最終使用: {{date}}"
+    },
+    "revoke": "無効化",
+    "empty": "APIキーが登録されていません"
+  },
+  "reports": {
+    "title": "STRレポート",
+    "error": "データの取得に失敗しました",
+    "result": {
+      "title": "STRレポートを作成しました",
+      "idLabel": "ID: {{id}}"
+    },
+    "export": {
+      "csv": "CSV",
+      "json": "JSON"
+    },
+    "form": {
+      "title": "STRレポート作成",
+      "targetAlert": "対象アラート",
+      "noAlerts": "対象となるアラートがありません",
+      "pointLabel": "疑わしい取引のポイント",
+      "pointPlaceholder": "疑わしい取引の理由を記述...",
+      "createdByLabel": "作成者",
+      "createdByPlaceholder": "担当者名",
+      "submit": "STRレポート作成"
+    }
+  },
+  "system": {
+    "title": "システム情報",
+    "error": "システム情報の取得に失敗しました",
+    "stats": {
+      "version": "バージョン",
+      "endpoints": "APIエンドポイント",
+      "enabledFeatures": "有効機能"
+    },
+    "components": {
+      "title": "コンポーネント",
+      "api": "Go API",
+      "engine": "Rust Engine",
+      "database": "PostgreSQL"
+    },
+    "features": {
+      "title": "機能ステータス",
+      "auth": "API認証",
+      "audit": "監査ログ",
+      "cases": "ケース管理",
+      "webhooks": "Webhook",
+      "rate_limit": "レート制限",
+      "scoring": "CDDスコアリング",
+      "monitoring": "取引モニタリング",
+      "screening": "スクリーニング",
+      "backtest": "バックテスト",
+      "config": "設定検証"
+    },
+    "status": {
+      "enabled": "有効",
+      "disabled": "無効"
+    }
+  },
+  "rules": {
+    "title": "ルール管理",
+    "error": "ルールの取得に失敗しました",
+    "actions": {
+      "import": "インポート",
+      "create": "新規作成"
+    },
+    "filter": {
+      "all": "全て",
+      "activeOnly": "有効のみ"
+    },
+    "types": {
+      "tmScenario": "TMシナリオ",
+      "cddWeight": "CDD重み付け",
+      "screeningConfig": "スクリーニング設定",
+      "countryRisk": "国別リスク"
+    },
+    "create": {
+      "title": "ルール作成",
+      "typeLabel": "種別",
+      "nameLabel": "名前",
+      "namePlaceholder": "rule_name",
+      "definitionLabel": "定義（JSON）",
+      "submit": "作成"
+    },
+    "import": {
+      "title": "ルール一括インポート",
+      "jsonArrayLabel": "JSON配列",
+      "error": "JSONの解析に失敗しました",
+      "submit": "インポート"
+    },
+    "status": {
+      "active": "有効",
+      "inactive": "無効"
+    },
+    "entry": {
+      "updatedAt": "更新: {{date}}",
+      "export": "エクスポート",
+      "activate": "有効化",
+      "deactivate": "無効化"
+    },
+    "empty": "ルールが登録されていません"
+  },
+  "webhooks": {
+    "title": "Webhook管理",
+    "createButton": "新規作成",
+    "error": "Webhookデータの取得に失敗しました",
+    "tabs": {
+      "webhooks": "Webhook",
+      "dlq": "DLQ"
+    },
+    "dlq": {
+      "table": {
+        "header": {
+          "event": "イベント",
+          "attemptCount": "試行回数",
+          "lastError": "最終エラー",
+          "failedAt": "失敗日時"
+        }
+      },
+      "reprocess": "再処理",
+      "empty": "DLQに退避されたイベントはありません"
+    },
+    "form": {
+      "title": "Webhook作成",
+      "urlLabel": "URL",
+      "eventsLabel": "イベント",
+      "submit": "作成"
+    },
+    "events": {
+      "alertCreated": "アラート作成",
+      "alertResolved": "アラート解決",
+      "caseCreated": "ケース作成",
+      "caseUpdated": "ケース更新",
+      "caseClosed": "ケースクローズ",
+      "strCreated": "STR作成",
+      "scoreChanged": "スコア変更",
+      "screeningMatch": "スクリーニング一致",
+      "screeningTruePositive": "スクリーニング真陽性",
+      "eddRequired": "EDD要求",
+      "transactionRestrictionRecommended": "取引制限推奨",
+      "relationshipDeclineRecommended": "取引謝絶推奨"
+    },
+    "status": {
+      "active": "有効",
+      "inactive": "無効"
+    },
+    "entry": {
+      "createdAt": "作成: {{date}}",
+      "deliveries": "配信履歴"
+    },
+    "deliveries": {
+      "table": {
+        "header": {
+          "event": "イベント",
+          "status": "ステータス",
+          "result": "結果",
+          "timestamp": "日時"
+        }
+      },
+      "success": "成功",
+      "failure": "失敗",
+      "empty": "配信履歴がありません"
+    },
+    "empty": "Webhookが登録されていません"
+  },
+  "whitelist": {
+    "title": "ホワイトリスト",
+    "requestButton": "申請",
+    "error": "ホワイトリストデータの取得に失敗しました",
+    "form": {
+      "title": "ホワイトリスト申請",
+      "customerId": "顧客ID",
+      "reason": "理由",
+      "validUntil": "有効期限",
+      "excludedRuleIds": "除外ルールID（任意、カンマ区切り。空欄なら全ルール除外）",
+      "excludedRuleIdsPlaceholder": "rule-a, rule-b",
+      "submit": "申請する"
+    },
+    "status": {
+      "pending_approval": "承認待ち",
+      "active": "有効",
+      "expired": "期限切れ",
+      "revoked": "解除済み"
+    },
+    "table": {
+      "header": {
+        "customerId": "顧客ID",
+        "status": "ステータス",
+        "reason": "理由",
+        "validUntil": "有効期限",
+        "requestedBy": "申請者",
+        "actions": "操作"
+      }
+    },
+    "actions": {
+      "approve": "承認",
+      "revoke": "解除",
+      "approveDisabledTitle": "申請者自身は承認できません"
+    },
+    "empty": "ホワイトリストエントリがありません"
+  }
+}

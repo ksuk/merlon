@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
@@ -243,7 +244,7 @@ func parseAuditListFilter(r *http.Request) (domain.AuditListFilter, PageRequest,
 // (ALD-005).
 func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if s.audit == nil {
-		writeError(w, http.StatusServiceUnavailable, "audit not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "audit not configured")
 		return
 	}
 
@@ -255,7 +256,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.audit.List(r.Context(), filter)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

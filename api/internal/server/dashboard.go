@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -20,7 +21,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	customers, err := s.customers.List(ctx, 10000, 0)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	stats.TotalCustomers = len(customers)
@@ -34,7 +35,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	openAlerts, err := s.alerts.ListOpen(ctx, 10000, 0)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	for _, a := range openAlerts {
@@ -46,7 +47,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if s.cases != nil {
 		cases, err := s.cases.ListOpen(ctx, 10000, 0)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 		stats.TotalCases = len(cases)

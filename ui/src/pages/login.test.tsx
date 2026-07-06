@@ -1,10 +1,11 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { LoginPage } from "./login"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -18,7 +19,7 @@ test("submits credentials and calls the login API", async () => {
     }),
   )
 
-  renderWithRouter(<LoginPage />)
+  await renderWithRouter(<LoginPage />)
 
   fireEvent.change(screen.getByLabelText("メールアドレス"), { target: { value: "alice@example.com" } })
   fireEvent.change(screen.getByLabelText("パスワード"), { target: { value: "correct-horse-battery-staple" } })
@@ -33,7 +34,7 @@ test("submits credentials and calls the login API", async () => {
 test("shows an error message when login fails", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("invalid email or password", { status: 401 }))
 
-  renderWithRouter(<LoginPage />)
+  await renderWithRouter(<LoginPage />)
 
   fireEvent.change(screen.getByLabelText("メールアドレス"), { target: { value: "alice@example.com" } })
   fireEvent.change(screen.getByLabelText("パスワード"), { target: { value: "wrong-password" } })

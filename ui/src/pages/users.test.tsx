@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { UsersPage } from "./users"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -27,7 +28,7 @@ test("renders user list with role badges", async () => {
     ),
   )
 
-  renderWithRouter(<UsersPage />)
+  await renderWithRouter(<UsersPage />)
 
   expect(await screen.findByText("alice@example.com")).toBeDefined()
   expect(screen.getByText("管理者")).toBeDefined()
@@ -36,7 +37,7 @@ test("renders user list with role badges", async () => {
 test("shows empty state", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
 
-  renderWithRouter(<UsersPage />)
+  await renderWithRouter(<UsersPage />)
 
   expect(await screen.findByText("ユーザが登録されていません")).toBeDefined()
 })

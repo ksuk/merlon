@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"time"
@@ -11,15 +12,15 @@ import (
 )
 
 type CreateTransactionRequest struct {
-	CustomerID          string                   `json:"customer_id"`
-	ExternalID          string                   `json:"external_id"`
-	Amount              float64                  `json:"amount"`
-	Currency            string                   `json:"currency"`
+	CustomerID          string                      `json:"customer_id"`
+	ExternalID          string                      `json:"external_id"`
+	Amount              float64                     `json:"amount"`
+	Currency            string                      `json:"currency"`
 	Direction           domain.TransactionDirection `json:"direction"`
-	CounterpartyID      string                   `json:"counterparty_id"`
-	CounterpartyCountry string                   `json:"counterparty_country"`
-	Channel             string                   `json:"channel"`
-	ExecutedAt          time.Time                `json:"executed_at"`
+	CounterpartyID      string                      `json:"counterparty_id"`
+	CounterpartyCountry string                      `json:"counterparty_country"`
+	Channel             string                      `json:"channel"`
+	ExecutedAt          time.Time                   `json:"executed_at"`
 }
 
 func transactionCursor(t domain.Transaction) Cursor {
@@ -29,7 +30,7 @@ func transactionCursor(t domain.Transaction) Cursor {
 func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) {
 	customerID := r.URL.Query().Get("customer_id")
 	if customerID == "" {
-		writeError(w, http.StatusBadRequest, "customer_id query parameter required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id query parameter required")
 		return
 	}
 
@@ -44,13 +45,13 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleListTransactionsCursor(w http.ResponseWriter, r *http.Request, customerID string) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	txns, err := s.transactions.ListByCustomerCursor(r.Context(), customerID, pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -71,7 +72,7 @@ func (s *Server) handleListTransactionsOffset(w http.ResponseWriter, r *http.Req
 
 	txns, err := s.transactions.ListByCustomer(r.Context(), customerID, limit+1, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -89,10 +90,10 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
@@ -101,24 +102,24 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request) {
 	var req CreateTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	if req.CustomerID == "" {
-		writeError(w, http.StatusBadRequest, "customer_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id required")
 		return
 	}
 	if req.ExternalID == "" {
-		writeError(w, http.StatusBadRequest, "external_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "external_id required")
 		return
 	}
 	if req.Amount <= 0 {
-		writeError(w, http.StatusBadRequest, "amount must be positive")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "amount must be positive")
 		return
 	}
 	if !isValidDirection(req.Direction) {
-		writeError(w, http.StatusBadRequest, "direction must be one of: inbound, outbound, internal")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "direction must be one of: inbound, outbound, internal")
 		return
 	}
 
@@ -127,10 +128,10 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusBadRequest, "customer not found: "+req.CustomerID)
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeNotFound, "customer not found: "+req.CustomerID)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -160,7 +161,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := s.transactions.Create(r.Context(), t); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

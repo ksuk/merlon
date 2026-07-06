@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net"
 	"net/http"
 	"net/url"
@@ -201,26 +202,26 @@ type createWebhookResponse struct {
 
 func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
 	var req createWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if req.URL == "" {
-		writeError(w, http.StatusBadRequest, "url is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "url is required")
 		return
 	}
 	if err := validateWebhookURL(req.URL); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 	if len(req.Events) == 0 {
-		writeError(w, http.StatusBadRequest, "events is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "events is required")
 		return
 	}
 
@@ -236,7 +237,7 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.webhooks.Create(r.Context(), hook); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -252,13 +253,13 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
 	hooks, err := s.webhooks.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if hooks == nil {
@@ -270,7 +271,7 @@ func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
@@ -279,10 +280,10 @@ func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -291,7 +292,7 @@ func (s *Server) handleGetWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
@@ -299,10 +300,10 @@ func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	if err := s.webhooks.Delete(r.Context(), id); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -311,7 +312,7 @@ func (s *Server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListWebhookDeliveries(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
@@ -321,16 +322,16 @@ func (s *Server) handleListWebhookDeliveries(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	deliveries, err := s.webhooks.ListDeliveries(r.Context(), id, 50)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if deliveries == nil {

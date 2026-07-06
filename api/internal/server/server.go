@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
@@ -309,7 +310,7 @@ func (s *Server) Start() error {
 func requestBodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ContentLength > maxRequestBodyBytes {
-			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeErrorCode(w, http.StatusRequestEntityTooLarge, apierr.CodePayloadTooLarge, "request body too large")
 			return
 		}
 		if r.Body != nil {

@@ -13,31 +13,31 @@ import { useApi } from "@/hooks/use-api"
 import { api, type WebhookDLQEntry, type WebhookDelivery, type WebhookEventType } from "@/lib/api"
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 
-const ALL_EVENTS: { value: WebhookEventType; label: string }[] = [
-  { value: "alert.created", label: "アラート作成" },
-  { value: "alert.resolved", label: "アラート解決" },
-  { value: "case.created", label: "ケース作成" },
-  { value: "case.updated", label: "ケース更新" },
-  { value: "case.closed", label: "ケースクローズ" },
-  { value: "str.created", label: "STR作成" },
-  { value: "score.changed", label: "スコア変更" },
-  { value: "screening.match", label: "スクリーニング一致" },
-  { value: "screening_true_positive", label: "スクリーニング真陽性" },
-  { value: "edd_required", label: "EDD要求" },
-  { value: "transaction_restriction_recommended", label: "取引制限推奨" },
-  { value: "relationship_decline_recommended", label: "取引謝絶推奨" },
-]
-
-function eventLabel(event: WebhookEventType) {
-  return ALL_EVENTS.find((ae) => ae.value === event)?.label ?? event
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function WebhooksPage() {
+  const { t, i18n } = useTranslation()
+  const allEvents: { value: WebhookEventType; label: string }[] = [
+    { value: "alert.created", label: t("webhooks.events.alertCreated") },
+    { value: "alert.resolved", label: t("webhooks.events.alertResolved") },
+    { value: "case.created", label: t("webhooks.events.caseCreated") },
+    { value: "case.updated", label: t("webhooks.events.caseUpdated") },
+    { value: "case.closed", label: t("webhooks.events.caseClosed") },
+    { value: "str.created", label: t("webhooks.events.strCreated") },
+    { value: "score.changed", label: t("webhooks.events.scoreChanged") },
+    { value: "screening.match", label: t("webhooks.events.screeningMatch") },
+    { value: "screening_true_positive", label: t("webhooks.events.screeningTruePositive") },
+    { value: "edd_required", label: t("webhooks.events.eddRequired") },
+    { value: "transaction_restriction_recommended", label: t("webhooks.events.transactionRestrictionRecommended") },
+    { value: "relationship_decline_recommended", label: t("webhooks.events.relationshipDeclineRecommended") },
+  ]
+  function eventLabel(event: WebhookEventType) {
+    return allEvents.find((ae) => ae.value === event)?.label ?? event
+  }
   const { data: webhooks, loading, error } = useApi(api.webhooks.list)
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -128,17 +128,17 @@ export function WebhooksPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">Webhookデータの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("webhooks.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Webhook管理</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("webhooks.title")}</h1>
         {tab === "webhooks" && (
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4" />
-            新規作成
+            {t("webhooks.createButton")}
           </Button>
         )}
       </div>
@@ -151,7 +151,7 @@ export function WebhooksPage() {
             tab === "webhooks" ? "border-primary text-foreground" : "border-transparent text-muted-foreground"
           }`}
         >
-          Webhook
+          {t("webhooks.tabs.webhooks")}
         </button>
         <button
           type="button"
@@ -160,7 +160,7 @@ export function WebhooksPage() {
             tab === "dlq" ? "border-primary text-foreground" : "border-transparent text-muted-foreground"
           }`}
         >
-          DLQ
+          {t("webhooks.tabs.dlq")}
         </button>
       </div>
 
@@ -172,10 +172,10 @@ export function WebhooksPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>イベント</TableHead>
-                  <TableHead>試行回数</TableHead>
-                  <TableHead>最終エラー</TableHead>
-                  <TableHead>失敗日時</TableHead>
+                  <TableHead>{t("webhooks.dlq.table.header.event")}</TableHead>
+                  <TableHead>{t("webhooks.dlq.table.header.attemptCount")}</TableHead>
+                  <TableHead>{t("webhooks.dlq.table.header.lastError")}</TableHead>
+                  <TableHead>{t("webhooks.dlq.table.header.failedAt")}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -187,7 +187,7 @@ export function WebhooksPage() {
                     <TableCell className="max-w-[300px] truncate text-xs text-destructive">
                       {entry.last_error ?? "-"}
                     </TableCell>
-                    <TableCell className="text-xs">{formatDateTime(entry.failed_at)}</TableCell>
+                    <TableCell className="text-xs">{formatDateTime(entry.failed_at, i18n.language)}</TableCell>
                     <TableCell>
                       <Button
                         size="sm"
@@ -195,7 +195,7 @@ export function WebhooksPage() {
                         disabled={reprocessingId === entry.id}
                         onClick={() => handleReprocess(entry.id)}
                       >
-                        再処理
+                        {t("webhooks.dlq.reprocess")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -206,7 +206,7 @@ export function WebhooksPage() {
         ) : (
           <Card>
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              DLQに退避されたイベントはありません
+              {t("webhooks.dlq.empty")}
             </CardContent>
           </Card>
         )
@@ -215,12 +215,12 @@ export function WebhooksPage() {
           {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Webhook作成</CardTitle>
+            <CardTitle className="text-base">{t("webhooks.form.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium">URL</label>
+                <label className="mb-1 block text-sm font-medium">{t("webhooks.form.urlLabel")}</label>
                 <input
                   ref={urlRef}
                   type="url"
@@ -230,9 +230,9 @@ export function WebhooksPage() {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium">イベント</label>
+                <label className="mb-2 block text-sm font-medium">{t("webhooks.form.eventsLabel")}</label>
                 <div className="flex flex-wrap gap-2">
-                  {ALL_EVENTS.map((evt) => (
+                  {allEvents.map((evt) => (
                     <button
                       key={evt.value}
                       type="button"
@@ -249,7 +249,7 @@ export function WebhooksPage() {
                 </div>
               </div>
               <Button type="submit" size="sm" disabled={creating || selectedEvents.length === 0}>
-                作成
+                {t("webhooks.form.submit")}
               </Button>
             </form>
           </CardContent>
@@ -266,7 +266,7 @@ export function WebhooksPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm">{w.url}</span>
                       <Badge variant={w.active ? "low" : "secondary"}>
-                        {w.active ? "有効" : "無効"}
+                        {w.active ? t("webhooks.status.active") : t("webhooks.status.inactive")}
                       </Badge>
                     </div>
                     <div className="flex flex-wrap gap-1">
@@ -277,13 +277,13 @@ export function WebhooksPage() {
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      作成: {formatDateTime(w.created_at)}
+                      {t("webhooks.entry.createdAt", { date: formatDateTime(w.created_at, i18n.language) })}
                     </p>
                   </div>
                   <div className="flex gap-1">
                     <Button variant="ghost" size="sm" onClick={() => toggleDeliveries(w.id)}>
                       {expandedId === w.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                      配信履歴
+                      {t("webhooks.entry.deliveries")}
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => handleDelete(w.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -298,10 +298,10 @@ export function WebhooksPage() {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>イベント</TableHead>
-                            <TableHead>ステータス</TableHead>
-                            <TableHead>結果</TableHead>
-                            <TableHead>日時</TableHead>
+                            <TableHead>{t("webhooks.deliveries.table.header.event")}</TableHead>
+                            <TableHead>{t("webhooks.deliveries.table.header.status")}</TableHead>
+                            <TableHead>{t("webhooks.deliveries.table.header.result")}</TableHead>
+                            <TableHead>{t("webhooks.deliveries.table.header.timestamp")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -313,17 +313,17 @@ export function WebhooksPage() {
                               <TableCell>{d.status_code || "-"}</TableCell>
                               <TableCell>
                                 <Badge variant={d.success ? "low" : "destructive"}>
-                                  {d.success ? "成功" : "失敗"}
+                                  {d.success ? t("webhooks.deliveries.success") : t("webhooks.deliveries.failure")}
                                 </Badge>
                                 {d.error && <span className="ml-2 text-xs text-destructive">{d.error}</span>}
                               </TableCell>
-                              <TableCell className="text-xs">{formatDateTime(d.created_at)}</TableCell>
+                              <TableCell className="text-xs">{formatDateTime(d.created_at, i18n.language)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     ) : (
-                      <p className="py-4 text-center text-sm text-muted-foreground">配信履歴がありません</p>
+                      <p className="py-4 text-center text-sm text-muted-foreground">{t("webhooks.deliveries.empty")}</p>
                     )}
                   </div>
                 )}
@@ -333,7 +333,7 @@ export function WebhooksPage() {
         ) : (
           <Card>
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              Webhookが登録されていません
+              {t("webhooks.empty")}
             </CardContent>
           </Card>
         )}

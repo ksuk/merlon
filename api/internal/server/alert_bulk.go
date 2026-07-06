@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -41,17 +42,17 @@ type bulkCloseAlertsResponse struct {
 // positive determination, not a true positive one.
 func (s *Server) handleBulkCloseAlerts(w http.ResponseWriter, r *http.Request) {
 	if s.alerts == nil {
-		writeError(w, http.StatusServiceUnavailable, "alerts not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "alerts not configured")
 		return
 	}
 
 	var req bulkCloseAlertsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 	if strings.TrimSpace(req.Reason) == "" {
-		writeError(w, http.StatusBadRequest, "reason is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "reason is required")
 		return
 	}
 
@@ -62,7 +63,7 @@ func (s *Server) handleBulkCloseAlerts(w http.ResponseWriter, r *http.Request) {
 		Severity:   req.Severity,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -111,17 +112,17 @@ type bulkCaseAssignmentResponse struct {
 // entry (case-management.md's per-alert traceability requirement).
 func (s *Server) handleBulkCaseAssignment(w http.ResponseWriter, r *http.Request) {
 	if s.alerts == nil || s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
 	var req bulkCaseAssignmentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 	if len(req.AlertIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "alert_ids is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "alert_ids is required")
 		return
 	}
 
@@ -133,16 +134,16 @@ func (s *Server) handleBulkCaseAssignment(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			var nf *domain.ErrNotFound
 			if errors.As(err, &nf) {
-				writeError(w, http.StatusNotFound, "case not found")
+				writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "case not found")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 		targetCase = c
 	} else {
 		if req.CustomerID == "" {
-			writeError(w, http.StatusBadRequest, "customer_id is required when case_id is not provided")
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id is required when case_id is not provided")
 			return
 		}
 		summary := req.Summary
@@ -160,7 +161,7 @@ func (s *Server) handleBulkCaseAssignment(w http.ResponseWriter, r *http.Request
 			UpdatedAt:  now,
 		}
 		if err := s.cases.Create(r.Context(), targetCase); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 		created = true
@@ -188,7 +189,7 @@ func (s *Server) handleBulkCaseAssignment(w http.ResponseWriter, r *http.Request
 
 	targetCase.UpdatedAt = time.Now()
 	if err := s.cases.Update(r.Context(), targetCase); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

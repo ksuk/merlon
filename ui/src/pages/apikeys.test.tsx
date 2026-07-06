@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { APIKeysPage } from "./apikeys"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -26,7 +27,7 @@ test("renders API key list", async () => {
     ),
   )
 
-  renderWithRouter(<APIKeysPage />)
+  await renderWithRouter(<APIKeysPage />)
 
   expect(await screen.findByText("本番用")).toBeDefined()
   expect(screen.getByText("管理者")).toBeDefined()
@@ -35,7 +36,7 @@ test("renders API key list", async () => {
 test("shows empty state", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
 
-  renderWithRouter(<APIKeysPage />)
+  await renderWithRouter(<APIKeysPage />)
 
   expect(await screen.findByText("APIキーが登録されていません")).toBeDefined()
 })

@@ -1,10 +1,11 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { SetupPage } from "./setup"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -18,7 +19,7 @@ test("submits the initial admin account creation form", async () => {
     }),
   )
 
-  renderWithRouter(<SetupPage />)
+  await renderWithRouter(<SetupPage />)
 
   fireEvent.change(screen.getByLabelText("メールアドレス"), { target: { value: "admin@example.com" } })
   fireEvent.change(screen.getByLabelText("初期パスワード（12文字以上）"), {
@@ -37,7 +38,7 @@ test("shows an error message when setup has already completed", async () => {
     new Response("initial setup has already been completed", { status: 409 }),
   )
 
-  renderWithRouter(<SetupPage />)
+  await renderWithRouter(<SetupPage />)
 
   fireEvent.change(screen.getByLabelText("メールアドレス"), { target: { value: "admin@example.com" } })
   fireEvent.change(screen.getByLabelText("初期パスワード（12文字以上）"), {

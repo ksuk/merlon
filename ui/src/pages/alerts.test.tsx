@@ -1,6 +1,7 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { AlertsPage } from "./alerts"
 
 const sampleAlert = {
@@ -18,7 +19,7 @@ const sampleAlert = {
 }
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -28,7 +29,7 @@ beforeEach(() => {
 test("renders alert table with data", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([sampleAlert])))
 
-  renderWithRouter(<AlertsPage />)
+  await renderWithRouter(<AlertsPage />)
 
   await screen.findByText("大口取引の検出")
   // "高" also appears as a <select> option in the bulk-close filter form, so
@@ -40,7 +41,7 @@ test("renders alert table with data", async () => {
 test("shows empty state when no alerts", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
 
-  renderWithRouter(<AlertsPage />)
+  await renderWithRouter(<AlertsPage />)
 
   expect(await screen.findByText("アラートがありません")).toBeDefined()
 })
@@ -48,7 +49,7 @@ test("shows empty state when no alerts", async () => {
 test("bulk close requires a reason before submitting", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([sampleAlert])))
 
-  renderWithRouter(<AlertsPage />)
+  await renderWithRouter(<AlertsPage />)
   await screen.findByText("大口取引の検出")
 
   const closeButton = screen.getByText("条件に一致するアラートをクローズ")
@@ -59,7 +60,7 @@ test("bulk close calls the filter-based bulk-close endpoint", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch")
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([sampleAlert])))
 
-  renderWithRouter(<AlertsPage />)
+  await renderWithRouter(<AlertsPage />)
   await screen.findByText("大口取引の検出")
 
   fireEvent.change(screen.getByPlaceholderText("判断理由（必須）"), {
@@ -87,7 +88,7 @@ test("selecting an alert enables bulk case assignment", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch")
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([sampleAlert])))
 
-  renderWithRouter(<AlertsPage />)
+  await renderWithRouter(<AlertsPage />)
   await screen.findByText("大口取引の検出")
 
   expect(screen.queryByText("選択したアラートをケースにまとめる")).toBeNull()

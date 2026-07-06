@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { CasesPage } from "./cases"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 function makeCase(id: string, status: string) {
@@ -35,7 +36,7 @@ test("displays new/reopened/str_filed status badges", async () => {
     ),
   )
 
-  renderWithRouter(<CasesPage />)
+  await renderWithRouter(<CasesPage />)
 
   expect(await screen.findByText("再オープン")).toBeDefined()
   expect(screen.getByText("STR対象")).toBeDefined()

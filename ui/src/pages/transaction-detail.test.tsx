@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { TransactionDetailPage } from "./transaction-detail"
 
 beforeEach(() => {
@@ -25,7 +26,7 @@ test("renders transaction detail", async () => {
     ),
   )
 
-  render(
+  await renderWithI18n(
     <MemoryRouter initialEntries={["/transactions/txn-001"]}>
       <Routes>
         <Route path="transactions/:id" element={<TransactionDetailPage />} />
@@ -40,7 +41,7 @@ test("renders transaction detail", async () => {
 test("shows error state", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fail"))
 
-  render(
+  await renderWithI18n(
     <MemoryRouter initialEntries={["/transactions/bad"]}>
       <Routes>
         <Route path="transactions/:id" element={<TransactionDetailPage />} />

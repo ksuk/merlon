@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"strings"
 	"time"
@@ -22,16 +23,16 @@ type CreateSTRRequest struct {
 func (s *Server) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 	var req CreateSTRRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	if req.AlertID == "" {
-		writeError(w, http.StatusBadRequest, "alert_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "alert_id required")
 		return
 	}
 	if req.SuspiciousPoint == "" {
-		writeError(w, http.StatusBadRequest, "suspicious_point required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "suspicious_point required")
 		return
 	}
 
@@ -39,10 +40,10 @@ func (s *Server) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -78,7 +79,7 @@ func (s *Server) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExportSTR(w http.ResponseWriter, r *http.Request) {
 	alertID := r.URL.Query().Get("alert_id")
 	if alertID == "" {
-		writeError(w, http.StatusBadRequest, "alert_id query parameter required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "alert_id query parameter required")
 		return
 	}
 
@@ -86,16 +87,16 @@ func (s *Server) handleExportSTR(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	customer, err := s.customers.Get(r.Context(), alert.CustomerID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "customer lookup failed")
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "customer lookup failed")
 		return
 	}
 
@@ -110,7 +111,7 @@ func (s *Server) handleExportSTR(w http.ResponseWriter, r *http.Request) {
 	case "json":
 		s.exportSTRJSON(r.Context(), w, alert, customer)
 	default:
-		writeError(w, http.StatusBadRequest, "unsupported format: "+format)
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "unsupported format: "+format)
 	}
 }
 
@@ -155,12 +156,12 @@ func sanitizeCSVCell(s string) string {
 }
 
 type strExportJSON struct {
-	ReportID     string                `json:"report_id"`
-	AlertID      string                `json:"alert_id"`
-	Customer     strCustomerExport     `json:"customer"`
-	Alert        strAlertExport        `json:"alert"`
+	ReportID     string                 `json:"report_id"`
+	AlertID      string                 `json:"alert_id"`
+	Customer     strCustomerExport      `json:"customer"`
+	Alert        strAlertExport         `json:"alert"`
 	Transactions []strTransactionExport `json:"transactions"`
-	ExportedAt   time.Time             `json:"exported_at"`
+	ExportedAt   time.Time              `json:"exported_at"`
 }
 
 type strCustomerExport struct {

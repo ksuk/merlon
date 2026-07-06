@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { AlertTriangle, ArrowLeftRight, FolderOpen, ShieldAlert, ShieldCheck, Users } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import {
   Bar,
   BarChart,
@@ -30,33 +31,13 @@ const SEVERITY_COLORS: Record<string, string> = {
   critical: "#ef4444",
 }
 
-const RISK_LABELS: Record<string, string> = {
-  low: "低リスク",
-  medium: "中リスク",
-  high: "高リスク",
-  unscored: "未スコア",
-}
-
-const SEVERITY_LABELS: Record<string, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
-  critical: "重大",
-}
-
-const LIST_TYPE_LABELS: Record<string, string> = {
-  sanctions: "制裁リスト",
-  pep: "PEPリスト",
-  "pep-rca": "PEP家族・近親者リスト",
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  open: "未対応",
-  investigating: "調査中",
-  escalated: "エスカレーション",
-  closed: "完了",
-  closed_true_positive: "完了(真陽性)",
-  closed_false_positive: "完了(偽陽性)",
+const CASE_STATUS_LABEL_KEYS: Record<string, string> = {
+  open: "open",
+  investigating: "investigating",
+  escalated: "escalated",
+  closed: "closed",
+  closed_true_positive: "closedTruePositive",
+  closed_false_positive: "closedFalsePositive",
 }
 
 // WHITELIST_EXPIRING_SOON_DAYS mirrors the daily expiry job's notification
@@ -65,7 +46,14 @@ const STATUS_LABELS: Record<string, string> = {
 // changes.
 const WHITELIST_EXPIRING_SOON_DAYS = 30
 
+const LIST_TYPE_LABEL_KEYS: Record<string, string> = {
+  sanctions: "sanctions",
+  pep: "pep",
+  "pep-rca": "pepRca",
+}
+
 export function DashboardPage() {
+  const { t } = useTranslation()
   const { data: stats, loading, error } = useApi(api.dashboard)
   const { data: activeWhitelist } = useApi(() => api.whitelist.list("active"))
 
@@ -82,7 +70,7 @@ export function DashboardPage() {
   if (error) {
     return (
       <div className="flex items-center justify-center p-12">
-        <p className="text-destructive">データの取得に失敗しました: {error}</p>
+        <p className="text-destructive">{t("dashboard.errorPrefix", { error })}</p>
       </div>
     )
   }
@@ -90,47 +78,57 @@ export function DashboardPage() {
   if (!stats) return null
 
   const riskData = Object.entries(stats.customers_by_risk_tier).map(([key, value]) => ({
-    name: RISK_LABELS[key] ?? key,
+    name: t(`dashboard.risk.${key}`, { defaultValue: key }),
     value,
     color: RISK_COLORS[key] ?? "#a3a3a3",
   }))
 
   const severityData = Object.entries(stats.alerts_by_severity).map(([key, value]) => ({
-    name: SEVERITY_LABELS[key] ?? key,
+    name: t(`dashboard.severity.${key}`, { defaultValue: key }),
     value,
     fill: SEVERITY_COLORS[key] ?? "#a3a3a3",
   }))
 
   const caseStatusData = Object.entries(stats.cases_by_status).map(([key, value]) => ({
-    name: STATUS_LABELS[key] ?? key,
+    name: t(`dashboard.caseStatusLabel.${CASE_STATUS_LABEL_KEYS[key] ?? key}`, { defaultValue: key }),
     value,
   }))
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">ダッシュボード</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t("dashboard.title")}</h1>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="顧客数" value={stats.total_customers} icon={Users} />
-        <StatCard title="アラート" value={stats.total_alerts} icon={AlertTriangle} description="未解決" />
-        <StatCard title="ケース" value={stats.total_cases} icon={FolderOpen} description="オープン" />
+        <StatCard title={t("dashboard.stats.customers")} value={stats.total_customers} icon={Users} />
         <StatCard
-          title="直近の取引"
+          title={t("dashboard.stats.alerts")}
+          value={stats.total_alerts}
+          icon={AlertTriangle}
+          description={t("dashboard.stats.alertsDescription")}
+        />
+        <StatCard
+          title={t("dashboard.stats.cases")}
+          value={stats.total_cases}
+          icon={FolderOpen}
+          description={t("dashboard.stats.casesDescription")}
+        />
+        <StatCard
+          title={t("dashboard.stats.recentTransactions")}
           value={stats.recent_transactions}
           icon={ArrowLeftRight}
         />
         <StatCard
-          title="ホワイトリスト期限切れ間近"
+          title={t("dashboard.stats.whitelistExpiringSoon")}
           value={expiringSoonCount}
           icon={ShieldCheck}
-          description={`${WHITELIST_EXPIRING_SOON_DAYS}日以内`}
+          description={t("dashboard.stats.whitelistExpiringSoonDescription", { days: WHITELIST_EXPIRING_SOON_DAYS })}
         />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">顧客リスク分布</CardTitle>
+            <CardTitle className="text-base">{t("dashboard.charts.riskDistribution")}</CardTitle>
           </CardHeader>
           <CardContent>
             {riskData.length > 0 ? (
@@ -154,14 +152,14 @@ export function DashboardPage() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <p className="py-12 text-center text-sm text-muted-foreground">データなし</p>
+              <p className="py-12 text-center text-sm text-muted-foreground">{t("dashboard.noData")}</p>
             )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">アラート深刻度</CardTitle>
+            <CardTitle className="text-base">{t("dashboard.charts.severityDistribution")}</CardTitle>
           </CardHeader>
           <CardContent>
             {severityData.length > 0 ? (
@@ -178,7 +176,7 @@ export function DashboardPage() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <p className="py-12 text-center text-sm text-muted-foreground">データなし</p>
+              <p className="py-12 text-center text-sm text-muted-foreground">{t("dashboard.noData")}</p>
             )}
           </CardContent>
         </Card>
@@ -189,17 +187,23 @@ export function DashboardPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <ShieldAlert className="h-4 w-4" />
-              制裁・PEPリストの鮮度
+              {t("dashboard.charts.screeningFreshness")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
               {stats.screening_list_freshness.map((list) => (
                 <div key={list.list_id} className="flex items-center gap-2">
-                  <Badge variant="outline">{LIST_TYPE_LABELS[list.list_type] ?? list.list_type}</Badge>
+                  <Badge variant="outline">
+                    {t(`dashboard.listType.${LIST_TYPE_LABEL_KEYS[list.list_type] ?? list.list_type}`, {
+                      defaultValue: list.list_type,
+                    })}
+                  </Badge>
                   <span className="text-sm text-muted-foreground">{list.list_id}</span>
                   <Badge variant={list.needs_operational_alert ? "destructive" : "secondary"}>
-                    {list.stale_days === 0 ? "最新" : `${list.stale_days}日経過`}
+                    {list.stale_days === 0
+                      ? t("dashboard.freshness.upToDate")
+                      : t("dashboard.freshness.staleDays", { days: list.stale_days })}
                   </Badge>
                 </div>
               ))}
@@ -211,7 +215,7 @@ export function DashboardPage() {
       {caseStatusData.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ケースステータス</CardTitle>
+            <CardTitle className="text-base">{t("dashboard.charts.caseStatusTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex gap-4">

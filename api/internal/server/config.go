@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 )
 
@@ -12,32 +13,32 @@ type validateConfigRequest struct {
 
 func (s *Server) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 	if s.configEngine == nil {
-		writeError(w, http.StatusServiceUnavailable, "config validation not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "config validation not configured")
 		return
 	}
 
 	var req validateConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if req.ConfigType == "" {
-		writeError(w, http.StatusBadRequest, "config_type is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "config_type is required")
 		return
 	}
 	if req.YAMLContent == "" {
-		writeError(w, http.StatusBadRequest, "yaml_content is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "yaml_content is required")
 		return
 	}
 	if len(req.YAMLContent) > 512*1024 {
-		writeError(w, http.StatusBadRequest, "yaml_content too large (max 512KB)")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "yaml_content too large (max 512KB)")
 		return
 	}
 
 	result, err := s.configEngine.ValidateConfig(r.Context(), req.ConfigType, req.YAMLContent)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

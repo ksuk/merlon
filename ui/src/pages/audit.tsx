@@ -12,50 +12,55 @@ import { RuleDiffView } from "@/components/audit/rule-diff-view"
 import { api, type AuditEntry, type AuditListParams } from "@/lib/api"
 import { Download } from "lucide-react"
 import { Fragment, useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 
-const ACTION_LABELS: Record<string, string> = {
-  create: "作成",
-  update: "更新",
-  update_status: "ステータス変更",
-  delete: "削除",
-  score_customer: "スコアリング",
-  screen_customer: "スクリーニング",
-  run_backtest: "バックテスト",
-  create_str: "STR作成",
-  export_audit_logs: "監査ログエクスポート",
+// ACTION_CATEGORY_VALUES mirror domain.ResourceTypesForCategory's map keys
+// (audit.md §1 操作カテゴリ, ALD-001's action_category filter axis) and are
+// sent verbatim as the API query parameter, so they must stay in Japanese to
+// match the backend contract; only the displayed label is translated below.
+// i18n-ignore
+const ACTION_CATEGORY_VALUES = ["", "認証", "顧客データ", "ルール管理", "アラート・ケース", "STR", "ホワイトリスト", "管理操作"] as const
+const ACTION_CATEGORY_LABEL_KEYS: Record<string, string> = {
+  "": "all",
+  "認証": "auth",
+  "顧客データ": "customerData",
+  "ルール管理": "ruleManagement",
+  "アラート・ケース": "alertCase",
+  STR: "str",
+  "ホワイトリスト": "whitelist",
+  "管理操作": "adminOp",
 }
 
-const RESOURCE_LABELS: Record<string, string> = {
-  customers: "顧客",
-  transactions: "取引",
-  alerts: "アラート",
-  cases: "ケース",
-  webhooks: "Webhook",
-  batch: "バッチ",
-  reports: "レポート",
-  admin: "管理",
-  rules: "ルール",
-  audit: "監査ログ",
-}
-
-// ACTION_CATEGORIES mirrors domain.ResourceTypesForCategory's keys
-// (audit.md §1 操作カテゴリ, ALD-001's action_category filter axis).
-const ACTION_CATEGORIES = [
-  { value: "", label: "全カテゴリ" },
-  { value: "認証", label: "認証" },
-  { value: "顧客データ", label: "顧客データ" },
-  { value: "ルール管理", label: "ルール管理" },
-  { value: "アラート・ケース", label: "アラート・ケース" },
-  { value: "STR", label: "STR" },
-  { value: "ホワイトリスト", label: "ホワイトリスト" },
-  { value: "管理操作", label: "管理操作" },
-]
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function AuditPage() {
+  const { t, i18n } = useTranslation()
+  const actionLabels: Record<string, string> = {
+    create: t("audit.action.create"),
+    update: t("audit.action.update"),
+    update_status: t("audit.action.update_status"),
+    delete: t("audit.action.delete"),
+    score_customer: t("audit.action.score_customer"),
+    screen_customer: t("audit.action.screen_customer"),
+    run_backtest: t("audit.action.run_backtest"),
+    create_str: t("audit.action.create_str"),
+    export_audit_logs: t("audit.action.export_audit_logs"),
+  }
+  const resourceLabels: Record<string, string> = {
+    customers: t("audit.resource.customers"),
+    transactions: t("audit.resource.transactions"),
+    alerts: t("audit.resource.alerts"),
+    cases: t("audit.resource.cases"),
+    webhooks: t("audit.resource.webhooks"),
+    batch: t("audit.resource.batch"),
+    reports: t("audit.resource.reports"),
+    admin: t("audit.resource.admin"),
+    rules: t("audit.resource.rules"),
+    audit: t("audit.resource.audit"),
+  }
+
   const [entries, setEntries] = useState<AuditEntry[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -119,20 +124,20 @@ export function AuditPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">監査ログの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("audit.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">監査ログ</h1>
-        <p className="text-sm text-muted-foreground">{entries?.length ?? 0} 件</p>
+        <h1 className="text-2xl font-bold tracking-tight">{t("audit.title")}</h1>
+        <p className="text-sm text-muted-foreground">{t("audit.count", { count: entries?.length ?? 0 })}</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label htmlFor="audit-since" className="mb-1 block text-xs font-medium text-muted-foreground">
-            期間（開始）
+            {t("audit.filter.since")}
           </label>
           <input
             id="audit-since"
@@ -144,7 +149,7 @@ export function AuditPage() {
         </div>
         <div>
           <label htmlFor="audit-until" className="mb-1 block text-xs font-medium text-muted-foreground">
-            期間（終了）
+            {t("audit.filter.until")}
           </label>
           <input
             id="audit-until"
@@ -156,7 +161,7 @@ export function AuditPage() {
         </div>
         <div>
           <label htmlFor="audit-category" className="mb-1 block text-xs font-medium text-muted-foreground">
-            操作カテゴリ
+            {t("audit.filter.category")}
           </label>
           <select
             id="audit-category"
@@ -164,36 +169,36 @@ export function AuditPage() {
             onChange={(e) => setActionCategory(e.target.value)}
             className="rounded-md border bg-background px-2 py-1 text-sm"
           >
-            {ACTION_CATEGORIES.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
+            {ACTION_CATEGORY_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {t(`audit.category.${ACTION_CATEGORY_LABEL_KEYS[value]}`)}
               </option>
             ))}
           </select>
         </div>
         <div>
           <label htmlFor="audit-user" className="mb-1 block text-xs font-medium text-muted-foreground">
-            操作者
+            {t("audit.filter.user")}
           </label>
           <input
             id="audit-user"
             type="text"
             value={userId}
             onChange={(e) => setUserId(e.target.value)}
-            placeholder="user_id"
+            placeholder={t("audit.filter.userPlaceholder")}
             className="rounded-md border bg-background px-2 py-1 text-sm"
           />
         </div>
         <div>
           <label htmlFor="audit-resource" className="mb-1 block text-xs font-medium text-muted-foreground">
-            対象リソースID
+            {t("audit.filter.resourceId")}
           </label>
           <input
             id="audit-resource"
             type="text"
             value={resourceId}
             onChange={(e) => setResourceId(e.target.value)}
-            placeholder="resource_id"
+            placeholder={t("audit.filter.resourceIdPlaceholder")}
             className="rounded-md border bg-background px-2 py-1 text-sm"
           />
         </div>
@@ -214,12 +219,12 @@ export function AuditPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>日時</TableHead>
-              <TableHead>操作</TableHead>
-              <TableHead>リソース</TableHead>
-              <TableHead>リソースID</TableHead>
-              <TableHead>ユーザー</TableHead>
-              <TableHead>IPアドレス</TableHead>
+              <TableHead>{t("audit.table.header.timestamp")}</TableHead>
+              <TableHead>{t("audit.table.header.action")}</TableHead>
+              <TableHead>{t("audit.table.header.resource")}</TableHead>
+              <TableHead>{t("audit.table.header.resourceId")}</TableHead>
+              <TableHead>{t("audit.table.header.user")}</TableHead>
+              <TableHead>{t("audit.table.header.ipAddress")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -234,15 +239,15 @@ export function AuditPage() {
                       className={hasDiff ? "cursor-pointer hover:bg-accent/50" : undefined}
                     >
                       <TableCell className="whitespace-nowrap text-sm">
-                        {formatDateTime(e.created_at)}
+                        {formatDateTime(e.created_at, i18n.language)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">
-                          {ACTION_LABELS[e.action] ?? e.action}
+                          {actionLabels[e.action] ?? e.action}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {RESOURCE_LABELS[e.resource_type] ?? e.resource_type}
+                        {resourceLabels[e.resource_type] ?? e.resource_type}
                       </TableCell>
                       <TableCell className="font-mono text-sm">
                         {e.resource_id || "-"}
@@ -265,7 +270,7 @@ export function AuditPage() {
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  監査ログがありません
+                  {t("audit.table.empty")}
                 </TableCell>
               </TableRow>
             )}
@@ -276,7 +281,7 @@ export function AuditPage() {
       {hasMore && (
         <div className="flex justify-center">
           <Button variant="outline" size="sm" disabled={loading} onClick={() => load(nextCursor)}>
-            さらに読み込む
+            {t("audit.loadMore")}
           </Button>
         </div>
       )}

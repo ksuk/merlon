@@ -4,14 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api, type ConfigValidationResult } from "@/lib/api"
 import { CheckCircle, Settings2, XCircle } from "lucide-react"
 import { useRef, useState } from "react"
-
-const CONFIG_TYPES = [
-  { value: "cdd_weights", label: "CDD重み付け" },
-  { value: "screening_lists", label: "スクリーニングリスト" },
-  { value: "scenario_rules", label: "シナリオルール" },
-]
+import { useTranslation } from "react-i18next"
 
 export function ConfigPage() {
+  const { t } = useTranslation()
+  const configTypes = [
+    { value: "cdd_weights", label: t("config.types.cddWeights") },
+    { value: "screening_lists", label: t("config.types.screeningLists") },
+    { value: "scenario_rules", label: t("config.types.scenarioRules") },
+  ]
   const [configType, setConfigType] = useState("cdd_weights")
   const yamlRef = useRef<HTMLTextAreaElement>(null)
   const [validating, setValidating] = useState(false)
@@ -33,48 +34,48 @@ export function ConfigPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">設定検証</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t("config.title")}</h1>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Settings2 className="h-4 w-4" />
-            YAML設定の検証
+            {t("config.form.title")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleValidate} className="space-y-4">
             <div>
-              <label className="mb-2 block text-sm font-medium">設定タイプ</label>
+              <label className="mb-2 block text-sm font-medium">{t("config.form.typeLabel")}</label>
               <div className="flex gap-2">
-                {CONFIG_TYPES.map((t) => (
+                {configTypes.map((ct) => (
                   <button
-                    key={t.value}
+                    key={ct.value}
                     type="button"
-                    onClick={() => setConfigType(t.value)}
+                    onClick={() => setConfigType(ct.value)}
                     className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                      configType === t.value
+                      configType === ct.value
                         ? "border-primary bg-primary/10 text-primary"
                         : "border-input text-muted-foreground hover:bg-accent"
                     }`}
                   >
-                    {t.label}
+                    {ct.label}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">YAML</label>
+              <label className="mb-1 block text-sm font-medium">{t("config.form.yamlLabel")}</label>
               <textarea
                 ref={yamlRef}
                 required
                 rows={12}
-                placeholder={"# 設定をYAML形式で入力...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2"}
+                placeholder={t("config.form.yamlPlaceholder")}
                 className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
             <Button type="submit" size="sm" disabled={validating}>
-              {validating ? "検証中..." : "検証"}
+              {validating ? t("config.form.validating") : t("config.form.submit")}
             </Button>
           </form>
         </CardContent>
@@ -87,14 +88,14 @@ export function ConfigPage() {
               {result.valid ? (
                 <>
                   <CheckCircle className="h-5 w-5 text-green-600" />
-                  <span className="font-medium text-green-800">検証成功</span>
-                  <Badge variant="low">有効</Badge>
+                  <span className="font-medium text-green-800">{t("config.result.successTitle")}</span>
+                  <Badge variant="low">{t("config.result.validBadge")}</Badge>
                 </>
               ) : (
                 <>
                   <XCircle className="h-5 w-5 text-red-600" />
-                  <span className="font-medium text-red-800">検証エラー</span>
-                  <Badge variant="destructive">{result.errors.length}件</Badge>
+                  <span className="font-medium text-red-800">{t("config.result.errorTitle")}</span>
+                  <Badge variant="destructive">{t("config.result.errorCount", { count: result.errors.length })}</Badge>
                 </>
               )}
             </div>

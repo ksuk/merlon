@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"sync"
@@ -61,7 +62,7 @@ func (s *Server) rateLimitMiddleware(next http.Handler) http.Handler {
 
 		if !allowed {
 			w.Header().Set("Retry-After", strconv.Itoa(int(s.limiter.window.Seconds())))
-			writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			writeErrorCode(w, http.StatusTooManyRequests, apierr.CodeRateLimited, "rate limit exceeded")
 			return
 		}
 

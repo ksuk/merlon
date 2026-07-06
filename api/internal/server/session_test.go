@@ -143,6 +143,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 	if strings.Contains(rec.Body.String(), testUserPassword) || strings.Contains(rec.Body.String(), "totally-wrong-password") {
 		t.Fatal("response body leaks a plaintext password")
 	}
+	assertErrorCode(t, rec, "unauthorized")
 }
 
 func TestLogin_RecordsAuditEvent(t *testing.T) {
@@ -242,6 +243,7 @@ func TestRefresh_RotatesToken(t *testing.T) {
 	if rec.Code == http.StatusOK {
 		t.Fatal("reusing a rotated refresh token succeeded")
 	}
+	assertErrorCode(t, rec, "unauthorized")
 }
 
 func TestRefresh_ReuseDetection_RevokesAllSessions(t *testing.T) {

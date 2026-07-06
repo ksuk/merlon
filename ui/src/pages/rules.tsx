@@ -4,25 +4,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { cn } from "@/lib/utils"
 import { api, type RuleDefinition, type RuleType } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { Download, FileUp, Plus, PowerOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 
-const RULE_TYPES: { value: RuleType; label: string }[] = [
-  { value: "TM_SCENARIO", label: "TMシナリオ" },
-  { value: "CDD_WEIGHT", label: "CDD重み付け" },
-  { value: "SCREENING_CONFIG", label: "スクリーニング設定" },
-  { value: "COUNTRY_RISK", label: "国別リスク" },
-]
-
-function ruleTypeLabel(t: RuleType) {
-  return RULE_TYPES.find((rt) => rt.value === t)?.label ?? t
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function RulesPage() {
+  const { t, i18n } = useTranslation()
+  const ruleTypes: { value: RuleType; label: string }[] = [
+    { value: "TM_SCENARIO", label: t("rules.types.tmScenario") },
+    { value: "CDD_WEIGHT", label: t("rules.types.cddWeight") },
+    { value: "SCREENING_CONFIG", label: t("rules.types.screeningConfig") },
+    { value: "COUNTRY_RISK", label: t("rules.types.countryRisk") },
+  ]
+  function ruleTypeLabel(rt: RuleType) {
+    return ruleTypes.find((entry) => entry.value === rt)?.label ?? rt
+  }
   const { data: user } = useApi(api.auth.me)
   const isAdmin = user?.role === "admin"
 
@@ -50,7 +51,7 @@ export function RulesPage() {
       setRules(res.data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(translateApiError(err, t))
     } finally {
       setLoading(false)
     }
@@ -93,7 +94,7 @@ export function RulesPage() {
     try {
       items = JSON.parse(text)
     } catch {
-      setImportError("JSONの解析に失敗しました")
+      setImportError(t("rules.import.error"))
       return
     }
 
@@ -104,7 +105,7 @@ export function RulesPage() {
       setShowImport(false)
       await reload()
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : String(err))
+      setImportError(translateApiError(err, t))
     } finally {
       setImporting(false)
     }
@@ -122,16 +123,16 @@ export function RulesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">ルール管理</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("rules.title")}</h1>
         {isAdmin && (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setShowImport(!showImport)}>
               <FileUp className="h-4 w-4" />
-              インポート
+              {t("rules.actions.import")}
             </Button>
             <Button size="sm" onClick={() => setShowCreate(!showCreate)}>
               <Plus className="h-4 w-4" />
-              新規作成
+              {t("rules.actions.create")}
             </Button>
           </div>
         )}
@@ -148,20 +149,20 @@ export function RulesPage() {
                 : "border-input text-muted-foreground hover:bg-accent"
             }`}
           >
-            全て
+            {t("rules.filter.all")}
           </button>
-          {RULE_TYPES.map((t) => (
+          {ruleTypes.map((rt) => (
             <button
-              key={t.value}
+              key={rt.value}
               type="button"
-              onClick={() => setTypeFilter(t.value)}
+              onClick={() => setTypeFilter(rt.value)}
               className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                typeFilter === t.value
+                typeFilter === rt.value
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-input text-muted-foreground hover:bg-accent"
               }`}
             >
-              {t.label}
+              {rt.label}
             </button>
           ))}
         </div>
@@ -171,47 +172,47 @@ export function RulesPage() {
             checked={activeOnly}
             onChange={(e) => setActiveOnly(e.target.checked)}
           />
-          有効のみ
+          {t("rules.filter.activeOnly")}
         </label>
       </div>
 
       {showCreate && isAdmin && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ルール作成</CardTitle>
+            <CardTitle className="text-base">{t("rules.create.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium">種別</label>
+                <label className="mb-2 block text-sm font-medium">{t("rules.create.typeLabel")}</label>
                 <div className="flex gap-2">
-                  {RULE_TYPES.map((t) => (
+                  {ruleTypes.map((rt) => (
                     <button
-                      key={t.value}
+                      key={rt.value}
                       type="button"
-                      onClick={() => setCreateType(t.value)}
+                      onClick={() => setCreateType(rt.value)}
                       className={`rounded-md border px-3 py-1 text-xs font-medium transition-colors ${
-                        createType === t.value
+                        createType === rt.value
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-input text-muted-foreground hover:bg-accent"
                       }`}
                     >
-                      {t.label}
+                      {rt.label}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">名前</label>
+                <label className="mb-1 block text-sm font-medium">{t("rules.create.nameLabel")}</label>
                 <input
                   ref={nameRef}
                   required
-                  placeholder="rule_name"
+                  placeholder={t("rules.create.namePlaceholder")}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">定義（JSON）</label>
+                <label className="mb-1 block text-sm font-medium">{t("rules.create.definitionLabel")}</label>
                 <textarea
                   ref={definitionRef}
                   required
@@ -221,7 +222,7 @@ export function RulesPage() {
                 />
               </div>
               <Button type="submit" size="sm" disabled={creating}>
-                作成
+                {t("rules.create.submit")}
               </Button>
             </form>
           </CardContent>
@@ -231,12 +232,12 @@ export function RulesPage() {
       {showImport && isAdmin && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ルール一括インポート</CardTitle>
+            <CardTitle className="text-base">{t("rules.import.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleImport} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium">JSON配列</label>
+                <label className="mb-1 block text-sm font-medium">{t("rules.import.jsonArrayLabel")}</label>
                 <textarea
                   ref={importRef}
                   required
@@ -247,7 +248,7 @@ export function RulesPage() {
               </div>
               {importError && <p className="text-sm text-destructive">{importError}</p>}
               <Button type="submit" size="sm" disabled={importing}>
-                インポート
+                {t("rules.import.submit")}
               </Button>
             </form>
           </CardContent>
@@ -257,7 +258,7 @@ export function RulesPage() {
       {loading ? (
         <div className="h-48 animate-pulse rounded-xl border bg-muted" />
       ) : error ? (
-        <p className="p-12 text-center text-destructive">ルールの取得に失敗しました</p>
+        <p className="p-12 text-center text-destructive">{t("rules.error")}</p>
       ) : (
         <div className="space-y-3">
           {rules && rules.length > 0 ? (
@@ -269,7 +270,7 @@ export function RulesPage() {
                       <span className="text-sm font-medium">{rule.name}</span>
                       <Badge variant="outline">{ruleTypeLabel(rule.type)}</Badge>
                       <Badge variant={rule.is_active ? "low" : "secondary"}>
-                        {rule.is_active ? "有効" : "無効"}
+                        {rule.is_active ? t("rules.status.active") : t("rules.status.inactive")}
                       </Badge>
                       <span className="text-xs text-muted-foreground">v{rule.version}</span>
                     </div>
@@ -277,7 +278,7 @@ export function RulesPage() {
                       <p className="text-xs text-muted-foreground">{rule.description}</p>
                     )}
                     <p className="text-xs text-muted-foreground">
-                      更新: {formatDateTime(rule.updated_at)}
+                      {t("rules.entry.updatedAt", { date: formatDateTime(rule.updated_at, i18n.language) })}
                     </p>
                   </div>
                   <div className="flex gap-1">
@@ -287,12 +288,12 @@ export function RulesPage() {
                       className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
                     >
                       <Download className="h-4 w-4" />
-                      エクスポート
+                      {t("rules.entry.export")}
                     </a>
                     {isAdmin && (
                       <Button variant="ghost" size="sm" onClick={() => handleToggleActive(rule)}>
                         <PowerOff className="h-4 w-4" />
-                        {rule.is_active ? "無効化" : "有効化"}
+                        {rule.is_active ? t("rules.entry.deactivate") : t("rules.entry.activate")}
                       </Button>
                     )}
                   </div>
@@ -302,7 +303,7 @@ export function RulesPage() {
           ) : (
             <Card>
               <CardContent className="p-8 text-center text-sm text-muted-foreground">
-                ルールが登録されていません
+                {t("rules.empty")}
               </CardContent>
             </Card>
           )}

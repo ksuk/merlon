@@ -10,9 +10,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type CasePriority, type CaseStatus } from "@/lib/api"
+import { api, type CasePriority } from "@/lib/api"
 import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
 const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critical"> = {
@@ -22,30 +23,27 @@ const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critic
   critical: "critical",
 }
 
-const PRIORITY_LABELS: Record<string, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
-  critical: "重大",
-}
-
-// new/reopened/str_filed は WS-8 Task 1（ケースステータス拡張）で追加。
-// open は new のエイリアスとして受理され続ける（Contract Stability）。
-const STATUS_LABELS: Record<CaseStatus, string> = {
-  open: "新規",
-  new: "新規",
-  investigating: "調査中",
-  escalated: "エスカレーション",
-  closed: "完了",
-  reopened: "再オープン",
-  str_filed: "STR対象",
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function CasesPage() {
+  const { t, i18n } = useTranslation()
+  const priorityLabels: Record<CasePriority, string> = {
+    low: t("casePriority.low"),
+    medium: t("casePriority.medium"),
+    high: t("casePriority.high"),
+    critical: t("casePriority.critical"),
+  }
+  const statusLabels: Record<string, string> = {
+    open: t("caseStatus.open"),
+    new: t("caseStatus.new"),
+    investigating: t("caseStatus.investigating"),
+    escalated: t("caseStatus.escalated"),
+    closed: t("caseStatus.closed"),
+    reopened: t("caseStatus.reopened"),
+    str_filed: t("caseStatus.str_filed"),
+  }
   const { data: cases, loading, error } = useApi(api.cases.list)
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -83,18 +81,18 @@ export function CasesPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">ケースデータの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("cases.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">ケース一覧</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("cases.title")}</h1>
         <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground">{cases?.length ?? 0} 件</p>
+          <p className="text-sm text-muted-foreground">{t("cases.count", { count: cases?.length ?? 0 })}</p>
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4" />
-            新規作成
+            {t("cases.createButton")}
           </Button>
         </div>
       </div>
@@ -102,44 +100,44 @@ export function CasesPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ケース作成</CardTitle>
+            <CardTitle className="text-base">{t("cases.form.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium">顧客ID</label>
+                  <label className="mb-1 block text-xs font-medium">{t("cases.form.customerId")}</label>
                   <input ref={custRef} required placeholder="cust-001"
                     className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium">アラートID（カンマ区切り）</label>
+                  <label className="mb-1 block text-xs font-medium">{t("cases.form.alertIds")}</label>
                   <input ref={alertRef} placeholder="alert-001,alert-002"
                     className="w-48 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium">担当者</label>
+                  <label className="mb-1 block text-xs font-medium">{t("cases.form.assignedTo")}</label>
                   <input ref={assignRef} placeholder="tanaka"
                     className="w-24 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium">優先度</label>
+                  <label className="mb-1 block text-xs font-medium">{t("cases.form.priority")}</label>
                   <div className="flex gap-1">
                     {(["low", "medium", "high"] as const).map((p) => (
                       <button key={p} type="button" onClick={() => setPriority(p)}
                         className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${priority === p ? "border-primary bg-primary/10 text-primary" : "border-input text-muted-foreground hover:bg-accent"}`}>
-                        {PRIORITY_LABELS[p]}
+                        {priorityLabels[p]}
                       </button>
                     ))}
                   </div>
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">概要</label>
-                <input ref={summaryRef} required placeholder="ケースの概要..."
+                <label className="mb-1 block text-xs font-medium">{t("cases.form.summary")}</label>
+                <input ref={summaryRef} required placeholder={t("cases.form.summaryPlaceholder")}
                   className="w-full rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
-              <Button type="submit" size="sm" disabled={creating}>作成</Button>
+              <Button type="submit" size="sm" disabled={creating}>{t("cases.form.submit")}</Button>
             </form>
           </CardContent>
         </Card>
@@ -149,12 +147,12 @@ export function CasesPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>優先度</TableHead>
-              <TableHead>ステータス</TableHead>
-              <TableHead>顧客ID</TableHead>
-              <TableHead>担当者</TableHead>
-              <TableHead>概要</TableHead>
-              <TableHead>作成日時</TableHead>
+              <TableHead>{t("cases.table.header.priority")}</TableHead>
+              <TableHead>{t("cases.table.header.status")}</TableHead>
+              <TableHead>{t("cases.table.header.customerId")}</TableHead>
+              <TableHead>{t("cases.table.header.assignedTo")}</TableHead>
+              <TableHead>{t("cases.table.header.summary")}</TableHead>
+              <TableHead>{t("cases.table.header.createdAt")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -164,12 +162,12 @@ export function CasesPage() {
                   <TableCell>
                     <Link to={`/cases/${c.id}`}>
                       <Badge variant={PRIORITY_VARIANT[c.priority]}>
-                        {PRIORITY_LABELS[c.priority] ?? c.priority}
+                        {priorityLabels[c.priority] ?? c.priority}
                       </Badge>
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{STATUS_LABELS[c.status] ?? c.status}</Badge>
+                    <Badge variant="outline">{statusLabels[c.status] ?? c.status}</Badge>
                   </TableCell>
                   <TableCell className="font-mono text-sm">
                     <Link to={`/customers/${c.customer_id}`} className="text-primary hover:underline">
@@ -178,13 +176,13 @@ export function CasesPage() {
                   </TableCell>
                   <TableCell>{c.assigned_to || "-"}</TableCell>
                   <TableCell className="max-w-[300px] truncate">{c.summary}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDateTime(c.created_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDateTime(c.created_at, i18n.language)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  ケースがありません
+                  {t("cases.table.empty")}
                 </TableCell>
               </TableRow>
             )}

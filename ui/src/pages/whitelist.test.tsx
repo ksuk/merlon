@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { WhitelistPage } from "./whitelist"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 const adminUser = { id: "u-admin", email: "admin@example.com", role: "admin" }
@@ -59,7 +60,7 @@ beforeEach(() => {
 test("renders pending and active entries", async () => {
   mockFetchRouting(adminUser, [pendingEntry, activeEntry])
 
-  renderWithRouter(<WhitelistPage />)
+  await renderWithRouter(<WhitelistPage />)
 
   expect(await screen.findByText("承認待ち")).toBeDefined()
   expect(screen.getByText("有効")).toBeDefined()
@@ -71,7 +72,7 @@ test("shows approve button disabled for requester", async () => {
   const ownRequestEntry = { ...pendingEntry, requested_by: adminUser.id }
   mockFetchRouting(adminUser, [ownRequestEntry])
 
-  renderWithRouter(<WhitelistPage />)
+  await renderWithRouter(<WhitelistPage />)
 
   const approveButton = await screen.findByRole("button", { name: "承認" })
   // Server enforces this too (403 on self-approval, whitelist.md §1); the
@@ -82,7 +83,7 @@ test("shows approve button disabled for requester", async () => {
 test("shows empty state", async () => {
   mockFetchRouting(adminUser, [])
 
-  renderWithRouter(<WhitelistPage />)
+  await renderWithRouter(<WhitelistPage />)
 
   expect(await screen.findByText("ホワイトリストエントリがありません")).toBeDefined()
 })

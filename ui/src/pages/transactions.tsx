@@ -13,13 +13,8 @@ import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
-
-const DIRECTION_LABELS: Record<string, string> = {
-  inbound: "入金",
-  outbound: "出金",
-  internal: "内部",
-}
 
 const DIRECTION_VARIANT: Record<string, "low" | "high" | "secondary"> = {
   inbound: "low",
@@ -27,15 +22,16 @@ const DIRECTION_VARIANT: Record<string, "low" | "high" | "secondary"> = {
   internal: "secondary",
 }
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
-function formatAmount(amount: number, currency: string) {
-  return new Intl.NumberFormat("ja-JP", { style: "currency", currency }).format(amount)
+function formatAmount(amount: number, currency: string, locale: string) {
+  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount)
 }
 
 export function TransactionsPage() {
+  const { t, i18n } = useTranslation()
   const { data: transactions, loading, error } = useApi(api.transactions.list)
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -77,18 +73,22 @@ export function TransactionsPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">取引データの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("transactions.error")}</p>
   }
+
+  const DIRECTIONS = ["inbound", "outbound", "internal"] as const
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">取引一覧</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("transactions.title")}</h1>
         <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground">{transactions?.length ?? 0} 件</p>
+          <p className="text-sm text-muted-foreground">
+            {t("transactions.count", { count: transactions?.length ?? 0 })}
+          </p>
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4" />
-            新規登録
+            {t("transactions.createButton")}
           </Button>
         </div>
       </div>
@@ -96,52 +96,52 @@ export function TransactionsPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">取引登録</CardTitle>
+            <CardTitle className="text-base">{t("transactions.form.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium">顧客ID</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.customerId")}</label>
                 <input ref={custRef} required placeholder="cust-001"
                   className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">外部ID</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.externalId")}</label>
                 <input ref={extRef} required placeholder="TXN-001"
                   className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">金額</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.amount")}</label>
                 <input ref={amountRef} type="number" required placeholder="100000" min="1"
                   className="w-28 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">通貨</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.currency")}</label>
                 <input ref={currencyRef} defaultValue="JPY" maxLength={3}
                   className="w-16 rounded-md border bg-background px-2 py-2 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">方向</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.direction")}</label>
                 <div className="flex gap-1">
-                  {(["inbound", "outbound", "internal"] as const).map((d) => (
+                  {DIRECTIONS.map((d) => (
                     <button key={d} type="button" onClick={() => setDirection(d)}
                       className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${direction === d ? "border-primary bg-primary/10 text-primary" : "border-input text-muted-foreground hover:bg-accent"}`}>
-                      {DIRECTION_LABELS[d]}
+                      {t(`transactions.direction.${d}`)}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">相手先国</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.counterpartyCountry")}</label>
                 <input ref={countryRef} placeholder="JP" maxLength={2}
                   className="w-16 rounded-md border bg-background px-2 py-2 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">チャネル</label>
+                <label className="mb-1 block text-xs font-medium">{t("transactions.form.channel")}</label>
                 <input ref={channelRef} placeholder="online"
                   className="w-24 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
-              <Button type="submit" size="sm" disabled={creating}>登録</Button>
+              <Button type="submit" size="sm" disabled={creating}>{t("transactions.form.submit")}</Button>
             </form>
           </CardContent>
         </Card>
@@ -151,40 +151,40 @@ export function TransactionsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>方向</TableHead>
-              <TableHead>顧客ID</TableHead>
-              <TableHead>金額</TableHead>
-              <TableHead>相手先国</TableHead>
-              <TableHead>チャネル</TableHead>
-              <TableHead>実行日時</TableHead>
+              <TableHead>{t("transactions.table.header.direction")}</TableHead>
+              <TableHead>{t("transactions.table.header.customerId")}</TableHead>
+              <TableHead>{t("transactions.table.header.amount")}</TableHead>
+              <TableHead>{t("transactions.table.header.counterpartyCountry")}</TableHead>
+              <TableHead>{t("transactions.table.header.channel")}</TableHead>
+              <TableHead>{t("transactions.table.header.executedAt")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {transactions && transactions.length > 0 ? (
-              transactions.map((t) => (
-                <TableRow key={t.id}>
+              transactions.map((tx) => (
+                <TableRow key={tx.id}>
                   <TableCell>
-                    <Link to={`/transactions/${t.id}`} className="hover:underline">
-                      <Badge variant={DIRECTION_VARIANT[t.direction] ?? "secondary"}>
-                        {DIRECTION_LABELS[t.direction] ?? t.direction}
+                    <Link to={`/transactions/${tx.id}`} className="hover:underline">
+                      <Badge variant={DIRECTION_VARIANT[tx.direction] ?? "secondary"}>
+                        {t(`transactions.direction.${tx.direction}`, { defaultValue: tx.direction })}
                       </Badge>
                     </Link>
                   </TableCell>
                   <TableCell className="font-mono text-sm">
-                    <Link to={`/customers/${t.customer_id}`} className="text-primary hover:underline">
-                      {t.customer_id}
+                    <Link to={`/customers/${tx.customer_id}`} className="text-primary hover:underline">
+                      {tx.customer_id}
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono">{formatAmount(t.amount, t.currency)}</TableCell>
-                  <TableCell>{t.counterparty_country || "-"}</TableCell>
-                  <TableCell>{t.channel || "-"}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDateTime(t.executed_at)}</TableCell>
+                  <TableCell className="font-mono">{formatAmount(tx.amount, tx.currency, i18n.language)}</TableCell>
+                  <TableCell>{tx.counterparty_country || "-"}</TableCell>
+                  <TableCell>{tx.channel || "-"}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDateTime(tx.executed_at, i18n.language)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  取引データがありません
+                  {t("transactions.table.empty")}
                 </TableCell>
               </TableRow>
             )}

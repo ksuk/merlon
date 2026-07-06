@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"time"
@@ -23,17 +24,17 @@ type ScreeningCheckRequest struct {
 
 func (s *Server) handleScreeningCheck(w http.ResponseWriter, r *http.Request) {
 	if s.screening == nil {
-		writeError(w, http.StatusServiceUnavailable, "screening engine not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "screening engine not configured")
 		return
 	}
 
 	var req ScreeningCheckRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 	if req.CustomerID == "" {
-		writeError(w, http.StatusBadRequest, "customer_id is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id is required")
 		return
 	}
 
@@ -49,10 +50,10 @@ func (s *Server) handleScreeningCheck(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -70,7 +71,7 @@ type UpdateScreeningResultRequest struct {
 
 func (s *Server) handleUpdateScreeningResult(w http.ResponseWriter, r *http.Request) {
 	if s.screeningResults == nil {
-		writeError(w, http.StatusServiceUnavailable, "screening result store not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "screening result store not configured")
 		return
 	}
 
@@ -79,21 +80,21 @@ func (s *Server) handleUpdateScreeningResult(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req UpdateScreeningResultRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	if err := record.ApplyStatusTransition(req.Status, req.FalsePositiveReason); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
@@ -104,7 +105,7 @@ func (s *Server) handleUpdateScreeningResult(w http.ResponseWriter, r *http.Requ
 	record.ReviewedAt = &now
 
 	if err := s.screeningResults.Update(r.Context(), record); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

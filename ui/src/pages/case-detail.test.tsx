@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { CaseDetailPage } from "./case-detail"
 
 function renderWithRoute(id: string) {
-  return render(
+  return renderWithI18n(
     <MemoryRouter initialEntries={[`/cases/${id}`]}>
       <Routes>
         <Route path="cases/:id" element={<CaseDetailPage />} />
@@ -42,7 +43,7 @@ test("renders case detail with notes and transitions", async () => {
     ),
   )
 
-  renderWithRoute("case1")
+  await renderWithRoute("case1")
 
   expect(await screen.findByText("ケース詳細")).toBeDefined()
   expect(screen.getByText("不審な取引パターン")).toBeDefined()
@@ -97,7 +98,7 @@ test("shows related cases section", async () => {
     )
   })
 
-  renderWithRoute("case1")
+  await renderWithRoute("case1")
 
   expect(await screen.findByText("関連ケース")).toBeDefined()
   expect(await screen.findByText("case-old")).toBeDefined()
@@ -123,7 +124,7 @@ test("hides note form for closed case", async () => {
     ),
   )
 
-  renderWithRoute("case2")
+  await renderWithRoute("case2")
 
   expect(await screen.findByText("ケース詳細")).toBeDefined()
   expect(screen.queryByPlaceholderText("ノートを追加...")).toBeNull()

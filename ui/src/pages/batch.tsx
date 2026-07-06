@@ -13,8 +13,10 @@ import { useApi } from "@/hooks/use-api"
 import { api, type BatchMonitorResponse, type BatchScoreResponse, type Customer } from "@/lib/api"
 import { Play, RefreshCw, Shield } from "lucide-react"
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 
 export function BatchPage() {
+  const { t } = useTranslation()
   const { data: customers, loading, error } = useApi(api.customers.list)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [scoreRunning, setScoreRunning] = useState(false)
@@ -69,24 +71,26 @@ export function BatchPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">データの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("batch.error")}</p>
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">一括処理</h1>
+      <h1 className="text-2xl font-bold tracking-tight">{t("batch.title")}</h1>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">対象顧客</CardTitle>
+          <CardTitle className="text-base">{t("batch.targetCustomers.title")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {selectedIds.length > 0 ? `${selectedIds.length}件選択中` : "全顧客が対象（未選択時）"}
+              {selectedIds.length > 0
+                ? t("batch.targetCustomers.selectedCount", { count: selectedIds.length })
+                : t("batch.targetCustomers.allTargeted")}
             </p>
             <Button variant="ghost" size="sm" onClick={selectAll}>
-              {selectedIds.length === (customers?.length ?? 0) ? "全解除" : "全選択"}
+              {selectedIds.length === (customers?.length ?? 0) ? t("batch.targetCustomers.deselectAll") : t("batch.targetCustomers.selectAll")}
             </Button>
           </div>
           <div className="max-h-48 space-y-1 overflow-y-auto">
@@ -102,11 +106,11 @@ export function BatchPage() {
           <div className="flex gap-2">
             <Button size="sm" onClick={handleBatchScore} disabled={scoreRunning}>
               <RefreshCw className={`h-4 w-4 ${scoreRunning ? "animate-spin" : ""}`} />
-              一括スコアリング
+              {t("batch.actions.score")}
             </Button>
             <Button size="sm" variant="outline" onClick={handleBatchMonitor} disabled={monitorRunning}>
               <Shield className={`h-4 w-4 ${monitorRunning ? "animate-pulse" : ""}`} />
-              一括モニタリング
+              {t("batch.actions.monitor")}
             </Button>
           </div>
         </CardContent>
@@ -117,24 +121,24 @@ export function BatchPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Play className="h-4 w-4" />
-              スコアリング結果
+              {t("batch.scoreResult.title")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-4 gap-4">
-              <Stat label="合計" value={scoreResult.total} />
-              <Stat label="成功" value={scoreResult.succeeded} />
-              <Stat label="失敗" value={scoreResult.failed} />
-              <Stat label="実行時間" value={scoreResult.duration} />
+              <Stat label={t("batch.scoreResult.stats.total")} value={scoreResult.total} />
+              <Stat label={t("batch.scoreResult.stats.succeeded")} value={scoreResult.succeeded} />
+              <Stat label={t("batch.scoreResult.stats.failed")} value={scoreResult.failed} />
+              <Stat label={t("batch.scoreResult.stats.duration")} value={scoreResult.duration} />
             </div>
             {scoreResult.results.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>顧客ID</TableHead>
-                    <TableHead>スコア</TableHead>
-                    <TableHead>リスクティア</TableHead>
-                    <TableHead>エラー</TableHead>
+                    <TableHead>{t("batch.scoreResult.table.header.customerId")}</TableHead>
+                    <TableHead>{t("batch.scoreResult.table.header.score")}</TableHead>
+                    <TableHead>{t("batch.scoreResult.table.header.riskTier")}</TableHead>
+                    <TableHead>{t("batch.scoreResult.table.header.error")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -160,23 +164,23 @@ export function BatchPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Shield className="h-4 w-4" />
-              モニタリング結果
+              {t("batch.monitorResult.title")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-4 gap-4">
-              <Stat label="合計" value={monitorResult.total} />
-              <Stat label="成功" value={monitorResult.succeeded} />
-              <Stat label="生成アラート" value={monitorResult.alerts_total} />
-              <Stat label="実行時間" value={monitorResult.duration} />
+              <Stat label={t("batch.monitorResult.stats.total")} value={monitorResult.total} />
+              <Stat label={t("batch.monitorResult.stats.succeeded")} value={monitorResult.succeeded} />
+              <Stat label={t("batch.monitorResult.stats.alertsTotal")} value={monitorResult.alerts_total} />
+              <Stat label={t("batch.monitorResult.stats.duration")} value={monitorResult.duration} />
             </div>
             {monitorResult.results.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>顧客ID</TableHead>
-                    <TableHead>生成アラート数</TableHead>
-                    <TableHead>エラー</TableHead>
+                    <TableHead>{t("batch.monitorResult.table.header.customerId")}</TableHead>
+                    <TableHead>{t("batch.monitorResult.table.header.alertsRaised")}</TableHead>
+                    <TableHead>{t("batch.monitorResult.table.header.error")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { AlertDetailPage } from "./alert-detail"
 
 function renderWithRoute(id: string) {
-  return render(
+  return renderWithI18n(
     <MemoryRouter initialEntries={[`/alerts/${id}`]}>
       <Routes>
         <Route path="alerts/:id" element={<AlertDetailPage />} />
@@ -36,7 +37,7 @@ test("renders alert detail with status transitions", async () => {
     ),
   )
 
-  renderWithRoute("a1")
+  await renderWithRoute("a1")
 
   expect(await screen.findByText("アラート詳細")).toBeDefined()
   expect(screen.getByText("大口取引の検出")).toBeDefined()
@@ -65,7 +66,7 @@ test("hides transitions for closed alert", async () => {
     ),
   )
 
-  renderWithRoute("a2")
+  await renderWithRoute("a2")
 
   expect(await screen.findByText("アラート詳細")).toBeDefined()
   expect(screen.queryByText("ステータス変更")).toBeNull()

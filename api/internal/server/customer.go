@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -52,13 +53,13 @@ func (s *Server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListCustomersCursor(w http.ResponseWriter, r *http.Request) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	customers, err := s.customers.ListByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -79,7 +80,7 @@ func (s *Server) handleListCustomersOffset(w http.ResponseWriter, r *http.Reques
 
 	customers, err := s.customers.List(r.Context(), limit+1, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -97,10 +98,10 @@ func (s *Server) handleGetCustomer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, c)
@@ -109,20 +110,20 @@ func (s *Server) handleGetCustomer(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 	var req CreateCustomerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	if req.ExternalID == "" {
-		writeError(w, http.StatusBadRequest, "external_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "external_id required")
 		return
 	}
 	if !isValidCustomerType(req.CustomerType) {
-		writeError(w, http.StatusBadRequest, "customer_type must be one of: individual, corporate_domestic, corporate_foreign")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_type must be one of: individual, corporate_domestic, corporate_foreign")
 		return
 	}
 	if err := validateAttributes(req.Attributes); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
@@ -139,7 +140,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.customers.Create(r.Context(), c); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -152,16 +153,16 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req UpdateCustomerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
@@ -173,14 +174,14 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Attributes != nil {
 		if err := validateAttributes(req.Attributes); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 			return
 		}
 		c.Attributes = req.Attributes
 	}
 
 	if err := s.customers.Update(r.Context(), c); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -196,7 +197,7 @@ func (s *Server) handleGetScoreHistory(w http.ResponseWriter, r *http.Request) {
 
 	records, err := s.customers.ListScoreHistory(r.Context(), id, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if records == nil {
@@ -212,7 +213,7 @@ type ScoreCustomerRequest struct {
 
 func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	if s.scoring == nil {
-		writeError(w, http.StatusServiceUnavailable, "scoring engine not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "scoring engine not configured")
 		return
 	}
 
@@ -221,22 +222,22 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req ScoreCustomerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	record, err := s.scoring.ScoreCustomer(r.Context(), c, req.RuleSetID)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "scoring engine error: "+err.Error())
+		writeErrorCode(w, http.StatusBadGateway, apierr.CodeEngineError, "scoring engine error: "+err.Error())
 		return
 	}
 
@@ -267,12 +268,12 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.customers.Update(r.Context(), c); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	if err := s.customers.SaveScoreRecord(r.Context(), record); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -362,7 +363,7 @@ type ScreenCustomerRequest struct {
 
 func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
 	if s.screening == nil {
-		writeError(w, http.StatusServiceUnavailable, "screening engine not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "screening engine not configured")
 		return
 	}
 
@@ -371,22 +372,22 @@ func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req ScreenCustomerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	result, err := s.screening.ScreenCustomer(r.Context(), c, req.ListIDs)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "screening engine error: "+err.Error())
+		writeErrorCode(w, http.StatusBadGateway, apierr.CodeEngineError, "screening engine error: "+err.Error())
 		return
 	}
 

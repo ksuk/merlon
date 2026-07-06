@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { BatchPage } from "./batch"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -29,7 +30,7 @@ test("renders batch page with customers", async () => {
     ),
   )
 
-  renderWithRouter(<BatchPage />)
+  await renderWithRouter(<BatchPage />)
 
   expect(await screen.findByText("一括処理")).toBeDefined()
   expect(screen.getByText("EXT-001")).toBeDefined()
@@ -40,7 +41,7 @@ test("renders batch page with customers", async () => {
 test("shows error state", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fail"))
 
-  renderWithRouter(<BatchPage />)
+  await renderWithRouter(<BatchPage />)
 
   expect(await screen.findByText("データの取得に失敗しました")).toBeDefined()
 })

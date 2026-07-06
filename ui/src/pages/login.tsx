@@ -2,9 +2,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
 export function LoginPage() {
+  const { t } = useTranslation()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +25,7 @@ export function LoginPage() {
       await api.auth.login(email, password)
       navigate("/")
     } catch {
-      setError("メールアドレスまたはパスワードが正しくありません")
+      setError(t("login.error"))
     } finally {
       setSubmitting(false)
     }
@@ -33,13 +35,13 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">ログイン</CardTitle>
+          <CardTitle className="text-xl">{t("login.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="login-email" className="mb-1 block text-sm font-medium">
-                メールアドレス
+                {t("login.emailLabel")}
               </label>
               <input
                 id="login-email"
@@ -52,7 +54,7 @@ export function LoginPage() {
             </div>
             <div>
               <label htmlFor="login-password" className="mb-1 block text-sm font-medium">
-                パスワード
+                {t("login.passwordLabel")}
               </label>
               <input
                 id="login-password"
@@ -65,7 +67,7 @@ export function LoginPage() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={submitting}>
-              ログイン
+              {t("login.submit")}
             </Button>
           </form>
         </CardContent>

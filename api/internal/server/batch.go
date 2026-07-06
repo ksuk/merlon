@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
@@ -32,7 +33,7 @@ type batchScoreResponse struct {
 
 func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 	if s.scoring == nil {
-		writeError(w, http.StatusServiceUnavailable, "scoring engine not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "scoring engine not configured")
 		return
 	}
 
@@ -40,12 +41,12 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 
 	var req batchScoreRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if len(req.CustomerIDs) > maxBatchCustomers {
-		writeError(w, http.StatusBadRequest, "too many customer_ids (max 1000)")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "too many customer_ids (max 1000)")
 		return
 	}
 
@@ -64,7 +65,7 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 		var err error
 		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 	}
@@ -156,7 +157,7 @@ type batchMonitorResponse struct {
 
 func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	if s.monitoring == nil {
-		writeError(w, http.StatusServiceUnavailable, "monitoring engine not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "monitoring engine not configured")
 		return
 	}
 
@@ -164,12 +165,12 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 
 	var req batchMonitorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if len(req.CustomerIDs) > maxBatchCustomers {
-		writeError(w, http.StatusBadRequest, "too many customer_ids (max 1000)")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "too many customer_ids (max 1000)")
 		return
 	}
 
@@ -188,7 +189,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 		var err error
 		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 	}

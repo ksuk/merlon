@@ -5,18 +5,19 @@ import { useApi } from "@/hooks/use-api"
 import { api, type Role } from "@/lib/api"
 import { Copy, Key, Plus, ShieldOff } from "lucide-react"
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: "admin", label: "管理者" },
-  { value: "analyst", label: "アナリスト" },
-  { value: "viewer", label: "閲覧者" },
-]
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function APIKeysPage() {
+  const { t, i18n } = useTranslation()
+  const roles: { value: Role; label: string }[] = [
+    { value: "admin", label: t("apikeys.roles.admin") },
+    { value: "analyst", label: t("apikeys.roles.analyst") },
+    { value: "viewer", label: t("apikeys.roles.viewer") },
+  ]
   const { data: keys, loading, error } = useApi(api.admin.apikeys.list)
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -57,16 +58,16 @@ export function APIKeysPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">APIキーの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("apikeys.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">APIキー管理</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("apikeys.title")}</h1>
         <Button size="sm" onClick={() => setShowForm(!showForm)}>
           <Plus className="h-4 w-4" />
-          新規作成
+          {t("apikeys.createButton")}
         </Button>
       </div>
 
@@ -74,14 +75,14 @@ export function APIKeysPage() {
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="flex items-center justify-between p-4">
             <div>
-              <p className="text-sm font-medium text-amber-800">APIキーが生成されました（この表示は一度のみ）</p>
+              <p className="text-sm font-medium text-amber-800">{t("apikeys.newKey.title")}</p>
               <code className="mt-1 block rounded bg-amber-100 px-2 py-1 font-mono text-xs text-amber-900">
                 {newKey}
               </code>
             </div>
             <Button variant="outline" size="sm" onClick={copyKey}>
               <Copy className="h-4 w-4" />
-              コピー
+              {t("apikeys.newKey.copy")}
             </Button>
           </CardContent>
         </Card>
@@ -92,24 +93,24 @@ export function APIKeysPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Key className="h-4 w-4" />
-              APIキー作成
+              {t("apikeys.form.title")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium">名前</label>
+                <label className="mb-1 block text-sm font-medium">{t("apikeys.form.nameLabel")}</label>
                 <input
                   ref={nameRef}
                   required
-                  placeholder="APIキーの用途..."
+                  placeholder={t("apikeys.form.namePlaceholder")}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium">ロール</label>
+                <label className="mb-2 block text-sm font-medium">{t("apikeys.form.roleLabel")}</label>
                 <div className="flex gap-2">
-                  {ROLES.map((r) => (
+                  {roles.map((r) => (
                     <button
                       key={r.value}
                       type="button"
@@ -126,7 +127,7 @@ export function APIKeysPage() {
                 </div>
               </div>
               <Button type="submit" size="sm" disabled={creating}>
-                作成
+                {t("apikeys.form.submit")}
               </Button>
             </form>
           </CardContent>
@@ -142,21 +143,21 @@ export function APIKeysPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{k.name}</span>
                     <Badge variant={k.active ? "low" : "destructive"}>
-                      {k.active ? "有効" : "無効"}
+                      {k.active ? t("apikeys.status.active") : t("apikeys.status.inactive")}
                     </Badge>
                     <Badge variant="outline">
-                      {ROLES.find((r) => r.value === k.role)?.label ?? k.role}
+                      {roles.find((r) => r.value === k.role)?.label ?? k.role}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    作成: {formatDateTime(k.created_at)}
-                    {k.last_used && ` | 最終使用: ${formatDateTime(k.last_used)}`}
+                    {t("apikeys.entry.created", { date: formatDateTime(k.created_at, i18n.language) })}
+                    {k.last_used && t("apikeys.entry.lastUsed", { date: formatDateTime(k.last_used, i18n.language) })}
                   </p>
                 </div>
                 {k.active && (
                   <Button variant="ghost" size="sm" onClick={() => handleRevoke(k.id)}>
                     <ShieldOff className="h-4 w-4 text-destructive" />
-                    無効化
+                    {t("apikeys.revoke")}
                   </Button>
                 )}
               </CardContent>
@@ -165,7 +166,7 @@ export function APIKeysPage() {
         ) : (
           <Card>
             <CardContent className="p-8 text-center text-sm text-muted-foreground">
-              APIキーが登録されていません
+              {t("apikeys.empty")}
             </CardContent>
           </Card>
         )}

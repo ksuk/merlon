@@ -13,6 +13,7 @@ import { useApi } from "@/hooks/use-api"
 import { api, type RiskTier } from "@/lib/api"
 import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link } from "react-router-dom"
 
 const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
@@ -21,29 +22,23 @@ const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
   high: "high",
 }
 
-const TIER_LABELS: Record<string, string> = {
-  low: "低",
-  medium: "中",
-  high: "高",
+const CUSTOMER_TYPE_KEYS: Record<string, string> = {
+  individual: "individual",
+  corporate_domestic: "corporateDomestic",
+  corporate_foreign: "corporateForeign",
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  individual: "個人",
-  corporate_domestic: "国内法人",
-  corporate_foreign: "海外法人",
-}
-
-const CUSTOMER_TYPES = [
-  { value: "individual", label: "個人" },
-  { value: "corporate_domestic", label: "国内法人" },
-  { value: "corporate_foreign", label: "海外法人" },
-]
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ja-JP")
+function formatDate(iso: string, locale: string) {
+  return new Date(iso).toLocaleDateString(locale)
 }
 
 export function CustomersPage() {
+  const { t, i18n } = useTranslation()
+  const CUSTOMER_TYPES = [
+    { value: "individual", label: t("customers.type.individual") },
+    { value: "corporate_domestic", label: t("customers.type.corporateDomestic") },
+    { value: "corporate_foreign", label: t("customers.type.corporateForeign") },
+  ]
   const { data: customers, loading, error } = useApi(api.customers.list)
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -78,7 +73,7 @@ export function CustomersPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">顧客データの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("customers.error")}</p>
   }
 
   const filtered = customers?.filter((c) => {
@@ -91,12 +86,12 @@ export function CustomersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">顧客一覧</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("customers.title")}</h1>
         <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground">{filtered?.length ?? 0} 件</p>
+          <p className="text-sm text-muted-foreground">{t("customers.count", { count: filtered?.length ?? 0 })}</p>
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4" />
-            新規作成
+            {t("customers.createButton")}
           </Button>
         </div>
       </div>
@@ -104,32 +99,32 @@ export function CustomersPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">顧客作成</CardTitle>
+            <CardTitle className="text-base">{t("customers.form.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-4">
               <div>
-                <label className="mb-1 block text-xs font-medium">外部ID</label>
+                <label className="mb-1 block text-xs font-medium">{t("customers.form.externalId")}</label>
                 <input ref={extIdRef} required placeholder="EXT-001"
                   className="rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">種別</label>
+                <label className="mb-1 block text-xs font-medium">{t("customers.form.type")}</label>
                 <div className="flex gap-1">
-                  {CUSTOMER_TYPES.map((t) => (
-                    <button key={t.value} type="button" onClick={() => setCustomerType(t.value)}
-                      className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${customerType === t.value ? "border-primary bg-primary/10 text-primary" : "border-input text-muted-foreground hover:bg-accent"}`}>
-                      {t.label}
+                  {CUSTOMER_TYPES.map((type) => (
+                    <button key={type.value} type="button" onClick={() => setCustomerType(type.value)}
+                      className={`rounded-md border px-2 py-1 text-xs font-medium transition-colors ${customerType === type.value ? "border-primary bg-primary/10 text-primary" : "border-input text-muted-foreground hover:bg-accent"}`}>
+                      {type.label}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">国コード</label>
+                <label className="mb-1 block text-xs font-medium">{t("customers.form.countryCode")}</label>
                 <input ref={countryRef} required placeholder="JP" maxLength={2}
                   className="w-16 rounded-md border bg-background px-3 py-2 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
-              <Button type="submit" size="sm" disabled={creating}>作成</Button>
+              <Button type="submit" size="sm" disabled={creating}>{t("customers.form.submit")}</Button>
             </form>
           </CardContent>
         </Card>
@@ -137,14 +132,14 @@ export function CustomersPage() {
 
       <div className="flex gap-2">
         <input value={filter} onChange={(e) => setFilter(e.target.value)}
-          placeholder="ID・名前・国コードで検索..."
+          placeholder={t("customers.search.placeholder")}
           className="max-w-xs rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
         <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}
           className="rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-          <option value="">全リスクティア</option>
-          <option value="low">低リスク</option>
-          <option value="medium">中リスク</option>
-          <option value="high">高リスク</option>
+          <option value="">{t("customers.filter.allTiers")}</option>
+          <option value="low">{t("customers.tier.low")}</option>
+          <option value="medium">{t("customers.tier.medium")}</option>
+          <option value="high">{t("customers.tier.high")}</option>
         </select>
       </div>
 
@@ -152,12 +147,12 @@ export function CustomersPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>外部ID</TableHead>
-              <TableHead>種別</TableHead>
-              <TableHead>国</TableHead>
-              <TableHead>リスクスコア</TableHead>
-              <TableHead>リスクティア</TableHead>
-              <TableHead>最終スコアリング</TableHead>
+              <TableHead>{t("customers.table.header.externalId")}</TableHead>
+              <TableHead>{t("customers.table.header.type")}</TableHead>
+              <TableHead>{t("customers.table.header.country")}</TableHead>
+              <TableHead>{t("customers.table.header.riskScore")}</TableHead>
+              <TableHead>{t("customers.table.header.riskTier")}</TableHead>
+              <TableHead>{t("customers.table.header.lastScored")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -169,23 +164,29 @@ export function CustomersPage() {
                       {c.external_id}
                     </Link>
                   </TableCell>
-                  <TableCell>{TYPE_LABELS[c.customer_type] ?? c.customer_type}</TableCell>
+                  <TableCell>
+                    {t(`customers.type.${CUSTOMER_TYPE_KEYS[c.customer_type] ?? c.customer_type}`, {
+                      defaultValue: c.customer_type,
+                    })}
+                  </TableCell>
                   <TableCell>{c.country_code}</TableCell>
                   <TableCell>{c.risk_score != null ? c.risk_score.toFixed(1) : "-"}</TableCell>
                   <TableCell>
                     {c.risk_tier ? (
-                      <Badge variant={TIER_VARIANT[c.risk_tier]}>{TIER_LABELS[c.risk_tier] ?? c.risk_tier}</Badge>
+                      <Badge variant={TIER_VARIANT[c.risk_tier]}>
+                        {t(`customers.tierShort.${c.risk_tier}`, { defaultValue: c.risk_tier })}
+                      </Badge>
                     ) : (
-                      <Badge variant="secondary">未スコア</Badge>
+                      <Badge variant="secondary">{t("customers.table.unscored")}</Badge>
                     )}
                   </TableCell>
-                  <TableCell>{c.last_scored_at ? formatDate(c.last_scored_at) : "-"}</TableCell>
+                  <TableCell>{c.last_scored_at ? formatDate(c.last_scored_at, i18n.language) : "-"}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
                 <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  顧客データがありません
+                  {t("customers.table.empty")}
                 </TableCell>
               </TableRow>
             )}

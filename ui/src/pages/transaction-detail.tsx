@@ -4,13 +4,8 @@ import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { ArrowLeft } from "lucide-react"
 import { useCallback } from "react"
+import { useTranslation } from "react-i18next"
 import { Link, useParams } from "react-router-dom"
-
-const DIR_LABELS: Record<string, string> = {
-  inbound: "入金",
-  outbound: "出金",
-  internal: "内部",
-}
 
 const DIR_VARIANT: Record<string, "low" | "medium" | "high"> = {
   inbound: "low",
@@ -18,15 +13,16 @@ const DIR_VARIANT: Record<string, "low" | "medium" | "high"> = {
   internal: "medium",
 }
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
-function formatAmount(amount: number, currency: string) {
-  return new Intl.NumberFormat("ja-JP", { style: "currency", currency }).format(amount)
+function formatAmount(amount: number, currency: string, locale: string) {
+  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount)
 }
 
 export function TransactionDetailPage() {
+  const { t, i18n } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { data: txn, loading, error } = useApi(
     useCallback(() => api.transactions.get(id!), [id]),
@@ -45,9 +41,9 @@ export function TransactionDetailPage() {
     return (
       <div className="space-y-4">
         <Link to="/transactions" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> 取引一覧に戻る
+          <ArrowLeft className="h-4 w-4" /> {t("transactionDetail.backToList")}
         </Link>
-        <p className="text-destructive">取引データの取得に失敗しました</p>
+        <p className="text-destructive">{t("transactionDetail.error")}</p>
       </div>
     )
   }
@@ -56,31 +52,31 @@ export function TransactionDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link to="/transactions" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> 戻る
+          <ArrowLeft className="h-4 w-4" /> {t("transactionDetail.back")}
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">{txn.external_id}</h1>
         <Badge variant={DIR_VARIANT[txn.direction] ?? "secondary"}>
-          {DIR_LABELS[txn.direction] ?? txn.direction}
+          {t(`transactions.direction.${txn.direction}`, { defaultValue: txn.direction })}
         </Badge>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">取引情報</CardTitle>
+            <CardTitle className="text-base">{t("transactionDetail.info.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">内部ID</dt>
+                <dt className="text-muted-foreground">{t("transactionDetail.info.internalId")}</dt>
                 <dd className="font-mono">{txn.id}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">外部ID</dt>
+                <dt className="text-muted-foreground">{t("transactionDetail.info.externalId")}</dt>
                 <dd className="font-mono">{txn.external_id}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">顧客ID</dt>
+                <dt className="text-muted-foreground">{t("transactionDetail.info.customerId")}</dt>
                 <dd>
                   <Link to={`/customers/${txn.customer_id}`} className="text-primary hover:underline font-mono">
                     {txn.customer_id}
@@ -88,8 +84,12 @@ export function TransactionDetailPage() {
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">方向</dt>
-                <dd><Badge variant={DIR_VARIANT[txn.direction]}>{DIR_LABELS[txn.direction]}</Badge></dd>
+                <dt className="text-muted-foreground">{t("transactionDetail.info.direction")}</dt>
+                <dd>
+                  <Badge variant={DIR_VARIANT[txn.direction]}>
+                    {t(`transactions.direction.${txn.direction}`)}
+                  </Badge>
+                </dd>
               </div>
             </dl>
           </CardContent>
@@ -97,37 +97,37 @@ export function TransactionDetailPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">金額・経路</CardTitle>
+            <CardTitle className="text-base">{t("transactionDetail.amountRoute.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">金額</dt>
-                <dd className="text-xl font-bold">{formatAmount(txn.amount, txn.currency)}</dd>
+                <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.amount")}</dt>
+                <dd className="text-xl font-bold">{formatAmount(txn.amount, txn.currency, i18n.language)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">通貨</dt>
+                <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.currency")}</dt>
                 <dd>{txn.currency}</dd>
               </div>
               {txn.counterparty_country && (
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">相手先国</dt>
+                  <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.counterpartyCountry")}</dt>
                   <dd>{txn.counterparty_country}</dd>
                 </div>
               )}
               {txn.channel && (
                 <div className="flex justify-between">
-                  <dt className="text-muted-foreground">チャネル</dt>
+                  <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.channel")}</dt>
                   <dd>{txn.channel}</dd>
                 </div>
               )}
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">実行日時</dt>
-                <dd>{formatDateTime(txn.executed_at)}</dd>
+                <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.executedAt")}</dt>
+                <dd>{formatDateTime(txn.executed_at, i18n.language)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">登録日時</dt>
-                <dd>{formatDateTime(txn.created_at)}</dd>
+                <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.createdAt")}</dt>
+                <dd>{formatDateTime(txn.created_at, i18n.language)}</dd>
               </div>
             </dl>
           </CardContent>

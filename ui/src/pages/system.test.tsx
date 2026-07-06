@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { SystemPage } from "./system"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -34,7 +35,7 @@ test("renders system info with features", async () => {
     ),
   )
 
-  renderWithRouter(<SystemPage />)
+  await renderWithRouter(<SystemPage />)
 
   expect(await screen.findByText("v1.0.0")).toBeDefined()
   expect(screen.getByText("36")).toBeDefined()
@@ -46,7 +47,7 @@ test("renders system info with features", async () => {
 test("shows error on fetch failure", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fail"))
 
-  renderWithRouter(<SystemPage />)
+  await renderWithRouter(<SystemPage />)
 
   expect(await screen.findByText("システム情報の取得に失敗しました")).toBeDefined()
 })

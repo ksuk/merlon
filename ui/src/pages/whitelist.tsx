@@ -11,15 +11,10 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type WhitelistEntry, type WhitelistEntryStatus } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { Plus } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-
-const STATUS_LABELS: Record<WhitelistEntryStatus, string> = {
-  pending_approval: "承認待ち",
-  active: "有効",
-  expired: "期限切れ",
-  revoked: "解除済み",
-}
+import { useTranslation } from "react-i18next"
 
 const STATUS_VARIANTS: Record<WhitelistEntryStatus, "medium" | "low" | "secondary" | "destructive"> = {
   pending_approval: "medium",
@@ -28,11 +23,18 @@ const STATUS_VARIANTS: Record<WhitelistEntryStatus, "medium" | "low" | "secondar
   revoked: "destructive",
 }
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function WhitelistPage() {
+  const { t, i18n } = useTranslation()
+  const statusLabels: Record<WhitelistEntryStatus, string> = {
+    pending_approval: t("whitelist.status.pending_approval"),
+    active: t("whitelist.status.active"),
+    expired: t("whitelist.status.expired"),
+    revoked: t("whitelist.status.revoked"),
+  }
   const { data: user } = useApi(api.auth.me)
   // whitelist:request (create/revoke) is granted to admin and analyst;
   // whitelist:approve is admin-only (auth.md §3, RolePermissions). The
@@ -59,7 +61,7 @@ export function WhitelistPage() {
       setEntries(res.data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      setError(translateApiError(err, t))
     } finally {
       setLoading(false)
     }
@@ -67,6 +69,7 @@ export function WhitelistPage() {
 
   useEffect(() => {
     reload()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleCreate(e: React.FormEvent) {
@@ -93,7 +96,7 @@ export function WhitelistPage() {
       setShowForm(false)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     } finally {
       setCreating(false)
     }
@@ -105,7 +108,7 @@ export function WhitelistPage() {
       await api.whitelist.approve(id)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     }
   }
 
@@ -115,7 +118,7 @@ export function WhitelistPage() {
       await api.whitelist.revoke(id)
       await reload()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err))
+      setActionError(translateApiError(err, t))
     }
   }
 
@@ -129,17 +132,17 @@ export function WhitelistPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">ホワイトリストデータの取得に失敗しました</p>
+    return <p className="p-12 text-center text-destructive">{t("whitelist.error")}</p>
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">ホワイトリスト</h1>
+        <h1 className="text-2xl font-bold tracking-tight">{t("whitelist.title")}</h1>
         {canRequest && (
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4" />
-            申請
+            {t("whitelist.requestButton")}
           </Button>
         )}
       </div>
@@ -153,12 +156,12 @@ export function WhitelistPage() {
       {showForm && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ホワイトリスト申請</CardTitle>
+            <CardTitle className="text-base">{t("whitelist.form.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium">顧客ID</label>
+                <label className="mb-1 block text-sm font-medium">{t("whitelist.form.customerId")}</label>
                 <input
                   ref={customerIdRef}
                   required
@@ -166,7 +169,7 @@ export function WhitelistPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">理由</label>
+                <label className="mb-1 block text-sm font-medium">{t("whitelist.form.reason")}</label>
                 <textarea
                   ref={reasonRef}
                   required
@@ -175,7 +178,7 @@ export function WhitelistPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium">有効期限</label>
+                <label className="mb-1 block text-sm font-medium">{t("whitelist.form.validUntil")}</label>
                 <input
                   ref={validUntilRef}
                   type="date"
@@ -185,16 +188,16 @@ export function WhitelistPage() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  除外ルールID（任意、カンマ区切り。空欄なら全ルール除外）
+                  {t("whitelist.form.excludedRuleIds")}
                 </label>
                 <input
                   ref={excludedRuleIdsRef}
-                  placeholder="rule-a, rule-b"
+                  placeholder={t("whitelist.form.excludedRuleIdsPlaceholder")}
                   className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
               <Button type="submit" size="sm" disabled={creating}>
-                申請する
+                {t("whitelist.form.submit")}
               </Button>
             </form>
           </CardContent>
@@ -207,12 +210,12 @@ export function WhitelistPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>顧客ID</TableHead>
-                  <TableHead>ステータス</TableHead>
-                  <TableHead>理由</TableHead>
-                  <TableHead>有効期限</TableHead>
-                  <TableHead>申請者</TableHead>
-                  <TableHead>操作</TableHead>
+                  <TableHead>{t("whitelist.table.header.customerId")}</TableHead>
+                  <TableHead>{t("whitelist.table.header.status")}</TableHead>
+                  <TableHead>{t("whitelist.table.header.reason")}</TableHead>
+                  <TableHead>{t("whitelist.table.header.validUntil")}</TableHead>
+                  <TableHead>{t("whitelist.table.header.requestedBy")}</TableHead>
+                  <TableHead>{t("whitelist.table.header.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -231,11 +234,11 @@ export function WhitelistPage() {
                       <TableCell className="font-mono text-xs">{entry.customer_id}</TableCell>
                       <TableCell>
                         <Badge variant={STATUS_VARIANTS[entry.status]}>
-                          {STATUS_LABELS[entry.status]}
+                          {statusLabels[entry.status]}
                         </Badge>
                       </TableCell>
                       <TableCell className="max-w-xs truncate text-sm">{entry.reason}</TableCell>
-                      <TableCell className="text-xs">{formatDateTime(entry.valid_until)}</TableCell>
+                      <TableCell className="text-xs">{formatDateTime(entry.valid_until, i18n.language)}</TableCell>
                       <TableCell className="font-mono text-xs">{entry.requested_by}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
@@ -244,15 +247,15 @@ export function WhitelistPage() {
                               variant="outline"
                               size="sm"
                               disabled={!canApproveThis}
-                              title={isOwnRequest ? "申請者自身は承認できません" : undefined}
+                              title={isOwnRequest ? t("whitelist.actions.approveDisabledTitle") : undefined}
                               onClick={() => handleApprove(entry.id)}
                             >
-                              承認
+                              {t("whitelist.actions.approve")}
                             </Button>
                           )}
                           {canRevokeThis && (
                             <Button variant="ghost" size="sm" onClick={() => handleRevoke(entry.id)}>
-                              解除
+                              {t("whitelist.actions.revoke")}
                             </Button>
                           )}
                         </div>
@@ -264,7 +267,7 @@ export function WhitelistPage() {
             </Table>
           ) : (
             <p className="p-8 text-center text-sm text-muted-foreground">
-              ホワイトリストエントリがありません
+              {t("whitelist.empty")}
             </p>
           )}
         </CardContent>

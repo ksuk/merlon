@@ -2,9 +2,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
 import { useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 
 export function SetupPage() {
+  const { t } = useTranslation()
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +25,7 @@ export function SetupPage() {
       await api.setup(email, password)
       navigate("/login")
     } catch {
-      setError("初期セットアップに失敗しました。既に管理者アカウントが作成済みの可能性があります")
+      setError(t("setup.error"))
     } finally {
       setSubmitting(false)
     }
@@ -33,16 +35,16 @@ export function SetupPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-xl">初期セットアップ</CardTitle>
+          <CardTitle className="text-xl">{t("setup.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              管理者アカウントを作成してください。ライセンスキーの適用は後からでも設定できます。
+              {t("setup.description")}
             </p>
             <div>
               <label htmlFor="setup-email" className="mb-1 block text-sm font-medium">
-                メールアドレス
+                {t("setup.emailLabel")}
               </label>
               <input
                 id="setup-email"
@@ -55,7 +57,7 @@ export function SetupPage() {
             </div>
             <div>
               <label htmlFor="setup-password" className="mb-1 block text-sm font-medium">
-                初期パスワード（12文字以上）
+                {t("setup.passwordLabel")}
               </label>
               <input
                 id="setup-password"
@@ -69,7 +71,7 @@ export function SetupPage() {
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={submitting}>
-              管理者アカウントを作成
+              {t("setup.submit")}
             </Button>
           </form>
         </CardContent>

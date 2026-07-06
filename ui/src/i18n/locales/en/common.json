@@ -1,0 +1,836 @@
+{
+  "language": {
+    "en": "English",
+    "ja": "Japanese",
+    "switcherLabel": "Language"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "customers": "Customers",
+    "alerts": "Alerts",
+    "cases": "Cases",
+    "transactions": "Transactions",
+    "batch": "Batch",
+    "reports": "STR reports",
+    "backtest": "Backtest",
+    "webhooks": "Webhooks",
+    "apikeys": "API keys",
+    "rules": "Rule management",
+    "whitelist": "Whitelist",
+    "config": "Config validation",
+    "audit": "Audit log",
+    "system": "System",
+    "tagline": "AML/CFT Compliance Platform"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "errorPrefix": "Failed to fetch data: {{error}}",
+    "noData": "No data",
+    "stats": {
+      "customers": "Customers",
+      "alerts": "Alerts",
+      "alertsDescription": "Open",
+      "cases": "Cases",
+      "casesDescription": "Open",
+      "recentTransactions": "Recent transactions",
+      "whitelistExpiringSoon": "Whitelist expiring soon",
+      "whitelistExpiringSoonDescription": "Within {{days}} days"
+    },
+    "charts": {
+      "riskDistribution": "Customer risk distribution",
+      "severityDistribution": "Alert severity",
+      "screeningFreshness": "Sanctions/PEP list freshness",
+      "caseStatusTitle": "Case status"
+    },
+    "risk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk",
+      "unscored": "Unscored"
+    },
+    "severity": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "listType": {
+      "sanctions": "Sanctions list",
+      "pep": "PEP list",
+      "pepRca": "PEP family/RCA list"
+    },
+    "caseStatusLabel": {
+      "open": "Open",
+      "investigating": "Investigating",
+      "escalated": "Escalated",
+      "closed": "Closed",
+      "closedTruePositive": "Closed (true positive)",
+      "closedFalsePositive": "Closed (false positive)"
+    },
+    "freshness": {
+      "upToDate": "Up to date",
+      "staleDays": "{{days}} days stale"
+    }
+  },
+  "customers": {
+    "title": "Customers",
+    "count": "{{count}} items",
+    "createButton": "Create new",
+    "error": "Failed to fetch customer data",
+    "form": {
+      "title": "Create customer",
+      "externalId": "External ID",
+      "type": "Type",
+      "countryCode": "Country code",
+      "submit": "Create"
+    },
+    "search": {
+      "placeholder": "Search by ID, name, or country code..."
+    },
+    "filter": {
+      "allTiers": "All risk tiers"
+    },
+    "tier": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "tierShort": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "type": {
+      "individual": "Individual",
+      "corporateDomestic": "Domestic corporate",
+      "corporateForeign": "Foreign corporate"
+    },
+    "table": {
+      "header": {
+        "externalId": "External ID",
+        "type": "Type",
+        "country": "Country",
+        "riskScore": "Risk score",
+        "riskTier": "Risk tier",
+        "lastScored": "Last scored"
+      },
+      "unscored": "Unscored",
+      "empty": "No customer data"
+    }
+  },
+  "casePriority": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical"
+  },
+  "caseStatus": {
+    "open": "New",
+    "new": "New",
+    "investigating": "Investigating",
+    "escalated": "Escalated",
+    "closed": "Closed",
+    "reopened": "Reopened",
+    "str_filed": "STR filed"
+  },
+  "cases": {
+    "title": "Cases",
+    "count": "{{count}} items",
+    "createButton": "Create new",
+    "error": "Failed to fetch case data",
+    "form": {
+      "title": "Create case",
+      "customerId": "Customer ID",
+      "alertIds": "Alert IDs (comma-separated)",
+      "assignedTo": "Assigned to",
+      "priority": "Priority",
+      "summary": "Summary",
+      "summaryPlaceholder": "Case summary...",
+      "submit": "Create"
+    },
+    "table": {
+      "header": {
+        "priority": "Priority",
+        "status": "Status",
+        "customerId": "Customer ID",
+        "assignedTo": "Assigned to",
+        "summary": "Summary",
+        "createdAt": "Created at"
+      },
+      "empty": "No cases"
+    }
+  },
+  "caseDetail": {
+    "backToList": "Back to case list",
+    "back": "Back",
+    "error": "Failed to fetch case data",
+    "title": "Case detail",
+    "info": {
+      "title": "Case info",
+      "customerId": "Customer ID",
+      "assignedTo": "Assigned to",
+      "createdAt": "Created at",
+      "closedAt": "Closed at"
+    },
+    "summary": {
+      "title": "Summary",
+      "relatedAlerts": "Related alerts"
+    },
+    "transitions": {
+      "title": "Status change",
+      "startInvestigation": "Start investigation",
+      "escalate": "Escalate",
+      "close": "Close",
+      "fileStr": "File as STR",
+      "rollback": "Roll back (to investigating)",
+      "reinvestigate": "Resume investigation"
+    },
+    "reopen": {
+      "title": "Reopen",
+      "placeholder": "Reason for reopening (required)",
+      "submit": "Reopen"
+    },
+    "reopenReason": {
+      "title": "Reopen reason"
+    },
+    "relatedCases": {
+      "title": "Related cases",
+      "empty": "No related cases",
+      "auto": "Auto-linked (same customer)",
+      "manual": "Manually linked"
+    },
+    "notes": {
+      "title": "Notes",
+      "empty": "No notes",
+      "placeholder": "Add a note..."
+    },
+    "edd": {
+      "stage3": "Stage 3: Transaction refusal recommended",
+      "stage2": "Stage 2: Transaction restriction recommended",
+      "stage1": "Stage 1: Reminder sent",
+      "requested": "EDD requested (pre-escalation)"
+    }
+  },
+  "alertSeverity": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "critical": "Critical"
+  },
+  "alertStatus": {
+    "open": "Open",
+    "investigating": "Investigating",
+    "escalated": "Escalated",
+    "closed_true_positive": "Closed (true positive)",
+    "closed_false_positive": "Closed (false positive)"
+  },
+  "alerts": {
+    "title": "Alerts",
+    "count": "{{count}} items",
+    "error": "Failed to fetch alert data",
+    "bulkClose": {
+      "label": "Bulk close",
+      "scenarioIdPlaceholder": "Scenario ID (optional)",
+      "severityPlaceholder": "Severity (optional)",
+      "reasonPlaceholder": "Reason (required)",
+      "submit": "Close matching alerts"
+    },
+    "bulkCase": {
+      "selectedCount": "{{count}} selected",
+      "submit": "Combine selected alerts into a case"
+    },
+    "table": {
+      "header": {
+        "severity": "Severity",
+        "status": "Status",
+        "customerId": "Customer ID",
+        "scenario": "Scenario",
+        "score": "Score",
+        "description": "Description",
+        "detectedAt": "Detected at"
+      },
+      "empty": "No alerts"
+    }
+  },
+  "alertDetail": {
+    "backToList": "Back to alert list",
+    "back": "Back",
+    "error": "Failed to fetch alert data",
+    "title": "Alert detail",
+    "info": {
+      "title": "Alert info",
+      "customerId": "Customer ID",
+      "scenario": "Scenario",
+      "score": "Score",
+      "detectedAt": "Detected at",
+      "resolvedAt": "Resolved at",
+      "resolvedBy": "Resolved by"
+    },
+    "description": {
+      "title": "Description",
+      "relatedTransactions": "Related transactions"
+    },
+    "transitions": {
+      "title": "Status change",
+      "startInvestigation": "Start investigation",
+      "escalate": "Escalate",
+      "closeTruePositive": "Close as true positive",
+      "closeFalsePositive": "Close as false positive"
+    }
+  },
+  "audit": {
+    "title": "Audit log",
+    "count": "{{count}} items",
+    "error": "Failed to fetch audit log",
+    "action": {
+      "create": "Create",
+      "update": "Update",
+      "update_status": "Update status",
+      "delete": "Delete",
+      "score_customer": "Score",
+      "screen_customer": "Screen",
+      "run_backtest": "Backtest",
+      "create_str": "Create STR",
+      "export_audit_logs": "Export audit logs"
+    },
+    "resource": {
+      "customers": "Customers",
+      "transactions": "Transactions",
+      "alerts": "Alerts",
+      "cases": "Cases",
+      "webhooks": "Webhooks",
+      "batch": "Batch",
+      "reports": "Reports",
+      "admin": "Admin",
+      "rules": "Rules",
+      "audit": "Audit log"
+    },
+    "table": {
+      "header": {
+        "timestamp": "Timestamp",
+        "action": "Action",
+        "resource": "Resource",
+        "resourceId": "Resource ID",
+        "user": "User",
+        "ipAddress": "IP address"
+      },
+      "empty": "No audit log entries"
+    },
+    "filter": {
+      "since": "Period (from)",
+      "until": "Period (to)",
+      "category": "Action category",
+      "user": "Actor",
+      "resourceId": "Target resource ID",
+      "userPlaceholder": "user_id",
+      "resourceIdPlaceholder": "resource_id"
+    },
+    "category": {
+      "all": "All categories",
+      "auth": "Authentication",
+      "customerData": "Customer data",
+      "ruleManagement": "Rule management",
+      "alertCase": "Alerts/Cases",
+      "str": "STR",
+      "whitelist": "Whitelist",
+      "adminOp": "Admin operations"
+    },
+    "loadMore": "Load more",
+    "ruleDiff": {
+      "empty": "No diff information",
+      "parseError": "Failed to parse diff",
+      "noChangedFields": "No fields changed",
+      "before": "Before",
+      "after": "After"
+    }
+  },
+  "transactions": {
+    "title": "Transactions",
+    "count": "{{count}} items",
+    "createButton": "Register new",
+    "error": "Failed to fetch transaction data",
+    "form": {
+      "title": "Register transaction",
+      "customerId": "Customer ID",
+      "externalId": "External ID",
+      "amount": "Amount",
+      "currency": "Currency",
+      "direction": "Direction",
+      "counterpartyCountry": "Counterparty country",
+      "channel": "Channel",
+      "submit": "Register"
+    },
+    "direction": {
+      "inbound": "Inbound",
+      "outbound": "Outbound",
+      "internal": "Internal"
+    },
+    "table": {
+      "header": {
+        "direction": "Direction",
+        "customerId": "Customer ID",
+        "amount": "Amount",
+        "counterpartyCountry": "Counterparty country",
+        "channel": "Channel",
+        "executedAt": "Executed at"
+      },
+      "empty": "No transaction data"
+    }
+  },
+  "transactionDetail": {
+    "backToList": "Back to transaction list",
+    "back": "Back",
+    "error": "Failed to fetch transaction data",
+    "info": {
+      "title": "Transaction info",
+      "internalId": "Internal ID",
+      "externalId": "External ID",
+      "customerId": "Customer ID",
+      "direction": "Direction"
+    },
+    "amountRoute": {
+      "title": "Amount & route",
+      "amount": "Amount",
+      "currency": "Currency",
+      "counterpartyCountry": "Counterparty country",
+      "channel": "Channel",
+      "executedAt": "Executed at",
+      "createdAt": "Registered at"
+    }
+  },
+  "customerDetail": {
+    "backToList": "Back to customer list",
+    "back": "Back",
+    "error": "Failed to fetch customer data",
+    "basicInfo": {
+      "title": "Basic information",
+      "internalId": "Internal ID",
+      "type": "Type",
+      "countryCode": "Country code",
+      "save": "Save",
+      "products": "Products",
+      "createdAt": "Created at",
+      "updatedAt": "Updated at"
+    },
+    "riskAssessment": {
+      "title": "Risk assessment",
+      "screenButton": "Screen",
+      "scoreButton": "Score",
+      "riskScore": "Risk score",
+      "riskTier": "Risk tier",
+      "unscored": "Unscored",
+      "lastScored": "Last scored"
+    },
+    "screening": {
+      "title": "Screening result",
+      "hit": "Hit",
+      "noHit": "No hit",
+      "summary": "Lists checked: {{count}} | Run at: {{time}}",
+      "table": {
+        "list": "List",
+        "matchedName": "Matched name",
+        "similarity": "Similarity",
+        "type": "Type",
+        "source": "Source"
+      }
+    },
+    "attributes": {
+      "title": "Attributes"
+    },
+    "scoreHistory": {
+      "title": "Score history",
+      "empty": "No score history",
+      "table": {
+        "score": "Score",
+        "tier": "Tier",
+        "ruleSet": "Rule set",
+        "version": "Version",
+        "evaluatedAt": "Evaluated at"
+      }
+    }
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "The page for this URL does not exist.",
+    "backToDashboard": "Back to dashboard"
+  },
+  "errorBoundary": {
+    "title": "An error occurred",
+    "retry": "Retry"
+  },
+  "errors": {
+    "not_found": "The requested resource was not found.",
+    "validation_failed": "The submitted data is invalid.",
+    "invalid_state_transition": "This action is not allowed in the current state.",
+    "unauthorized": "You are not authenticated. Please log in again.",
+    "forbidden": "You do not have permission to perform this action.",
+    "conflict": "This action conflicts with the current state of the resource.",
+    "rate_limited": "Too many requests. Please try again later.",
+    "payload_too_large": "The request payload is too large.",
+    "internal_error": "An internal error occurred. Please try again later.",
+    "service_unavailable": "This feature is not currently available.",
+    "engine_error": "The scoring engine could not process this request.",
+    "retention_shorten_forbidden": "The retention period cannot be shortened below the regulatory minimum.",
+    "unknown": "An unexpected error occurred."
+  },
+  "login": {
+    "title": "Log in",
+    "emailLabel": "Email address",
+    "passwordLabel": "Password",
+    "submit": "Log in",
+    "error": "Incorrect email or password"
+  },
+  "setup": {
+    "title": "Initial setup",
+    "description": "Create the administrator account. A license key can be applied later.",
+    "emailLabel": "Email address",
+    "passwordLabel": "Initial password (12+ characters)",
+    "submit": "Create administrator account",
+    "error": "Initial setup failed. An administrator account may already exist."
+  },
+  "users": {
+    "title": "User management",
+    "error": "Failed to fetch user list",
+    "roles": {
+      "admin": "Admin",
+      "analyst": "Analyst",
+      "viewer": "Viewer"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "created": "Created: {{date}}"
+    },
+    "empty": "No users registered"
+  },
+  "config": {
+    "title": "Config validation",
+    "form": {
+      "title": "Validate YAML config",
+      "typeLabel": "Config type",
+      "yamlLabel": "YAML",
+      "yamlPlaceholder": "# Enter config in YAML format...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
+      "validating": "Validating...",
+      "submit": "Validate"
+    },
+    "types": {
+      "cddWeights": "CDD weights",
+      "screeningLists": "Screening lists",
+      "scenarioRules": "Scenario rules"
+    },
+    "result": {
+      "successTitle": "Validation succeeded",
+      "validBadge": "Valid",
+      "errorTitle": "Validation error",
+      "errorCount": "{{count}} errors"
+    }
+  },
+  "backtest": {
+    "title": "Backtest",
+    "error": "Failed to fetch data",
+    "form": {
+      "title": "Run test",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Backtest description...",
+      "targetCustomers": "Target customers",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all",
+      "running": "Running...",
+      "submit": "Run backtest"
+    },
+    "result": {
+      "title": "Result",
+      "customers": "Customers",
+      "transactions": "Transactions",
+      "alerts": "Alerts generated",
+      "executionTime": "Execution time",
+      "table": {
+        "header": {
+          "scenario": "Scenario",
+          "alerts": "Alerts",
+          "high": "High",
+          "medium": "Medium",
+          "low": "Low",
+          "affectedCustomers": "Affected customers"
+        }
+      }
+    }
+  },
+  "batch": {
+    "title": "Batch",
+    "error": "Failed to fetch data",
+    "targetCustomers": {
+      "title": "Target customers",
+      "selectedCount": "{{count}} selected",
+      "allTargeted": "All customers targeted (none selected)",
+      "selectAll": "Select all",
+      "deselectAll": "Deselect all"
+    },
+    "actions": {
+      "score": "Bulk scoring",
+      "monitor": "Bulk monitoring"
+    },
+    "scoreResult": {
+      "title": "Scoring result",
+      "stats": {
+        "total": "Total",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "duration": "Duration"
+      },
+      "table": {
+        "header": {
+          "customerId": "Customer ID",
+          "score": "Score",
+          "riskTier": "Risk tier",
+          "error": "Error"
+        }
+      }
+    },
+    "monitorResult": {
+      "title": "Monitoring result",
+      "stats": {
+        "total": "Total",
+        "succeeded": "Succeeded",
+        "alertsTotal": "Alerts generated",
+        "duration": "Duration"
+      },
+      "table": {
+        "header": {
+          "customerId": "Customer ID",
+          "alertsRaised": "Alerts raised",
+          "error": "Error"
+        }
+      }
+    }
+  },
+  "apikeys": {
+    "title": "API keys",
+    "createButton": "Create new",
+    "error": "Failed to fetch API keys",
+    "newKey": {
+      "title": "API key generated (shown only once)",
+      "copy": "Copy"
+    },
+    "form": {
+      "title": "Create API key",
+      "nameLabel": "Name",
+      "namePlaceholder": "Purpose of this API key...",
+      "roleLabel": "Role",
+      "submit": "Create"
+    },
+    "roles": {
+      "admin": "Admin",
+      "analyst": "Analyst",
+      "viewer": "Viewer"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "created": "Created: {{date}}",
+      "lastUsed": " | Last used: {{date}}"
+    },
+    "revoke": "Revoke",
+    "empty": "No API keys registered"
+  },
+  "reports": {
+    "title": "STR reports",
+    "error": "Failed to fetch data",
+    "result": {
+      "title": "STR report created",
+      "idLabel": "ID: {{id}}"
+    },
+    "export": {
+      "csv": "CSV",
+      "json": "JSON"
+    },
+    "form": {
+      "title": "Create STR report",
+      "targetAlert": "Target alert",
+      "noAlerts": "No target alerts",
+      "pointLabel": "Point of suspicious transaction",
+      "pointPlaceholder": "Describe the reason for suspicion...",
+      "createdByLabel": "Created by",
+      "createdByPlaceholder": "Analyst name",
+      "submit": "Create STR report"
+    }
+  },
+  "system": {
+    "title": "System info",
+    "error": "Failed to fetch system info",
+    "stats": {
+      "version": "Version",
+      "endpoints": "API endpoints",
+      "enabledFeatures": "Enabled features"
+    },
+    "components": {
+      "title": "Components",
+      "api": "Go API",
+      "engine": "Rust Engine",
+      "database": "PostgreSQL"
+    },
+    "features": {
+      "title": "Feature status",
+      "auth": "API auth",
+      "audit": "Audit log",
+      "cases": "Case management",
+      "webhooks": "Webhooks",
+      "rate_limit": "Rate limiting",
+      "scoring": "CDD scoring",
+      "monitoring": "Transaction monitoring",
+      "screening": "Screening",
+      "backtest": "Backtest",
+      "config": "Config validation"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    }
+  },
+  "rules": {
+    "title": "Rule management",
+    "error": "Failed to fetch rules",
+    "actions": {
+      "import": "Import",
+      "create": "Create new"
+    },
+    "filter": {
+      "all": "All",
+      "activeOnly": "Active only"
+    },
+    "types": {
+      "tmScenario": "TM scenario",
+      "cddWeight": "CDD weight",
+      "screeningConfig": "Screening config",
+      "countryRisk": "Country risk"
+    },
+    "create": {
+      "title": "Create rule",
+      "typeLabel": "Type",
+      "nameLabel": "Name",
+      "namePlaceholder": "rule_name",
+      "definitionLabel": "Definition (JSON)",
+      "submit": "Create"
+    },
+    "import": {
+      "title": "Bulk import rules",
+      "jsonArrayLabel": "JSON array",
+      "error": "Failed to parse JSON",
+      "submit": "Import"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "updatedAt": "Updated: {{date}}",
+      "export": "Export",
+      "activate": "Activate",
+      "deactivate": "Deactivate"
+    },
+    "empty": "No rules registered"
+  },
+  "webhooks": {
+    "title": "Webhook management",
+    "createButton": "Create new",
+    "error": "Failed to fetch webhook data",
+    "tabs": {
+      "webhooks": "Webhooks",
+      "dlq": "DLQ"
+    },
+    "dlq": {
+      "table": {
+        "header": {
+          "event": "Event",
+          "attemptCount": "Attempts",
+          "lastError": "Last error",
+          "failedAt": "Failed at"
+        }
+      },
+      "reprocess": "Reprocess",
+      "empty": "No events in the DLQ"
+    },
+    "form": {
+      "title": "Create webhook",
+      "urlLabel": "URL",
+      "eventsLabel": "Events",
+      "submit": "Create"
+    },
+    "events": {
+      "alertCreated": "Alert created",
+      "alertResolved": "Alert resolved",
+      "caseCreated": "Case created",
+      "caseUpdated": "Case updated",
+      "caseClosed": "Case closed",
+      "strCreated": "STR created",
+      "scoreChanged": "Score changed",
+      "screeningMatch": "Screening match",
+      "screeningTruePositive": "Screening true positive",
+      "eddRequired": "EDD required",
+      "transactionRestrictionRecommended": "Transaction restriction recommended",
+      "relationshipDeclineRecommended": "Relationship decline recommended"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "entry": {
+      "createdAt": "Created: {{date}}",
+      "deliveries": "Delivery history"
+    },
+    "deliveries": {
+      "table": {
+        "header": {
+          "event": "Event",
+          "status": "Status",
+          "result": "Result",
+          "timestamp": "Timestamp"
+        }
+      },
+      "success": "Succeeded",
+      "failure": "Failed",
+      "empty": "No delivery history"
+    },
+    "empty": "No webhooks registered"
+  },
+  "whitelist": {
+    "title": "Whitelist",
+    "requestButton": "Request",
+    "error": "Failed to fetch whitelist data",
+    "form": {
+      "title": "Request whitelist entry",
+      "customerId": "Customer ID",
+      "reason": "Reason",
+      "validUntil": "Valid until",
+      "excludedRuleIds": "Excluded rule IDs (optional, comma-separated; empty excludes all rules)",
+      "excludedRuleIdsPlaceholder": "rule-a, rule-b",
+      "submit": "Submit request"
+    },
+    "status": {
+      "pending_approval": "Pending approval",
+      "active": "Active",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "table": {
+      "header": {
+        "customerId": "Customer ID",
+        "status": "Status",
+        "reason": "Reason",
+        "validUntil": "Valid until",
+        "requestedBy": "Requested by",
+        "actions": "Actions"
+      }
+    },
+    "actions": {
+      "approve": "Approve",
+      "revoke": "Revoke",
+      "approveDisabledTitle": "The requester cannot approve their own request"
+    },
+    "empty": "No whitelist entries"
+  }
+}

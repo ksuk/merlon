@@ -13,6 +13,7 @@ import { useApi } from "@/hooks/use-api"
 import { api, type RiskTier, type ScreenResult } from "@/lib/api"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { Link, useParams } from "react-router-dom"
 
 const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
@@ -21,23 +22,18 @@ const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
   high: "high",
 }
 
-const TIER_LABELS: Record<string, string> = {
-  low: "低リスク",
-  medium: "中リスク",
-  high: "高リスク",
+const CUSTOMER_TYPE_KEYS: Record<string, string> = {
+  individual: "individual",
+  corporate_domestic: "corporateDomestic",
+  corporate_foreign: "corporateForeign",
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  individual: "個人",
-  corporate_domestic: "国内法人",
-  corporate_foreign: "海外法人",
-}
-
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("ja-JP")
+function formatDateTime(iso: string, locale: string) {
+  return new Date(iso).toLocaleString(locale)
 }
 
 export function CustomerDetailPage() {
+  const { t, i18n } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const { data: customer, loading, error } = useApi(
     useCallback(() => api.customers.get(id!), [id]),
@@ -99,9 +95,9 @@ export function CustomerDetailPage() {
     return (
       <div className="space-y-4">
         <Link to="/customers" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> 顧客一覧に戻る
+          <ArrowLeft className="h-4 w-4" /> {t("customerDetail.backToList")}
         </Link>
-        <p className="text-destructive">顧客データの取得に失敗しました</p>
+        <p className="text-destructive">{t("customerDetail.error")}</p>
       </div>
     )
   }
@@ -110,12 +106,12 @@ export function CustomerDetailPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link to="/customers" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> 戻る
+          <ArrowLeft className="h-4 w-4" /> {t("customerDetail.back")}
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">{customer.external_id}</h1>
         {customer.risk_tier && (
           <Badge variant={TIER_VARIANT[customer.risk_tier]}>
-            {TIER_LABELS[customer.risk_tier]}
+            {t(`customers.tier.${customer.risk_tier}`)}
           </Badge>
         )}
       </div>
@@ -123,7 +119,7 @@ export function CustomerDetailPage() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">基本情報</CardTitle>
+            <CardTitle className="text-base">{t("customerDetail.basicInfo.title")}</CardTitle>
             <Button size="sm" variant="ghost" onClick={() => setEditing(!editing)}>
               <Pencil className="h-4 w-4" />
             </Button>
@@ -131,36 +127,42 @@ export function CustomerDetailPage() {
           <CardContent>
             <dl className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">内部ID</dt>
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.internalId")}</dt>
                 <dd className="font-mono">{customer.id}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">種別</dt>
-                <dd>{TYPE_LABELS[customer.customer_type] ?? customer.customer_type}</dd>
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.type")}</dt>
+                <dd>
+                  {t(`customers.type.${CUSTOMER_TYPE_KEYS[customer.customer_type] ?? customer.customer_type}`, {
+                    defaultValue: customer.customer_type,
+                  })}
+                </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">国コード</dt>
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.countryCode")}</dt>
                 <dd>
                   {editing ? (
                     <div className="flex gap-2">
                       <input ref={countryRef} defaultValue={customer.country_code} maxLength={2}
                         className="w-16 rounded-md border bg-background px-2 py-1 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
-                      <Button size="sm" variant="outline" onClick={handleSave} disabled={saving}>保存</Button>
+                      <Button size="sm" variant="outline" onClick={handleSave} disabled={saving}>
+                        {t("customerDetail.basicInfo.save")}
+                      </Button>
                     </div>
                   ) : customer.country_code}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">プロダクト</dt>
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.products")}</dt>
                 <dd>{customer.product_types?.join(", ") || "-"}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">作成日</dt>
-                <dd>{formatDateTime(customer.created_at)}</dd>
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.createdAt")}</dt>
+                <dd>{formatDateTime(customer.created_at, i18n.language)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">更新日</dt>
-                <dd>{formatDateTime(customer.updated_at)}</dd>
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.updatedAt")}</dt>
+                <dd>{formatDateTime(customer.updated_at, i18n.language)}</dd>
               </div>
             </dl>
           </CardContent>
@@ -168,39 +170,39 @@ export function CustomerDetailPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">リスク評価</CardTitle>
+            <CardTitle className="text-base">{t("customerDetail.riskAssessment.title")}</CardTitle>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={handleScreen} disabled={screening}>
                 <Search className={`h-4 w-4 ${screening ? "animate-pulse" : ""}`} />
-                スクリーニング
+                {t("customerDetail.riskAssessment.screenButton")}
               </Button>
               <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
                 <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
-                スコアリング
+                {t("customerDetail.riskAssessment.scoreButton")}
               </Button>
             </div>
           </CardHeader>
           <CardContent>
             <dl className="space-y-3 text-sm">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">リスクスコア</dt>
+                <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.riskScore")}</dt>
                 <dd className="text-2xl font-bold">
                   {customer.risk_score != null ? customer.risk_score.toFixed(1) : "-"}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">リスクティア</dt>
+                <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.riskTier")}</dt>
                 <dd>
                   {customer.risk_tier ? (
                     <Badge variant={TIER_VARIANT[customer.risk_tier]}>
-                      {TIER_LABELS[customer.risk_tier]}
+                      {t(`customers.tier.${customer.risk_tier}`)}
                     </Badge>
-                  ) : "未スコア"}
+                  ) : t("customerDetail.riskAssessment.unscored")}
                 </dd>
               </div>
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">最終スコアリング</dt>
-                <dd>{customer.last_scored_at ? formatDateTime(customer.last_scored_at) : "-"}</dd>
+                <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.lastScored")}</dt>
+                <dd>{customer.last_scored_at ? formatDateTime(customer.last_scored_at, i18n.language) : "-"}</dd>
               </div>
             </dl>
           </CardContent>
@@ -211,25 +213,28 @@ export function CustomerDetailPage() {
         <Card className={screenResult.hit ? "border-red-200" : "border-green-200"}>
           <CardHeader>
             <CardTitle className="text-base">
-              スクリーニング結果
+              {t("customerDetail.screening.title")}
               <Badge variant={screenResult.hit ? "destructive" : "low"} className="ml-2">
-                {screenResult.hit ? "ヒットあり" : "ヒットなし"}
+                {screenResult.hit ? t("customerDetail.screening.hit") : t("customerDetail.screening.noHit")}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              チェック済みリスト: {screenResult.lists_checked}件 | 実行日時: {formatDateTime(screenResult.screened_at)}
+              {t("customerDetail.screening.summary", {
+                count: screenResult.lists_checked,
+                time: formatDateTime(screenResult.screened_at, i18n.language),
+              })}
             </p>
             {screenResult.matches.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>リスト</TableHead>
-                    <TableHead>一致名</TableHead>
-                    <TableHead>類似度</TableHead>
-                    <TableHead>種別</TableHead>
-                    <TableHead>ソース</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.list")}</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.matchedName")}</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.similarity")}</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.type")}</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.source")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -252,7 +257,7 @@ export function CustomerDetailPage() {
       {customer.attributes && Object.keys(customer.attributes).length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">属性</CardTitle>
+            <CardTitle className="text-base">{t("customerDetail.attributes.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="grid gap-2 text-sm md:grid-cols-2">
@@ -269,7 +274,7 @@ export function CustomerDetailPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">スコア履歴</CardTitle>
+          <CardTitle className="text-base">{t("customerDetail.scoreHistory.title")}</CardTitle>
         </CardHeader>
         <CardContent>
           {scoresLoading ? (
@@ -278,11 +283,11 @@ export function CustomerDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>スコア</TableHead>
-                  <TableHead>ティア</TableHead>
-                  <TableHead>ルールセット</TableHead>
-                  <TableHead>バージョン</TableHead>
-                  <TableHead>評価日時</TableHead>
+                  <TableHead>{t("customerDetail.scoreHistory.table.score")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreHistory.table.tier")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreHistory.table.ruleSet")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreHistory.table.version")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreHistory.table.evaluatedAt")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -290,17 +295,17 @@ export function CustomerDetailPage() {
                   <TableRow key={s.id}>
                     <TableCell className="font-bold">{s.score.toFixed(1)}</TableCell>
                     <TableCell>
-                      <Badge variant={TIER_VARIANT[s.tier]}>{TIER_LABELS[s.tier]}</Badge>
+                      <Badge variant={TIER_VARIANT[s.tier]}>{t(`customers.tier.${s.tier}`)}</Badge>
                     </TableCell>
                     <TableCell className="font-mono text-sm">{s.rule_set_id}</TableCell>
                     <TableCell>v{s.rule_set_version}</TableCell>
-                    <TableCell>{formatDateTime(s.scored_at)}</TableCell>
+                    <TableCell>{formatDateTime(s.scored_at, i18n.language)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">スコア履歴がありません</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("customerDetail.scoreHistory.empty")}</p>
           )}
         </CardContent>
       </Card>

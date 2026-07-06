@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router-dom"
+import { renderWithI18n } from "@/test/i18n-test-utils"
 import { BacktestPage } from "./backtest"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return render(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
 beforeEach(() => {
@@ -29,7 +30,7 @@ test("renders backtest form with customers", async () => {
     ),
   )
 
-  renderWithRouter(<BacktestPage />)
+  await renderWithRouter(<BacktestPage />)
 
   expect(await screen.findByText("EXT-001")).toBeDefined()
   expect(screen.getByText("バックテスト実行")).toBeDefined()
@@ -38,7 +39,7 @@ test("renders backtest form with customers", async () => {
 test("shows error state", async () => {
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fail"))
 
-  renderWithRouter(<BacktestPage />)
+  await renderWithRouter(<BacktestPage />)
 
   expect(await screen.findByText("データの取得に失敗しました")).toBeDefined()
 })
