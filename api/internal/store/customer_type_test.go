@@ -72,7 +72,7 @@ func TestCustomerTypeExistingValuesUnaffected(t *testing.T) {
 func TestCustomerAttributesTrustPartiesStructure(t *testing.T) {
 	pool := newTestPgPool(t)
 	ctx := context.Background()
-	repo := NewPgCustomerRepo(pool)
+	repo := NewPgCustomerRepo(pool, nil)
 
 	trustParties := []any{
 		map[string]any{"role": "settlor", "name": "山田太郎"},

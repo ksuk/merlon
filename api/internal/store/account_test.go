@@ -87,7 +87,7 @@ func TestPgAccountCreateJointWithMultipleCustomers(t *testing.T) {
 	ctx := context.Background()
 
 	repo := NewPgAccountRepo(pool)
-	customerRepo := NewPgCustomerRepo(pool)
+	customerRepo := NewPgCustomerRepo(pool, nil)
 
 	primary := &domain.Customer{
 		ID: newTestUUID(), ExternalID: "acct-primary-" + newTestUUID(),

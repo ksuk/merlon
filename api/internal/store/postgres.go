@@ -10,15 +10,20 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/merlon-aml/merlon/api/internal/crypto"
 	"github.com/merlon-aml/merlon/api/internal/domain"
 )
 
 type PgCustomerRepo struct {
 	pool *pgxpool.Pool
+	// encryptor transparently encrypts/decrypts customers.attributes' direct
+	// PII fields (data-model.md §3.1, WS-11 Task 7). Nil disables encryption
+	// entirely (encryption not configured), leaving attributes untouched.
+	encryptor *crypto.Encryptor
 }
 
-func NewPgCustomerRepo(pool *pgxpool.Pool) *PgCustomerRepo {
-	return &PgCustomerRepo{pool: pool}
+func NewPgCustomerRepo(pool *pgxpool.Pool, encryptor *crypto.Encryptor) *PgCustomerRepo {
+	return &PgCustomerRepo{pool: pool, encryptor: encryptor}
 }
 
 const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at`
@@ -56,6 +61,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	if len(attrs) > 0 {
 		json.Unmarshal(attrs, &c.Attributes)
 	}
+	decryptDirectPII(r.encryptor, c.Attributes)
 	if riskTier != nil {
 		rt := domain.RiskTier(*riskTier)
 		c.RiskTier = &rt
@@ -65,7 +71,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 
 // scanCustomerRows scans a single customers row using customerColumns'
 // column order, shared by List/ListByCursor/ListEDDPending.
-func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
+func scanCustomerRows(rows pgx.Rows, encryptor *crypto.Encryptor) (domain.Customer, error) {
 	var c domain.Customer
 	var attrs []byte
 	var products []string
@@ -86,6 +92,7 @@ func scanCustomerRows(rows pgx.Rows) (domain.Customer, error) {
 	if len(attrs) > 0 {
 		json.Unmarshal(attrs, &c.Attributes)
 	}
+	decryptDirectPII(encryptor, c.Attributes)
 	if riskTier != nil {
 		rt := domain.RiskTier(*riskTier)
 		c.RiskTier = &rt
@@ -105,7 +112,7 @@ func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.
 
 	var customers []domain.Customer
 	for rows.Next() {
-		c, err := scanCustomerRows(rows)
+		c, err := scanCustomerRows(rows, r.encryptor)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +141,7 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 
 	var customers []domain.Customer
 	for rows.Next() {
-		c, err := scanCustomerRows(rows)
+		c, err := scanCustomerRows(rows, r.encryptor)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +163,7 @@ func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer,
 
 	var customers []domain.Customer
 	for rows.Next() {
-		c, err := scanCustomerRows(rows)
+		c, err := scanCustomerRows(rows, r.encryptor)
 		if err != nil {
 			return nil, err
 		}
@@ -166,12 +173,16 @@ func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer,
 }
 
 func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
-	attrs, _ := json.Marshal(c.Attributes)
+	encryptedAttrs, err := encryptDirectPII(r.encryptor, c.Attributes)
+	if err != nil {
+		return err
+	}
+	attrs, _ := json.Marshal(encryptedAttrs)
 	status := c.Status
 	if status == "" {
 		status = domain.CustomerStatusActive
 	}
-	_, err := r.pool.Exec(ctx,
+	_, err = r.pool.Exec(ctx,
 		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
@@ -184,7 +195,11 @@ func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 }
 
 func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
-	attrs, _ := json.Marshal(c.Attributes)
+	encryptedAttrs, err := encryptDirectPII(r.encryptor, c.Attributes)
+	if err != nil {
+		return err
+	}
+	attrs, _ := json.Marshal(encryptedAttrs)
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15 WHERE id=$1`,
