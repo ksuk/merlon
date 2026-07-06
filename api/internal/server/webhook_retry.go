@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"time"
@@ -166,13 +167,13 @@ func (s *Server) RunWebhookRetryWorker(ctx context.Context, interval time.Durati
 // awaiting reprocessing (api.md §3.1 "DLQ内イベントの再処理はUI上から実行可能").
 func (s *Server) handleListDLQEntries(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
 	entries, err := s.webhooks.ListDLQEntries(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -197,7 +198,7 @@ type reprocessDLQEntryResponse struct {
 // "操作を監査ログに記録する").
 func (s *Server) handleReprocessDLQEntry(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
-		writeError(w, http.StatusServiceUnavailable, "webhooks not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
 		return
 	}
 
@@ -206,10 +207,10 @@ func (s *Server) handleReprocessDLQEntry(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -217,10 +218,10 @@ func (s *Server) handleReprocessDLQEntry(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, "webhook not found")
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "webhook not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -245,13 +246,13 @@ func (s *Server) handleReprocessDLQEntry(w http.ResponseWriter, r *http.Request)
 		CreatedAt:    time.Now(),
 	}
 	if err := s.webhooks.CreateDelivery(r.Context(), delivery); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	now := time.Now()
 	if err := s.webhooks.MarkDLQEntryReprocessed(r.Context(), id, now); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	metrics.WebhookDLQDepth.Dec()

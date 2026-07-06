@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -61,7 +62,7 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, customerID string) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
@@ -75,7 +76,7 @@ func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, 
 		alerts, err = s.alerts.ListOpenByCursor(r.Context(), fetchLimit, after)
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -106,7 +107,7 @@ func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -124,10 +125,10 @@ func (s *Server) handleGetAlert(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
@@ -138,22 +139,22 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 
 	var req UpdateAlertStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	if req.Status == "" {
-		writeError(w, http.StatusBadRequest, "status required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "status required")
 		return
 	}
 
 	if err := s.alerts.UpdateStatus(r.Context(), id, req.Status, req.ResolvedBy); err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

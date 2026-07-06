@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 )
 
 type errorResponse struct {
-	Error string `json:"error"`
+	Error string      `json:"error"`
+	Code  apierr.Code `json:"error_code,omitempty"`
 }
 
 // deprecatedOffsetSunsetWindow is the minimum migration period api.md §1.2
@@ -22,8 +25,15 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// Deprecated: use writeErrorCode so the response carries a stable
+// error_code alongside the message (Contract Stability: clients branch on
+// error_code, not the message string, which may be reworded or translated).
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, errorResponse{Error: msg})
+}
+
+func writeErrorCode(w http.ResponseWriter, status int, code apierr.Code, msg string) {
+	writeJSON(w, status, errorResponse{Error: msg, Code: code})
 }
 
 // paginatedResponse is the additive {"data": [...], "pagination": {...}}

@@ -80,6 +80,21 @@ func TestAuthNoHeader(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	assertErrorCode(t, rec, "unauthorized")
+}
+
+// assertErrorCode decodes rec.Body as {"error": ..., "error_code": ...} and
+// fails the test if error_code does not match want (Contract Stability:
+// clients must be able to branch on error_code for every error response).
+func assertErrorCode(t *testing.T, rec *httptest.ResponseRecorder, want string) {
+	t.Helper()
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v (body: %s)", err, rec.Body.String())
+	}
+	if body["error_code"] != want {
+		t.Errorf("error_code = %q, want %q (body: %s)", body["error_code"], want, rec.Body.String())
+	}
 }
 
 func TestAuthInvalidKey(t *testing.T) {
@@ -93,6 +108,7 @@ func TestAuthInvalidKey(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	assertErrorCode(t, rec, "unauthorized")
 }
 
 func TestAuthValidKey(t *testing.T) {
@@ -134,6 +150,7 @@ func TestAuthViewerCannotWrite(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
+	assertErrorCode(t, rec, "forbidden")
 }
 
 func TestAuthAnalystCanWrite(t *testing.T) {
@@ -235,6 +252,7 @@ func TestAdminRequiresAdminRole(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
+	assertErrorCode(t, rec, "forbidden")
 }
 
 func TestBootstrapTokenCreateKey(t *testing.T) {
@@ -264,6 +282,7 @@ func TestBootstrapTokenCannotCreateSecondKey(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	assertErrorCode(t, rec, "unauthorized")
 }
 
 func TestBootstrapTokenCannotListKeys(t *testing.T) {

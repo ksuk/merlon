@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"strings"
 	"time"
@@ -59,7 +60,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			header := r.Header.Get("Authorization")
 			if header == "Bearer "+s.bootstrapToken {
 				if !s.bootstrapTokenAllowed(r.Context()) {
-					writeAuthError(w, http.StatusUnauthorized, "bootstrap token has already been used")
+					writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "bootstrap token has already been used")
 					return
 				}
 				next.ServeHTTP(w, r)
@@ -69,18 +70,18 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		principal, ctx, err := s.authenticate(r)
 		if err != nil {
-			writeAuthError(w, err.status, err.message)
+			writeAuthError(w, err.status, err.code, err.message)
 			return
 		}
 
 		// Admin routes require admin role
 		if strings.HasPrefix(r.URL.Path, "/api/v1/admin/") && principal.Role != domain.RoleAdmin {
-			writeAuthError(w, http.StatusForbidden, "admin role required")
+			writeAuthError(w, http.StatusForbidden, apierr.CodeForbidden, "admin role required")
 			return
 		}
 
 		if !hasPermission(principal.Role, r.Method, r.URL.Path) {
-			writeAuthError(w, http.StatusForbidden, "insufficient permissions")
+			writeAuthError(w, http.StatusForbidden, apierr.CodeForbidden, "insufficient permissions")
 			return
 		}
 
@@ -90,6 +91,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 type authError struct {
 	status  int
+	code    apierr.Code
 	message string
 }
 
@@ -106,12 +108,12 @@ func (s *Server) authenticate(r *http.Request) (Principal, context.Context, *aut
 		return s.authenticateJWT(r, cookie.Value)
 	}
 
-	return Principal{}, nil, &authError{http.StatusUnauthorized, "missing Authorization header"}
+	return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "missing Authorization header"}
 }
 
 func (s *Server) authenticateAPIKey(r *http.Request, header string) (Principal, context.Context, *authError) {
 	if !strings.HasPrefix(header, "Bearer ") {
-		return Principal{}, nil, &authError{http.StatusUnauthorized, "invalid Authorization format"}
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid Authorization format"}
 	}
 
 	token := strings.TrimPrefix(header, "Bearer ")
@@ -121,13 +123,13 @@ func (s *Server) authenticateAPIKey(r *http.Request, header string) (Principal, 
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			return Principal{}, nil, &authError{http.StatusUnauthorized, "invalid API key"}
+			return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid API key"}
 		}
-		return Principal{}, nil, &authError{http.StatusInternalServerError, err.Error()}
+		return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
 	}
 
 	if !key.Active {
-		return Principal{}, nil, &authError{http.StatusUnauthorized, "API key revoked"}
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "API key revoked"}
 	}
 
 	now := time.Now()
@@ -142,21 +144,21 @@ func (s *Server) authenticateAPIKey(r *http.Request, header string) (Principal, 
 
 func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, context.Context, *authError) {
 	if s.tokenIssuer == nil {
-		return Principal{}, nil, &authError{http.StatusUnauthorized, "JWT authentication not configured"}
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "JWT authentication not configured"}
 	}
 
 	claims, err := s.tokenIssuer.VerifyAccessToken(token)
 	if err != nil {
-		return Principal{}, nil, &authError{http.StatusUnauthorized, "invalid or expired session"}
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid or expired session"}
 	}
 
 	if s.denylist != nil {
 		revoked, err := s.denylist.IsRevoked(r.Context(), claims.UserID)
 		if err != nil {
-			return Principal{}, nil, &authError{http.StatusInternalServerError, err.Error()}
+			return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
 		}
 		if revoked {
-			return Principal{}, nil, &authError{http.StatusUnauthorized, "session has been revoked"}
+			return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session has been revoked"}
 		}
 	}
 
@@ -164,7 +166,7 @@ func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, cont
 	// CSRF, unlike the Bearer API key path, so state-changing requests must
 	// echo the non-HttpOnly csrf_token cookie back in a header.
 	if !isSafeMethod(r.Method) && !csrfTokenMatches(r) {
-		return Principal{}, nil, &authError{http.StatusForbidden, "missing or invalid CSRF token"}
+		return Principal{}, nil, &authError{http.StatusForbidden, apierr.CodeForbidden, "missing or invalid CSRF token"}
 	}
 
 	principal := Principal{Role: domain.Role(claims.Role), UserID: claims.UserID}
@@ -240,10 +242,8 @@ func hasPermission(role domain.Role, method, path string) bool {
 	}
 }
 
-func writeAuthError(w http.ResponseWriter, code int, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+func writeAuthError(w http.ResponseWriter, status int, code apierr.Code, msg string) {
+	writeJSON(w, status, errorResponse{Error: msg, Code: code})
 }
 
 type createAPIKeyRequest struct {
@@ -260,18 +260,18 @@ type createAPIKeyResponse struct {
 
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if s.apikeys == nil {
-		writeError(w, http.StatusServiceUnavailable, "API key management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "API key management not configured")
 		return
 	}
 
 	var req createAPIKeyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "name is required")
 		return
 	}
 	if req.Role == "" {
@@ -291,7 +291,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.apikeys.Create(r.Context(), key); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -305,13 +305,13 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	if s.apikeys == nil {
-		writeError(w, http.StatusServiceUnavailable, "API key management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "API key management not configured")
 		return
 	}
 
 	keys, err := s.apikeys.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if keys == nil {
@@ -323,7 +323,7 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	if s.apikeys == nil {
-		writeError(w, http.StatusServiceUnavailable, "API key management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "API key management not configured")
 		return
 	}
 
@@ -331,10 +331,10 @@ func (s *Server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	if err := s.apikeys.Revoke(r.Context(), id); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

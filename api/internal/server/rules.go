@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"io"
 	"net/http"
 	"reflect"
@@ -72,7 +73,7 @@ type createRuleRequest struct {
 
 func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
@@ -81,13 +82,13 @@ func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	items, err := s.rules.List(r.Context(), ruleType, activeOnly, pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -100,7 +101,7 @@ func (s *Server) handleListRules(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetRule(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
@@ -113,7 +114,7 @@ func (s *Server) handleGetRule(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("version"); raw != "" {
 		version, convErr := strconv.Atoi(raw)
 		if convErr != nil {
-			writeError(w, http.StatusBadRequest, "version must be an integer")
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "version must be an integer")
 			return
 		}
 		rd, err = s.rules.GetVersion(r.Context(), id, version)
@@ -124,10 +125,10 @@ func (s *Server) handleGetRule(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -136,21 +137,21 @@ func (s *Server) handleGetRule(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
 	var req createRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 	if req.Type == "" || req.Name == "" {
-		writeError(w, http.StatusBadRequest, "type and name are required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "type and name are required")
 		return
 	}
 	if len(req.Definition) == 0 {
-		writeError(w, http.StatusBadRequest, "definition is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "definition is required")
 		return
 	}
 
@@ -173,7 +174,7 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.rules.Create(r.Context(), rd); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -191,7 +192,7 @@ type updateRuleRequest struct {
 // diff on the audit log entry (ALD-003).
 func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
@@ -200,20 +201,20 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req updateRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 	if len(req.Definition) == 0 {
-		writeError(w, http.StatusBadRequest, "definition is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "definition is required")
 		return
 	}
 
@@ -241,7 +242,7 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.rules.CreateNewVersion(r.Context(), updated); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -262,7 +263,7 @@ func (s *Server) handleDeactivateRule(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) setRuleActive(w http.ResponseWriter, r *http.Request, active bool) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
@@ -270,16 +271,16 @@ func (s *Server) setRuleActive(w http.ResponseWriter, r *http.Request, active bo
 	if err := s.rules.SetActive(r.Context(), id, active); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	rd, err := s.rules.Get(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -288,7 +289,7 @@ func (s *Server) setRuleActive(w http.ResponseWriter, r *http.Request, active bo
 
 func (s *Server) handleExportRule(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
@@ -297,10 +298,10 @@ func (s *Server) handleExportRule(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -318,7 +319,7 @@ func (s *Server) writeRuleValidationError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadRequest, ve.result)
 		return
 	}
-	writeError(w, http.StatusInternalServerError, err.Error())
+	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 }
 
 // exportedRule is the interchange format for GET .../export and POST
@@ -342,7 +343,7 @@ func writeExportedRule(w http.ResponseWriter, r *http.Request, er exportedRule) 
 
 	var definition any
 	if err := json.Unmarshal(er.Definition, &definition); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -355,7 +356,7 @@ func writeExportedRule(w http.ResponseWriter, r *http.Request, er exportedRule) 
 
 	raw, err := yaml.Marshal(out)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -405,17 +406,17 @@ func decodeImportItems(r *http.Request) ([]importRuleItem, error) {
 // in concurrently) can still leave a partial batch on Postgres.
 func (s *Server) handleImportRules(w http.ResponseWriter, r *http.Request) {
 	if s.rules == nil {
-		writeError(w, http.StatusServiceUnavailable, "rule management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "rule management not configured")
 		return
 	}
 
 	items, err := decodeImportItems(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 	if len(items) == 0 {
-		writeError(w, http.StatusBadRequest, "at least one rule is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "at least one rule is required")
 		return
 	}
 
@@ -426,29 +427,29 @@ func (s *Server) handleImportRules(w http.ResponseWriter, r *http.Request) {
 
 	for i, item := range items {
 		if item.Type == "" || item.Name == "" {
-			writeError(w, http.StatusConflict, fmt.Sprintf("item %d: type and name are required", i))
+			writeErrorCode(w, http.StatusConflict, apierr.CodeValidationFailed, fmt.Sprintf("item %d: type and name are required", i))
 			return
 		}
 		if seenNames[item.Name] {
-			writeError(w, http.StatusConflict, fmt.Sprintf("item %d: duplicate rule name %q in import batch", i, item.Name))
+			writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, fmt.Sprintf("item %d: duplicate rule name %q in import batch", i, item.Name))
 			return
 		}
 		seenNames[item.Name] = true
 
 		if _, err := s.rules.Get(r.Context(), item.Name); err == nil {
-			writeError(w, http.StatusConflict, fmt.Sprintf("item %d: rule %q already exists", i, item.Name))
+			writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, fmt.Sprintf("item %d: rule %q already exists", i, item.Name))
 			return
 		} else {
 			var nf *domain.ErrNotFound
 			if !errors.As(err, &nf) {
-				writeError(w, http.StatusInternalServerError, err.Error())
+				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 				return
 			}
 		}
 
 		definition, err := json.Marshal(item.Definition)
 		if err != nil {
-			writeError(w, http.StatusConflict, fmt.Sprintf("item %d: invalid definition: %v", i, err))
+			writeErrorCode(w, http.StatusConflict, apierr.CodeValidationFailed, fmt.Sprintf("item %d: invalid definition: %v", i, err))
 			return
 		}
 
@@ -458,7 +459,7 @@ func (s *Server) handleImportRules(w http.ResponseWriter, r *http.Request) {
 				writeJSON(w, http.StatusConflict, map[string]any{"item": i, "errors": ve.result})
 				return
 			}
-			writeError(w, http.StatusInternalServerError, verr.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, verr.Error())
 			return
 		}
 
@@ -478,7 +479,7 @@ func (s *Server) handleImportRules(w http.ResponseWriter, r *http.Request) {
 	created := make([]*domain.RuleDefinition, 0, len(prepared))
 	for _, rd := range prepared {
 		if err := s.rules.Create(r.Context(), rd); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 		created = append(created, rd)

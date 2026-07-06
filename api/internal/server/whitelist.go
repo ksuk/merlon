@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"time"
@@ -41,54 +42,54 @@ type createWhitelistEntryRequest struct {
 // time.
 func (s *Server) handleCreateWhitelistEntry(w http.ResponseWriter, r *http.Request) {
 	if s.whitelist == nil {
-		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "whitelist management not configured")
 		return
 	}
 
 	var req createWhitelistEntryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if req.CustomerID == "" {
-		writeError(w, http.StatusBadRequest, "customer_id is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id is required")
 		return
 	}
 	if req.Reason == "" {
-		writeError(w, http.StatusBadRequest, "reason is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "reason is required")
 		return
 	}
 	if req.ValidUntil == "" {
-		writeError(w, http.StatusBadRequest, "valid_until is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "valid_until is required")
 		return
 	}
 
 	validUntil, err := time.Parse(time.RFC3339, req.ValidUntil)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "valid_until must be an RFC3339 timestamp")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "valid_until must be an RFC3339 timestamp")
 		return
 	}
 
 	now := time.Now()
 	if !validUntil.After(now) {
-		writeError(w, http.StatusBadRequest, "valid_until must be in the future")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "valid_until must be in the future")
 		return
 	}
 	maxValidDays := s.whitelistMaxValidDays()
 	maxValidUntil := now.Add(time.Duration(maxValidDays) * 24 * time.Hour)
 	if validUntil.After(maxValidUntil) {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("valid_until must be within %d days", maxValidDays))
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, fmt.Sprintf("valid_until must be within %d days", maxValidDays))
 		return
 	}
 
 	if _, err := s.customers.Get(r.Context(), req.CustomerID); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, "customer not found")
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "customer not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -106,7 +107,7 @@ func (s *Server) handleCreateWhitelistEntry(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := s.whitelist.Create(r.Context(), entry); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -118,7 +119,7 @@ func (s *Server) handleCreateWhitelistEntry(w http.ResponseWriter, r *http.Reque
 // locking, then transitions the entry to status=active.
 func (s *Server) handleApproveWhitelistEntry(w http.ResponseWriter, r *http.Request) {
 	if s.whitelist == nil {
-		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "whitelist management not configured")
 		return
 	}
 
@@ -127,21 +128,21 @@ func (s *Server) handleApproveWhitelistEntry(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	if entry.Status != domain.WhitelistEntryStatusPendingApproval {
-		writeError(w, http.StatusConflict, "whitelist entry is not pending approval")
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "whitelist entry is not pending approval")
 		return
 	}
 
 	approver := resolveAuditUserID(r)
 	if approver == entry.RequestedBy {
-		writeError(w, http.StatusForbidden, "requester cannot approve their own whitelist entry")
+		writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "requester cannot approve their own whitelist entry")
 		return
 	}
 
@@ -165,7 +166,7 @@ func (s *Server) handleApproveWhitelistEntry(w http.ResponseWriter, r *http.Requ
 // invoke it, including to withdraw their own still-pending request.
 func (s *Server) handleRevokeWhitelistEntry(w http.ResponseWriter, r *http.Request) {
 	if s.whitelist == nil {
-		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "whitelist management not configured")
 		return
 	}
 
@@ -174,15 +175,15 @@ func (s *Server) handleRevokeWhitelistEntry(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	if entry.Status != domain.WhitelistEntryStatusPendingApproval && entry.Status != domain.WhitelistEntryStatusActive {
-		writeError(w, http.StatusConflict, "whitelist entry cannot be revoked from status "+string(entry.Status))
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "whitelist entry cannot be revoked from status "+string(entry.Status))
 		return
 	}
 
@@ -207,20 +208,20 @@ func (s *Server) handleRevokeWhitelistEntry(w http.ResponseWriter, r *http.Reque
 func writeWhitelistUpdateError(w http.ResponseWriter, err error) {
 	var conflict *domain.ErrConflict
 	if errors.As(err, &conflict) {
-		writeError(w, http.StatusConflict, conflict.Error())
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
 		return
 	}
 	var nf *domain.ErrNotFound
 	if errors.As(err, &nf) {
-		writeError(w, http.StatusNotFound, nf.Error())
+		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 		return
 	}
-	writeError(w, http.StatusInternalServerError, err.Error())
+	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 }
 
 func (s *Server) handleGetWhitelistEntry(w http.ResponseWriter, r *http.Request) {
 	if s.whitelist == nil {
-		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "whitelist management not configured")
 		return
 	}
 
@@ -229,10 +230,10 @@ func (s *Server) handleGetWhitelistEntry(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -257,7 +258,7 @@ type createWhitelistReviewRequest struct {
 // atomically via CreateReviewAndApply.
 func (s *Server) handleCreateWhitelistReview(w http.ResponseWriter, r *http.Request) {
 	if s.whitelist == nil {
-		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "whitelist management not configured")
 		return
 	}
 
@@ -266,21 +267,21 @@ func (s *Server) handleCreateWhitelistReview(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	if entry.Status != domain.WhitelistEntryStatusActive {
-		writeError(w, http.StatusConflict, "whitelist entry is not active")
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "whitelist entry is not active")
 		return
 	}
 
 	var req createWhitelistReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
@@ -297,27 +298,27 @@ func (s *Server) handleCreateWhitelistReview(w http.ResponseWriter, r *http.Requ
 	switch req.Decision {
 	case domain.WhitelistReviewDecisionRenewed:
 		if req.NewValidUntil == "" {
-			writeError(w, http.StatusBadRequest, "new_valid_until is required when decision is renewed")
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "new_valid_until is required when decision is renewed")
 			return
 		}
 		newValidUntil, err := time.Parse(time.RFC3339, req.NewValidUntil)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "new_valid_until must be an RFC3339 timestamp")
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "new_valid_until must be an RFC3339 timestamp")
 			return
 		}
 		if !newValidUntil.After(now) {
-			writeError(w, http.StatusBadRequest, "new_valid_until must be in the future")
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "new_valid_until must be in the future")
 			return
 		}
 		maxValidDays := s.whitelistMaxValidDays()
 		if newValidUntil.After(now.Add(time.Duration(maxValidDays) * 24 * time.Hour)) {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("new_valid_until must be within %d days", maxValidDays))
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, fmt.Sprintf("new_valid_until must be within %d days", maxValidDays))
 			return
 		}
 		if req.NextReviewDate != "" {
 			nextReviewDate, err := time.Parse(time.DateOnly, req.NextReviewDate)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "next_review_date must be a YYYY-MM-DD date")
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "next_review_date must be a YYYY-MM-DD date")
 				return
 			}
 			review.NextReviewDate = &nextReviewDate
@@ -326,7 +327,7 @@ func (s *Server) handleCreateWhitelistReview(w http.ResponseWriter, r *http.Requ
 	case domain.WhitelistReviewDecisionRevoked:
 		entry.Status = domain.WhitelistEntryStatusExpired
 	default:
-		writeError(w, http.StatusBadRequest, `decision must be "renewed" or "revoked"`)
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, `decision must be "renewed" or "revoked"`)
 		return
 	}
 
@@ -345,7 +346,7 @@ func whitelistEntryCursor(e domain.WhitelistEntry) Cursor {
 
 func (s *Server) handleListWhitelistEntries(w http.ResponseWriter, r *http.Request) {
 	if s.whitelist == nil {
-		writeError(w, http.StatusServiceUnavailable, "whitelist management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "whitelist management not configured")
 		return
 	}
 
@@ -358,7 +359,7 @@ func (s *Server) handleListWhitelistEntries(w http.ResponseWriter, r *http.Reque
 
 	entries, err := s.whitelist.List(r.Context(), status, limit+1, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

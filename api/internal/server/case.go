@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"time"
@@ -60,22 +61,22 @@ type addNoteRequest struct {
 
 func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
 	var req createCaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if req.CustomerID == "" {
-		writeError(w, http.StatusBadRequest, "customer_id is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id is required")
 		return
 	}
 	if req.Summary == "" {
-		writeError(w, http.StatusBadRequest, "summary is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "summary is required")
 		return
 	}
 
@@ -83,10 +84,10 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, "customer not found")
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "customer not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -109,7 +110,7 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.cases.Create(r.Context(), c); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	adjustCasesOpenGauge("", c.Status)
@@ -121,7 +122,7 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
@@ -130,10 +131,10 @@ func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -146,7 +147,7 @@ func caseCursor(c domain.Case) Cursor {
 
 func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
@@ -154,7 +155,7 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	if customerID != "" {
 		cases, err := s.cases.ListByCustomer(r.Context(), customerID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 		writePaginatedJSON(w, http.StatusOK, cases, PaginationMeta{HasMore: false})
@@ -172,13 +173,13 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	cases, err := s.cases.ListOpenByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -199,7 +200,7 @@ func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request) {
 
 	cases, err := s.cases.ListOpen(r.Context(), limit+1, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -213,7 +214,7 @@ func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
@@ -223,29 +224,29 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req updateCaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	oldStatus := c.Status
 	if req.Status != "" {
 		if !domain.ValidCaseStatusTransition(oldStatus, req.Status) {
-			writeError(w, http.StatusBadRequest, "invalid case status transition")
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, "invalid case status transition")
 			return
 		}
 
 		if req.Status == domain.CaseStatusReopened {
 			if req.Reason == "" {
-				writeError(w, http.StatusBadRequest, "reason is required to reopen a case")
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "reason is required to reopen a case")
 				return
 			}
 			// Reopen requires Analyst or above (case-management.md "再オープン
@@ -255,7 +256,7 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 			// level; a missing role (auth not configured, e.g. dev mode) is
 			// treated as unrestricted.
 			if role, ok := auth.RoleFromContext(r.Context()); ok && role == domain.RoleViewer {
-				writeError(w, http.StatusForbidden, "reopen requires analyst role or above")
+				writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "reopen requires analyst role or above")
 				return
 			}
 			c.ReopenReason = req.Reason
@@ -275,7 +276,7 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.cases.Update(r.Context(), c); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if req.Status != "" {
@@ -293,7 +294,7 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
@@ -303,21 +304,21 @@ func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req addNoteRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	if req.Content == "" {
-		writeError(w, http.StatusBadRequest, "content is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "content is required")
 		return
 	}
 
@@ -334,7 +335,7 @@ func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.cases.AddNote(r.Context(), caseID, note); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -355,7 +356,7 @@ type relatedCase struct {
 // recorded in related_case_ids.
 func (s *Server) handleGetRelatedCases(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
@@ -364,16 +365,16 @@ func (s *Server) handleGetRelatedCases(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	sameCustomer, err := s.cases.ListByCustomer(r.Context(), c.CustomerID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -411,7 +412,7 @@ type addRelatedCaseRequest struct {
 // one-directional (only the target case's related_case_ids is updated).
 func (s *Server) handleAddRelatedCase(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
-		writeError(w, http.StatusServiceUnavailable, "case management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
 		return
 	}
 
@@ -420,34 +421,34 @@ func (s *Server) handleAddRelatedCase(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req addRelatedCaseRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 	if req.RelatedCaseID == "" {
-		writeError(w, http.StatusBadRequest, "related_case_id is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "related_case_id is required")
 		return
 	}
 	if req.RelatedCaseID == id {
-		writeError(w, http.StatusBadRequest, "a case cannot be linked to itself")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "a case cannot be linked to itself")
 		return
 	}
 
 	if _, err := s.cases.Get(r.Context(), req.RelatedCaseID); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, "related case not found")
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "related case not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -460,7 +461,7 @@ func (s *Server) handleAddRelatedCase(w http.ResponseWriter, r *http.Request) {
 	c.RelatedCaseIDs = append(c.RelatedCaseIDs, req.RelatedCaseID)
 
 	if err := s.cases.Update(r.Context(), c); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

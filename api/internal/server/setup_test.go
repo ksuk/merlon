@@ -67,4 +67,5 @@ func TestSetup_SecondCallRejected(t *testing.T) {
 	if rec.Code != http.StatusConflict && rec.Code != http.StatusForbidden {
 		t.Errorf("second setup status = %d, want %d or %d", rec.Code, http.StatusConflict, http.StatusForbidden)
 	}
+	assertErrorCode(t, rec, "conflict")
 }

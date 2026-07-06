@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
@@ -20,37 +21,37 @@ type setupRequest struct {
 // unhealthy and login is unreachable (no users exist to log in as).
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	if s.users == nil {
-		writeError(w, http.StatusServiceUnavailable, "user management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "user management not configured")
 		return
 	}
 
 	count, err := s.users.Count(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if count > 0 {
-		writeAuthError(w, http.StatusConflict, "initial setup has already been completed")
+		writeAuthError(w, http.StatusConflict, apierr.CodeConflict, "initial setup has already been completed")
 		return
 	}
 
 	var req setupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid request body")
 		return
 	}
 	if req.Email == "" {
-		writeError(w, http.StatusBadRequest, "email is required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "email is required")
 		return
 	}
 	if err := auth.ValidatePasswordPolicy(req.Password); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -65,7 +66,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:    now,
 	}
 	if err := s.users.Create(r.Context(), user); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

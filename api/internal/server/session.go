@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/merlon-aml/merlon/api/internal/apierr"
 	"log"
 	"net/http"
 	"time"
@@ -25,39 +26,39 @@ type meResponse struct {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.users == nil || s.refreshTokens == nil || s.tokenIssuer == nil {
-		writeError(w, http.StatusServiceUnavailable, "authentication not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "authentication not configured")
 		return
 	}
 
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid request body")
 		return
 	}
 
 	user, err := s.users.GetByEmail(r.Context(), req.Email)
 	if err != nil || !user.Active {
 		s.recordAuthAudit(r, "", "login_failed")
-		writeAuthError(w, http.StatusUnauthorized, "invalid email or password")
+		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid email or password")
 		return
 	}
 
 	ok, err := auth.VerifyPassword(user.PasswordHash, req.Password)
 	if err != nil || !ok {
 		s.recordAuthAudit(r, user.ID, "login_failed")
-		writeAuthError(w, http.StatusUnauthorized, "invalid email or password")
+		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid email or password")
 		return
 	}
 
 	accessToken, err := s.tokenIssuer.IssueAccessToken(user.ID, string(user.Role), generateID())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	rawRefresh, _, err := auth.IssueRefreshToken(r.Context(), s.refreshTokens, user.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -106,37 +107,37 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	if s.refreshTokens == nil || s.users == nil || s.tokenIssuer == nil {
-		writeError(w, http.StatusServiceUnavailable, "authentication not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "authentication not configured")
 		return
 	}
 
 	cookie, err := r.Cookie(refreshTokenCookie)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "missing refresh token")
+		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "missing refresh token")
 		return
 	}
 
 	newRaw, _, err := auth.RotateRefreshToken(r.Context(), s.refreshTokens, cookie.Value)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or reused refresh token")
+		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid or reused refresh token")
 		return
 	}
 
 	tok, err := s.refreshTokens.GetByHash(r.Context(), auth.HashRefreshToken(newRaw))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	user, err := s.users.Get(r.Context(), tok.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	accessToken, err := s.tokenIssuer.IssueAccessToken(user.ID, string(user.Role), generateID())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -148,19 +149,19 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	if s.users == nil {
-		writeError(w, http.StatusServiceUnavailable, "user management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "user management not configured")
 		return
 	}
 
 	principal, ok := r.Context().Value(ctxKeyPrincipal).(Principal)
 	if !ok || principal.UserID == "" {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated as a user")
+		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "not authenticated as a user")
 		return
 	}
 
 	user, err := s.users.Get(r.Context(), principal.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -172,13 +173,13 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 // existing admin-only prefix check applies.
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	if s.users == nil {
-		writeError(w, http.StatusServiceUnavailable, "user management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "user management not configured")
 		return
 	}
 
 	users, err := s.users.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if users == nil {
