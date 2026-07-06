@@ -151,6 +151,41 @@ func TestUpdateAlertStatusNotFound(t *testing.T) {
 	}
 }
 
+// TestAlertStatusUpdateOptimisticLock verifies a PATCH supplying the
+// alert's current updated_at as expected_updated_at succeeds, and a PATCH
+// supplying a stale updated_at (an intervening update happened first) is
+// rejected with 409 rather than silently overwriting it (WS-11 Task 8,
+// data-model.md §3.9).
+func TestAlertStatusUpdateOptimisticLock(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+
+	// Ensure the update's timestamp is distinguishable from the seed's
+	// (some platforms' clocks have coarse enough resolution that two
+	// time.Now() calls microseconds apart can otherwise read identical).
+	time.Sleep(2 * time.Millisecond)
+
+	body := `{"status":"investigating","expected_updated_at":"` + alert.UpdatedAt.Format(time.RFC3339Nano) + `"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	// A second client submits an update using the now-stale updated_at it
+	// read before the update above.
+	staleBody := `{"status":"closed_false_positive","expected_updated_at":"` + alert.UpdatedAt.Format(time.RFC3339Nano) + `"}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(staleBody))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
 func TestHandleListAlerts_CursorPagination(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)

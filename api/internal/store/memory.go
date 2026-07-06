@@ -426,6 +426,26 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 	return nil
 }
 
+// UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
+// check against expectedUpdatedAt (data-model.md §3.9).
+func (r *MemoryAlertRepo) UpdateStatusIfUnmodified(_ context.Context, id string, status domain.AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a, ok := r.data[id]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "alert", ID: id}
+	}
+	if !a.UpdatedAt.Equal(expectedUpdatedAt) {
+		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
+	}
+	a.Status = status
+	a.ResolvedBy = resolvedBy
+	now := time.Now()
+	a.ResolvedAt = &now
+	a.UpdatedAt = now
+	return nil
+}
+
 func (r *MemoryAlertRepo) EscalateSeverity(_ context.Context, id string, severity domain.AlertSeverity) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -560,6 +580,23 @@ func (r *MemoryCaseRepo) Update(_ context.Context, c *domain.Case) error {
 	defer r.mu.Unlock()
 	if _, ok := r.data[c.ID]; !ok {
 		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	c.UpdatedAt = time.Now()
+	r.data[c.ID] = c
+	return nil
+}
+
+// UpdateIfUnmodified is Update guarded by an optimistic-lock check against
+// expectedUpdatedAt (data-model.md §3.9).
+func (r *MemoryCaseRepo) UpdateIfUnmodified(_ context.Context, c *domain.Case, expectedUpdatedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	existing, ok := r.data[c.ID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	if !existing.UpdatedAt.Equal(expectedUpdatedAt) {
+		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
 	}
 	c.UpdatedAt = time.Now()
 	r.data[c.ID] = c

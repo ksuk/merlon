@@ -647,6 +647,29 @@ func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain
 	return nil
 }
 
+// UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
+// check against expectedUpdatedAt (data-model.md §3.9). Zero rows affected
+// because of a stale expectedUpdatedAt (row exists but its updated_at
+// moved on) is reported as *domain.ErrConflict; zero rows because the
+// alert doesn't exist at all is reported as *domain.ErrNotFound.
+func (r *PgAlertRepo) UpdateStatusIfUnmodified(ctx context.Context, id string, status domain.AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error {
+	now := time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE alerts SET status=$2, resolved_by=$3, resolved_at=$4, updated_at=$5 WHERE id=$1 AND updated_at=$6`,
+		id, string(status), resolvedBy, now, now, expectedUpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := r.Get(ctx, id); err != nil {
+			return err
+		}
+		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
+	}
+	return nil
+}
+
 func (r *PgAlertRepo) EscalateSeverity(ctx context.Context, id string, severity domain.AlertSeverity) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE alerts SET severity=$2, updated_at=now() WHERE id=$1`,
@@ -832,6 +855,30 @@ func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
 	if tag.RowsAffected() == 0 {
 		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
 	}
+	return nil
+}
+
+// UpdateIfUnmodified is Update guarded by an optimistic-lock check against
+// expectedUpdatedAt (data-model.md §3.9). Zero rows affected because of a
+// stale expectedUpdatedAt (row exists but its updated_at moved on) is
+// reported as *domain.ErrConflict; zero rows because the case doesn't exist
+// at all is reported as *domain.ErrNotFound.
+func (r *PgCaseRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Case, expectedUpdatedAt time.Time) error {
+	newUpdatedAt := time.Now()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9
+		WHERE id=$1 AND updated_at=$10`,
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, newUpdatedAt, c.ClosedAt, expectedUpdatedAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := r.Get(ctx, c.ID); err != nil {
+			return err
+		}
+		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
+	}
+	c.UpdatedAt = newUpdatedAt
 	return nil
 }
 

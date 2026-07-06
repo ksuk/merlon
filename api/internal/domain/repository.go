@@ -60,6 +60,11 @@ type AlertRepository interface {
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
 	Create(ctx context.Context, a *Alert) error
 	UpdateStatus(ctx context.Context, id string, status AlertStatus, resolvedBy string) error
+	// UpdateStatusIfUnmodified applies the same update as UpdateStatus, but
+	// only if the alert's stored updated_at still equals expectedUpdatedAt
+	// (optimistic locking, data-model.md §3.9). Returns *ErrConflict on
+	// mismatch.
+	UpdateStatusIfUnmodified(ctx context.Context, id string, status AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error
 	// CreateIfNotDuplicate inserts a unless another alert already exists for
 	// the same (customer_id, scenario_id, aggregation_window_start) tuple
 	// (transaction-monitoring.md「バッチ/リアルタイム評価の重複アラート防止」).
