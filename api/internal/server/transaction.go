@@ -197,8 +197,18 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		ExecutedAt:          executedAt,
 		CreatedAt:           now,
 	}
+	// Idempotency-Key (api.md §4.1): a resend using an already-used key is
+	// rejected with 409, independent of whether external_id also matches.
+	if key := r.Header.Get("Idempotency-Key"); key != "" {
+		t.IdempotencyKey = &key
+	}
 
 	if err := s.transactions.Create(r.Context(), t); err != nil {
+		var conflict *domain.ErrConflict
+		if errors.As(err, &conflict) {
+			writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
+			return
+		}
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}

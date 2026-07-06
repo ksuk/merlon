@@ -32,9 +32,15 @@ type Transaction struct {
 	// chain_analysis_result from an external vendor (data-model.md §1.3.1 —
 	// wallet sanctions screening itself is out of this system's scope; this
 	// field is only a receptacle for the vendor's result).
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	ExecutedAt time.Time      `json:"executed_at"`
-	CreatedAt  time.Time      `json:"created_at"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+	// IdempotencyKey mirrors the client's Idempotency-Key header (api.md
+	// §4.1). Nil when the client omitted the header (optional, not
+	// required). A resend using an already-used key must be rejected with
+	// 409 rather than creating a second transaction, even if external_id
+	// differs.
+	IdempotencyKey *string   `json:"idempotency_key,omitempty"`
+	ExecutedAt     time.Time `json:"executed_at"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // CounterpartyType classifies the counterparty side of a virtual-asset

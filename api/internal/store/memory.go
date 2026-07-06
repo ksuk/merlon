@@ -190,15 +190,17 @@ func (r *MemoryCustomerRepo) ListScoreHistory(_ context.Context, customerID stri
 }
 
 type MemoryTransactionRepo struct {
-	mu         sync.RWMutex
-	data       map[string]*domain.Transaction
-	byCustomer map[string][]string
+	mu             sync.RWMutex
+	data           map[string]*domain.Transaction
+	byCustomer     map[string][]string
+	idempotencyKey map[string]string // idempotency key -> transaction ID
 }
 
 func NewMemoryTransactionRepo() *MemoryTransactionRepo {
 	return &MemoryTransactionRepo{
-		data:       make(map[string]*domain.Transaction),
-		byCustomer: make(map[string][]string),
+		data:           make(map[string]*domain.Transaction),
+		byCustomer:     make(map[string][]string),
+		idempotencyKey: make(map[string]string),
 	}
 }
 
@@ -243,6 +245,12 @@ func (r *MemoryTransactionRepo) ListByCustomerCursor(_ context.Context, customer
 func (r *MemoryTransactionRepo) Create(_ context.Context, t *domain.Transaction) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if t.IdempotencyKey != nil {
+		if _, exists := r.idempotencyKey[*t.IdempotencyKey]; exists {
+			return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "idempotency key already used"}
+		}
+		r.idempotencyKey[*t.IdempotencyKey] = t.ID
+	}
 	r.data[t.ID] = t
 	r.byCustomer[t.CustomerID] = append(r.byCustomer[t.CustomerID], t.ID)
 	return nil

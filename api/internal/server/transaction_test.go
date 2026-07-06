@@ -185,6 +185,48 @@ func TestCreateTransactionMissingDirection(t *testing.T) {
 	}
 }
 
+// TestCreateTransactionIdempotencyKeyConflict verifies the Idempotency-Key
+// header (api.md §4.1) rejects a resend with the same key, even with a
+// different external_id, as a 409 rather than silently creating a second
+// transaction.
+func TestCreateTransactionIdempotencyKeyConflict(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body1 := `{"customer_id":"` + cust.ID + `","external_id":"TX-IDEMP-1","amount":100,"direction":"inbound"}`
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body1))
+	req1.Header.Set("Idempotency-Key", "idem-key-1")
+	rec1 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("first request: status = %d, want %d, body: %s", rec1.Code, http.StatusCreated, rec1.Body.String())
+	}
+
+	body2 := `{"customer_id":"` + cust.ID + `","external_id":"TX-IDEMP-2","amount":200,"direction":"inbound"}`
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body2))
+	req2.Header.Set("Idempotency-Key", "idem-key-1")
+	rec2 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusConflict {
+		t.Fatalf("resend: status = %d, want %d, body: %s", rec2.Code, http.StatusConflict, rec2.Body.String())
+	}
+}
+
+// TestCreateTransactionWithoutIdempotencyKey verifies omitting the header
+// entirely still works (it is optional, not required).
+func TestCreateTransactionWithoutIdempotencyKey(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-NOIDEMP","amount":100,"direction":"inbound"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+}
+
 // TestTransactionAccountIDOptional verifies the pre-existing
 // single-customer-account transaction model still works unchanged after
 // WS-11 Task 4 adds an optional account_id (data-model.md §1.1.3).

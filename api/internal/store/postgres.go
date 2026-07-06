@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/merlon-aml/merlon/api/internal/crypto"
 	"github.com/merlon-aml/merlon/api/internal/domain"
@@ -299,7 +300,7 @@ func NewPgTransactionRepo(pool *pgxpool.Pool) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, executed_at, created_at"
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at"
 
 func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
@@ -308,6 +309,7 @@ func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
 		&t.Direction, &t.CounterpartyID, &t.CounterpartyCountry,
 		&t.Channel, &t.AccountID, &counterpartyJSON, &metadataJSON,
+		&t.IdempotencyKey,
 		&t.ExecutedAt, &t.CreatedAt,
 	)
 	if err != nil {
@@ -407,13 +409,25 @@ func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) e
 	}
 
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, executed_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
 		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
-		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.ExecutedAt, t.CreatedAt,
+		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.IdempotencyKey, t.ExecutedAt, t.CreatedAt,
 	)
+	if err != nil && isIdempotencyKeyViolation(err) {
+		return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "idempotency key already used"}
+	}
 	return err
+}
+
+// isIdempotencyKeyViolation reports whether err is specifically the
+// transactions_idempotency_key_idx partial unique violation, as opposed to
+// e.g. the pre-existing transactions_external_id_unique constraint (which
+// callers already handle/report separately).
+func isIdempotencyKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "transactions_idempotency_key_idx"
 }
 
 // PgAlertRepo
