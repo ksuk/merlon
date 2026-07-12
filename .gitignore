@@ -59,6 +59,7 @@ desktop.ini
 *.orig
 
 # Local agent state
+.claude/settings.json
 .claude/worktrees/
 .claude/checkpoints/
 .claude/mailbox/
