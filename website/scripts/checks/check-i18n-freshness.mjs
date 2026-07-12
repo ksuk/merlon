@@ -21,7 +21,15 @@
 // An ack whose hash doesn't match the en file's current commit hash is
 // stale and fails the check (the ack must be re-confirmed after further en
 // changes).
+//
+// When the en file has uncommitted local modifications there is no commit
+// hash to pin to; in that case the ack value must be
+// "sha256:<hex digest of the current en file content>". Any further edit
+// to the en file changes the digest and the ack goes stale, so the pair
+// deterministically fails again until the ja translation (or the ack) is
+// refreshed.
 
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -87,11 +95,19 @@ export function run() {
     const ackedHash = acks[rel];
     if (enUncommitted || enHeadHash === null) {
       // A pending uncommitted en edit (or an en file with no commit yet)
-      // cannot be acknowledged by a commit-hash ack: there is no stable
-      // hash to pin the ack to yet.
+      // has no stable commit hash; it can only be acknowledged by a
+      // content-hash ack pinning the exact current en bytes.
+      const contentAck = `sha256:${createHash("sha256")
+        .update(readFileSync(enAbs))
+        .digest("hex")}`;
+      if (ackedHash === contentAck) {
+        continue; // acknowledged for exactly this en content
+      }
       violations.push({
         file: displayRel,
-        reason: "en file has uncommitted changes newer than the ja translation",
+        reason: ackedHash?.startsWith("sha256:")
+          ? `stale freshness ack: acked content hash does not match the current en file (expected ${contentAck})`
+          : "en file has uncommitted changes newer than the ja translation",
       });
       continue;
     }

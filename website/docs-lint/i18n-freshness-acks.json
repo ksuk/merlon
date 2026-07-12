@@ -1,1 +1,17 @@
-{}
+{
+  "architecture.md": "sha256:779b5aad7f412bd9b809924de18cbde4095679217e9a43c788cc470a185642be",
+  "auth.md": "sha256:60c2b1318ea33bebafb86815e2a54a1ce8b3860f0de4cd07eb51417884b4bc95",
+  "case-management.md": "sha256:c4ee9136438189b8d10ee9923ba83f22aec62f4f3c975c0b5a150332205dbf48",
+  "compliance/data-retention.md": "sha256:81b228878414d6671a1ee40c9eed6ac971b45c2af142959e6117abb95cb6db03",
+  "compliance/fsa-guideline-mapping.md": "sha256:203b0bfff543385088e4eb6aef352550dcdad354ce917af0a43aa46e8e8fe076",
+  "compliance/regulatory-scope.md": "sha256:cad85a34b080fbb40e8573a4f0b1dce7fbd81b05f4d30f4c06457e4e56d8e7fe",
+  "configuration.md": "sha256:4a81f2ca32c21f2849132f1b473a6b5721fb3d4da8ab806e5869ec6e29fc050b",
+  "development/proto-workflow.md": "sha256:9edd32eb122aa9466dff433a3f26fe91db179a6dda2f1756675eaaeca8c94990",
+  "development/setup.md": "sha256:c3b8c788d6f899177524bf511fdddec7851c873cb7637ed14a3f392c3f0b3f2e",
+  "development/testing.md": "sha256:7813d6ef8cc5c7529fca4f4b7cddb98766b6539d9a96cf4e1c834c249854b277",
+  "getting-started.md": "sha256:1cbcc801cbdd972aadbe9860e794b7cf28b664ae3e698c4fbaa8fc455551551c",
+  "operations/backup-restore.md": "sha256:674cd628e84f7bfd6b5218924d6c922811e440e8a3e224d837a3e99f1f3e24db",
+  "operations/deployment.md": "sha256:ab405be115de212f451b94862ff49a1466383d2850f9e078493865c91cea34b6",
+  "operations/partitioning-guide.md": "sha256:93f8ee84c175ce777839e0c9957a9971ecf442b3700c22812dbb8e49a049cead",
+  "operations/upgrade.md": "sha256:e4817caf58c435e3f10c1a07e34dc164cda0a1452c5ec6b23b5552499a319a54"
+}

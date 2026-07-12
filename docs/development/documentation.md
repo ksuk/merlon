@@ -112,9 +112,17 @@ path to the English file's current HEAD commit hash
 { "getting-started.md": "a1b2c3d4..." }
 ```
 
+If the English file has uncommitted local modifications there is no commit
+hash to pin to; use a content-hash ack instead, prefixed with `sha256:`:
+
+```json
+{ "getting-started.md": "sha256:<sha256 hex digest of the en file content>" }
+```
+
 **Stale-entry rule**: an ack whose hash does not match the English file's
-current HEAD hash fails the check — it must be re-confirmed (or the
-translation updated) after any further English change.
+current HEAD hash (or, for `sha256:` acks, the current file content) fails
+the check — it must be re-confirmed (or the translation updated) after any
+further English change.
 
 ### 5. `check-ui-translations`
 
