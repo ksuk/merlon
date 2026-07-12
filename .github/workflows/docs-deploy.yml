@@ -8,13 +8,32 @@ on:
       - 'proto/**'
       - 'api/**'
       - 'content/schema/**'
+      - 'scripts/**'
       - 'website/**'
       - 'Makefile'
+      - '.github/workflows/docs-deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'proto/**'
+      - 'api/**'
+      - 'content/schema/**'
+      - 'scripts/**'
+      - 'website/**'
+      - 'Makefile'
+      - '.github/workflows/docs-deploy.yml'
   workflow_dispatch:
 
 concurrency:
   group: docs-deploy
   cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOCS_SITE_URL: ${{ vars.DOCS_SITE_URL }}
 
 jobs:
   deploy:
@@ -38,22 +57,56 @@ jobs:
         with:
           setup_only: true
 
+      - name: Generate protobuf code
+        run: |
+          cd proto
+          buf lint
+          buf generate
+
       - name: Generate OpenAPI spec
-        run: make generate-openapi
+        run: |
+          mkdir -p docs/api
+          cd api
+          go run ./cmd/openapi-export -o ../docs/api/openapi.json
 
       - name: Generate proto reference docs
-        run: make generate-proto-docs
+        run: |
+          cd proto
+          buf generate --template buf.gen.docs.yaml
+          cd ..
+          node website/scripts/generate-proto-docs.mjs
 
       - name: Build docs site
         run: |
           cd website
           npm ci
+          npm run typecheck
           npm run build
 
+      - name: Validate production URL
+        if: github.event_name != 'pull_request'
+        run: test -n "$DOCS_SITE_URL"
+
       - name: Deploy to Cloudflare Workers
+        id: deploy
+        if: github.event_name != 'pull_request'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4.110.0'
           workingDirectory: website
-          command: deploy
+          command: deploy --message "Docs ${{ github.sha }}"
+
+      - name: Smoke test deployment
+        if: github.event_name != 'pull_request'
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOYMENT_URL"
+          base_url="${DEPLOYMENT_URL%/}"
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+            "$base_url/docs/getting-started" | grep -qi '<html'
+          curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+            "$base_url/ja/docs/getting-started" | grep -qi '<html'

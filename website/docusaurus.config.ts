@@ -4,6 +4,11 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
+const siteUrl = (process.env.DOCS_SITE_URL ?? 'http://localhost:3000').replace(
+  /\/+$/,
+  '',
+);
+
 const config: Config = {
   title: 'Merlon',
   tagline: 'Self-hosted AML/CFT platform for non-bank financial institutions',
@@ -14,15 +19,11 @@ const config: Config = {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
   },
 
-  // Set the production url of your site here.
-  // TODO: replace with the final custom domain once decided.
-  url: 'https://merlon-docs.example.com',
+  // Production is supplied by the deployment environment; localhost keeps
+  // local development and pull-request builds self-contained.
+  url: siteUrl,
   // Set the /<baseUrl>/ pathname under which your site is served
   baseUrl: '/',
-
-  // GitHub pages deployment config.
-  organizationName: 'merlon-aml',
-  projectName: 'merlon',
 
   onBrokenLinks: 'throw',
   markdown: {
@@ -47,7 +48,7 @@ const config: Config = {
           routeBasePath: 'docs',
           sidebarPath: './sidebars.ts',
           editUrl: ({docPath}) =>
-            `https://github.com/merlon-aml/merlon/edit/main/docs/${docPath}`,
+            `https://github.com/ksuk/merlon/edit/main/docs/${docPath}`,
           // Versioning: leave the standard docs-plugin versioning capability
           // available. No version snapshot has been cut yet, so the site
           // only serves the "current" version for now.
@@ -97,7 +98,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/merlon-aml/merlon',
+          href: 'https://github.com/ksuk/merlon',
           label: 'GitHub',
           position: 'right',
         },
@@ -120,7 +121,7 @@ const config: Config = {
           items: [
             {
               label: 'GitHub',
-              href: 'https://github.com/merlon-aml/merlon',
+              href: 'https://github.com/ksuk/merlon',
             },
           ],
         },
