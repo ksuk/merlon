@@ -55,6 +55,8 @@ desktop.ini
 # Build
 /build/
 *.log
+/api/merlon-api
+*.orig
 
 # Local agent state
 .claude/worktrees/
