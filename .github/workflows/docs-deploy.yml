@@ -101,7 +101,9 @@ jobs:
           set -euo pipefail
           test -n "$DEPLOYMENT_URL"
           base_url="${DEPLOYMENT_URL%/}"
-          curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
-            "$base_url/docs/getting-started" | grep -qi '<html'
-          curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
-            "$base_url/ja/docs/getting-started" | grep -qi '<html'
+          en_body="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+            "$base_url/docs/getting-started")"
+          grep -qi '<html' <<<"$en_body"
+          ja_body="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
+            "$base_url/ja/docs/getting-started")"
+          grep -qi '<html' <<<"$ja_body"
