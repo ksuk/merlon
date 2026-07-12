@@ -4,5 +4,12 @@ Copyright (c) 2026 Merlon Project Contributors
 This software is licensed under the Business Source License 1.1.
 See the LICENSE file for details.
 
-Third-party software used by Merlon:
-(dependencies will be listed here as they are added)
+Third-party software notices
+
+The UI build dependency Lightning CSS 1.32.0 and its platform packages are
+licensed under the Mozilla Public License 2.0 (MPL-2.0).
+https://github.com/parcel-bundler/lightningcss
+
+Other third-party dependency licenses are checked by the repository's license
+workflow. The complete, version-specific dependency graph is recorded in the
+component lock files.

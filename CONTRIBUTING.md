@@ -8,9 +8,9 @@ Merlon is licensed under the [Business Source License 1.1](LICENSE) (source-avai
 
 Files under `content/_sample/` are licensed under [Apache-2.0](content/_sample/LICENSE).
 
-## LEGAL_REVIEW_REQUIRED: Contributor Agreement
+## Developer Certificate of Origin
 
-A Contributor License Agreement (CLA) or Developer Certificate of Origin (DCO) requirement has not yet been finalized. This section will be updated before accepting external contributions.
+All commits submitted to Merlon must include a Developer Certificate of Origin (DCO) 1.1 sign-off. By signing off, you certify that you have the right to submit the contribution under this repository's license. Use `git commit -s` to add a `Signed-off-by:` trailer to each commit. See the [Developer Certificate of Origin 1.1](https://developercertificate.org/) for the full text.
 
 ## How to Contribute
 
@@ -28,6 +28,9 @@ A Contributor License Agreement (CLA) or Developer Certificate of Origin (DCO) r
 4. Run tests: `make test`
 5. Run linter: `make lint`
 6. Submit a pull request using the PR template
+
+Use a descriptive branch prefix: `feat/`, `fix/`, `docs/`, `refactor/`,
+`test/`, `chore/`, `ci/`, or `perf/`.
 
 ### Development Setup
 

@@ -8,7 +8,7 @@ If you discover a security vulnerability in Merlon, please report it responsibly
 
 ### How to Report
 
-Email: security@merlon-aml.example.com (REPLACE WITH ACTUAL ADDRESS)
+Use [GitHub Private Vulnerability Reporting](../../security/advisories/new) to submit a report. This reporting channel must be enabled before the repository is made public.
 
 Please include:
 

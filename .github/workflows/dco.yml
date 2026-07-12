@@ -1,0 +1,27 @@
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-signoffs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify DCO sign-offs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eu
+          for commit in $(git rev-list "$BASE_SHA..HEAD"); do
+            if ! git log -1 --format=%B "$commit" | grep -qi '^Signed-off-by: .'; then
+              echo "Missing DCO sign-off: $commit" >&2
+              exit 1
+            fi
+          done
