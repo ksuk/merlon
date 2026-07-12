@@ -12,7 +12,10 @@
     "serve": "docusaurus serve",
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "gen:schema": "node scripts/generate-schema-docs.mjs",
+    "sync:i18n": "node scripts/sync-i18n-fallback.mjs",
+    "prebuild": "npm run gen:schema && npm run sync:i18n"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",
