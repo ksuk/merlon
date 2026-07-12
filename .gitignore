@@ -20,6 +20,10 @@ dist/
 api/gen/
 engine/crates/merlon-proto/src/gen/
 
+# Docs site: generated reference docs (openapi.json, proto/*.md, schema/*.md)
+# emitted at build time; not committed.
+docs/api/
+
 # Environment
 .env
 .env.local
@@ -32,6 +36,9 @@ docker-compose.override.yml
 
 # Test artifacts
 .playwright-mcp/
+
+# Local release-planning workspace (not part of the product; never publish)
+/.release-tasks/
 
 # IDE
 .idea/
@@ -48,3 +55,15 @@ desktop.ini
 # Build
 /build/
 *.log
+
+# Local agent state
+.claude/worktrees/
+.claude/checkpoints/
+.claude/mailbox/
+.claude/scheduled_tasks.json
+.claude/scheduled_tasks.lock
+.claude/agent-registry.json
+.claude/agent-memory-local/
+.agents/
+.codex/
+.playwright-mcp/

@@ -3,14 +3,26 @@ name: Security
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     - cron: '0 9 * * 1'  # Weekly on Monday at 9:00 UTC
 
 jobs:
+  gitleaks:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+
   govulncheck:
     name: Go Vulnerability Check
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: api
@@ -18,14 +30,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.25'
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - run: govulncheck ./...
 
   cargo-audit:
     name: Rust Dependency Audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: engine
@@ -35,10 +46,51 @@ jobs:
       - run: cargo install cargo-audit
       - run: cargo audit
 
+  go-licenses:
+    name: Go License Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go install github.com/google/go-licenses@latest
+      - run: go-licenses check ./... --allowed_licenses=MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC
+
+  cargo-deny:
+    name: Rust License Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo install cargo-deny
+      - run: cargo deny check licenses
+
+  npm-licenses:
+    name: Node License Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npx license-checker --production --excludePrivatePackages --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;MPL-2.0'
+
   npm-audit:
     name: NPM Dependency Audit
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: ui
