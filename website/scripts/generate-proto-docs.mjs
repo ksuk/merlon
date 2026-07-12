@@ -23,11 +23,25 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { LOCALES } from "./lib/locales.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const OUT_DIR = path.join(REPO_ROOT, "docs", "api", "proto");
-const REFERENCE_JSON = path.join(OUT_DIR, "reference.json");
+const OUT_DIR_EN = path.join(REPO_ROOT, "docs", "api", "proto");
+const OUT_DIR_JA = path.join(
+  REPO_ROOT,
+  "website",
+  "i18n",
+  "ja",
+  "docusaurus-plugin-content-docs",
+  "current",
+  "api",
+  "proto"
+);
+const OUT_DIRS = { en: OUT_DIR_EN, ja: OUT_DIR_JA };
+// reference.json is always produced by buf into the English output dir; both
+// locales render from that same intermediate file.
+const REFERENCE_JSON = path.join(OUT_DIR_EN, "reference.json");
 
 // ---------------------------------------------------------------------------
 // Markdown / MDX safety helpers (same rules as generate-schema-docs.mjs)
@@ -91,7 +105,7 @@ function fieldTypeCell(field) {
   return type;
 }
 
-function renderMessage(message, level, out) {
+function renderMessage(message, level, out, L) {
   out.push(heading(level, code(message.longName || message.name)));
   out.push("");
   if (message.description) {
@@ -99,13 +113,13 @@ function renderMessage(message, level, out) {
     out.push("");
   }
   if (!message.fields || message.fields.length === 0) {
-    out.push("_No fields._");
+    out.push(L.noFields);
     out.push("");
     return;
   }
   out.push(
     renderTable(
-      ["Field", "Type", "Label", "Description"],
+      [L.field, L.type, L.label, L.description],
       message.fields.map((f) => [
         code(f.name),
         fieldTypeCell(f),
@@ -117,7 +131,7 @@ function renderMessage(message, level, out) {
   out.push("");
 }
 
-function renderEnum(en, level, out) {
+function renderEnum(en, level, out, L) {
   out.push(heading(level, code(en.longName || en.name)));
   out.push("");
   if (en.description) {
@@ -126,14 +140,14 @@ function renderEnum(en, level, out) {
   }
   out.push(
     renderTable(
-      ["Value", "Number", "Description"],
+      [L.value_, L.number, L.description],
       (en.values || []).map((v) => [code(v.name), code(v.number), escapeText(v.description) || "—"])
     )
   );
   out.push("");
 }
 
-function renderService(service, level, out) {
+function renderService(service, level, out, L) {
   out.push(heading(level, code(service.longName || service.name)));
   out.push("");
   if (service.description) {
@@ -142,7 +156,7 @@ function renderService(service, level, out) {
   }
   out.push(
     renderTable(
-      ["Method", "Request", "Response", "Description"],
+      [L.method, L.request, L.response, L.description],
       (service.methods || []).map((m) => {
         const request = `${code(m.requestFullType)}${m.requestStreaming ? " (streaming)" : ""}`;
         const response = `${code(m.responseFullType)}${m.responseStreaming ? " (streaming)" : ""}`;
@@ -154,7 +168,7 @@ function renderService(service, level, out) {
   out.push("");
 }
 
-function renderFilePage(file) {
+function renderFilePage(file, L) {
   const slug = baseName(file.name);
   const title = titleCase(slug);
   const out = [];
@@ -174,45 +188,41 @@ function renderFilePage(file) {
   }
 
   if (file.services?.length) {
-    out.push(heading(2, "Services"));
+    out.push(heading(2, L.services));
     out.push("");
-    for (const service of file.services) renderService(service, 3, out);
+    for (const service of file.services) renderService(service, 3, out, L);
   }
 
   if (file.messages?.length) {
-    out.push(heading(2, "Messages"));
+    out.push(heading(2, L.messages));
     out.push("");
-    for (const message of file.messages) renderMessage(message, 3, out);
+    for (const message of file.messages) renderMessage(message, 3, out, L);
   }
 
   if (file.enums?.length) {
-    out.push(heading(2, "Enums"));
+    out.push(heading(2, L.enums));
     out.push("");
-    for (const en of file.enums) renderEnum(en, 3, out);
+    for (const en of file.enums) renderEnum(en, 3, out, L);
   }
 
   return { slug, title, markdown: out.join("\n") };
 }
 
-function renderIndexPage(pages, files) {
+function renderIndexPage(pages, files, L) {
   const out = [];
   out.push("---");
-  out.push("title: gRPC Protocol Reference");
+  out.push(`title: ${L.grpcProtocolReferenceTitle}`);
   out.push("sidebar_label: Overview");
   out.push("sidebar_position: 0");
   out.push("---");
   out.push("");
-  out.push(heading(1, "gRPC Protocol Reference"));
+  out.push(heading(1, L.grpcProtocolReferenceTitle));
   out.push("");
-  out.push(
-    "Merlon's Go API and Rust Engine communicate over the gRPC contract defined in " +
-      "`proto/merlon/v1/` (managed by [buf](https://buf.build)). These pages are " +
-      "generated automatically from those `.proto` files; do not edit them directly."
-  );
+  out.push(L.protoIndexIntro);
   out.push("");
   out.push(
     renderTable(
-      ["Proto file", "Package", "Services", "Messages", "Enums"],
+      [L.protoFile, L.package, L.services, L.messages, L.enums],
       files.map((f, i) => [
         `[${f.name}](./${pages[i].slug}.md)`,
         code(f.package),
@@ -223,22 +233,22 @@ function renderIndexPage(pages, files) {
     )
   );
   out.push("");
-  out.push(`See also the [scalar value type reference](./scalar-value-types.md).`);
+  out.push(L.protoSeeAlso("./scalar-value-types.md"));
   out.push("");
   return out.join("\n");
 }
 
-function renderScalarTypesPage(scalarValueTypes) {
+function renderScalarTypesPage(scalarValueTypes, L) {
   const out = [];
   out.push("---");
-  out.push("title: Scalar Value Types");
-  out.push("sidebar_label: Scalar Value Types");
+  out.push(`title: ${L.scalarValueTypes}`);
+  out.push(`sidebar_label: ${L.scalarValueTypes}`);
   out.push("sidebar_position: 99");
   out.push("---");
   out.push("");
-  out.push(heading(1, "Scalar Value Types"));
+  out.push(heading(1, L.scalarValueTypes));
   out.push("");
-  out.push("How each protobuf scalar type maps onto common language types.");
+  out.push(L.protoScalarIntro);
   out.push("");
   out.push(
     renderTable(
@@ -278,43 +288,50 @@ function main() {
     throw new Error(`No proto files found in ${REFERENCE_JSON}`);
   }
 
-  // Wipe and recreate OUT_DIR: this also removes the intermediate
-  // reference.json emitted by buf, which is not meant to be served.
-  rmSync(OUT_DIR, { recursive: true, force: true });
-  mkdirSync(OUT_DIR, { recursive: true });
+  for (const locale of Object.keys(OUT_DIRS)) {
+    const L = LOCALES[locale];
+    const OUT_DIR = OUT_DIRS[locale];
 
-  const pages = files.map(renderFilePage);
-  for (const page of pages) {
-    const outPath = path.join(OUT_DIR, `${page.slug}.md`);
-    writeFileSync(outPath, page.markdown, "utf8");
-    console.log(`Wrote ${path.relative(REPO_ROOT, outPath)}`);
+    // Wipe and recreate OUT_DIR. For the English tree, this also removes
+    // the intermediate reference.json emitted by buf, which is not meant
+    // to be served (it's regenerated by `make generate-proto-docs` before
+    // this script runs again).
+    rmSync(OUT_DIR, { recursive: true, force: true });
+    mkdirSync(OUT_DIR, { recursive: true });
+
+    const pages = files.map((file) => renderFilePage(file, L));
+    for (const page of pages) {
+      const outPath = path.join(OUT_DIR, `${page.slug}.md`);
+      writeFileSync(outPath, page.markdown, "utf8");
+      console.log(`Wrote ${path.relative(REPO_ROOT, outPath)}`);
+    }
+
+    const indexPath = path.join(OUT_DIR, "index.md");
+    writeFileSync(indexPath, renderIndexPage(pages, files, L), "utf8");
+    console.log(`Wrote ${path.relative(REPO_ROOT, indexPath)}`);
+
+    const scalarPath = path.join(OUT_DIR, "scalar-value-types.md");
+    writeFileSync(scalarPath, renderScalarTypesPage(description.scalarValueTypes, L), "utf8");
+    console.log(`Wrote ${path.relative(REPO_ROOT, scalarPath)}`);
+
+    const categoryPath = path.join(OUT_DIR, "_category_.json");
+    writeFileSync(
+      categoryPath,
+      JSON.stringify(
+        {
+          label: L.categoryGrpcProtocolReference,
+          position: 2,
+          link: { type: "doc", id: "api/proto/index" },
+        },
+        null,
+        2
+      ) + "\n",
+      "utf8"
+    );
+    console.log(`Wrote ${path.relative(REPO_ROOT, categoryPath)}`);
+
+    console.log(`Generated ${pages.length} proto page(s) + index + scalar types into ${path.relative(REPO_ROOT, OUT_DIR)}`);
   }
-
-  const indexPath = path.join(OUT_DIR, "index.md");
-  writeFileSync(indexPath, renderIndexPage(pages, files), "utf8");
-  console.log(`Wrote ${path.relative(REPO_ROOT, indexPath)}`);
-
-  const scalarPath = path.join(OUT_DIR, "scalar-value-types.md");
-  writeFileSync(scalarPath, renderScalarTypesPage(description.scalarValueTypes), "utf8");
-  console.log(`Wrote ${path.relative(REPO_ROOT, scalarPath)}`);
-
-  const categoryPath = path.join(OUT_DIR, "_category_.json");
-  writeFileSync(
-    categoryPath,
-    JSON.stringify(
-      {
-        label: "gRPC Protocol Reference",
-        position: 2,
-        link: { type: "doc", id: "api/proto/index" },
-      },
-      null,
-      2
-    ) + "\n",
-    "utf8"
-  );
-  console.log(`Wrote ${path.relative(REPO_ROOT, categoryPath)}`);
-
-  console.log(`Generated ${pages.length} proto page(s) + index + scalar types into ${path.relative(REPO_ROOT, OUT_DIR)}`);
 }
 
 main();

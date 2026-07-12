@@ -19,11 +19,23 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { LOCALES } from "./lib/locales.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
 const SCHEMA_DIR = path.join(REPO_ROOT, "content", "schema");
-const OUT_DIR = path.join(REPO_ROOT, "docs", "api", "schema");
+const OUT_DIR_EN = path.join(REPO_ROOT, "docs", "api", "schema");
+const OUT_DIR_JA = path.join(
+  REPO_ROOT,
+  "website",
+  "i18n",
+  "ja",
+  "docusaurus-plugin-content-docs",
+  "current",
+  "api",
+  "schema"
+);
+const OUT_DIRS = { en: OUT_DIR_EN, ja: OUT_DIR_JA };
 
 // ---------------------------------------------------------------------------
 // Markdown / MDX safety helpers
@@ -78,13 +90,13 @@ function typeLabel(schema) {
 }
 
 /** Collect the "Constraints" rows applicable to a single (sub)schema. */
-function constraintRows(schema) {
+function constraintRows(schema, L) {
   const rows = [];
   const add = (label, value) => rows.push([label, value]);
 
   if (schema.const !== undefined) add("Const", jsonCode(schema.const));
   if (schema.enum) add("Enum", schema.enum.map((v) => jsonCode(v)).join(", "));
-  if (schema.default !== undefined) add("Default", jsonCode(schema.default));
+  if (schema.default !== undefined) add(L.default, jsonCode(schema.default));
   if (schema.format) add("Format", code(schema.format));
   if (schema.pattern) add("Pattern", code(schema.pattern));
   if (schema.minimum !== undefined) add("Minimum", code(schema.minimum));
@@ -155,7 +167,7 @@ function renderTable(headerCells, rows) {
  *                    (empty string at the document root)
  * @param level      Markdown heading level to use for each child member's heading
  */
-function renderMembers(schema, breadcrumb, level, out) {
+function renderMembers(schema, breadcrumb, level, out, L) {
   const members = [];
 
   if (schema.properties) {
@@ -177,7 +189,7 @@ function renderMembers(schema, breadcrumb, level, out) {
 
   out.push(
     renderTable(
-      ["Name", "Type", "Required", "Description"],
+      [L.name, L.type, L.required, L.description],
       members.map((m) => [
         m.isMap ? code("(any key)") : m.isItems ? code("(array item)") : code(m.name),
         typeLabel(m.schema),
@@ -189,7 +201,7 @@ function renderMembers(schema, breadcrumb, level, out) {
   out.push("");
 
   for (const m of members) {
-    const rows = constraintRows(m.schema);
+    const rows = constraintRows(m.schema, L);
     const nested = hasNestedShape(m.schema);
     if (rows.length === 0 && !nested) continue;
 
@@ -204,16 +216,16 @@ function renderMembers(schema, breadcrumb, level, out) {
     out.push(heading(level, code(childLabel)));
     out.push("");
     if (rows.length > 0) {
-      out.push(renderTable(["Constraint", "Value"], rows));
+      out.push(renderTable([L.constraint, L.value], rows));
       out.push("");
     }
     if (nested) {
-      renderMembers(m.schema, childLabel, level + 1, out);
+      renderMembers(m.schema, childLabel, level + 1, out, L);
     }
   }
 }
 
-function renderSchemaPage(schema, fileName) {
+function renderSchemaPage(schema, fileName, L) {
   const out = [];
   const title = schema.title || fileName;
 
@@ -232,18 +244,18 @@ function renderSchemaPage(schema, fileName) {
   const metaRows = [];
   if (schema.$id) metaRows.push(["Schema ID", code(schema.$id)]);
   if (schema.$schema) metaRows.push(["JSON Schema dialect", code(schema.$schema)]);
-  metaRows.push(["Type", typeLabel(schema)]);
+  metaRows.push([L.type, typeLabel(schema)]);
   if (schema.required?.length) {
     metaRows.push(["Required top-level fields", schema.required.map((r) => code(r)).join(", ")]);
   }
-  out.push(renderTable(["Field", "Value"], metaRows));
+  out.push(renderTable([L.field, L.value], metaRows));
   out.push("");
 
-  out.push(heading(2, "Properties"));
+  out.push(heading(2, L.properties));
   out.push("");
-  renderMembers(schema, "", 3, out);
+  renderMembers(schema, "", 3, out, L);
 
-  out.push(heading(2, "Full schema"));
+  out.push(heading(2, L.fullSchema));
   out.push("");
   out.push("```json");
   out.push(JSON.stringify(schema, null, 2));
@@ -253,26 +265,21 @@ function renderSchemaPage(schema, fileName) {
   return out.join("\n");
 }
 
-function renderIndexPage(entries) {
+function renderIndexPage(entries, L) {
   const out = [];
   out.push("---");
-  out.push("title: Rule Definition Schemas");
+  out.push(`title: ${L.ruleSchemasIndexTitle}`);
   out.push("sidebar_label: Overview");
   out.push("sidebar_position: 0");
   out.push("---");
   out.push("");
-  out.push(heading(1, "Rule Definition Schemas"));
+  out.push(heading(1, L.ruleSchemasIndexTitle));
   out.push("");
-  out.push(
-    "Merlon's CDD scoring weights, country risk tables, and transaction-monitoring " +
-      "scenarios are all expressed as JSON documents validated against the schemas " +
-      "below (see `content/schema/` in the repository). These pages are generated " +
-      "automatically from those JSON Schema files; do not edit them directly."
-  );
+  out.push(L.schemaIndexIntro);
   out.push("");
   out.push(
     renderTable(
-      ["Schema", "Title", "Description"],
+      [L.schemaColumn, L.titleColumn, L.descriptionColumn],
       entries.map((e) => [
         `[${e.fileName}](./${e.fileName}.md)`,
         e.schema.title || e.fileName,
@@ -297,9 +304,6 @@ function main() {
     throw new Error(`No schema files found in ${SCHEMA_DIR}`);
   }
 
-  rmSync(OUT_DIR, { recursive: true, force: true });
-  mkdirSync(OUT_DIR, { recursive: true });
-
   const entries = [];
   for (const file of files) {
     const fileName = file.replace(/\.json$/, "");
@@ -308,35 +312,42 @@ function main() {
     entries.push({ fileName, schema });
   }
 
-  for (let i = 0; i < entries.length; i++) {
-    const { fileName, schema } = entries[i];
-    const markdown = renderSchemaPage(schema, fileName);
-    const outPath = path.join(OUT_DIR, `${fileName}.md`);
-    writeFileSync(outPath, markdown, "utf8");
-    console.log(`Wrote ${path.relative(REPO_ROOT, outPath)}`);
+  for (const locale of Object.keys(OUT_DIRS)) {
+    const L = LOCALES[locale];
+    const OUT_DIR = OUT_DIRS[locale];
+
+    rmSync(OUT_DIR, { recursive: true, force: true });
+    mkdirSync(OUT_DIR, { recursive: true });
+
+    for (const { fileName, schema } of entries) {
+      const markdown = renderSchemaPage(schema, fileName, L);
+      const outPath = path.join(OUT_DIR, `${fileName}.md`);
+      writeFileSync(outPath, markdown, "utf8");
+      console.log(`Wrote ${path.relative(REPO_ROOT, outPath)}`);
+    }
+
+    const indexPath = path.join(OUT_DIR, "index.md");
+    writeFileSync(indexPath, renderIndexPage(entries, L), "utf8");
+    console.log(`Wrote ${path.relative(REPO_ROOT, indexPath)}`);
+
+    const categoryPath = path.join(OUT_DIR, "_category_.json");
+    writeFileSync(
+      categoryPath,
+      JSON.stringify(
+        {
+          label: L.categoryRuleSchemas,
+          position: 3,
+          link: { type: "doc", id: "api/schema/index" },
+        },
+        null,
+        2
+      ) + "\n",
+      "utf8"
+    );
+    console.log(`Wrote ${path.relative(REPO_ROOT, categoryPath)}`);
+
+    console.log(`Generated ${entries.length} schema page(s) + index into ${path.relative(REPO_ROOT, OUT_DIR)}`);
   }
-
-  const indexPath = path.join(OUT_DIR, "index.md");
-  writeFileSync(indexPath, renderIndexPage(entries), "utf8");
-  console.log(`Wrote ${path.relative(REPO_ROOT, indexPath)}`);
-
-  const categoryPath = path.join(OUT_DIR, "_category_.json");
-  writeFileSync(
-    categoryPath,
-    JSON.stringify(
-      {
-        label: "Rule Schemas",
-        position: 3,
-        link: { type: "doc", id: "api/schema/index" },
-      },
-      null,
-      2
-    ) + "\n",
-    "utf8"
-  );
-  console.log(`Wrote ${path.relative(REPO_ROOT, categoryPath)}`);
-
-  console.log(`Generated ${entries.length} schema page(s) + index into ${path.relative(REPO_ROOT, OUT_DIR)}`);
 }
 
 main();

@@ -23,11 +23,22 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { LOCALES } from "./lib/locales.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
-const OUT_DIR = path.join(REPO_ROOT, "docs", "api");
-const OPENAPI_JSON_PATH = path.join(OUT_DIR, "openapi.json");
+const OUT_DIR_EN = path.join(REPO_ROOT, "docs", "api");
+const OUT_DIR_JA = path.join(
+  REPO_ROOT,
+  "website",
+  "i18n",
+  "ja",
+  "docusaurus-plugin-content-docs",
+  "current",
+  "api"
+);
+const OUT_DIRS = { en: OUT_DIR_EN, ja: OUT_DIR_JA };
+const OPENAPI_JSON_PATH = path.join(OUT_DIR_EN, "openapi.json");
 
 /** Escape text for safe placement in Markdown/MDX prose (see generate-schema-docs.mjs). */
 function escapeText(value) {
@@ -54,16 +65,16 @@ function countByMethod(paths) {
   return { counts, total };
 }
 
-function renderOpenApiPage(spec) {
+function renderOpenApiPage(spec, L) {
   const info = spec.info || {};
-  const title = info.title || "REST API Reference";
+  const title = "REST API Reference";
   const version = info.version || "unversioned";
   const server = spec.servers?.[0]?.url;
   const { counts, total } = countByMethod(spec.paths);
 
   const out = [];
   out.push("---");
-  out.push("title: REST API Reference");
+  out.push(`title: ${L.restApiReferenceTitle}`);
   out.push("sidebar_label: REST API");
   out.push("sidebar_position: 1");
   out.push("---");
@@ -74,29 +85,24 @@ function renderOpenApiPage(spec) {
     out.push(escapeText(info.description));
     out.push("");
   }
-  out.push(
-    "This page describes the Go API's REST surface, exported directly from its " +
-      "route definitions as an [OpenAPI 3.0](https://spec.openapis.org/oas/v3.0.3) " +
-      "document. It is generated automatically (`make generate-openapi`); do not " +
-      "edit it directly."
-  );
+  out.push(L.openapiIntro);
   out.push("");
 
   const metaRows = [
-    ["OpenAPI version", `\`${spec.openapi || "unknown"}\``],
-    ["API version", `\`${version}\``],
+    [L.openapiVersion, `\`${spec.openapi || "unknown"}\``],
+    [L.apiVersion, `\`${version}\``],
   ];
-  if (server) metaRows.push(["Base path", `\`${server}\``]);
-  metaRows.push(["Endpoints", String(total)]);
-  out.push("| Field | Value |");
+  if (server) metaRows.push([L.basePath, `\`${server}\``]);
+  metaRows.push([L.endpoints, String(total)]);
+  out.push(`| ${L.field} | ${L.value} |`);
   out.push("|---|---|");
   for (const [k, v] of metaRows) out.push(`| ${k} | ${v} |`);
   out.push("");
 
   if (total > 0) {
-    out.push("## Endpoints by method");
+    out.push(`## ${L.endpointsByMethod}`);
     out.push("");
-    out.push("| Method | Count |");
+    out.push(`| ${L.method} | ${L.count} |`);
     out.push("|---|---|");
     for (const method of Object.keys(counts).sort()) {
       out.push(`| \`${method}\` | ${counts[method]} |`);
@@ -104,14 +110,9 @@ function renderOpenApiPage(spec) {
     out.push("");
   }
 
-  out.push("## Full specification");
+  out.push(`## ${L.fullSpecification}`);
   out.push("");
-  out.push(
-    "The complete machine-readable spec is available at " +
-      "[`openapi.json`](./openapi.json). Load it into any OpenAPI-compatible " +
-      "tool (Swagger UI, Postman, Insomnia, `openapi-generator`, ...) to " +
-      "explore or exercise the API interactively."
-  );
+  out.push(L.openapiFullSpec("./openapi.json"));
   out.push("");
 
   return out.join("\n");
@@ -125,28 +126,42 @@ function main() {
     );
   }
   const spec = JSON.parse(readFileSync(OPENAPI_JSON_PATH, "utf8"));
+  const rawJson = readFileSync(OPENAPI_JSON_PATH, "utf8");
 
-  mkdirSync(OUT_DIR, { recursive: true });
+  for (const locale of Object.keys(OUT_DIRS)) {
+    const L = LOCALES[locale];
+    const OUT_DIR = OUT_DIRS[locale];
 
-  const pagePath = path.join(OUT_DIR, "openapi.md");
-  writeFileSync(pagePath, renderOpenApiPage(spec), "utf8");
-  console.log(`Wrote ${path.relative(REPO_ROOT, pagePath)}`);
+    mkdirSync(OUT_DIR, { recursive: true });
 
-  const categoryPath = path.join(OUT_DIR, "_category_.json");
-  writeFileSync(
-    categoryPath,
-    JSON.stringify(
-      {
-        label: "API Reference",
-        position: 4,
-        link: { type: "doc", id: "api/openapi" },
-      },
-      null,
-      2
-    ) + "\n",
-    "utf8"
-  );
-  console.log(`Wrote ${path.relative(REPO_ROOT, categoryPath)}`);
+    const pagePath = path.join(OUT_DIR, "openapi.md");
+    writeFileSync(pagePath, renderOpenApiPage(spec, L), "utf8");
+    console.log(`Wrote ${path.relative(REPO_ROOT, pagePath)}`);
+
+    // The ja page also links to ./openapi.json; the spec itself isn't
+    // localized, so mirror the same JSON alongside the ja page so that
+    // relative link resolves under the ja locale route too.
+    if (locale !== "en") {
+      writeFileSync(path.join(OUT_DIR, "openapi.json"), rawJson, "utf8");
+      console.log(`Wrote ${path.relative(REPO_ROOT, path.join(OUT_DIR, "openapi.json"))}`);
+    }
+
+    const categoryPath = path.join(OUT_DIR, "_category_.json");
+    writeFileSync(
+      categoryPath,
+      JSON.stringify(
+        {
+          label: L.categoryApiReference,
+          position: 4,
+          link: { type: "doc", id: "api/openapi" },
+        },
+        null,
+        2
+      ) + "\n",
+      "utf8"
+    );
+    console.log(`Wrote ${path.relative(REPO_ROOT, categoryPath)}`);
+  }
 }
 
 main();
