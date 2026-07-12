@@ -1,8 +1,13 @@
+---
+title: Testing Guide
+---
+
 # Testing Guide
 
-Merlon は Go / Rust / TypeScript / Proto の各レイヤでテストを持つ。本文書は各テストの実行方法とテスト戦略の方針を示す。
+Merlon has tests at every layer: Go, Rust, TypeScript, and Proto. This
+document covers how to run each and the overall testing strategy.
 
-## コンポーネント別の実行
+## Running tests per component
 
 ### Go (API)
 
@@ -10,7 +15,7 @@ Merlon は Go / Rust / TypeScript / Proto の各レイヤでテストを持つ�
 cd api && go test ./...
 ```
 
-カバレッジ付き:
+With coverage:
 
 ```bash
 cd api && go test -cover ./...
@@ -34,35 +39,47 @@ cd ui && npm run test
 cd proto && buf lint
 ```
 
-破壊的変更の検出:
+Detecting breaking changes:
 
 ```bash
 cd proto && buf breaking --against '.git#branch=main'
 ```
 
-## 全体実行
+## Running everything
 
 ```bash
 make test
 ```
 
-`make test` は Go テスト・Rust テスト・UI テスト・`buf lint` をまとめて実行する。CI でも同じターゲットを使用する。
+`make test` runs the Go tests, Rust tests, UI tests, and `buf lint` together.
+CI uses the same target.
 
-## テスト戦略の方針（TDD）
+## Testing strategy (TDD)
 
-機能実装・バグ修正は TDD（テスト駆動開発）で進める。
+Feature work and bug fixes follow TDD (test-driven development).
 
-1. **テスト作成** — 期待する振る舞いを表すテストを先に書く（失敗を確認）
-2. **実装** — テストを通す最小限のコードを書く
-3. **リファクタリング** — テストが通る状態を保ちつつ整理する
+1. **Write the test** — write a test that expresses the expected behavior
+   first (confirm it fails).
+2. **Implement** — write the minimal code needed to make the test pass.
+3. **Refactor** — clean up while keeping the test green.
 
-### レイヤ別の重点
+### Emphasis by layer
 
-- **Engine（Rust）** — CDD スコアリング・TM 評価・スクリーニングはビジネスロジックの核。判断根拠の再現性（Auditability First）を担保するため、同一入力に対する出力の決定性をテストで固定する
-- **API（Go）** — CRUD とオーケストレーション。サービス境界の契約と、エラー時にアラート側へ倒れること（Fail-Alert）を検証する
-- **Proto** — 契約安定性（Contract Stability、後方互換 12 ヶ月以上）を `buf breaking` で機械的に保証する
-- **UI** — コンポーネント単位のテストと、調査ワークフローのユーザーフロー
+- **Engine (Rust)** — CDD scoring, TM evaluation, and screening are the core
+  business logic. To uphold reproducibility of decision rationale
+  (Auditability First), tests pin the determinism of output for identical
+  input.
+- **API (Go)** — CRUD and orchestration. Tests verify service-boundary
+  contracts and that failures fall toward alerting rather than silence
+  (Fail-Alert).
+- **Proto** — Contract Stability (12+ months of backward compatibility) is
+  mechanically enforced with `buf breaking`.
+- **UI** — component-level tests plus user-flow tests for the investigation
+  workflow.
 
-### 既存パターンへの準拠
+### Follow existing patterns
 
-新規テストは各ディレクトリの既存テストフレームワーク・命名規則・パターンに従う。Go は標準 `testing`、Rust は `#[cfg(test)]` モジュール、UI は既存のテストランナー設定を踏襲する。
+New tests should follow the existing test framework, naming conventions, and
+patterns in each directory. Go uses the standard `testing` package, Rust
+uses `#[cfg(test)]` modules, and the UI follows its existing test-runner
+configuration.

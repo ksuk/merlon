@@ -1,37 +1,44 @@
+---
+sidebar_position: 1
+title: Getting Started
+---
+
 # Getting Started
 
-Merlon を最短で起動するためのクイックスタートガイド。
+A quick-start guide to running Merlon with the least effort.
 
-## 前提条件
+## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) 24+
 - [Docker Compose](https://docs.docker.com/compose/) v2+
 - `git`
 
-ローカルに Go / Rust / Node.js をインストールする必要はない。最小構成はすべてコンテナ内で完結する。
+You do not need Go, Rust, or Node.js installed locally — the minimal setup
+runs entirely in containers.
 
-## 手順
+## Steps
 
 ```bash
-# 1. リポジトリを取得
-git clone https://github.com/your-org/merlon.git
+# 1. Clone the repository
+git clone https://github.com/ksuk/merlon.git
 cd merlon
 
-# 2. 環境変数ファイルを用意
+# 2. Prepare the environment file
 cp .env.example .env
 
-# 3. 最小構成で起動（API + Engine + PostgreSQL）
+# 3. Start the minimal topology (API + PostgreSQL; the Engine is not part of
+#    this profile — use docker-compose.yml for the full topology)
 docker compose -f docker-compose.minimal.yml up --build
 
-# 4. ヘルスチェック（別ターミナルで）
+# 4. Health check (in another terminal)
 curl localhost:8080/healthz
 ```
 
-`{"status":"ok"}` が返れば起動成功。
+A response body containing `"status":"ok"` means the API started successfully.
 
-## 次のステップ
+## Next steps
 
-- [アーキテクチャ概要](architecture.md) — システム全体の構成を理解する
-- [設定リファレンス](configuration.md) — 環境変数と `config.yaml` を調整する
-- [開発環境セットアップ](development/setup.md) — コードを編集する開発者向け
-- [テスト実行ガイド](development/testing.md) — テストの動かし方
+- [Architecture overview](architecture.md) — understand the overall system layout
+- [Configuration reference](configuration.md) — tune environment variables and `config.yaml`
+- [Development environment setup](development/setup.md) — for developers who will edit code
+- [Testing guide](development/testing.md) — how to run the test suites

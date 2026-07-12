@@ -4,6 +4,8 @@ AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) complian
 
 Merlon provides integrated **Customer Due Diligence (CDD) scoring** and **Transaction Monitoring (TM)** capabilities, designed for self-hosted deployment by crypto-asset exchanges, money transfer operators, and other regulated entities.
 
+It is designed primarily for Japanese non-bank financial institutions, while its configuration-driven model can support banks and organizations in other jurisdictions after their own legal and compliance assessment. Each deployment serves one institution; Merlon is not a multi-tenant service.
+
 ## License
 
 Merlon is **source-available** software licensed under the [Business Source License 1.1](LICENSE). It is **not** OSI-approved open source.
@@ -51,7 +53,7 @@ See [docs/architecture.md](docs/architecture.md) for details.
 Prerequisites: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 
 ```bash
-git clone https://github.com/merlon-aml/merlon.git
+git clone https://github.com/ksuk/merlon.git
 cd merlon
 cp .env.example .env
 docker compose -f docker-compose.minimal.yml up --build
@@ -68,7 +70,7 @@ See [docs/getting-started.md](docs/getting-started.md) for the full guide.
 
 ## Development
 
-Requirements: Go 1.22+, Rust (stable), Node.js 20+, [buf](https://buf.build/)
+Requirements: Go 1.25+, Rust (stable), Node.js 20+, [buf](https://buf.build/)
 
 ```bash
 # Run all tests

@@ -1,40 +1,52 @@
+---
+title: Development Environment Setup
+---
+
 # Development Environment Setup
 
-Merlon の開発環境構築手順。DevContainer（推奨）とローカル環境の 2 通りを示す。
+How to set up a Merlon development environment. Two paths are covered: a
+DevContainer (recommended) and a local install.
 
-## 方法 1: DevContainer（推奨）
+## Option 1: DevContainer (recommended)
 
-[VS Code](https://code.visualstudio.com/) と [Dev Containers 拡張機能](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)、Docker があれば、ツールチェーン一式が自動で揃う。
+With [VS Code](https://code.visualstudio.com/), the
+[Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers),
+and Docker, the whole toolchain is set up for you automatically.
 
-1. リポジトリを VS Code で開く
-2. コマンドパレット（`F1`）→ **Dev Containers: Reopen in Container** を実行
-3. 初回はイメージのビルドに数分かかる。完了後、Go / Rust / Node.js / buf がすべて利用可能になる
+1. Open the repository in VS Code.
+2. Open the command palette (`F1`) and run **Dev Containers: Reopen in
+   Container**.
+3. The first build takes a few minutes while the image is built. Once it's
+   done, Go, Rust, Node.js, and buf are all available, along with `psql`
+   (the PostgreSQL client), `gh` (GitHub CLI), `claude` (Claude Code CLI),
+   `codex` (OpenAI Codex CLI), and `wrangler` (Cloudflare CLI).
 
-設定は `.devcontainer/devcontainer.json` と `.devcontainer/Dockerfile` を参照。
+See `.devcontainer/devcontainer.json` and `.devcontainer/Dockerfile` for the
+configuration.
 
-## 方法 2: ローカル環境
+## Option 2: Local environment
 
-DevContainer を使わない場合、以下のツールを個別にインストールする。
+If you're not using the DevContainer, install the following tools yourself.
 
-### Go 1.22+
+### Go 1.25+
 
 ```bash
-# https://go.dev/dl/ から取得、またはパッケージマネージャ
-go version   # go1.22 以上を確認
+# Get it from https://go.dev/dl/, or via your package manager
+go version   # confirm go1.25 or higher
 ```
 
-### Rust（rustup 経由）
+### Rust (via rustup)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustc --version   # stable / 2024 edition 対応版
+rustc --version   # stable, with 2024 edition support
 ```
 
 ### Node.js 20+ / npm
 
 ```bash
-# https://nodejs.org/ から LTS を取得、または nvm
-node --version   # v20 以上
+# Get the LTS release from https://nodejs.org/, or use nvm
+node --version   # v20 or higher
 npm --version
 ```
 
@@ -42,13 +54,13 @@ npm --version
 
 ```bash
 npm install -g @bufbuild/buf
-# または https://buf.build/docs/installation
+# or see https://buf.build/docs/installation
 buf --version
 ```
 
 ### PostgreSQL 16+
 
-Docker での起動を推奨。
+Running it via Docker is recommended.
 
 ```bash
 docker run -d --name merlon-db \
@@ -59,38 +71,45 @@ docker run -d --name merlon-db \
   postgres:16
 ```
 
-## 初回セットアップ手順
+## First-time setup
 
 ```bash
-# 1. 環境変数
+# 1. Environment variables
 cp .env.example .env
 
-# 2. Proto コード生成
+# 2. Generate proto code
 make proto
 
-# 3. 依存関係の取得
+# 3. Fetch dependencies
 cd api && go mod download && cd ..
 cd engine && cargo fetch && cd ..
 cd ui && npm install && cd ..
 
-# 4. DB マイグレーション
+# 4. Run DB migrations
 make migrate
 
-# 5. デモデータ投入（任意）
+# 5. Load demo data (optional)
 make seed
 ```
 
-## make コマンド一覧
+## Make targets
 
-| コマンド | 説明 |
+| Target | Description |
 |---|---|
-| `make proto` | Proto から Go/Rust コードを生成（`buf lint` + `buf generate`） |
-| `make build` | 全コンポーネントをビルド |
-| `make test` | 全テストを実行（Go / Rust / UI / Proto lint） |
-| `make lint` | 全リンターを実行 |
-| `make migrate` | DB マイグレーションを適用 |
-| `make seed` | デモデータを投入（`deploy/seed/seed.sql`） |
-| `make run` | ローカルで全コンポーネントを起動 |
-| `make clean` | ビルド成果物を削除 |
+| `make proto` | Generate Go/Rust code from proto (`buf lint` + `buf generate`) |
+| `make build` | Build all components |
+| `make test` | Run all tests (Go / Rust / UI / proto lint) |
+| `make lint` | Run all linters |
+| `make fmt` | Format all code (Go, Rust, UI) |
+| `make migrate` | Apply DB migrations using `MERLON_DATABASE_URL` |
+| `make seed` | Start the full docker-compose topology with demo data (`MERLON_SEED=true docker compose up --build`) |
+| `make dev-up` / `make dev-down` | Start/stop the development topology (`docker-compose.yml` + `docker-compose.dev.yml`) |
+| `make minimal-up` / `make minimal-down` | Start/stop the minimal topology (PostgreSQL + API only) |
+| `make generate-openapi` | Export the OpenAPI spec to `docs/api/openapi.json` |
 
-詳細は [testing.md](testing.md)、[proto-workflow.md](proto-workflow.md) を参照。
+To seed demo data into an already-running PostgreSQL instance instead of
+starting the whole compose topology, run `scripts/seed-demo.sh`, which loads
+`deploy/seed/seed.sql` via `psql`.
+
+See [testing.md](testing.md) and [proto-workflow.md](proto-workflow.md) for
+more detail.

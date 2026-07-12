@@ -1,25 +1,38 @@
+---
+title: FSA Guideline Mapping
+---
+
 # FSA Guideline Mapping
 
-本文書は、金融庁（FSA）の「マネー・ローンダリング及びテロ資金供与対策に関するガイドライン」の主要項目と、Merlon の対応機能の対応関係を示す。
+This document maps key items in the Financial Services Agency's (FSA)
+"Guidelines for Anti-Money Laundering and Combatting the Financing of
+Terrorism" to the corresponding Merlon capabilities.
 
-## 目的
+## Purpose
 
-導入企業のコンプライアンス担当者が、FSA ガイドラインの各要求事項を Merlon のどの機能で満たすかを把握できるようにする。AML/CFT 態勢整備において、システムが対応する範囲と運用で補う範囲の切り分けを助ける。
+To let a deploying institution's compliance staff see which Merlon
+capability addresses each FSA guideline requirement, and to help separate
+what the system covers from what must be covered by operational process when
+building out an AML/CFT program.
 
-## 対応表
+## Mapping table
 
-| FSA ガイドライン項目 | Merlon 機能 | 状態 |
+| FSA guideline item | Merlon capability | Status |
 |---|---|---|
-| 取引時確認 | CDD スコアリング | TODO: 詳細対応を M1.3 で拡充 |
-| 疑わしい取引の届出 | TM + ケース管理 + STR エクスポート | TODO: STR フォーマット対応を M2.x で拡充 |
-| 継続的な顧客管理 | CDD スコアリング（定期見直し） | TODO: 定期見直しフローを拡充 |
-| リスクベース・アプローチ | Score-Driven Architecture | TODO: リスク格付け運用ガイドを拡充 |
-| 取引モニタリング | TM エンジン | M2.1: ストラクチャリング検知・急速資金移動検知シナリオ実装済み |
-| 制裁対象者スクリーニング | スクリーニングエンジン | TODO: リスト連携を拡充 |
-| 記録の保持 | 監査ログ + データ保持ポリシー | TODO: 保持期間設定の詳細を拡充 |
+| Customer due diligence at transaction time | CDD scoring | TODO: expand detailed coverage in M1.3 |
+| Filing suspicious transaction reports | TM + case management + STR export | TODO: expand STR format support in M2.x |
+| Ongoing customer management | CDD scoring (periodic review) | TODO: expand the periodic review workflow |
+| Risk-based approach | Score-Driven Architecture | TODO: expand risk-rating operational guidance |
+| Transaction monitoring | TM engine | M2.1: structuring detection and rapid fund movement detection scenarios implemented |
+| Sanctions-list screening | Screening engine | TODO: expand list integrations |
+| Record retention | Audit logs + data retention policy | TODO: expand retention period configuration detail |
 
-## 注記
+## Notes
 
-本文書は **M1.1 段階の骨格**である。各項目の詳細な対応内容（具体的な機能仕様・運用手順・エビデンス出力）は、今後のマイルストーンで順次拡充する。
+This document is a **skeleton at the M1.1 stage**. Detailed coverage for
+each item — concrete feature specifications, operational procedures, and
+evidence output — will be filled in incrementally in future milestones.
 
-本対応表は導入企業の AML/CFT 態勢が FSA ガイドラインに適合することを保証するものではない。最終的な適合性判断は導入企業および専門家の責任において行う必要がある。
+This mapping table does not guarantee that a deploying institution's AML/CFT
+program conforms to the FSA guidelines. The deploying institution and its
+advisors remain responsible for the final conformance determination.

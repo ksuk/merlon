@@ -8,13 +8,13 @@
 
 ## コンテキスト
 
-data-model.md §3.10 は、運用に伴い無期限に成長するテーブルとして `transactions`、`audit_logs`、`customer_score_history`、`alerts` の4つを挙げている。このうち `transactions`（`occurred_at` 基準）と `audit_logs`（`created_at` 基準）の月次パーティション DDL テンプレートは ADR-0010（WS-9）が既に `docs/compliance/data-retention.md` に提供済みである。
+実装済みのデータモデルは、運用に伴い無期限に成長するテーブルとして `transactions`、`audit_logs`、`customer_score_history`、`alerts` の4つを挙げている。このうち `transactions`（`occurred_at` 基準）と `audit_logs`（`created_at` 基準）の月次パーティション DDL テンプレートは ADR-0010（WS-9）が既に `docs/compliance/data-retention.md` に提供済みである。
 
 `customer_score_history` はスコアリング契機（取引評価・定期再評価・手動再スコア等）のたびに1行追加されるため、`transactions` と同等以上の速度で成長し得る。`alerts` は取引監視の評価結果として生成され、件数は取引量とシナリオ数に比例して増える。両テーブルとも ADR-0010 のテンプレートの対象外だったため、本ADRで扱う。
 
 また §3.10 はパーティショニング以外にも、GIN インデックスのオペレータクラス選択、キャパシティプランニングの基準値、リードレプリカのルーティング方針、autovacuum 調整推奨値を規定しており、これらは特定のテーブルに限らずシステム全体の運用方針であるため、本ADRと `docs/operations/partitioning-guide.md` で併せて文書化する。
 
-ADR-0010 と同様、Merlon は既に稼働中の導入先が存在し得る自己ホスト型ソフトウェアであるため、既存テーブルへの後付けパーティション化（破壊的かつダウンタイムを伴う移行）は本リポジトリのマイグレーションとして提供しない（`03_implementation-plan.md` Global Constraints の additive-only 原則）。
+ADR-0010 と同様、Merlon は既に稼働中の導入先が存在し得る自己ホスト型ソフトウェアであるため、既存テーブルへの後付けパーティション化（破壊的かつダウンタイムを伴う移行）は本リポジトリのマイグレーションとして提供しない（本プロジェクトの additive-only 原則）。
 
 ## 決定
 
@@ -27,14 +27,14 @@ ADR-0010 と同様、Merlon は既に稼働中の導入先が存在し得る自�
 ## 根拠
 
 - ADR-0010 と同一の理由（additive-only 原則、稼働中導入先への意図しない破壊的変更の回避）が `customer_score_history`/`alerts` にも等しく当てはまる。
-- `customer_score_history` はリスク格付けの変遷を追跡するために全履歴を永続保持する設計（`docs/compliance/data-retention.md`「ルール定義とスコア履歴を永続保持する理由」）であり、パーティション化しても保持方針（削除しない）自体は変わらない。パーティションは検索・vacuum コストの抑制が目的であり、パージ対象ではない。
+- `customer_score_history` は導入組織が設定した保持期間中、リスク格付けの変遷を追跡する。期限到達後は30日の猶予を経てパージ対象となる。パーティションは検索・vacuum コストの抑制にも利用できる。
 - `alerts` はケース管理・監査の根拠となるため、パーティションの切り離し（detach）後もアーカイブとして保持する運用を前提とする。
 - キャパシティ・レプリカ・autovacuum の方針は個別テーブルのDDLとは独立した運用ガイドラインであるため、ADRではなく `docs/operations/partitioning-guide.md`（実務者向け手順書）に集約し、ADR本文は「何を・なぜ決定したか」に留める。
 
 ## 棄却した代替案
 
 - **`customer_score_history`/`alerts` も本リポジトリのマイグレーションとして強制的にパーティション化する** — ADR-0010 と同じ理由で却下（additive-only 原則違反、稼働中データへの破壊的移行の強制）。
-- **`customer_score_history` は全履歴保持のため古いパーティションを自動 detach しない方針にする** — 保持方針上は妥当だが、パーティション自体の主目的（検索・vacuum コスト抑制）とは独立した運用判断であるため、本ADRでは規定せず `docs/operations/partitioning-guide.md` で「検索対象パーティション」と「アーカイブ済みパーティション」を分ける運用例として案内するに留めた。
+- **`customer_score_history` を永久保持する** — 導入組織が設定する削除方針と矛盾し、不要な個人関連データを無期限に蓄積するため採用しない。
 
 ## 影響
 

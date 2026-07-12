@@ -1,33 +1,33 @@
 ---
 name: Bug report
-about: 不具合を報告する
+about: Report a reproducible defect
 title: "[Bug] "
 labels: bug
-assignees: ''
+assignees: ""
 ---
 
-## 概要
-発生している不具合を簡潔に記述する。
+## Summary
+Describe the problem concisely.
 
-## 再現手順
+## Steps to reproduce
 1.
 2.
 3.
 
-## 期待される動作
-本来どうなるべきかを記述する。
+## Expected behavior
+Describe what should have happened.
 
-## 実際の動作
-実際に何が起きたかを記述する。
+## Actual behavior
+Describe what happened instead.
 
-## 環境
-- Merlon バージョン:
-- コンポーネント: (API / Engine / UI / 不明)
-- デプロイ方法: (Docker Compose / Helm / その他)
-- OS:
+## Environment
+- Merlon version:
+- Component: API / Engine / UI / unknown
+- Deployment method: Docker Compose / Helm / other
+- Operating system:
 
-## ログ・スクリーンショット
-関連するログ（機微情報はマスクすること）やスクリーンショットを添付する。
+## Logs or screenshots
+Attach relevant logs or screenshots. Remove secrets, customer data, and other sensitive information before posting.
 
-## 補足
-その他の情報があれば記述する。
+## Additional context
+Add any other context that could help reproduce or diagnose the issue.

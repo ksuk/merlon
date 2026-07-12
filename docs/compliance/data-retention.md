@@ -1,52 +1,91 @@
+---
+title: Data Retention Policy
+---
+
 # Data Retention Policy
 
-本文書は、犯罪収益移転防止法（犯収法）の記録保持要件と、Merlon におけるデータライフサイクル設計を示す。データ種別ごとの保持期間はアプリケーション層の `retention_policies` テーブル（`migrations/017_retention.sql`）でも管理し、本文書の値と一致させる。
+This document gives example configuration centered on the Act on Prevention
+of Transfer of Criminal Proceeds (犯罪収益移転防止法, commonly abbreviated
+"犯収法" and referred to below as "the Act"), and describes the data
+lifecycle design implemented in Merlon. For other jurisdictions (including
+GDPR), the deploying organization must evaluate and configure its own
+retention policy according to the laws that apply to it and its own retention
+obligations. Retention periods per data category are also managed in the
+application layer's `retention_policies` table (`migrations/017_retention.sql`)
+and must be kept in sync with the values in this document.
 
-## 犯収法の保持期間要件
+## Retention requirements under the Act
 
-| 記録種別 | 保持期間 | 根拠 |
+| Record type | Retention period | Basis |
 |---|---|---|
-| 取引記録 | 7 年 | 犯収法（取引終了日から） |
-| 確認記録（本人確認） | 7 年 | 犯収法（取引終了日から） |
+| Transaction records | 7 years | The Act (from the end of the transaction) |
+| Verification records (identity verification) | 7 years | The Act (from the end of the transaction) |
 
-7 年は `2555` 日として `config.yaml` の `audit.retention_days` 等に反映する（[configuration.md](../configuration.md) 参照）。
+Seven years is represented as `2555` days. This is the seeded value for the
+`transaction_data`, `customer_data`, `alert_case_data`, and
+`cdd_score_history` rows in the `retention_policies` table (see
+[Configuration Reference](../configuration.md) for how retention periods are
+administered through that table and its API, rather than through
+`config.yaml`).
 
-## デフォルト保持期間（RET-001, RET-002）
+## Default retention periods (RET-001, RET-002)
 
-audit.md §6 の保持期間表と一致させる。犯収法上の法定保存義務があるデータ種別（監査ログ以外）は**延長のみ可（短縮不可）**とし、`retention_policies.min_retention_days` の CHECK 制約（`retention_no_shorten`）で強制する。
+The values below are initial defaults, not fixed values. Deploying
+organizations must set a positive retention period for every data category in
+accordance with applicable law, contractual obligations, audit requirements,
+and their own deletion policy. Configuration changes are recorded in the
+audit log, and data is physically deleted 30 days after its retention
+deadline is reached.
 
-| データ種別 | デフォルト保持期間 | 起算点 | 設定変更可否 |
+| Data category | Default retention period | Reference point | Configurable |
 |---|---|---|---|
-| 取引データ | 7年（2555日） | 取引の行われた日（`transactions.occurred_at`） | 延長のみ可（短縮不可） |
-| 顧客データ | 7年（2555日） | 最終取引日 | 延長のみ可（短縮不可） |
-| アラート・ケース | 7年（2555日） | 関連取引の `occurred_at` | 延長のみ可（短縮不可） |
-| 監査ログ | 10年（3650日） | ログ記録日（`created_at`） | 変更可（法定下限なし） |
-| CDDスコア履歴 | 7年（2555日） | `scored_at` | 延長のみ可（短縮不可） |
+| Transaction data | 7 years (2555 days) | Date the transaction occurred (`transactions.executed_at`) | Yes, to any positive number of days |
+| Customer data | 7 years (2555 days) | Date of the last transaction | Yes, to any positive number of days |
+| Alerts / cases | 7 years (2555 days) | `resolved_at` / `closed_at` (unresolved/open records are excluded) | Yes, to any positive number of days |
+| Audit logs | 10 years (3650 days) | Date the log was recorded (`created_at`) | Yes, to any positive number of days |
+| CDD score history | 7 years (2555 days) | `scored_at` | Yes, to any positive number of days |
 
-## Merlon でのデータライフサイクル設計
+## Data lifecycle design in Merlon
 
-Auditability First 原則に基づき、判断根拠の再現性を最優先とする。
+Under the Auditability First principle, reproducibility of decision rationale
+takes top priority.
 
-| データ種別 | ライフサイクル |
+| Data category | Lifecycle |
 |---|---|
-| 監査ログ | append-only。削除・更新不可 |
-| 顧客データ | 取引終了後 7 年保持。保存期間経過後は APPI 削除要求に応じて `attributes` 内の直接 PII を匿名化できる（RET-004、`api/internal/retention/anonymize.go`） |
-| ルール定義 | 全バージョンを永続保持（過去の判断を再現可能にするため削除しない） |
-| スコア履歴 | 全履歴を保持（リスク格付けの変遷を追跡） |
-| 取引データ | 7 年保持後にアーカイブ／削除対象 |
+| Audit logs | Append-only for the duration of the retention period. Logically deleted once the deadline is reached, then physically deleted 30 days later |
+| Customer data | Retained for 7 years after the transaction relationship ends. Once the retention period has elapsed, direct PII within `attributes` can be anonymized in response to an Act on the Protection of Personal Information (個人情報保護法, "APPI") deletion request (RET-004, `api/internal/retention/anonymize.go`) |
+| Rule definitions | All versions are retained permanently (never deleted, so that past decisions remain reproducible) |
+| Score history | Tracks the evolution of risk ratings for the duration of the configured retention period. Logically deleted once the deadline is reached, then physically deleted 30 days later |
+| Transaction data | Logically deleted after the configured retention period, then physically deleted 30 days later |
 
-自動パージ（RET-003）は論理削除→一定期間後の物理削除の2段階で実行し（`api/internal/retention/purge.go`）、パージの実行自体を監査ログに記録する（action: `purge_execution`）。
+`PurgeJob` runs daily in PostgreSQL-backed deployments. At each configured
+retention cutoff it records `purge_marked_at`, and normal API reads exclude
+marked data. After a 30-day grace period it physically deletes marked
+transaction data, alert/case data, CDD score history, customer data,
+dependent screening results, and audit logs. A customer remains until
+independently retained child records complete their own lifecycle.
 
-### ルール定義とスコア履歴を永続保持する理由
+### Why rule definitions are retained permanently
 
-過去のある時点での判断（なぜ当時この顧客が高リスクと判定されたか）を再現するには、当時適用されていたルール定義とスコアの両方が必要である。ルール定義を上書き・削除すると過去の判断根拠が失われるため、全バージョンを保持する（Configuration as the Product 原則とも整合）。
+For the duration of the retention period, the rule definitions and score
+history that were in effect at the time make it possible to reproduce the
+rationale behind a decision. Overwriting or deleting a rule definition would
+destroy the ability to reproduce past decisions, so all versions are kept.
+Score history, by contrast, is deleted after the user-configured retention
+period plus the 30-day grace period elapses, so reproducibility is not
+guaranteed beyond that window.
 
-## アーカイブ戦略（新規導入企業向けパーティショニングテンプレート）
+## Archive strategy (partitioning template for new deployments)
 
-PostgreSQL の宣言的パーティショニング（`PARTITION BY RANGE`）は大量データを扱う導入企業にとって有効だが、**既存の稼働中テーブルへの後付けパーティション化は行わない**（[ADR-0010](../decisions/0010-audit-log-partitioning-template.md)）。以下は、これから環境を新規構築する導入企業がゼロから採用できる月次 RANGE パーティションの DDL テンプレート例である。
+PostgreSQL declarative partitioning (`PARTITION BY RANGE`) is effective for
+deployments handling large data volumes, but **this project does not
+retrofit partitioning onto tables that are already live in production**
+(ADR-0010). The
+following is an example DDL template for monthly RANGE partitions that a
+newly-provisioned deployment can adopt from scratch.
 
 ```sql
--- audit_logs: created_at 基準の月次パーティション例
+-- audit_logs: example monthly partitioning keyed on created_at
 CREATE TABLE audit_logs (
     id              BIGSERIAL,
     user_id         VARCHAR(255),
@@ -62,10 +101,10 @@ CREATE TABLE audit_logs (
 
 CREATE TABLE audit_logs_2026_07 PARTITION OF audit_logs
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
--- 以降、月次で CREATE TABLE ... PARTITION OF ... を追加する
--- (運用自動化する場合は pg_partman 等の拡張の利用を推奨)
+-- Add a CREATE TABLE ... PARTITION OF ... statement each month going forward
+-- (consider an extension such as pg_partman if you want to automate this)
 
--- transactions: occurred_at 基準の月次パーティション例
+-- transactions: example monthly partitioning keyed on executed_at
 CREATE TABLE transactions (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id           UUID NOT NULL,
@@ -73,26 +112,43 @@ CREATE TABLE transactions (
     amount                NUMERIC(20,2) NOT NULL,
     currency              VARCHAR(3) NOT NULL,
     direction             VARCHAR(10) NOT NULL,
-    occurred_at           TIMESTAMPTZ NOT NULL,
+    executed_at           TIMESTAMPTZ NOT NULL,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
-    -- (実際の列は migrations/002_transactions_alerts.sql を参照)
-) PARTITION BY RANGE (occurred_at);
+    -- (see migrations/002_transactions_alerts.sql for the actual column list)
+) PARTITION BY RANGE (executed_at);
 
 CREATE TABLE transactions_2026_07 PARTITION OF transactions
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 ```
 
-運用上の指針：
+Operational guidance:
 
-- 保持期間（監査ログ10年、取引7年）を超えた古いパーティションは、コールドストレージへの移送または切り離し（`DETACH PARTITION`）で扱う。物理削除は RET-003 の自動パージジョブのポリシーに従う。
-- パーティション単位の操作により、巨大テーブルでも保持ポリシー適用（範囲検索・パージ）のコストを一定に抑えられる。
-- 既に非パーティション運用で稼働している導入企業がパーティション化へ移行する場合は、「新テーブル作成→並行書き込み→データ移行→参照切替」という一般的な手順を要する。この移行は破壊的でダウンタイムを伴い得るため、本リポジトリの自動マイグレーションでは提供しない。移行を検討する場合は個別に計画を立てること。
-- `customer_score_history`・`alerts` を含む、より広範なテーブルのパーティショニング戦略・容量計画・移行ガイドは別途 ADR で扱う。
+- For old partitions past the retention period (10 years for audit logs, 7
+  years for transactions), move them to cold storage or detach them
+  (`DETACH PARTITION`). Before physically deleting anything, the deploying
+  organization should implement and verify deletion procedures that meet its
+  own legal and audit requirements.
+- Operating on individual partitions keeps the cost of applying retention
+  policy (range scans, purges) constant even for very large tables.
+- A deployment already running non-partitioned tables that wants to migrate
+  to partitioning generally needs to follow the sequence "create new table →
+  write to both in parallel → migrate data → cut over reads." This migration
+  can be disruptive and may involve downtime, so this repository's automated
+  migrations do not provide it. Plan any such migration separately.
+- Partitioning strategy, capacity planning, and migration guidance for the
+  broader set of ever-growing tables, including `customer_score_history` and
+  `alerts`, are covered in a separate ADR.
 
-既存の稼働中テーブルへの後付けパーティション化は行わない（[ADR-0010](../decisions/0010-audit-log-partitioning-template.md)、[ADR-0011](../decisions/0011-partitioning-strategy.md)）。以下は、これから環境を新規構築する導入企業がゼロから採用できる月次 RANGE パーティションの DDL テンプレート例である（`customer_score_history`/`alerts` 分。`audit_logs`/`transactions` は ADR-0010 参照）。
+This project does not retrofit partitioning onto tables that are already
+live in production
+(ADR-0010,
+ADR-0011). The following is an
+example DDL template for monthly RANGE partitions that a newly-provisioned
+deployment can adopt from scratch, covering `customer_score_history` and
+`alerts` (see ADR-0010 for `audit_logs`/`transactions`).
 
 ```sql
--- customer_score_history: scored_at 基準の月次パーティション例
+-- customer_score_history: example monthly partitioning keyed on scored_at
 CREATE TABLE customer_score_history (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     customer_id  UUID NOT NULL,
@@ -106,9 +162,9 @@ CREATE TABLE customer_score_history (
 
 CREATE TABLE customer_score_history_2026_07 PARTITION OF customer_score_history
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
--- 以降、月次で CREATE TABLE ... PARTITION OF ... を追加する
+-- Add a CREATE TABLE ... PARTITION OF ... statement each month going forward
 
--- alerts: detected_at 基準の月次パーティション例
+-- alerts: example monthly partitioning keyed on detected_at
 CREATE TABLE alerts (
     id          TEXT PRIMARY KEY,
     customer_id TEXT NOT NULL,
@@ -123,19 +179,26 @@ CREATE TABLE alerts (
 
 CREATE TABLE alerts_2026_07 PARTITION OF alerts
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
--- 以降、月次で CREATE TABLE ... PARTITION OF ... を追加する
+-- Add a CREATE TABLE ... PARTITION OF ... statement each month going forward
 ```
 
-- `customer_score_history` は全履歴を永続保持する方針（本文書「ルール定義とスコア履歴を永続保持する理由」）のため、古いパーティションは detach してもコールドストレージへ移送するのみで、パージ（物理削除）は行わない。
-- `alerts` はケース管理・監査の根拠となるため、パーティションの detach 後もアーカイブとして保持する。
-- 既に非パーティション運用で稼働している導入企業がパーティション化へ移行する場合の一般的な手順、GIN インデックスのオペレータクラス選択方針、キャパシティプランニング、リードレプリカのルーティング方針、autovacuum 調整推奨値は [`docs/operations/partitioning-guide.md`](../operations/partitioning-guide.md) を参照。
+- Once `customer_score_history` rows pass the user-configured retention
+  period, they are physically deleted 30 days after `purge_marked_at` is set.
+  When partitioning, confirm the retention policy and grace period before
+  detaching an old partition slated for deletion.
+- `alerts` underpin case management and audit evidence, so keep detached
+  partitions as an archive rather than dropping them.
+- For the general procedure a deployment already running non-partitioned
+  tables would follow to migrate to partitioning, GIN index operator-class
+  selection guidance, capacity planning, read-replica routing policy, and
+  recommended autovacuum tuning, see
+  [`docs/operations/partitioning-guide.md`](../operations/partitioning-guide.md).
 
-## Enterprise WORM 監査ログによる改竄検知
+## Limits of audit-log tamper resistance
 
-Enterprise エディションでは監査ログを WORM（Write Once Read Many）モードで運用できる（`config.yaml` の `audit.worm: true`）。
-
-- 一度書き込んだ監査ログは変更・削除できない
-- ハッシュチェーン等により改竄を検知する
-- 監査・検査時に、記録の完全性を証明する手段を提供する
-
-WORM モードの詳細運用は今後のマイルストーンで拡充する。
+The self-hosted edition provides after-the-fact verification via
+`merlon-audit verify`, but database-enforced immutability, WORM storage, and
+hash chaining are not included in the current release. The deploying
+organization is responsible for configuring database roles, backups, access
+control, and monitoring. See [Regulatory Scope](regulatory-scope.md) for
+details.

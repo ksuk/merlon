@@ -1,74 +1,97 @@
+---
+title: Protocol Buffers Workflow
+---
+
 # Protocol Buffers Workflow
 
-Merlon の Go API と Rust Engine は gRPC で通信する。両者の契約は `proto/` 配下の Protocol Buffers 定義であり、[buf](https://buf.build/) で管理する。
+Merlon's Go API and Rust Engine communicate over gRPC. The contract between
+them is the Protocol Buffers definitions under `proto/`, managed with
+[buf](https://buf.build/).
 
-## buf CLI の役割
+## What the buf CLI does
 
-`buf` は Protocol Buffers のリント・破壊的変更検出・コード生成を統合的に扱うツールである。Merlon では以下を担う。
+`buf` handles linting, breaking-change detection, and code generation for
+Protocol Buffers in one tool. In Merlon it is responsible for:
 
-- **lint** — proto 定義のスタイル・命名規則の検証
-- **breaking** — 後方互換性の破壊を検出（Contract Stability 原則）
-- **generate** — Go / Rust のコードを生成
+- **lint** — checking proto definitions against style and naming rules
+- **breaking** — detecting backward-incompatible changes (the Contract
+  Stability principle)
+- **generate** — generating Go and Rust code
 
-設定は `proto/buf.yaml`（モジュール定義）と `proto/buf.gen.yaml`（生成設定）に置く。
+Configuration lives in `proto/buf.yaml` (module definition) and
+`proto/buf.gen.yaml` (generation settings).
 
-## proto ファイルの編集手順
+## Editing a proto file
 
-1. `proto/` 配下の `.proto` ファイルを編集する
-2. リントを実行して規約違反を確認する
+1. Edit the `.proto` files under `proto/`.
+2. Run the linter to check for style violations:
 
    ```bash
    cd proto && buf lint
    ```
 
-3. 既存契約を変更する場合、破壊的変更がないか確認する
+3. If you're changing an existing contract, check for breaking changes:
 
    ```bash
    cd proto && buf breaking --against '.git#branch=main'
    ```
 
-4. コードを生成する（下記）
-5. Go / Rust 両側のコードをビルドして整合を確認する
+4. Generate code (see below).
+5. Build both the Go and Rust sides to confirm they stay in sync.
 
-## コード生成
+## Code generation
 
 ### buf generate / make proto
 
 ```bash
 make proto
-# 内部的には scripts/generate-proto.sh が buf lint → buf generate を実行
+# Internally this runs scripts/generate-proto.sh, which does buf lint → buf generate
 ```
 
-または直接:
+Or directly:
 
 ```bash
 cd proto && buf generate
 ```
 
-## Go 側と Rust 側の生成コード管理の違い
+## Go and Rust generate code differently
 
-両言語で生成コードの扱いが異なる点に注意する。
+Both sides regenerate code from the same proto definitions, but the timing
+and mechanism differ. Neither side commits generated code to the
+repository — `api/gen/` and the Rust `OUT_DIR` output are both listed in
+`.gitignore`.
 
-### Go 側（`api/gen/`）
+### Go side (`api/gen/`)
 
-生成された `.pb.go` / `.grpc.pb.go` は `api/gen/` にコミットする。Go のビルドはコミット済みの生成コードを直接参照するため、`buf generate` を実行しないと最新の proto 変更が反映されない。
+Generated `.pb.go` / `.grpc.pb.go` files land in `api/gen/`, which is
+gitignored. The Go build imports this generated package directly
+(`github.com/ksuk/merlon/api/gen/merlon/v1`), so **you must run
+`make proto` (or `buf generate`) explicitly before `go build` / `go test`** —
+plain `go build` does not regenerate it for you. On a fresh checkout, forget
+this step and the build fails with missing-package errors.
 
-- 生成物はリポジトリに含める
-- proto 変更時は `make proto` を実行し、生成コードの差分も同じコミットに含める
+- Generated output is not committed; it is regenerated on demand.
+- When you change a proto file, run `make proto` and rebuild/retest before
+  committing your change.
 
-### Rust 側（`build.rs`）
+### Rust side (`build.rs`)
 
-Rust 側はビルド時に `build.rs` が proto をコンパイルし、`OUT_DIR` にコードを生成する。生成物はリポジトリにコミットしない。
+On the Rust side, `build.rs` compiles the proto files at build time and
+writes the generated code into Cargo's `OUT_DIR`, which `tonic::include_proto!`
+then pulls in. This output is never committed to the repository.
 
-- 生成物は `cargo build` のたびに自動再生成される
-- proto 変更は次回ビルドで自動反映される
+- Generated output is automatically regenerated on every `cargo build`.
+- A proto change takes effect automatically the next time you build — no
+  extra step required.
 
-### まとめ
+### Summary
 
-| 項目 | Go (`api/gen/`) | Rust (`build.rs`) |
+| Aspect | Go (`api/gen/`) | Rust (`build.rs` / `OUT_DIR`) |
 |---|---|---|
-| 生成タイミング | `buf generate` 実行時 | `cargo build` 時に自動 |
-| リポジトリへのコミット | する | しない |
-| 反映に必要な操作 | `make proto` | ビルドのみ |
+| When it regenerates | Only when you run `buf generate` (`make proto`) | Automatically, every `cargo build` |
+| Committed to the repository | No (gitignored) | No (gitignored) |
+| What you must do to pick up a proto change | Run `make proto` before building/testing | Just build — it's automatic |
 
-モノレポ構成により、proto 変更と Go/Rust 両側の更新を 1 コミットで完結できる（[ADR-0001](../decisions/0001-monorepo-structure.md) 参照）。
+The monorepo structure lets a proto change and the corresponding Go/Rust
+updates land in a single commit (see
+ADR-0001).

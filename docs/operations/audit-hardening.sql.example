@@ -1,0 +1,12 @@
+-- Example only. Adapt role names and grants to the deployment's PostgreSQL
+-- role model; do not apply blindly.
+--
+-- Prevent the application role from altering or removing audit records.
+REVOKE UPDATE, DELETE ON TABLE audit_logs FROM merlon_app;
+
+-- Give auditors a dedicated read-only role. Membership assignment is an
+-- operational decision and is intentionally not included here.
+CREATE ROLE merlon_auditor NOLOGIN;
+GRANT CONNECT ON DATABASE merlon TO merlon_auditor;
+GRANT USAGE ON SCHEMA public TO merlon_auditor;
+GRANT SELECT ON TABLE audit_logs TO merlon_auditor;

@@ -14,7 +14,7 @@ CDD スコア変動（ティア変更）を TM 再評価へ伝播させる仕組
 
 `api/internal/events` に `Bus` インターフェース（`Publish`/`Subscribe`）を定義し、`EVENT_BUS` 環境変数（`pg_notify` | `nats`）で実装を切り替える。デフォルトは `pg_notify`。
 
-選択基準（overview.md §4.4）：
+選択基準：
 
 | 基準 | 推奨 |
 |---|---|
@@ -40,7 +40,7 @@ CDD スコア変動（ティア変更）を TM 再評価へ伝播させる仕組
 
 ## 影響
 
-- `api/internal/events/bus.go` が `Bus` インターフェースと `Event`（`ChainID` を含む。cdd-scoring.md の循環依存遮断に使用）を定義する
+- `api/internal/events/bus.go` が `Bus` インターフェースと `Event`（`ChainID` を含み、CDDスコアリング起因のイベント連鎖を追跡するために使用）を定義する
 - `api/internal/events/pgnotify` が pg_notify 実装、`api/internal/events/nats` がスタブ実装を提供し、`api/internal/events/factory.go` の `NewBus(cfg)` が `EVENT_BUS` に応じて選択する
 - NATS の JetStream 実接続・永続化配信保証の実装は本 WS のスコープ外とし、D2 後半の別タスクで対応する
 - WS-5 以降でイベント量が増加し水平スケールが必要になった場合、導入企業は `EVENT_BUS=nats` への切り替えと NATS サーバのプロビジョニングが必要になる

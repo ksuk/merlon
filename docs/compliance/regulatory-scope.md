@@ -1,3 +1,7 @@
+---
+title: Regulatory Scope
+---
+
 # Regulatory Scope
 
 Merlon is designed primarily for AML/CFT operations at Japanese financial institutions, including non-bank financial institutions. Its default retention periods, sample rules, and documentation are examples for that operating context; they are not legal advice or a certification of regulatory compliance.

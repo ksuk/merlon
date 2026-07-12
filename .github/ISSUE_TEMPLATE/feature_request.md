@@ -1,22 +1,25 @@
 ---
 name: Feature request
-about: 新機能・改善を提案する
+about: Propose a product improvement
 title: "[Feature] "
 labels: enhancement
-assignees: ''
+assignees: ""
 ---
 
-## 解決したい課題
-この機能が解決する課題や、現状の不便な点を記述する。
+## Problem to solve
+Describe the user or operational problem.
 
-## 提案する機能
-どのような機能・改善を望むかを記述する。
+## Proposed change
+Describe the feature or improvement you would like.
 
-## 想定する利用シーン
-誰が、どのような場面で利用するかを記述する。
+## Intended use
+Who would use it, and in what context?
 
-## 代替案
-検討した他の方法があれば記述する。
+## Alternatives considered
+Describe other approaches you considered.
 
-## 補足
-関連する FSA ガイドライン項目、参考資料、その他の情報があれば記述する。
+## Regulatory or domain context
+List any applicable regulation or guidance, for example an FSA guideline or FATF recommendation. Do not include confidential customer or risk-assessment material.
+
+## Additional context
+Add any other relevant material.
