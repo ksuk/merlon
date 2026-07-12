@@ -1,4 +1,4 @@
-# Development Environment Setup
+# 開発環境構築
 
 Merlon の開発環境構築手順。DevContainer（推奨）とローカル環境の 2 通りを示す。
 
@@ -20,7 +20,7 @@ DevContainer を使わない場合、以下のツールを個別にインスト�
 
 ```bash
 # https://go.dev/dl/ から取得、またはパッケージマネージャ
-go version   # go1.22 以上を確認
+go version   # go1.25 以上を確認
 ```
 
 ### Rust（rustup 経由）
@@ -88,9 +88,13 @@ make seed
 | `make build` | 全コンポーネントをビルド |
 | `make test` | 全テストを実行（Go / Rust / UI / Proto lint） |
 | `make lint` | 全リンターを実行 |
-| `make migrate` | DB マイグレーションを適用 |
-| `make seed` | デモデータを投入（`deploy/seed/seed.sql`） |
-| `make run` | ローカルで全コンポーネントを起動 |
-| `make clean` | ビルド成果物を削除 |
+| `make fmt` | 全コードをフォーマット（Go、Rust、UI） |
+| `make migrate` | `MERLON_DATABASE_URL` を使って DB マイグレーションを適用 |
+| `make seed` | デモデータ付きでフル構成の docker-compose トポロジーを起動（`MERLON_SEED=true docker compose up --build`） |
+| `make dev-up` / `make dev-down` | 開発用トポロジー（`docker-compose.yml` + `docker-compose.dev.yml`）を起動／停止 |
+| `make minimal-up` / `make minimal-down` | 最小トポロジー（PostgreSQL + API のみ）を起動／停止 |
+| `make generate-openapi` | OpenAPI 仕様を `docs/api/openapi.json` にエクスポート |
 
-詳細は [testing.md](testing.md)、[proto-workflow.md](proto-workflow.md) を参照。
+すでに起動中の PostgreSQL インスタンスに、compose トポロジー全体を起動せずにデモデータを投入するには、`scripts/seed-demo.sh` を実行する。このスクリプトは `psql` 経由で `deploy/seed/seed.sql` を読み込む。
+
+詳細は [テストガイド](testing.md)、[Protocol Buffers ワークフロー](proto-workflow.md) を参照。

@@ -1,4 +1,4 @@
-# Data Retention Policy
+# データ保持ポリシー
 
 本文書は、犯罪収益移転防止法（犯収法）を主眼とした設定例と、Merlon におけるデータライフサイクル設計を示す。他法域（GDPR等を含む）では、導入組織が適用法と自組織の保持義務に応じて保持ポリシーを評価・設定する必要がある。データ種別ごとの保持期間はアプリケーション層の `retention_policies` テーブル（`migrations/017_retention.sql`）でも管理し、本文書の値と一致させる。
 
@@ -9,7 +9,7 @@
 | 取引記録 | 7 年 | 犯収法（取引終了日から） |
 | 確認記録（本人確認） | 7 年 | 犯収法（取引終了日から） |
 
-7 年は `2555` 日として `config.yaml` の `audit.retention_days` 等に反映する（[configuration.md](../configuration.md) 参照）。
+7 年は `2555` 日として表現される。これは `retention_policies` テーブルにおける `transaction_data`・`customer_data`・`alert_case_data`・`cdd_score_history` の各行の初期投入値である（保持期間が `config.yaml` ではなく、このテーブルと対応する API を通じて管理される仕組みについては、[設定リファレンス](../configuration.md) を参照）。
 
 ## デフォルト保持期間（RET-001, RET-002）
 
@@ -35,7 +35,7 @@ Auditability First 原則に基づき、判断根拠の再現性を最優先と�
 | スコア履歴 | 設定保持期間中にリスク格付けの変遷を追跡。期限到達時に論理削除し、30日後に物理削除 |
 | 取引データ | 設定保持期間後に論理削除し、30日後に物理削除 |
 
-`PurgeJob` runs daily in PostgreSQL-backed deployments. At each configured retention cutoff it records `purge_marked_at`, and normal API reads exclude marked data. After a 30-day grace period it physically deletes marked transaction data, alert/case data, CDD score history, customer data, dependent screening results, and audit logs. A customer remains until independently retained child records complete their own lifecycle.
+`PurgeJob` は PostgreSQL バックエンドの導入環境で毎日実行される。設定された保持期限の到達時に `purge_marked_at` を記録し、通常の API 読み取りではマーク済みデータを除外する。30日間の猶予期間の後、マーク済みの取引データ、アラート・ケースデータ、CDD スコア履歴、顧客データ、依存するスクリーニング結果、監査ログを物理削除する。顧客データは、独立して保持される子レコードがそれぞれのライフサイクルを完了するまで残存する。
 
 ### ルール定義を永続保持する理由
 
@@ -43,7 +43,7 @@ Auditability First 原則に基づき、判断根拠の再現性を最優先と�
 
 ## アーカイブ戦略（新規導入企業向けパーティショニングテンプレート）
 
-PostgreSQL の宣言的パーティショニング（`PARTITION BY RANGE`）は大量データを扱う導入企業にとって有効だが、**既存の稼働中テーブルへの後付けパーティション化は行わない**（[ADR-0010](../decisions/0010-audit-log-partitioning-template.md)）。以下は、これから環境を新規構築する導入企業がゼロから採用できる月次 RANGE パーティションの DDL テンプレート例である。
+PostgreSQL の宣言的パーティショニング（`PARTITION BY RANGE`）は大量データを扱う導入企業にとって有効だが、**既存の稼働中テーブルへの後付けパーティション化は行わない**（ADR-0010）。以下は、これから環境を新規構築する導入企業がゼロから採用できる月次 RANGE パーティションの DDL テンプレート例である。
 
 ```sql
 -- audit_logs: created_at 基準の月次パーティション例
@@ -89,7 +89,7 @@ CREATE TABLE transactions_2026_07 PARTITION OF transactions
 - 既に非パーティション運用で稼働している導入企業がパーティション化へ移行する場合は、「新テーブル作成→並行書き込み→データ移行→参照切替」という一般的な手順を要する。この移行は破壊的でダウンタイムを伴い得るため、本リポジトリの自動マイグレーションでは提供しない。移行を検討する場合は個別に計画を立てること。
 - `customer_score_history`・`alerts` を含む、より広範なテーブルのパーティショニング戦略・容量計画・移行ガイドは別途 ADR で扱う。
 
-既存の稼働中テーブルへの後付けパーティション化は行わない（[ADR-0010](../decisions/0010-audit-log-partitioning-template.md)、[ADR-0011](../decisions/0011-partitioning-strategy.md)）。以下は、これから環境を新規構築する導入企業がゼロから採用できる月次 RANGE パーティションの DDL テンプレート例である（`customer_score_history`/`alerts` 分。`audit_logs`/`transactions` は ADR-0010 参照）。
+既存の稼働中テーブルへの後付けパーティション化は行わない（ADR-0010、ADR-0011）。以下は、これから環境を新規構築する導入企業がゼロから採用できる月次 RANGE パーティションの DDL テンプレート例である（`customer_score_history`/`alerts` 分。`audit_logs`/`transactions` は ADR-0010 参照）。
 
 ```sql
 -- customer_score_history: scored_at 基準の月次パーティション例

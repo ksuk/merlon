@@ -1,0 +1,30 @@
+{
+  "version.label": {
+    "message": "次期バージョン",
+    "description": "The label for version current"
+  },
+  "sidebar.docsSidebar.category.API Reference": {
+    "message": "API リファレンス",
+    "description": "The label for category 'API Reference' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.gRPC Protocol Reference": {
+    "message": "gRPC プロトコルリファレンス",
+    "description": "The label for category 'gRPC Protocol Reference' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Rule Schemas": {
+    "message": "ルールスキーマ",
+    "description": "The label for category 'Rule Schemas' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Compliance": {
+    "message": "コンプライアンス",
+    "description": "The label for category 'Compliance' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Operations": {
+    "message": "運用",
+    "description": "The label for category 'Operations' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Development": {
+    "message": "開発",
+    "description": "The label for category 'Development' in sidebar 'docsSidebar'"
+  }
+}

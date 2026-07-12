@@ -1,4 +1,4 @@
-# Testing Guide
+# テストガイド
 
 Merlon は Go / Rust / TypeScript / Proto の各レイヤでテストを持つ。本文書は各テストの実行方法とテスト戦略の方針を示す。
 

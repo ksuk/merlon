@@ -4,8 +4,8 @@
 
 DDL テンプレート自体は以下を参照:
 
-- `transactions`・`audit_logs`: [ADR-0010](../decisions/0010-audit-log-partitioning-template.md)、`docs/compliance/data-retention.md`
-- `customer_score_history`・`alerts`: [ADR-0011](../decisions/0011-partitioning-strategy.md)、`docs/compliance/data-retention.md`
+- `transactions`・`audit_logs`: ADR-0010、`docs/compliance/data-retention.md`
+- `customer_score_history`・`alerts`: ADR-0011、`docs/compliance/data-retention.md`
 
 **本リポジトリのマイグレーション（`migrations/*.sql`）は、既存の稼働中テーブルへの後付けパーティション化を一切行わない。** 以下は新規導入企業がゼロから環境を構築する場合の指針、および既に非パーティション運用で稼働している導入企業が将来パーティション化へ移行する際の一般的な手順である。
 

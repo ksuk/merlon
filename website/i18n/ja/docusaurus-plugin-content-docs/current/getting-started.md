@@ -1,4 +1,8 @@
-# Getting Started
+---
+sidebar_position: 1
+---
+
+# はじめに
 
 Merlon を最短で起動するためのクイックスタートガイド。
 
@@ -14,20 +18,21 @@ Merlon を最短で起動するためのクイックスタートガイド。
 
 ```bash
 # 1. リポジトリを取得
-git clone https://github.com/merlon-aml/merlon.git
+git clone https://github.com/ksuk/merlon.git
 cd merlon
 
 # 2. 環境変数ファイルを用意
 cp .env.example .env
 
-# 3. 最小構成で起動（API + Engine + PostgreSQL）
+# 3. 最小構成で起動（API + PostgreSQL。Engine はこのプロファイルには含まれない。
+#    フルトポロジーには docker-compose.yml を使用する）
 docker compose -f docker-compose.minimal.yml up --build
 
 # 4. ヘルスチェック（別ターミナルで）
 curl localhost:8080/healthz
 ```
 
-`{"status":"ok"}` が返れば起動成功。
+レスポンスボディに `"status":"ok"` が含まれていれば、API の起動は成功している。
 
 ## 次のステップ
 

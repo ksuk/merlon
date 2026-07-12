@@ -1,0 +1,22 @@
+{
+  "title": {
+    "message": "Merlon",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "Merlon ロゴ",
+    "description": "The alt text of navbar logo"
+  },
+  "item.label.Docs": {
+    "message": "ドキュメント",
+    "description": "Navbar item with label Docs"
+  },
+  "item.label.Reference": {
+    "message": "リファレンス",
+    "description": "Navbar item with label Reference"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}
