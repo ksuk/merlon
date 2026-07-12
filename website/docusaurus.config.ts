@@ -49,9 +49,9 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl: ({docPath}) =>
             `https://github.com/ksuk/merlon/edit/main/docs/${docPath}`,
-          // Architecture Decision Records are internal design history, not
-          // published end-user documentation.
-          exclude: ['decisions/**'],
+          // Architecture Decision Records and internal audit standards are
+          // internal material, not published end-user documentation.
+          exclude: ['decisions/**', 'standards/**'],
           // Versioning: leave the standard docs-plugin versioning capability
           // available. No version snapshot has been cut yet, so the site
           // only serves the "current" version for now.

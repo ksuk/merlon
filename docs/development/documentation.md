@@ -17,6 +17,9 @@ source.
 - `docs/decisions/**` (Architecture Decision Records) is excluded from the
   built site entirely and is written in Japanese; it is not translated and
   the documentation checks skip it.
+- `docs/standards/**` (internal audit and review standards) is likewise
+  excluded from the built site and written in Japanese; it is not translated
+  and the documentation checks skip it.
 - `docs/api/**` is generated reference output (OpenAPI, gRPC proto, and JSON
   Schema reference pages) and is gitignored. Never edit it directly — it is
   overwritten by `make generate-openapi`, `make generate-proto-docs`, and the
