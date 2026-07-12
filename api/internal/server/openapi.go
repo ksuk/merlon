@@ -2,7 +2,9 @@ package server
 
 import "net/http"
 
-func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+// BuildOpenAPISpec constructs the Merlon HTTP API's OpenAPI 3.0.3 document.
+// It is exported so tooling can render the spec without an HTTP round trip.
+func BuildOpenAPISpec() map[string]any {
 	spec := map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -68,7 +70,11 @@ func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	writeJSON(w, http.StatusOK, spec)
+	return spec
+}
+
+func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, BuildOpenAPISpec())
 }
 
 // paginationParams describes the api.md §1.1/§1.2 query parameters shared by
