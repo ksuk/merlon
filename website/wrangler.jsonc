@@ -1,0 +1,15 @@
+{
+  // Cloudflare Workers config for the Merlon docs site.
+  // This is an assets-only Worker (no Worker script): the built Docusaurus
+  // site under ./build is served directly by Cloudflare's asset layer.
+  // Deployed by .github/workflows/docs-deploy.yml via wrangler-action.
+  "name": "merlon-docs",
+
+  // Bump periodically per Cloudflare's guidance; pinning avoids silently
+  // picking up new default runtime behavior on redeploy.
+  "compatibility_date": "2026-07-12",
+
+  "assets": {
+    "directory": "./build"
+  }
+}
