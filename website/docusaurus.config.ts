@@ -12,7 +12,7 @@ const siteUrl = (process.env.DOCS_SITE_URL ?? 'http://localhost:3000').replace(
 const config: Config = {
   title: 'Merlon',
   tagline: 'Self-hosted AML/CFT platform for non-bank financial institutions',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/favicon.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -49,6 +49,9 @@ const config: Config = {
           sidebarPath: './sidebars.ts',
           editUrl: ({docPath}) =>
             `https://github.com/ksuk/merlon/edit/main/docs/${docPath}`,
+          // Architecture Decision Records are internal design history, not
+          // published end-user documentation.
+          exclude: ['decisions/**'],
           // Versioning: leave the standard docs-plugin versioning capability
           // available. No version snapshot has been cut yet, so the site
           // only serves the "current" version for now.
@@ -75,8 +78,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Replace with your project's social card
-    image: 'img/docusaurus-social-card.jpg',
+    image: 'img/og-image.png',
     colorMode: {
       respectPrefersColorScheme: true,
     },
@@ -84,7 +86,8 @@ const config: Config = {
       title: 'Merlon',
       logo: {
         alt: 'Merlon Logo',
-        src: 'img/logo.svg',
+        src: 'img/icon.svg',
+        srcDark: 'img/logo-inverse.svg',
       },
       items: [
         {
@@ -92,6 +95,12 @@ const config: Config = {
           sidebarId: 'docsSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        {
+          type: 'doc',
+          docId: 'api/openapi',
+          position: 'left',
+          label: 'Reference',
         },
         {
           type: 'localeDropdown',
@@ -114,10 +123,35 @@ const config: Config = {
               label: 'Getting Started',
               to: '/docs/getting-started',
             },
+            {
+              label: 'Architecture',
+              to: '/docs/architecture',
+            },
+            {
+              label: 'Configuration',
+              to: '/docs/configuration',
+            },
           ],
         },
         {
-          title: 'More',
+          title: 'Reference',
+          items: [
+            {
+              label: 'REST API',
+              to: '/docs/api/openapi',
+            },
+            {
+              label: 'gRPC',
+              to: '/docs/api/proto',
+            },
+            {
+              label: 'Rule Schemas',
+              to: '/docs/api/schema',
+            },
+          ],
+        },
+        {
+          title: 'Project',
           items: [
             {
               label: 'GitHub',
@@ -126,7 +160,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Merlon. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Merlon.`,
     },
     prism: {
       theme: prismThemes.github,

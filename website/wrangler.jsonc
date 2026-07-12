@@ -1,4 +1,5 @@
 {
+  "$schema": "./node_modules/wrangler/config-schema.json",
   // Cloudflare Workers config for the Merlon docs site.
   // This is an assets-only Worker (no Worker script): the built Docusaurus
   // site under ./build is served directly by Cloudflare's asset layer.
@@ -8,6 +9,8 @@
   // Bump periodically per Cloudflare's guidance; pinning avoids silently
   // picking up new default runtime behavior on redeploy.
   "compatibility_date": "2026-07-12",
+  "workers_dev": true,
+  "preview_urls": false,
 
   "assets": {
     "directory": "./build"

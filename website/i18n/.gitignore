@@ -14,3 +14,8 @@
 /ja/docusaurus-plugin-content-docs/current/decisions/0010-audit-log-partitioning-template.md
 /ja/docusaurus-plugin-content-docs/current/decisions/0011-partitioning-strategy.md
 /ja/docusaurus-plugin-content-docs/current/decisions/TEMPLATE.md
+/ja/docusaurus-plugin-content-docs/current/api/
+/ja/docusaurus-plugin-content-docs/current/compliance/_category_.json
+/ja/docusaurus-plugin-content-docs/current/development/_category_.json
+/ja/docusaurus-plugin-content-docs/current/operations/_category_.json
+/ja/docusaurus-plugin-content-docs/current/operations/audit-hardening.sql.example

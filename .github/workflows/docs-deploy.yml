@@ -41,6 +41,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -57,24 +59,17 @@ jobs:
         with:
           setup_only: true
 
+      - name: Docs checks
+        run: node website/scripts/checks/run-all.mjs
+
       - name: Generate protobuf code
-        run: |
-          cd proto
-          buf lint
-          buf generate
+        run: make proto
 
       - name: Generate OpenAPI spec
-        run: |
-          mkdir -p docs/api
-          cd api
-          go run ./cmd/openapi-export -o ../docs/api/openapi.json
+        run: make generate-openapi
 
       - name: Generate proto reference docs
-        run: |
-          cd proto
-          buf generate --template buf.gen.docs.yaml
-          cd ..
-          node website/scripts/generate-proto-docs.mjs
+        run: make generate-proto-docs
 
       - name: Build docs site
         run: |

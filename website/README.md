@@ -46,16 +46,21 @@ This command generates static content into the `build` directory and can be serv
 
 ## Deployment
 
-Using SSH:
+The site is deployed as a static-assets Cloudflare Worker named
+`merlon-docs`. Set the canonical public URL when building:
 
 ```bash
-USE_SSH=true npm run deploy
+DOCS_SITE_URL=https://merlon-docs.<account-subdomain>.workers.dev npm run build
 ```
 
-Not using SSH:
+For an authenticated local deployment, run `npx wrangler login` once and
+then:
 
 ```bash
-GIT_USER=<Your GitHub username> npm run deploy
+npm run build
+npm run deploy:cf
 ```
 
-If you are using GitHub Pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+Production deployments run from `.github/workflows/docs-deploy.yml` after a
+push to `main`. Configure `DOCS_SITE_URL` as a GitHub Actions variable and
+`CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets.
