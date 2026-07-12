@@ -7,10 +7,8 @@ import (
 )
 
 // RetentionPolicy governs how long a data category is kept before automatic
-// purge (audit.md RET-001/RET-002, §6 保持期間表). Statutory categories
-// (everything but audit_log) carry a non-nil MinRetentionDays equal to their
-// seeded RetentionDays, so RetentionDays may only be extended, never
-// shortened (migrations/017_retention.sql retention_no_shorten CHECK).
+// purge. Deployments may configure positive retention periods. The optional
+// MinRetentionDays field is retained for API and schema compatibility.
 type RetentionPolicy struct {
 	ID               string    `json:"id"`
 	DataCategory     string    `json:"data_category"`
@@ -21,11 +19,9 @@ type RetentionPolicy struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// ErrRetentionShorten signals an attempted update that would reduce a
-// statutory data category's retention below its legally required minimum
-// (RET-002: 延長のみ可, 設計原則5). Callers translate this to HTTP 400 (not
-// 409 — this is a validation failure of the request body, not a concurrent
-// modification conflict).
+// ErrRetentionShorten is retained for legacy/custom databases that configure
+// MinRetentionDays. Current defaults are deployment-controlled and have no
+// built-in minimum. Callers translate this validation error to HTTP 400.
 type ErrRetentionShorten struct {
 	DataCategory  string
 	RequestedDays int
@@ -37,12 +33,16 @@ func (e *ErrRetentionShorten) Error() string {
 		strconv.Itoa(e.MinDays) + " days (requested " + strconv.Itoa(e.RequestedDays) + ")"
 }
 
+type ErrInvalidRetentionDays struct{ Days int }
+
+func (e *ErrInvalidRetentionDays) Error() string {
+	return "retention_days must be greater than zero (requested " + strconv.Itoa(e.Days) + ")"
+}
+
 type RetentionRepository interface {
 	List(ctx context.Context) ([]RetentionPolicy, error)
 	Get(ctx context.Context, dataCategory string) (*RetentionPolicy, error)
-	// Update sets retention_days (延長方向のみ想定). Returns *ErrRetentionShorten
-	// if retentionDays is below the category's MinRetentionDays (defense in
-	// depth alongside the DB CHECK constraint and the server-layer
-	// pre-check); *ErrNotFound if dataCategory is unknown.
+	// Update sets a positive retention_days value. Returns *ErrNotFound if the
+	// data category is unknown.
 	Update(ctx context.Context, dataCategory string, retentionDays int, updatedBy string) (*RetentionPolicy, error)
 }

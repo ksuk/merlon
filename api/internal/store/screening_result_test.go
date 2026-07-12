@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func newTestScreeningResult(id, customerID, entryID string, status domain.ScreeningResultStatus, at time.Time) *domain.ScreeningResultRecord {

@@ -10,20 +10,20 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/casemgmt"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/casemgmt"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 // maxChainHops bounds how many times a single event_chain_id may re-trigger
 // CDD rescoring before the automatic chain is truncated in favor of manual
-// review (cdd-scoring.md safety valve 4: circular dependency prevention,
+// review (the CDD scoring design safety valve 4: circular dependency prevention,
 // default 3).
 const maxChainHops = 3
 
-// retroactiveWindow is how far back transaction-monitoring.md's in-flight
+// retroactiveWindow is how far back the transaction-monitoring design's in-flight
 // tier consistency rule looks for already-evaluated transactions to
 // re-evaluate after a tier upgrade.
 const retroactiveWindow = 24 * time.Hour
@@ -41,12 +41,12 @@ type TierChangeEvent struct {
 // "cdd.tier_changed" events. On a MEDIUM/LOW -> HIGH upgrade, it
 // re-evaluates the customer's transactions from the last 24 hours under the
 // new tier's thresholds and persists any newly-generated alerts
-// (transaction-monitoring.md in-flight tier consistency). Downgrades are
+// (the transaction-monitoring design in-flight tier consistency). Downgrades are
 // never retroactively re-evaluated (Fail-Alert principle: prefer false
 // positives over missed detections, so existing alerts are never
 // retroactively invalidated). Once the event's chain hop count exceeds
 // maxChainHops, the handler stops processing and increments
-// merlon_cdd_event_chain_truncated_total instead (cdd-scoring.md safety
+// merlon_cdd_event_chain_truncated_total instead (the CDD scoring design safety
 // valve 4).
 func NewTierChangeHandler(
 	transactions domain.TransactionRepository,
@@ -115,7 +115,7 @@ func NewTierChangeHandler(
 }
 
 // isUpgradeToHigh reports whether the transition is a MEDIUM/LOW -> HIGH
-// upgrade (transaction-monitoring.md in-flight tier consistency). A nil
+// upgrade (the transaction-monitoring design in-flight tier consistency). A nil
 // oldTier (first-ever scoring) is not treated as an upgrade.
 func isUpgradeToHigh(oldTier *domain.RiskTier, newTier domain.RiskTier) bool {
 	if newTier != domain.RiskTierHigh || oldTier == nil {

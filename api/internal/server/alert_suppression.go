@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // applyWhitelistSuppression marks alert as suppressed if customerID holds an

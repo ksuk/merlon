@@ -2,13 +2,13 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"log"
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/auth"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type loginRequest struct {
@@ -237,7 +237,7 @@ func setRefreshCookie(w http.ResponseWriter, token string) {
 	})
 }
 
-// setCSRFCookie issues the Double Submit Cookie CSRF token (auth.md §2). It
+// setCSRFCookie issues the Double Submit Cookie CSRF token (the authentication model §2). It
 // is intentionally not HttpOnly: client-side JS must read it and echo it
 // back in the X-CSRF-Token header on state-changing requests.
 func setCSRFCookie(w http.ResponseWriter, token string) {

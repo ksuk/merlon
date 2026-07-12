@@ -117,7 +117,7 @@ func TestRunImportJob_TracksConsecutiveFailures(t *testing.T) {
 	}
 
 	// Day 3: consecutive failures reach the default 3-day threshold
-	// (screening.md "連続 N 日間（デフォルト：3 日）取得失敗した場合、運用アラート").
+	// (the screening workflow "連続 N 日間（デフォルト：3 日）取得失敗した場合、運用アラート").
 	result, err := RunImportJob(ctx, adapters, store, tracker)
 	if err != nil {
 		t.Fatalf("RunImportJob day 3: %v", err)
@@ -185,7 +185,7 @@ func TestRunImportJob_PEPNotConfiguredIsSkippedNotFailed(t *testing.T) {
 		t.Errorf("outcome = %+v, want Skipped=true, Imported=false", outcome)
 	}
 
-	// Skipping must not count as a failure (screening.md "PEP リスト未設定の場合、
+	// Skipping must not count as a failure (the screening workflow "PEP リスト未設定の場合、
 	// PEP 照合はスキップされるが、その旨を監査ログに記録する" — not an operational
 	// failure requiring the fail-alert consecutive-failure counter).
 	n, err := tracker.ConsecutiveFailures(ctx, "pep_provider")

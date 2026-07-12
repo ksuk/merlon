@@ -14,7 +14,7 @@ import (
 // sanctions/PEP list keyed by list ID. RunImportJob only ever calls
 // SaveList after a successful fetch (full replace); on fetch failure the
 // previously saved list is left untouched so matching continues against it
-// (screening.md "リスト取得に失敗した場合、前回成功時のリストで照合を継続する").
+// (the screening workflow "リスト取得に失敗した場合、前回成功時のリストで照合を継続する").
 type ListStore interface {
 	SaveList(ctx context.Context, data *RawListData) error
 	GetList(ctx context.Context, listID string) (*RawListData, error)
@@ -22,7 +22,7 @@ type ListStore interface {
 
 // FailureTracker counts consecutive fetch failures per list so RunImportJob
 // can flag a list for an operational alert once the failure streak reaches
-// staleFailureThreshold (screening.md, default 3 consecutive days).
+// staleFailureThreshold (the screening workflow, default 3 consecutive days).
 type FailureTracker interface {
 	RecordSuccess(ctx context.Context, listID string) error
 	RecordFailure(ctx context.Context, listID string) (consecutiveFailures int, err error)
@@ -34,7 +34,7 @@ type FailureTracker interface {
 }
 
 // staleFailureThreshold is the default number of consecutive fetch failures
-// after which an operational alert is required (screening.md "連続 N 日間
+// after which an operational alert is required (the screening workflow "連続 N 日間
 // （デフォルト：3 日）取得失敗した場合、運用アラート...を発行").
 const staleFailureThreshold = 3
 
@@ -61,7 +61,7 @@ type ImportResult struct {
 // previously stored list untouched and increments that list's consecutive
 // failure count; ErrPEPNotConfigured is treated as an intentional skip
 // (audit-logged, not counted as a failure) rather than an error, per
-// screening.md's PEP-not-configured handling.
+// the screening workflow's PEP-not-configured handling.
 func RunImportJob(ctx context.Context, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker) (ImportResult, error) {
 	listIDs := make([]string, 0, len(adapters))
 	for id := range adapters {
@@ -139,7 +139,7 @@ func importOne(ctx context.Context, listID string, adapter ListAdapter, store Li
 }
 
 // RunImportJobPeriodically runs RunImportJob immediately, then again every
-// interval, until ctx is cancelled. screening.md's default fetch schedule
+// interval, until ctx is cancelled. the screening workflow's default fetch schedule
 // is daily at 03:00 JST; a precise time-of-day cron trigger is left as a
 // future enhancement, so this exposes a tunable interval instead (wired
 // from MERLON_SCREENING_IMPORT_INTERVAL in main.go).

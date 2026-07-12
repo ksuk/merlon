@@ -1,5 +1,5 @@
 // Package pgnotify implements events.Bus on top of PostgreSQL's
-// LISTEN/NOTIFY, the default event transport (03_implementation-plan.md
+// LISTEN/NOTIFY, the default event transport (the implementation plan
 // design decision: pg_notify default, NATS required only past the
 // horizontal-scale / 10k-events-per-day threshold).
 package pgnotify
@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events"
 )
 
 func init() {
@@ -26,7 +26,7 @@ func init() {
 }
 
 // defaultGapWait is how long Subscribe waits for a missing sequence number
-// to arrive before falling back to a source-of-truth requery (overview.md
+// to arrive before falling back to a source-of-truth requery (the operational design
 // §4.4 event delivery guarantees: sequence number gap default 5s).
 const defaultGapWait = 5 * time.Second
 

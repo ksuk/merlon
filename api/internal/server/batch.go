@@ -3,11 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 const maxBatchCustomers = 1000
@@ -105,7 +105,7 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 }
 
 // queuePendingReview records a customer's transactions as PENDING_REVIEW
-// (OPS-005, overview.md §4.4 Fail-Alert) when the monitoring engine call
+// (OPS-005, the operational design §4.4 Fail-Alert) when the monitoring engine call
 // fails, so detection resumes automatically via the recovery job instead of
 // being dropped. It returns false (leaving the caller to treat the call as
 // a hard failure) if no PendingEvaluationRepository is configured or the
@@ -205,7 +205,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	reviewRunID := generateID()
 
 	for _, c := range customers {
-		// data-model.md §1.1.2: a closed customer's TM evaluation stops
+		// the data model §1.1.2: a closed customer's TM evaluation stops
 		// entirely (existing records are kept for the retention period, but
 		// no further scoring/alerting happens). This handler represents the
 		// realtime "取引発生時" path, so frozen/dormant customers are still

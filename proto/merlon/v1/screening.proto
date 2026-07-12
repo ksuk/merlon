@@ -2,14 +2,14 @@ syntax = "proto3";
 
 package merlon.v1;
 
-option go_package = "github.com/merlon-aml/merlon/api/gen/merlon/v1;merlonv1";
+option go_package = "github.com/ksuk/merlon/api/gen/merlon/v1;merlonv1";
 
 import "merlon/v1/types.proto";
 
 service ScreeningService {
   rpc ScreenCustomer (ScreenCustomerRequest) returns (ScreenCustomerResponse);
   // @deprecated Use the standard grpc.health.v1.Health service instead
-  // (OPS-002, overview.md §4.4). Kept for backward compatibility until
+  // (OPS-002, the operational design §4.4). Kept for backward compatibility until
   // 2027-07-04 (12 months), per Contract Stability.
   // buf:lint:ignore RPC_REQUEST_RESPONSE_UNIQUE
   rpc Health (HealthRequest) returns (HealthResponse) {

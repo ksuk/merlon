@@ -7,11 +7,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // pgCheckViolationCode is the PostgreSQL SQLSTATE for a CHECK constraint
-// violation (retention_no_shorten, migrations/017_retention.sql).
+// violation (retention_days_positive or the legacy retention_no_shorten).
 const pgCheckViolationCode = "23514"
 
 // PgRetentionRepo implements domain.RetentionRepository against
@@ -71,11 +71,13 @@ func (r *PgRetentionRepo) Get(ctx context.Context, dataCategory string) (*domain
 	return p, nil
 }
 
-// Update applies retentionDays, relying on the retention_no_shorten CHECK
-// constraint as the authoritative guard (server-layer validation in
-// handleUpdateRetentionPolicy is the primary, friendlier-error path; this is
-// defense in depth against a race or a caller that skips that check).
+// Update applies a positive retention period. The current migration leaves
+// MinRetentionDays nil, while legacy/custom deployments with a configured
+// minimum continue to receive ErrRetentionShorten.
 func (r *PgRetentionRepo) Update(ctx context.Context, dataCategory string, retentionDays int, updatedBy string) (*domain.RetentionPolicy, error) {
+	if retentionDays <= 0 {
+		return nil, &domain.ErrInvalidRetentionDays{Days: retentionDays}
+	}
 	row := r.pool.QueryRow(ctx,
 		`UPDATE retention_policies SET retention_days = $1, updated_by = $2, updated_at = now()
 		WHERE data_category = $3

@@ -1,6 +1,6 @@
 // Package nats provides an events.Bus skeleton for NATS JetStream. The real
 // connection/publish/subscribe logic is deferred to a later D2 task
-// (03_implementation-plan.md design decision: NATS ships interface-only
+// (the implementation plan design decision: NATS ships interface-only
 // until the horizontal-scale / 10k-events-per-day threshold requires it);
 // this package only guarantees the interface contract so EVENT_BUS=nats can
 // be selected without a compile-time dependency change once the real
@@ -11,7 +11,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events"
 )
 
 func init() {

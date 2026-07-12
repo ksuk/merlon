@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // customerStatusWebhookRequest is the body of the core system's
-// customer_status_changed notification (data-model.md §1.1.2). The core
+// customer_status_changed notification (the data model §1.1.2). The core
 // system is the system of record for the customer's identity, so it is
 // addressed by external_id rather than this system's internal UUID.
 type customerStatusWebhookRequest struct {
@@ -32,7 +32,7 @@ func isValidCustomerStatus(s domain.CustomerStatus) bool {
 
 // handleCustomerStatusWebhook implements
 // POST /api/v1/webhooks/inbound/customer-status. This system does not judge
-// whether the transition is valid (data-model.md §1.1.2: "本システムは通知
+// whether the transition is valid (the data model §1.1.2: "本システムは通知
 // を受けて status を更新するのみで、状態遷移の可否判定は行わない") — it
 // records whatever status the core system reports.
 func (s *Server) handleCustomerStatusWebhook(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +74,7 @@ func (s *Server) handleCustomerStatusWebhook(w http.ResponseWriter, r *http.Requ
 
 	s.recordCustomerStatusAuditEntry(r, updated.ID, string(oldStatus), string(req.Status), req.Reason)
 
-	// data-model.md §1.1.2: "顧客の死亡が判明した場合、基幹は status = frozen
+	// the data model §1.1.2: "顧客の死亡が判明した場合、基幹は status = frozen
 	// を通知し、本システムは該当顧客の全アラートを severity = HIGH に引き上げ
 	// てケース管理へエスカレーションする". The wire format has no dedicated
 	// "cause" enum, so death is inferred from a free-text reason mentioning
@@ -115,7 +115,7 @@ func (s *Server) recordCustomerStatusAuditEntry(r *http.Request, customerID, old
 }
 
 // escalateCustomerAlertsOnDeath raises every alert belonging to customerID to
-// HIGH severity and consolidates each into a case (data-model.md §1.1.2).
+// HIGH severity and consolidates each into a case (the data model §1.1.2).
 func (s *Server) escalateCustomerAlertsOnDeath(r *http.Request, customerID string) {
 	if s.alerts == nil {
 		return

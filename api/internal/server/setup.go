@@ -2,12 +2,12 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/auth"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type setupRequest struct {
@@ -15,7 +15,7 @@ type setupRequest struct {
 	Password string `json:"password"`
 }
 
-// handleSetup implements the initial setup flow (overview.md §4.5): only the
+// handleSetup implements the initial setup flow (the operational design §4.5): only the
 // first call (users table empty) succeeds, and it creates the first
 // administrator account. Until this has run, /healthz/ready reports
 // unhealthy and login is unreachable (no users exist to log in as).

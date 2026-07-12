@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/events/handlers"
-	"github.com/merlon-aml/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events/handlers"
+	"github.com/ksuk/merlon/api/internal/screening"
 )
 
 const (
@@ -49,7 +49,7 @@ func (s *Server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
 	s.handleListCustomersOffset(w, r)
 }
 
-// handleListCustomersCursor serves api.md §1.1 cursor-based pagination.
+// handleListCustomersCursor serves the HTTP API contract §1.1 cursor-based pagination.
 func (s *Server) handleListCustomersCursor(w http.ResponseWriter, r *http.Request) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *Server) handleListCustomersCursor(w http.ResponseWriter, r *http.Reques
 }
 
 // handleListCustomersOffset preserves the pre-existing offset/limit contract
-// (api.md §1.2 dual-support / deprecation period) while still returning the
+// (the HTTP API contract §1.2 dual-support / deprecation period) while still returning the
 // additive {"data", "pagination"} envelope.
 func (s *Server) handleListCustomersOffset(w http.ResponseWriter, r *http.Request) {
 	offsetParam := r.URL.Query().Get("offset")
@@ -252,7 +252,7 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	now := record.ScoredAt
 	c.LastScoredAt = &now
 
-	// EDD escalation window (case-management.md §EDD未実施継続時の段階的
+	// EDD escalation window (the case-management workflow §EDD未実施継続時の段階的
 	// 措置): entering High tier starts the clock (kept if already running,
 	// so a re-score at High doesn't reset stage progress); leaving High tier
 	// closes the window, since EDD is no longer required.
@@ -279,7 +279,7 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Immediate sanctions rescreen at the new tier's frequency
-	// (screening.md "CDD ティア昇格時（Medium → High 等、新ティアの頻度を即時適用）").
+	// (the screening workflow "CDD ティア昇格時（Medium → High 等、新ティアの頻度を即時適用）").
 	if isTierPromotion(oldTier, record.Tier) && s.screening != nil {
 		deps := screening.SchedulerDeps{
 			Customers:        s.customers,
@@ -293,7 +293,7 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish a tier-change event (Task 8, CDD-009) so
-	// events/handlers.TierChangeHandler can trigger transaction-monitoring.md's
+	// events/handlers.TierChangeHandler can trigger the transaction-monitoring design's
 	// 24h retroactive TM re-evaluation on upgrades. Independent of the
 	// screening rescreen above (different downstream consumer).
 	s.publishTierChange(r.Context(), c.ID, oldTier, record.Tier, record.ScoredAt)
@@ -326,7 +326,7 @@ func tierRank(t domain.RiskTier) int {
 
 // publishTierChange emits a "cdd.tier_changed" event (Task 8, CDD-009) when
 // scoring changed the customer's risk tier, so
-// events/handlers.TierChangeHandler can trigger transaction-monitoring.md's
+// events/handlers.TierChangeHandler can trigger the transaction-monitoring design's
 // retroactive re-evaluation on upgrades. It is a no-op if no event bus is
 // configured or the tier did not change.
 func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTier *domain.RiskTier, newTier domain.RiskTier, scoredAt time.Time) {
@@ -415,7 +415,7 @@ func validateAttributes(attrs map[string]any) error {
 			return fmt.Errorf("attribute key too long: %d chars (max %d)", len(k), maxAttrKeyLen)
 		}
 		// Scalar string values are checked directly; structured values
-		// (e.g. attributes.trust_parties, data-model.md §1.1.1) are checked
+		// (e.g. attributes.trust_parties, the data model §1.1.1) are checked
 		// by their serialized JSON size instead.
 		size := 0
 		if s, ok := v.(string); ok {

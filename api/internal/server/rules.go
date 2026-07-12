@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"io"
 	"net/http"
 	"reflect"
@@ -14,7 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // ruleConfigType maps a domain.RuleType to the config_type string
@@ -37,7 +37,7 @@ func ruleConfigType(t domain.RuleType) string {
 }
 
 // validateRuleDefinition delegates schema/semantic validation to the Rust
-// engine's ConfigService (rule-schema.md §5: rule definitions must be
+// engine's ConfigService (the rule schema §5: rule definitions must be
 // JSON-Schema validated; no in-process eval of rule content). It returns a
 // *ruleValidationError (carrying the engine's structured errors) when
 // validation ran and found problems.
@@ -323,7 +323,7 @@ func (s *Server) writeRuleValidationError(w http.ResponseWriter, err error) {
 }
 
 // exportedRule is the interchange format for GET .../export and POST
-// .../import (api.md §1.4): a rule's content without the DB-managed
+// .../import (the HTTP API contract §1.4): a rule's content without the DB-managed
 // id/version/is_active bookkeeping fields, so re-importing an export
 // produces a semantically equivalent rule regardless of storage history.
 type exportedRule struct {
@@ -334,7 +334,7 @@ type exportedRule struct {
 }
 
 // writeExportedRule writes er as JSON, or as YAML when the request asks for
-// ?format=yaml (api.md §1.4).
+// ?format=yaml (the HTTP API contract §1.4).
 func writeExportedRule(w http.ResponseWriter, r *http.Request, er exportedRule) {
 	if r.URL.Query().Get("format") != "yaml" {
 		writeJSON(w, http.StatusOK, er)
@@ -399,7 +399,7 @@ func decodeImportItems(r *http.Request) ([]importRuleItem, error) {
 // handleImportRules bulk-creates rules from a JSON or YAML array (CNT-001/002).
 // It validates every item (existence checks + engine.ConfigEngine schema
 // validation, CNT-003) before creating any of them: one invalid item rejects
-// the whole batch (api.md §1.4 "1件でも失敗したら全体を拒否"). Note: the
+// the whole batch (the HTTP API contract §1.4 "1件でも失敗したら全体を拒否"). Note: the
 // RuleRepository interface has no multi-row transactional Create, so this
 // atomicity is enforced by validating everything up front rather than by a
 // DB transaction — a failure in the create loop itself (e.g. a name racing
@@ -490,7 +490,7 @@ func (s *Server) handleImportRules(w http.ResponseWriter, r *http.Request) {
 
 // diffRuleDefinitions produces a flat, top-level key diff between two rule
 // Definition documents (ALD-003). A full structural/nested diff is not
-// required by rule-schema.md; a per-key before/after comparison is
+// required by the rule schema; a per-key before/after comparison is
 // sufficient for audit purposes.
 func diffRuleDefinitions(before, after json.RawMessage) (string, error) {
 	var beforeMap, afterMap map[string]any

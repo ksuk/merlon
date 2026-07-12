@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/notify"
 )
 
 // notifyAlertCreated resolves NOTIF-003 routing for a newly created alert

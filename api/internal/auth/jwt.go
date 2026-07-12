@@ -21,10 +21,10 @@ const RefreshTokenTTL = 7 * 24 * time.Hour
 // KeyRotationGracePeriod is how long a retired signing key's kid remains
 // acceptable for verification after rotation. It matches AccessTokenTTL: a
 // token issued the instant before rotation must still be verifiable for the
-// remainder of its own lifetime (auth.md §2).
+// remainder of its own lifetime (the authentication model §2).
 const KeyRotationGracePeriod = 15 * time.Minute
 
-// Claims is the JWT access token payload (auth.md §2).
+// Claims is the JWT access token payload (the authentication model §2).
 type Claims struct {
 	UserID string `json:"sub"`
 	Role   string `json:"role"`
@@ -132,7 +132,7 @@ func (t *TokenIssuer) RotateRS256Key(privateKeyPath, publicKeyPath string) error
 
 // NewHS256Issuer builds a development-only HS256 issuer. It requires a
 // non-empty secret (MERLON_JWT_SECRET); RS256 should be preferred in
-// production (auth.md §2.5 "現行実装からの移行").
+// production (the authentication model §2.5 "現行実装からの移行").
 func NewHS256Issuer(secret string) (*TokenIssuer, error) {
 	if secret == "" {
 		return nil, errors.New("MERLON_JWT_SECRET must not be empty")

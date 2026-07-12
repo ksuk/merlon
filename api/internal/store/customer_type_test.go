@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // TestCustomerTypeAcceptsTrustPartnershipNpoGovernmentForeignLegalArrangement
-// verifies data-model.md §1.1.1: the five non-natural-person customer_type
+// verifies the data model §1.1.1: the five non-natural-person customer_type
 // values added by migrations/019_customer_type_extension.sql are all
 // accepted by the ENUM constraint.
 func TestCustomerTypeAcceptsTrustPartnershipNpoGovernmentForeignLegalArrangement(t *testing.T) {
@@ -67,7 +67,7 @@ func TestCustomerTypeExistingValuesUnaffected(t *testing.T) {
 }
 
 // TestCustomerAttributesTrustPartiesStructure verifies a round trip of
-// attributes.trust_parties (data-model.md §1.1.1: JSONB array with
+// attributes.trust_parties (the data model §1.1.1: JSONB array with
 // settlor/trustee/beneficiary role entries) through PgCustomerRepo.
 func TestCustomerAttributesTrustPartiesStructure(t *testing.T) {
 	pool := newTestPgPool(t)

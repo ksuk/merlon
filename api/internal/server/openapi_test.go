@@ -102,6 +102,29 @@ func TestOpenAPI_ExistingFieldsPreserved(t *testing.T) {
 	}
 }
 
+// TestBuildOpenAPISpec_MatchesHandlerOutput guards the refactor that
+// extracted the spec construction out of handleOpenAPI into the exported
+// BuildOpenAPISpec, which cmd/openapi-export calls directly (without an HTTP
+// round trip). It reuses previousPaths rather than duplicating the path
+// list, so this stays in sync with TestOpenAPI_ExistingFieldsPreserved.
+func TestBuildOpenAPISpec_MatchesHandlerOutput(t *testing.T) {
+	spec := BuildOpenAPISpec()
+
+	if spec["openapi"] != "3.0.3" {
+		t.Errorf(`spec["openapi"] = %v, want "3.0.3"`, spec["openapi"])
+	}
+
+	paths, ok := spec["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("spec.paths missing or not an object")
+	}
+	for _, p := range previousPaths {
+		if _, ok := paths[p]; !ok {
+			t.Errorf("path %q missing from BuildOpenAPISpec() output", p)
+		}
+	}
+}
+
 func TestOpenAPI_PaginationFieldsPresent(t *testing.T) {
 	spec := fetchOpenAPISpec(t)
 

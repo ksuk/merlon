@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 )
 
 func TestWriteErrorCodeIncludesBothFields(t *testing.T) {

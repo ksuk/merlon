@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestCounterpartyJSONRoundTrip verifies Counterparty (data-model.md
+// TestCounterpartyJSONRoundTrip verifies Counterparty (the data model
 // §1.3.1 travel-rule originator/beneficiary data) marshals and unmarshals
 // back to an identical value, matching how PgTransactionRepo persists it in
 // the transactions.counterparty JSONB column.

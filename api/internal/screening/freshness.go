@@ -3,12 +3,12 @@ package screening
 import (
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 // ListImportStatus is one configured list's last-known successful-import
 // timestamp, the input ComputeListFreshness needs to derive staleness
-// (screening.md "リストの鮮度情報（最終更新日時）をダッシュボードに表示する").
+// (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示する").
 type ListImportStatus struct {
 	ListID        string
 	ListType      string
@@ -17,7 +17,7 @@ type ListImportStatus struct {
 
 // ListFreshness is one list's computed freshness: days since its last
 // successful import, and whether that has crossed the default 3-day
-// operational-alert threshold (screening.md "連続 N 日間（デフォルト：3 日）取得
+// operational-alert threshold (the screening workflow "連続 N 日間（デフォルト：3 日）取得
 // 失敗した場合、運用アラート...を発行").
 type ListFreshness struct {
 	ListID                string
@@ -47,7 +47,7 @@ func ComputeListFreshness(lists []ListImportStatus) []ListFreshness {
 }
 
 // RecordListFreshnessMetrics publishes merlon_screening_list_stale_days
-// (overview.md §4.4 OPS-003, label: list_type). Several lists share one
+// (the operational design §4.4 OPS-003, label: list_type). Several lists share one
 // list_type (OFAC/EU/UN/MOF are all "sanctions"); this records the worst
 // (maximum) staleness among them per type, so a stale list is never masked
 // by a fresher one sharing its type (Fail-Alert principle: err toward

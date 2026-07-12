@@ -47,7 +47,7 @@ type Alert struct {
 	SuppressionReason string    `json:"suppression_reason,omitempty"`
 	// AggregationWindowStart, BatchRunID, and BatchReviewedAt support alert
 	// deduplication across the realtime/batch evaluation paths
-	// (transaction-monitoring.md「アラート統合ロジック」/「バッチ/リアルタイム
+	// (the transaction-monitoring design「アラート統合ロジック」/「バッチ/リアルタイム
 	// 評価の重複アラート防止」). AggregationWindowStart is nil for scenarios
 	// with no aggregation window (e.g. single-transaction realtime checks),
 	// which are exempt from the dedup constraint.

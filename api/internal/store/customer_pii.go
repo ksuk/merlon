@@ -1,9 +1,9 @@
 package store
 
-import "github.com/merlon-aml/merlon/api/internal/crypto"
+import "github.com/ksuk/merlon/api/internal/crypto"
 
 // directPIIAttributeKeys lists the customers.attributes keys classified as
-// direct PII (data-model.md §3.1) and therefore encrypted at rest.
+// direct PII (the data model §3.1) and therefore encrypted at rest.
 // Quasi-PII (occupation, industry, nationality, residence country) and AML
 // risk attributes (PEP flag, entity type, etc.) stay plaintext, per §3.1, so
 // GIN indexing over attributes keeps working for them.

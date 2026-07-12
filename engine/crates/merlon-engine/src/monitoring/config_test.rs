@@ -93,7 +93,7 @@ fn test_load_not_found() {
     assert!(result.is_err());
 }
 
-// v1/v2 dual loader (rule-schema.md §3.1 migration item 2/3).
+// v1/v2 dual loader (the rule schema §3.1 migration item 2/3).
 
 #[test]
 fn test_load_v1_scenario_converts_to_by_risk_tier() {
@@ -145,7 +145,7 @@ fn test_v1_evaluation_mode_defaults_to_both() {
 
 #[test]
 fn test_v1_absolute_threshold_defaults_to_system_default() {
-    // WS-5 Task3: v1 predates absolute_threshold entirely (rule-schema.md
+    // WS-5 Task3: v1 predates absolute_threshold entirely (the rule schema
     // §3.1 migration item 3), so it must resolve to the system default
     // rather than a value derived from the scenario's own parameters.
     let config = ScenarioConfig::load_dual("testdata/tm_structuring.yaml").unwrap();

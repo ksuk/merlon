@@ -3,16 +3,16 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-// bulkCloseAlertsRequest filters alerts to close in bulk (case-management.md
+// bulkCloseAlertsRequest filters alerts to close in bulk (the case-management workflow
 // §アラートの一括処理: "フィルタ条件（シナリオID、期間、severity）で絞り込ん
 // だアラートを一括で CLOSED にする"). Reason is required and recorded on
 // every individual audit entry (not just once for the whole request).
@@ -33,7 +33,7 @@ type bulkCloseAlertsResponse struct {
 // alerts already in a closed status are skipped (idempotent re-runs), and
 // every alert actually closed gets its own audit log entry in addition to
 // the single generic entry auditMiddleware writes for the request as a
-// whole (case-management.md: "一括操作は個別アラートごとに監査ログを記録
+// whole (the case-management workflow: "一括操作は個別アラートごとに監査ログを記録
 // する" — the automatic per-request entry alone is not sufficient).
 //
 // Closed alerts are marked ClosedFalsePositive: a bulk close across a
@@ -93,7 +93,7 @@ func isAlertClosed(status domain.AlertStatus) bool {
 
 // bulkCaseAssignmentRequest either adds AlertIDs to an existing case
 // (CaseID set) or bundles them into a newly created case (CaseID empty,
-// CustomerID required) — case-management.md §アラートの一括処理: "選択した
+// CustomerID required) — the case-management workflow §アラートの一括処理: "選択した
 // 複数アラートを既存ケースに追加、または新規ケースとしてまとめる".
 type bulkCaseAssignmentRequest struct {
 	AlertIDs   []string `json:"alert_ids"`
@@ -109,7 +109,7 @@ type bulkCaseAssignmentResponse struct {
 
 // handleBulkCaseAssignment implements POST /api/v1/alerts/bulk-case. Like
 // handleBulkCloseAlerts, every alert added to the case gets its own audit
-// entry (case-management.md's per-alert traceability requirement).
+// entry (the case-management workflow's per-alert traceability requirement).
 func (s *Server) handleBulkCaseAssignment(w http.ResponseWriter, r *http.Request) {
 	if s.alerts == nil || s.cases == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
@@ -197,7 +197,7 @@ func (s *Server) handleBulkCaseAssignment(w http.ResponseWriter, r *http.Request
 }
 
 // recordBulkAuditEntry writes one audit log entry for a single alert
-// affected by a bulk operation (case-management.md: per-alert traceability
+// affected by a bulk operation (the case-management workflow: per-alert traceability
 // even within a bulk request).
 func (s *Server) recordBulkAuditEntry(r *http.Request, action, alertID string, details map[string]string, userID, ip, userAgent string) {
 	if s.audit == nil {

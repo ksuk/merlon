@@ -1,5 +1,5 @@
 // Command merlon-audit provides a coreプラン向けの監査ログ完全性検証CLI
-// (audit.md §7). It ships as a single Go binary in the same image as
+// (the audit design §7). It ships as a single Go binary in the same image as
 // merlon-api (api/cmd/merlon-api), so no separate deployment is required.
 package main
 
@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 }
 
 // run implements the verify subcommand and returns the process exit code
-// audit.md §7 specifies: 0 no anomaly, 1 anomaly detected, 2 execution
+// the audit design §7 specifies: 0 no anomaly, 1 anomaly detected, 2 execution
 // error (bad flags, connection failure, query error). Exposed separately
 // from main so tests can drive it without forking a subprocess.
 func run(args []string, stdout io.Writer) int {
@@ -85,7 +85,7 @@ func run(args []string, stdout io.Writer) int {
 		return 2
 	}
 
-	// audit.md §7 監査記録: verify の実行自体も監査ログに記録する。read-only
+	// the audit design §7 監査記録: verify の実行自体も監査ログに記録する。read-only
 	// 接続時は書き込みできないためスキップする (§7 表の該当欄)。
 	if opts.ReadOnly {
 		fmt.Fprintln(stdout, "read-only connection: skipping audit log write for this run")

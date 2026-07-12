@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // PgAccountRepo implements domain.AccountRepository against accounts /
@@ -52,7 +52,10 @@ func (r *PgAccountRepo) AddCustomer(ctx context.Context, accountID, customerID s
 
 func (r *PgAccountRepo) ListCustomers(ctx context.Context, accountID string) ([]domain.AccountCustomer, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT account_id, customer_id, role FROM account_customers WHERE account_id = $1`, accountID,
+		`SELECT ac.account_id, ac.customer_id, ac.role
+		 FROM account_customers ac
+		 JOIN customers c ON c.id = ac.customer_id
+		 WHERE ac.account_id = $1 AND c.purge_marked_at IS NULL`, accountID,
 	)
 	if err != nil {
 		return nil, err
@@ -71,14 +74,14 @@ func (r *PgAccountRepo) ListCustomers(ctx context.Context, accountID string) ([]
 }
 
 // RepresentativeRiskScore takes MAX(risk_score) across every customer linked
-// to accountID (data-model.md §1.1.3 "保守的評価"), returning nil if none of
+// to accountID (the data model §1.1.3 "保守的評価"), returning nil if none of
 // them has been scored yet.
 func (r *PgAccountRepo) RepresentativeRiskScore(ctx context.Context, accountID string) (*float64, error) {
 	var score *float64
 	err := r.pool.QueryRow(ctx,
 		`SELECT MAX(c.risk_score) FROM account_customers ac
 		JOIN customers c ON c.id = ac.customer_id
-		WHERE ac.account_id = $1`,
+		WHERE ac.account_id = $1 AND c.purge_marked_at IS NULL`,
 		accountID,
 	).Scan(&score)
 	if err != nil {

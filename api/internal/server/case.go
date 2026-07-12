@@ -3,18 +3,18 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/auth"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 // openCaseStatuses are the sub-statuses merlon_cases_open (OPS-003,
-// overview.md §4.4) tracks. "closed" and "str_filed" are deliberately absent:
+// the operational design §4.4) tracks. "closed" and "str_filed" are deliberately absent:
 // neither is an open case, so they are only ever decremented from, never
 // counted.
 var openCaseStatuses = map[domain.CaseStatus]bool{
@@ -49,10 +49,10 @@ type updateCaseRequest struct {
 	Status     domain.CaseStatus `json:"status,omitempty"`
 	AssignedTo string            `json:"assigned_to,omitempty"`
 	Summary    string            `json:"summary,omitempty"`
-	// Reason is required when Status is CaseStatusReopened (case-management.md
+	// Reason is required when Status is CaseStatusReopened (the case-management workflow
 	// "再オープン時は理由（テキスト、必須）を記録する").
 	Reason string `json:"reason,omitempty"`
-	// ExpectedUpdatedAt enables optimistic locking (data-model.md §3.9,
+	// ExpectedUpdatedAt enables optimistic locking (the data model §3.9,
 	// WS-11 Task 8): when set, the update is rejected with 409 if the
 	// case's stored updated_at no longer matches. Omitted entirely, the
 	// update proceeds unconditionally (legacy callers, internal batch
@@ -175,7 +175,7 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	s.handleListCasesOffset(w, r)
 }
 
-// handleListCasesCursor serves api.md §1.1 cursor-based pagination.
+// handleListCasesCursor serves the HTTP API contract §1.1 cursor-based pagination.
 func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
@@ -194,7 +194,7 @@ func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListCasesOffset preserves the pre-existing offset/limit contract
-// (api.md §1.2 dual-support / deprecation period) while still returning the
+// (the HTTP API contract §1.2 dual-support / deprecation period) while still returning the
 // additive {"data", "pagination"} envelope.
 func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request) {
 	offsetParam := r.URL.Query().Get("offset")
@@ -255,7 +255,7 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "reason is required to reopen a case")
 				return
 			}
-			// Reopen requires Analyst or above (case-management.md "再オープン
+			// Reopen requires Analyst or above (the case-management workflow "再オープン
 			// 権限は Analyst 以上"). WS-1's auth package is available, but this
 			// endpoint serves every status transition, not just reopen, so we
 			// gate inline rather than via auth.RequirePermission at the route
@@ -365,7 +365,7 @@ func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
 
 // relatedCase pairs a case with how it was linked to the case under
 // inspection, so the UI can distinguish auto-discovered history from
-// manual links (case-management.md "関連ケースは customer_id で自動抽出し、
+// manual links (the case-management workflow "関連ケースは customer_id で自動抽出し、
 // 追加の手動リンクも可能とする").
 type relatedCase struct {
 	Case     domain.Case `json:"case"`
@@ -429,7 +429,7 @@ type addRelatedCaseRequest struct {
 
 // handleAddRelatedCase serves POST /api/v1/cases/{id}/related: record a
 // manual link from the case under inspection to related_case_id
-// (case-management.md "追加の手動リンクも可能とする"). The link is
+// (the case-management workflow "追加の手動リンクも可能とする"). The link is
 // one-directional (only the target case's related_case_ids is updated).
 func (s *Server) handleAddRelatedCase(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {

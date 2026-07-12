@@ -19,14 +19,14 @@ const (
 
 	// WebhookEventScreeningTruePositive notifies the core system that a
 	// screening_results hit was confirmed a true positive so it can decide
-	// on an immediate transaction freeze (screening.md "TRUE_POSITIVE：制裁
+	// on an immediate transaction freeze (the screening workflow "TRUE_POSITIVE：制裁
 	// 対象者と同一人物と判定。自動的にケース管理にケースを生成し（severity = CRITICAL）、
 	// 該当顧客の取引を即時凍結の判断を基幹に通知する（Webhook screening_true_positive
 	// イベント）"). Deliberately a distinct event from WebhookEventScreeningMatch,
 	// which fires on the raw single-shot screen call before investigation.
 	WebhookEventScreeningTruePositive WebhookEventType = "screening_true_positive"
 
-	// EDD 3-stage escalation events (case-management.md §EDD未実施継続時の
+	// EDD 3-stage escalation events (the case-management workflow §EDD未実施継続時の
 	// 段階的措置). The actual restriction/decline decision and execution
 	// remains the core system's responsibility (CONST-002); Merlon only
 	// detects the elapsed-time thresholds and notifies.
@@ -55,7 +55,7 @@ type WebhookDelivery struct {
 	Error      string           `json:"error,omitempty"`
 	CreatedAt  time.Time        `json:"created_at"`
 
-	// EventID (api.md §4.2, notifications.md §2) is generated once per
+	// EventID (the HTTP API contract §4.2, notifications.md §2) is generated once per
 	// dispatched event and kept identical across every retry attempt so the
 	// receiver can deduplicate.
 	EventID string `json:"event_id"`
@@ -68,7 +68,7 @@ type WebhookDelivery struct {
 	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
 }
 
-// DLQEntry is a webhook event that exhausted its retry budget (api.md §3.1
+// DLQEntry is a webhook event that exhausted its retry budget (the HTTP API contract §3.1
 // "最大再送回数を超過したイベントは Dead Letter Queue（DLQ）に退避する").
 // It can be reprocessed from the UI, which is recorded in the audit log.
 type DLQEntry struct {

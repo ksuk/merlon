@@ -3,27 +3,27 @@ package server
 import (
 	"context"
 	"errors"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 const (
 	// webhookMaxAttempts caps retries at 10 total delivery attempts
-	// (api.md §3.1 "最大10回"); the 10th failure moves the event to the DLQ.
+	// (the HTTP API contract §3.1 "最大10回"); the 10th failure moves the event to the DLQ.
 	webhookMaxAttempts = 10
-	// webhookBaseBackoff is the delay before the 2nd attempt (api.md §3.1
+	// webhookBaseBackoff is the delay before the 2nd attempt (the HTTP API contract §3.1
 	// "初回30秒").
 	webhookBaseBackoff = 30 * time.Second
-	// webhookMaxBackoff caps the exponential backoff (api.md §3.1 "最大6時間").
+	// webhookMaxBackoff caps the exponential backoff (the HTTP API contract §3.1 "最大6時間").
 	webhookMaxBackoff = 6 * time.Hour
 
 	// webhookDLQCapacity and webhookDLQWarningThreshold (80% of capacity):
-	// neither notifications.md nor api.md specifies a DLQ capacity number, so
+	// neither notifications.md nor the HTTP API contract specifies a DLQ capacity number, so
 	// per ws08-notify-case.md Task 4 these are taken from the task document
 	// itself (its designated fallback source of truth for this value).
 	webhookDLQCapacity         = 10000
@@ -32,7 +32,7 @@ const (
 
 // computeBackoff returns the delay to wait after `attempt` failed delivery
 // attempts before trying again (attempt=1 -> 30s, doubling thereafter, capped
-// at 6h). api.md §3.1: "配信失敗時は指数バックオフ（初回30秒、最大6時間、
+// at 6h). the HTTP API contract §3.1: "配信失敗時は指数バックオフ（初回30秒、最大6時間、
 // 最大10回）で再送する".
 func computeBackoff(attempt int) time.Duration {
 	if attempt < 1 {
@@ -52,7 +52,7 @@ func computeBackoff(attempt int) time.Duration {
 }
 
 // retryFailedDelivery re-sends d (attempt_count+1) using the same EventID so
-// the receiver can deduplicate (api.md §4.2). On success it clears
+// the receiver can deduplicate (the HTTP API contract §4.2). On success it clears
 // NextAttemptAt; on failure it either schedules the next attempt or, once
 // webhookMaxAttempts is reached, moves the event to the DLQ.
 func (s *Server) retryFailedDelivery(ctx context.Context, d *domain.WebhookDelivery) error {
@@ -164,7 +164,7 @@ func (s *Server) RunWebhookRetryWorker(ctx context.Context, interval time.Durati
 }
 
 // handleListDLQEntries serves GET /api/v1/webhooks/dlq: the events still
-// awaiting reprocessing (api.md §3.1 "DLQ内イベントの再処理はUI上から実行可能").
+// awaiting reprocessing (the HTTP API contract §3.1 "DLQ内イベントの再処理はUI上から実行可能").
 func (s *Server) handleListDLQEntries(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "webhooks not configured")
@@ -194,7 +194,7 @@ type reprocessDLQEntryResponse struct {
 
 // handleReprocessDLQEntry serves POST /api/v1/webhooks/dlq/{id}/reprocess:
 // an immediate, manually-triggered redelivery attempt. The operation is
-// recorded in the audit log via the standard auditMiddleware (api.md §3.1
+// recorded in the audit log via the standard auditMiddleware (the HTTP API contract §3.1
 // "操作を監査ログに記録する").
 func (s *Server) handleReprocessDLQEntry(w http.ResponseWriter, r *http.Request) {
 	if s.webhooks == nil {

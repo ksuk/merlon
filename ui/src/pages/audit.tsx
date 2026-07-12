@@ -15,7 +15,7 @@ import { Fragment, useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 
 // ACTION_CATEGORY_VALUES mirror domain.ResourceTypesForCategory's map keys
-// (audit.md §1 operation category, ALD-001's action_category filter axis)
+// (the audit design §1 operation category, ALD-001's action_category filter axis)
 // and are sent verbatim as the API query parameter, so they must stay in
 // Japanese to match the backend contract; only the displayed label (via
 // ACTION_CATEGORY_LABEL_KEYS + t()) is translated.

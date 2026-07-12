@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/crypto"
+	"github.com/ksuk/merlon/api/internal/crypto"
 )
 
 func testKeyRing(t *testing.T, versions ...uint8) *crypto.KeyRing {

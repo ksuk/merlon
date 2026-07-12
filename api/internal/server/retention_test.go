@@ -1,16 +1,25 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/store"
 )
+
+type failingRetentionAuditRepo struct{ err error }
+
+func (r *failingRetentionAuditRepo) Create(context.Context, *domain.AuditEntry) error { return r.err }
+func (r *failingRetentionAuditRepo) List(context.Context, domain.AuditListFilter) ([]domain.AuditEntry, error) {
+	return nil, r.err
+}
 
 func testServerWithRetention() *Server {
 	return New(":0", Deps{
@@ -84,7 +93,7 @@ func TestRetentionPolicyUpdateExtendSucceeds(t *testing.T) {
 	}
 }
 
-func TestRetentionPolicyUpdateShortenReturns400(t *testing.T) {
+func TestRetentionPolicyUpdateShortenSucceeds(t *testing.T) {
 	s := testServerWithRetention()
 	adminKey := createAPIKey(t, s, "retention-admin", domain.RoleAdmin)
 
@@ -94,8 +103,46 @@ func TestRetentionPolicyUpdateShortenReturns400(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestRetentionPolicyUpdateRejectsNonPositiveDays(t *testing.T) {
+	s := testServerWithRetention()
+	adminKey := createAPIKey(t, s, "retention-admin", domain.RoleAdmin)
+
+	for _, days := range []string{"0", "-1"} {
+		body := `{"retention_days":` + days + `}`
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/retention-policies/cdd_score_history", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+adminKey)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("retention_days=%s: status = %d, want %d, body=%s", days, rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+	}
+}
+
+func TestRetentionPolicyUpdateDoesNotMutateWhenStartAuditFails(t *testing.T) {
+	s := testServerWithRetention()
+	adminKey := createAPIKey(t, s, "retention-admin", domain.RoleAdmin)
+	s.audit = &failingRetentionAuditRepo{err: errors.New("audit unavailable")}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/retention-policies/cdd_score_history", strings.NewReader(`{"retention_days":100}`))
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	policy, err := s.retention.Get(context.Background(), "cdd_score_history")
+	if err != nil {
+		t.Fatalf("get retention policy: %v", err)
+	}
+	if policy.RetentionDays != 2555 {
+		t.Fatalf("retention changed despite failed audit: got %d, want 2555", policy.RetentionDays)
 	}
 }
 

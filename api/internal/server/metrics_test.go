@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestHandleMetricsReturnsPrometheusFormat verifies OPS-003 (overview.md
+// TestHandleMetricsReturnsPrometheusFormat verifies OPS-003 (the operational design
 // §4.4): GET /metrics exposes the Prometheus text exposition format and
 // includes every business/technical metric name, even at zero value.
 func TestHandleMetricsReturnsPrometheusFormat(t *testing.T) {

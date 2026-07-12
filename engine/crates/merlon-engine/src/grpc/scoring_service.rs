@@ -37,7 +37,7 @@ impl ScoringServiceImpl {
             1 => "individual",
             2 => "corporate_domestic",
             3 => "corporate_foreign",
-            // WS-11 Task 3 (data-model.md §1.1.1): non-natural-person types.
+            // WS-11 Task 3 (the data model §1.1.1): non-natural-person types.
             // CddWeightConfig's applies_to filtering already treats unknown
             // customer_type strings as "no type-specific factors apply" (see
             // CddScoringEngine::evaluate), so passing these through here is
@@ -88,6 +88,7 @@ impl ScoringServiceImpl {
             tier,
             factors,
             rule_set_id: result.rule_set_id,
+            rule_set_sha256: result.rule_set_sha256,
             rule_set_version: result.rule_set_version,
             scored_at: Some(Timestamp {
                 seconds: now.as_secs() as i64,

@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // sortByCreatedAtDesc orders items by (created_at, id) descending, matching
-// the default sort api.md §1.1 specifies and the ORDER BY clause the
+// the default sort the HTTP API contract §1.1 specifies and the ORDER BY clause the
 // Postgres repositories use. Go map iteration order is randomized per run,
 // so anything read out of a map (as every Memory*Repo does) must be sorted
 // before it can be paginated at all, whether by offset or cursor.
@@ -436,7 +436,7 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 }
 
 // UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
-// check against expectedUpdatedAt (data-model.md §3.9).
+// check against expectedUpdatedAt (the data model §3.9).
 func (r *MemoryAlertRepo) UpdateStatusIfUnmodified(_ context.Context, id string, status domain.AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -641,7 +641,7 @@ func (r *MemoryCaseRepo) Update(_ context.Context, c *domain.Case) error {
 }
 
 // UpdateIfUnmodified is Update guarded by an optimistic-lock check against
-// expectedUpdatedAt (data-model.md §3.9).
+// expectedUpdatedAt (the data model §3.9).
 func (r *MemoryCaseRepo) UpdateIfUnmodified(_ context.Context, c *domain.Case, expectedUpdatedAt time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1019,8 +1019,8 @@ func deactivateAll(versions []*domain.RuleDefinition) {
 }
 
 // MemoryRetentionRepo is the dev/test-only RetentionRepository
-// (audit.md RET-001/RET-002), pre-seeded with the same five statutory
-// defaults as migrations/017_retention.sql so tests don't depend on Postgres.
+// (RET-001/RET-002), pre-seeded with the same configurable defaults as the
+// database migrations so tests don't depend on Postgres.
 type MemoryRetentionRepo struct {
 	mu   sync.RWMutex
 	data map[string]*domain.RetentionPolicy
@@ -1038,13 +1038,12 @@ func NewMemoryRetentionRepo() *MemoryRetentionRepo {
 			UpdatedAt:        now,
 		}
 	}
-	statutoryMin := 2555
 	return &MemoryRetentionRepo{
 		data: map[string]*domain.RetentionPolicy{
-			"customer_data":     seed("customer_data", 2555, &statutoryMin),
-			"transaction_data":  seed("transaction_data", 2555, &statutoryMin),
-			"alert_case_data":   seed("alert_case_data", 2555, &statutoryMin),
-			"cdd_score_history": seed("cdd_score_history", 2555, &statutoryMin),
+			"customer_data":     seed("customer_data", 2555, nil),
+			"transaction_data":  seed("transaction_data", 2555, nil),
+			"alert_case_data":   seed("alert_case_data", 2555, nil),
+			"cdd_score_history": seed("cdd_score_history", 2555, nil),
 			"audit_log":         seed("audit_log", 3650, nil),
 		},
 	}
@@ -1079,6 +1078,9 @@ func (r *MemoryRetentionRepo) Update(_ context.Context, dataCategory string, ret
 	if !ok {
 		return nil, &domain.ErrNotFound{Entity: "retention_policy", ID: dataCategory}
 	}
+	if retentionDays <= 0 {
+		return nil, &domain.ErrInvalidRetentionDays{Days: retentionDays}
+	}
 	if p.MinRetentionDays != nil && retentionDays < *p.MinRetentionDays {
 		return nil, &domain.ErrRetentionShorten{DataCategory: dataCategory, RequestedDays: retentionDays, MinDays: *p.MinRetentionDays}
 	}
@@ -1090,7 +1092,7 @@ func (r *MemoryRetentionRepo) Update(_ context.Context, dataCategory string, ret
 }
 
 // MemoryScreeningResultRepo is the dev/test-only ScreeningResultRepository
-// (screening.md §スクリーニングヒット後の調査ワークフロー).
+// (the screening workflow §スクリーニングヒット後の調査ワークフロー).
 type MemoryScreeningResultRepo struct {
 	mu   sync.RWMutex
 	data map[string]*domain.ScreeningResultRecord
@@ -1163,7 +1165,7 @@ func (r *MemoryScreeningResultRepo) ListByStatus(_ context.Context, status domai
 }
 
 // ListPastFalsePositives lets a reviewer see prior False Positive
-// determinations against the same list entry (screening.md "同一リストエントリへの
+// determinations against the same list entry (the screening workflow "同一リストエントリへの
 // 再ヒット時に過去の False Positive 判定を参照可能とする"), regardless of which
 // customer triggered the earlier hit.
 func (r *MemoryScreeningResultRepo) ListPastFalsePositives(_ context.Context, entryID string) ([]domain.ScreeningResultRecord, error) {
@@ -1182,7 +1184,7 @@ func (r *MemoryScreeningResultRepo) ListPastFalsePositives(_ context.Context, en
 	return all, nil
 }
 
-// MemoryAccountRepo (WS-11 Task 4, data-model.md §1.1.3). RepresentativeRiskScore
+// MemoryAccountRepo (WS-11 Task 4, the data model §1.1.3). RepresentativeRiskScore
 // reads customerRepo directly (same package) rather than duplicating
 // risk_score storage, mirroring PgAccountRepo's JOIN against customers.
 type MemoryAccountRepo struct {

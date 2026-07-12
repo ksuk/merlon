@@ -45,6 +45,7 @@ pub struct ScoringResult {
     pub factors: Vec<ContributingFactor>,
     pub rule_set_id: String,
     pub rule_set_version: i32,
+    pub rule_set_sha256: String,
 }
 
 const FALLBACK_MAX_VALUE: f64 = 5.0;
@@ -118,7 +119,8 @@ impl CddScoringEngine {
             tier,
             factors,
             rule_set_id: self.config.preset_id.clone(),
-            rule_set_version: 1,
+            rule_set_version: self.config.rule_set_version_fingerprint(),
+            rule_set_sha256: self.config.rule_set_sha256.clone(),
         }
     }
 
@@ -133,7 +135,7 @@ impl CddScoringEngine {
         // previously this function returned early via `def.values.as_ref()?`
         // whenever `values` was absent, so a factor defined only via `source`
         // always fell back to FALLBACK_MAX_VALUE regardless of the actual
-        // country risk table content (rule-schema.md §3.5).
+        // country risk table content (the rule schema §3.5).
         if def.source.as_deref() == Some("country_risk_table") {
             let table = country_risk_table?;
             return match factor_name {

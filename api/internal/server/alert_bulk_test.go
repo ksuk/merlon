@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func seedAlertWith(t *testing.T, s *Server, customerID, scenarioID string, severity domain.AlertSeverity, detectedAt time.Time) domain.Alert {
@@ -32,7 +32,7 @@ func seedAlertWith(t *testing.T, s *Server, customerID, scenarioID string, sever
 	return *a
 }
 
-// TestHandleBulkCloseAlerts_RequiresReason verifies case-management.md: bulk
+// TestHandleBulkCloseAlerts_RequiresReason verifies the case-management workflow: bulk
 // close requires a common reason (text, required).
 func TestHandleBulkCloseAlerts_RequiresReason(t *testing.T) {
 	s := testServerFull()
@@ -100,7 +100,7 @@ func TestHandleBulkCloseAlerts_FiltersByScenarioPeriodSeverity(t *testing.T) {
 }
 
 // TestHandleBulkCloseAlerts_RecordsIndividualAuditEntries verifies
-// case-management.md: "一括操作は個別アラートごとに監査ログを記録する" — one
+// the case-management workflow: "一括操作は個別アラートごとに監査ログを記録する" — one
 // audit entry per closed alert must exist, not just the request-level entry.
 func TestHandleBulkCloseAlerts_RecordsIndividualAuditEntries(t *testing.T) {
 	s := testServerFull()

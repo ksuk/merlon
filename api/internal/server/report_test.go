@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func createTestCustomerAndAlert(t *testing.T, s *Server) (domain.Customer, domain.Alert) {

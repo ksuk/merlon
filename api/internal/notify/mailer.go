@@ -11,7 +11,7 @@ import (
 	"net/smtp"
 	"strings"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // Notification is the payload passed to Notifier.Send. It deliberately

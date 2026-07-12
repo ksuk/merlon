@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -37,7 +37,7 @@ func createTestWebhook(t *testing.T, s *Server, url string, events []string) dom
 	return hook
 }
 
-// TestComputeBackoff_ExponentialWithCaps verifies api.md §3.1's backoff
+// TestComputeBackoff_ExponentialWithCaps verifies the HTTP API contract §3.1's backoff
 // schedule: 30s initially, doubling each attempt, capped at 6h.
 func TestComputeBackoff_ExponentialWithCaps(t *testing.T) {
 	tests := []struct {
@@ -115,7 +115,7 @@ func TestComputeBackoff_MaxAttemptsIs10(t *testing.T) {
 	}
 }
 
-// TestDeliverWebhook_SameEventIdAcrossRetries verifies api.md §4.2: retries
+// TestDeliverWebhook_SameEventIdAcrossRetries verifies the HTTP API contract §4.2: retries
 // of the same event must carry the same X-Merlon-Event-Id so the receiver
 // can deduplicate.
 func TestDeliverWebhook_SameEventIdAcrossRetries(t *testing.T) {
@@ -155,7 +155,7 @@ func TestDeliverWebhook_SameEventIdAcrossRetries(t *testing.T) {
 }
 
 // TestDeliverWebhook_IncludesTimestampHeader verifies X-Merlon-Timestamp
-// (Unix epoch) is present on delivery (api.md §3).
+// (Unix epoch) is present on delivery (the HTTP API contract §3).
 func TestDeliverWebhook_IncludesTimestampHeader(t *testing.T) {
 	var gotTimestamp string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

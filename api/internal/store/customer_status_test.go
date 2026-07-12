@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestCustomerStatusDefaultsToActive verifies data-model.md §1.1: customers.status
+// TestCustomerStatusDefaultsToActive verifies the data model §1.1: customers.status
 // defaults to 'active' when not specified at INSERT time.
 func TestCustomerStatusDefaultsToActive(t *testing.T) {
 	pool := newTestPgPool(t)
@@ -26,7 +26,7 @@ func TestCustomerStatusDefaultsToActive(t *testing.T) {
 }
 
 // TestCustomerStatusAcceptsAllFourValues verifies all four customer_status
-// ENUM values (data-model.md §1.1.2) are accepted.
+// ENUM values (the data model §1.1.2) are accepted.
 func TestCustomerStatusAcceptsAllFourValues(t *testing.T) {
 	pool := newTestPgPool(t)
 	ctx := context.Background()

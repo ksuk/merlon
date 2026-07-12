@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlon-aml.example.com/schemas/cdd_weight_v1.json",
+  "$id": "https://github.com/ksuk/merlon/schemas/cdd_weight_v1.json",
   "title": "CDD Weight Definition",
   "description": "Schema for customer due diligence risk weight definitions",
   "type": "object",

@@ -13,6 +13,8 @@ type Config struct {
 	HTTPAddr            string
 	EngineAddr          string
 	DatabaseURL         string
+	EncryptionKeyRing   string
+	Seed                bool
 	JWTSecret           string
 	JWTPrivateKeyFile   string
 	JWTPublicKeyFile    string
@@ -36,7 +38,7 @@ type Config struct {
 	// Screening (WS-7): sanctions/PEP list auto-import and CDD-tier-driven
 	// rescreening job startup, all disabled by default so a fresh
 	// deployment never attempts external endpoint access or background
-	// batches without explicit operator configuration (screening.md).
+	// batches without explicit operator configuration (the screening workflow).
 	ScreeningImportEnabled   bool
 	ScreeningRescreenEnabled bool
 	ScreeningImportInterval  time.Duration
@@ -48,7 +50,7 @@ type Config struct {
 	ScreeningPEPURL          string
 
 	// TM batch evaluation scheduler (WS-5 Task6,
-	// transaction-monitoring.md「バッチ評価のスケジューリング」). TMBatchTimezone is
+	// the transaction-monitoring design「バッチ評価のスケジューリング」). TMBatchTimezone is
 	// an IANA location name (e.g. "Asia/Tokyo"); empty means time.Local.
 	TMBatchSchedule string
 	TMBatchTimezone string
@@ -73,7 +75,7 @@ type Config struct {
 	// §1: "ケース/アラートIDと本システムへのリンクのみを記載する").
 	PublicURL string
 
-	// EDD 3-stage escalation (case-management.md §EDD未実施継続時の段階的
+	// EDD 3-stage escalation (the case-management workflow §EDD未実施継続時の段階的
 	// 措置). Stage 1 (reminder) is fixed at 30 days; stages 2/3 are
 	// "デフォルト、設定可" so they are configurable here.
 	EDDStage2Days int
@@ -81,8 +83,19 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
-	if c.Env == "production" && !c.AuthEnabled {
-		return fmt.Errorf("MERLON_AUTH_ENABLED must be true in production")
+	if c.Env == "production" {
+		if !c.AuthEnabled {
+			return fmt.Errorf("MERLON_AUTH_ENABLED must be true in production")
+		}
+		if strings.TrimSpace(c.DatabaseURL) == "" {
+			return fmt.Errorf("MERLON_DATABASE_URL must be set in production")
+		}
+		if strings.TrimSpace(c.EncryptionKeyRing) == "" {
+			return fmt.Errorf("MERLON_ENCRYPTION_KEY_RING must be set in production")
+		}
+		if c.Seed {
+			return fmt.Errorf("MERLON_SEED must not be true in production")
+		}
 	}
 	return nil
 }
@@ -92,7 +105,9 @@ func Load() *Config {
 		Env:                   getEnv("MERLON_ENV", "development"),
 		HTTPAddr:              getEnv("MERLON_HTTP_ADDR", ":8080"),
 		EngineAddr:            getEnv("MERLON_ENGINE_ADDR", ""),
-		DatabaseURL:           getEnv("MERLON_DATABASE_URL", "postgres://merlon:merlon@localhost:5432/merlon?sslmode=disable"),
+		DatabaseURL:           getEnv("MERLON_DATABASE_URL", ""),
+		EncryptionKeyRing:     getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
+		Seed:                  getEnv("MERLON_SEED", "") == "true",
 		JWTSecret:             getEnv("MERLON_JWT_SECRET", ""),
 		JWTPrivateKeyFile:     getEnv("MERLON_JWT_PRIVATE_KEY_FILE", ""),
 		JWTPublicKeyFile:      getEnv("MERLON_JWT_PUBLIC_KEY_FILE", ""),

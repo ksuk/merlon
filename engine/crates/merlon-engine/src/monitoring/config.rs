@@ -34,7 +34,7 @@ impl From<serde_yaml::Error> for ConfigError {
 }
 
 /// Distinguishes which on-disk TM scenario schema a `ScenarioConfig` was
-/// loaded from (rule-schema.md §3.1). v1 is the pre-existing flat
+/// loaded from (the rule schema §3.1). v1 is the pre-existing flat
 /// parameters/risk_tier_adjustments shape; v2 is the by_customer_type ->
 /// by_risk_tier nested shape (content/schema/tm_scenario_v2.json).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -65,7 +65,7 @@ pub struct ScenarioConfig {
     #[serde(skip)]
     pub absolute_threshold: Option<f64>,
     /// customer_type -> risk_tier -> threshold. For v1 content the same
-    /// map is repeated under every customer_type (rule-schema.md §3.1
+    /// map is repeated under every customer_type (the rule schema §3.1
     /// migration item 2: v1 has no customer_type axis).
     #[serde(skip)]
     pub by_customer_type: HashMap<String, HashMap<String, f64>>,
@@ -75,8 +75,8 @@ fn default_evaluation_mode() -> String {
     "both".to_string()
 }
 
-/// Which evaluation pass(es) a scenario runs under (rule-schema.md §1.2,
-/// transaction-monitoring.md「評価モード」).
+/// Which evaluation pass(es) a scenario runs under (the rule schema §1.2,
+/// the transaction-monitoring design「評価モード」).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EvaluationMode {
@@ -120,7 +120,7 @@ const RISK_TIERS: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
 const V1_THRESHOLD_KEYS: [&str; 2] = ["threshold", "threshold_amount"];
 
 /// System default for the absolute_threshold safety valve
-/// (`tm.default_absolute_threshold`, transaction-monitoring.md「絶対閾値の
+/// (`tm.default_absolute_threshold`, the transaction-monitoring design「絶対閾値の
 /// 安全弁」), applied whenever a scenario doesn't specify its own.
 const DEFAULT_ABSOLUTE_THRESHOLD: f64 = 10_000_000.0;
 
@@ -242,7 +242,7 @@ impl ScenarioConfig {
     }
 
     /// Loads a TM scenario file, auto-detecting whether it is tm_scenario_v1
-    /// or tm_scenario_v2 (rule-schema.md §3.1). Use this (rather than `load`)
+    /// or tm_scenario_v2 (the rule schema §3.1). Use this (rather than `load`)
     /// wherever scenario content from `content/schema/` may be either
     /// version; `load`/`from_yaml` remain v1-only for existing callers.
     pub fn load_dual(path: &str) -> Result<Self, ConfigError> {
@@ -268,7 +268,7 @@ impl ScenarioConfig {
 
     /// Converts v1's flat, customer-type-agnostic risk_tier_adjustments into
     /// the unified by_customer_type/by_risk_tier representation, per
-    /// rule-schema.md §3.1 migration item 2: the same threshold applies to
+    /// the rule schema §3.1 migration item 2: the same threshold applies to
     /// every customer_type since v1 has no such axis. Semantics are
     /// unchanged; only the internal representation resolve_threshold reads
     /// from is added.
@@ -295,7 +295,7 @@ impl ScenarioConfig {
             }
         }
 
-        // v1 has no absolute_threshold concept at all (rule-schema.md
+        // v1 has no absolute_threshold concept at all (the rule schema
         // §3.1 migration item 3), so it is left unspecified here and
         // resolved to the system default by `absolute_threshold()`,
         // exactly like an omitted v2 `conditions.absolute_threshold`.
@@ -349,7 +349,7 @@ impl ScenarioConfig {
         EvaluationMode::from_config_str(&self.evaluation_mode)
     }
 
-    /// Resolves the absolute_threshold safety valve (transaction-monitoring.md
+    /// Resolves the absolute_threshold safety valve (the transaction-monitoring design
     /// 「絶対閾値の安全弁」), falling back to the system default
     /// (`tm.default_absolute_threshold`, 1,000万円) when the scenario
     /// doesn't specify one (v2 `conditions.absolute_threshold` omitted, or

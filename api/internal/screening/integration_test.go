@@ -6,9 +6,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 // TestScreeningPipeline_ImportThenRescreenThenFreshness_E2E exercises the

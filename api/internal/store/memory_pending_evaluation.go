@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // MemoryPendingEvaluationRepo is the in-memory domain.PendingEvaluationRepository

@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 // TestBatchEvaluation_SkipsAlreadyAlertedRealtimeTransaction is the
 // acceptance-criteria test for "同一取引へのバッチ/リアルタイム二重評価でアラートが1件に
-// 抑止される" (transaction-monitoring.md「バッチ/リアルタイム評価の重複アラート防止」):
+// 抑止される" (the transaction-monitoring design「バッチ/リアルタイム評価の重複アラート防止」):
 // an evaluation_mode=both scenario that already raised an alert via the
 // realtime path (server.handleBatchMonitor, simulated here directly through
 // AlertRepository.CreateIfNotDuplicate with no BatchRunID) must not produce

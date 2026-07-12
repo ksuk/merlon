@@ -52,7 +52,7 @@ func matchesLabels(m *dto.Metric, want map[string]string) bool {
 // TestMetricsMiddlewareRecordsDuration verifies that serving a request
 // through the full middleware chain records a sample in
 // merlon_api_request_duration_seconds for that request's matched route
-// (Task 2, overview.md §4.4).
+// (Task 2, the operational design §4.4).
 func TestMetricsMiddlewareRecordsDuration(t *testing.T) {
 	s := testServer()
 

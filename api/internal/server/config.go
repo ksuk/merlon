@@ -2,7 +2,7 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 )
 

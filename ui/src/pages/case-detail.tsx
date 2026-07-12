@@ -37,7 +37,7 @@ export function CaseDetailPage() {
     reopened: t("caseStatus.reopened"),
     str_filed: t("caseStatus.str_filed"),
   }
-  // case-management.md §ケースのステータス遷移の遷移図どおり
+  // the case-management workflow §ケースのステータス遷移の遷移図どおり
   // （NEW→INVESTIGATING→{ESCALATED→INVESTIGATING(差し戻し), CLOSED, STR_FILED}）。
   // CLOSED→REOPENED は理由必須・Analyst以上のため、別途の再オープンフォームで扱う
   // （このテーブルには含めない）。
@@ -60,7 +60,7 @@ export function CaseDetailPage() {
     { key: "edd_stage1_last_sent_at", label: t("caseDetail.edd.stage1"), variant: "medium" },
   ]
   // eddStageDisplay picks the highest-reached EDD escalation stage for
-  // display (case-management.md §EDD未実施継続時の段階的措置). Returns null
+  // display (the case-management workflow §EDD未実施継続時の段階的措置). Returns null
   // when the customer has no open EDD requirement.
   function eddStageDisplay(customer: Customer | null) {
     if (!customer?.edd_requested_at) return null
@@ -77,13 +77,13 @@ export function CaseDetailPage() {
   const [addingNote, setAddingNote] = useState(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
-  // ケース間の関連付け（case-management.md §ケース間の関連付け）。
+  // ケース間の関連付け（the case-management workflow §ケース間の関連付け）。
   const [relatedCases, setRelatedCases] = useState<RelatedCase[] | null>(null)
 
-  // EDD段階表示（case-management.md §EDD未実施継続時の段階的措置）。
+  // EDD段階表示（the case-management workflow §EDD未実施継続時の段階的措置）。
   const [customer, setCustomer] = useState<Customer | null>(null)
 
-  // 再オープン（理由必須・Analyst以上、case-management.md「再オープン時は
+  // 再オープン（理由必須・Analyst以上、the case-management workflow「再オープン時は
   // 理由（テキスト、必須）を記録する」）。
   const [reopenReason, setReopenReason] = useState("")
   const [reopening, setReopening] = useState(false)

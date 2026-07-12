@@ -2,8 +2,14 @@ package server
 
 import "net/http"
 
+func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, BuildOpenAPISpec())
+}
+
 // BuildOpenAPISpec constructs the Merlon HTTP API's OpenAPI 3.0.3 document.
-// It is exported so tooling can render the spec without an HTTP round trip.
+// It is exported so that tooling outside this package (e.g.
+// cmd/openapi-export) can render the spec to a file without going through an
+// HTTP round trip.
 func BuildOpenAPISpec() map[string]any {
 	spec := map[string]any{
 		"openapi": "3.0.3",
@@ -73,11 +79,7 @@ func BuildOpenAPISpec() map[string]any {
 	return spec
 }
 
-func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, BuildOpenAPISpec())
-}
-
-// paginationParams describes the api.md §1.1/§1.2 query parameters shared by
+// paginationParams describes the the HTTP API contract §1.1/§1.2 query parameters shared by
 // every cursor-paginated list endpoint. offset is retained but marked
 // deprecated per the dual-support migration policy.
 func paginationParams() []map[string]any {
@@ -105,7 +107,7 @@ func paginationParams() []map[string]any {
 }
 
 // paginatedListResponses describes the additive {"data", "pagination"}
-// envelope api.md §1.1 specifies for list endpoint responses.
+// envelope the HTTP API contract §1.1 specifies for list endpoint responses.
 func paginatedListResponses() map[string]any {
 	return map[string]any{
 		"200": map[string]any{

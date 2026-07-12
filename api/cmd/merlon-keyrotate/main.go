@@ -17,10 +17,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/crypto"
+	"github.com/ksuk/merlon/api/internal/crypto"
 )
 
-// directPIIAttributeKeys mirrors store.directPIIAttributeKeys (data-model.md
+// directPIIAttributeKeys mirrors store.directPIIAttributeKeys (the data model
 // §3.1). Duplicated here rather than imported since store's copy is
 // unexported and this CLI intentionally has no other dependency on the
 // store package's Postgres repository types.

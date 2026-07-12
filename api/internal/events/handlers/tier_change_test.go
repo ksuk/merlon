@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/store"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -50,7 +50,7 @@ func seedTransaction(t *testing.T, transactions domain.TransactionRepository, cu
 }
 
 // TestTierChangeHandler_UpgradeTriggersRetroactiveReevaluation verifies
-// transaction-monitoring.md's "in-flight tier consistency" rule: a
+// the transaction-monitoring design's "in-flight tier consistency" rule: a
 // MEDIUM/LOW -> HIGH upgrade re-evaluates transactions evaluated within the
 // last 24 hours under the new tier's thresholds.
 func TestTierChangeHandler_UpgradeTriggersRetroactiveReevaluation(t *testing.T) {
@@ -151,7 +151,7 @@ func TestTierChangeHandler_NewAlertsGeneratedOnReevaluation(t *testing.T) {
 }
 
 // TestTierChangeHandler_EventChainTruncatedAfterThreeHops verifies
-// cdd-scoring.md safety valve 4: once an event chain has hopped past the
+// the CDD scoring design safety valve 4: once an event chain has hopped past the
 // default limit (3), the handler stops re-evaluating and instead increments
 // merlon_cdd_event_chain_truncated_total.
 func TestTierChangeHandler_EventChainTruncatedAfterThreeHops(t *testing.T) {

@@ -5,12 +5,13 @@ RUN npm ci
 COPY ui/ .
 RUN npm run build
 
-FROM golang:1.26-alpine AS api-builder
+FROM golang:1.25-alpine AS api-builder
 WORKDIR /build
 COPY api/go.mod api/go.sum* ./
 RUN go mod download 2>/dev/null || true
 COPY api/ .
-RUN CGO_ENABLED=0 go build -o merlon-api ./cmd/merlon-api
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=$VERSION" -o merlon-api ./cmd/merlon-api
 
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates

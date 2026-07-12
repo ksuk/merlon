@@ -1,3 +1,5 @@
+# Source: Japan Ministry of Finance asset-freeze list (public notice; Japanese Copyright Act Art. 13(2)).
+# Retrieved: 2026-07-10. Sample data only; not maintained or current. Do not use for production screening.
 schema_version: "1.0"
 list_id: mof_japan_sample
 list_type: sanctions

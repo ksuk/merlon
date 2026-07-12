@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/argon2"
 )
 
-// MinPasswordLength is the minimum password length required by auth.md §1.
+// MinPasswordLength is the minimum password length required by the authentication model §1.
 // Configurable password policies are out of scope for this workstream.
 const MinPasswordLength = 12
 
@@ -84,7 +84,7 @@ func VerifyPassword(hash, plain string) (bool, error) {
 	return subtle.ConstantTimeCompare(gotHash, wantHash) == 1, nil
 }
 
-// ValidatePasswordPolicy enforces the minimum password length (auth.md §1).
+// ValidatePasswordPolicy enforces the minimum password length (the authentication model §1).
 func ValidatePasswordPolicy(plain string) error {
 	if len(plain) < MinPasswordLength {
 		return fmt.Errorf("password must be at least %d characters", MinPasswordLength)

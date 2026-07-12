@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// TestRetentionPolicySeedDefaults verifies migrations/017_retention.sql seeds
-// the five statutory data categories with the retention days transcribed
-// from audit.md §6 (transaction/customer/alert-case/CDD score history: 7
-// years = 2555 days; audit log: 10 years = 3650 days).
+// TestRetentionPolicySeedDefaults verifies the configured defaults after all
+// migrations. They are defaults, not immutable statutory lower bounds.
 func TestRetentionPolicySeedDefaults(t *testing.T) {
 	pool := newTestPgPool(t)
 	ctx := context.Background()
@@ -17,10 +15,10 @@ func TestRetentionPolicySeedDefaults(t *testing.T) {
 		retentionDays int
 		hasMin        bool
 	}{
-		"customer_data":     {2555, true},
-		"transaction_data":  {2555, true},
-		"alert_case_data":   {2555, true},
-		"cdd_score_history": {2555, true},
+		"customer_data":     {2555, false},
+		"transaction_data":  {2555, false},
+		"alert_case_data":   {2555, false},
+		"cdd_score_history": {2555, false},
 		"audit_log":         {3650, false},
 	}
 
@@ -44,18 +42,30 @@ func TestRetentionPolicySeedDefaults(t *testing.T) {
 	}
 }
 
-// TestRetentionPolicyShortenRejected verifies the retention_no_shorten CHECK
-// constraint rejects reducing retention_days below min_retention_days for a
-// statutory category (audit.md RET-002: 延長のみ可, 設計原則5).
-func TestRetentionPolicyShortenRejected(t *testing.T) {
+// TestRetentionPolicyShortenSucceeds verifies a deployment can select a
+// shorter positive period when its retention policy requires one.
+func TestRetentionPolicyShortenSucceeds(t *testing.T) {
 	pool := newTestPgPool(t)
 	ctx := context.Background()
 
 	_, err := pool.Exec(ctx,
 		`UPDATE retention_policies SET retention_days = 100 WHERE data_category = 'customer_data'`,
 	)
-	if err == nil {
-		t.Fatal("expected CHECK constraint violation when shortening customer_data retention, got nil error")
+	if err != nil {
+		t.Fatalf("shorten customer_data retention: %v", err)
+	}
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `UPDATE retention_policies SET retention_days = 2555 WHERE data_category = 'customer_data'`)
+	})
+}
+
+func TestRetentionPolicyNonPositiveRejected(t *testing.T) {
+	pool := newTestPgPool(t)
+	ctx := context.Background()
+	for _, days := range []int{0, -1} {
+		if _, err := pool.Exec(ctx, `UPDATE retention_policies SET retention_days = $1 WHERE data_category = 'cdd_score_history'`, days); err == nil {
+			t.Errorf("retention_days=%d: expected CHECK constraint violation", days)
+		}
 	}
 }
 
@@ -82,7 +92,7 @@ func TestRetentionPolicyAuditLogExtendSucceeds(t *testing.T) {
 
 // TestRuleDefinitionEffectivenessReviewColumnExists verifies migrations/017
 // added rule_definitions.last_effectiveness_review_at, defaulting to NULL
-// (audit.md §8: レビュー未実施の追跡).
+// (the audit design §8: レビュー未実施の追跡).
 func TestRuleDefinitionEffectivenessReviewColumnExists(t *testing.T) {
 	pool := newTestPgPool(t)
 	ctx := context.Background()
@@ -103,7 +113,7 @@ func TestRuleDefinitionEffectivenessReviewColumnExists(t *testing.T) {
 }
 
 // TestCustomerAnonymizedAtColumnExists verifies migrations/017 added
-// customers.anonymized_at (data-model.md §3.7).
+// customers.anonymized_at (the data model §3.7).
 func TestCustomerAnonymizedAtColumnExists(t *testing.T) {
 	pool := newTestPgPool(t)
 	ctx := context.Background()

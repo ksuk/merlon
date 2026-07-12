@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlon-aml.example.com/schemas/country_risk_v1.json",
+  "$id": "https://github.com/ksuk/merlon/schemas/country_risk_v1.json",
   "title": "Country Risk Table",
   "type": "object",
   "required": ["schema_version", "content_type", "effective_date", "default_score", "countries"],

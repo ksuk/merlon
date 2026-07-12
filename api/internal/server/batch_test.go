@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func testServerWithAllEngines() *Server {
@@ -165,7 +165,7 @@ func TestBatchMonitorAll(t *testing.T) {
 // Task4/Task7's dedup routing: calling /api/v1/batch/monitor twice for a
 // customer whose transactions keep triggering the same scenario must not
 // create a second alert for the same (customer_id, scenario_id,
-// aggregation_window_start) tuple (transaction-monitoring.md「バッチ/リアルタイム
+// aggregation_window_start) tuple (the transaction-monitoring design「バッチ/リアルタイム
 //評価の重複アラート防止」).
 func TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow(t *testing.T) {
 	s := testServerWithAllEngines()
@@ -207,7 +207,7 @@ func TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow(t *testing.T) 
 }
 
 // TestBatchMonitor_EngineDown_QueuesPendingReview verifies OPS-005 /
-// Fail-Alert (overview.md §4.4): when the monitoring engine call fails, the
+// Fail-Alert (the operational design §4.4): when the monitoring engine call fails, the
 // affected customer's transactions are queued as PENDING_REVIEW instead of
 // being reported as a hard failure, and the endpoint itself still returns
 // 200 (detection degrades to "review later", it never simply stops).

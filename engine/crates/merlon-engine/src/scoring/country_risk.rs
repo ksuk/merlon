@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use super::config::ConfigError;
 
-/// Independent country risk table content (rule-schema.md §3.5,
+/// Independent country risk table content (the rule schema §3.5,
 /// content/schema/country_risk_v1.json), referenced by a CDD risk factor
 /// whose `source` is `"country_risk_table"` instead of an inline `values` map.
 #[derive(Debug, Clone, Deserialize)]
@@ -30,7 +30,7 @@ impl CountryRiskTable {
     }
 
     /// Score for a country code, falling back to `default_score` for
-    /// countries absent from the table (rule-schema.md §3.5 "未定義国の扱い").
+    /// countries absent from the table (the rule schema §3.5 "未定義国の扱い").
     pub fn score_for(&self, country_code: &str) -> u8 {
         self.countries
             .get(country_code)
@@ -40,7 +40,7 @@ impl CountryRiskTable {
 
     /// `default_score` must never be 1 (low risk): an absent/misconfigured
     /// entry must not silently read as low risk (Secure and Conservative by
-    /// Default, rule-schema.md §3.5).
+    /// Default, the rule schema §3.5).
     fn validate(&self) -> Result<(), ConfigError> {
         if self.default_score == 1 {
             return Err(ConfigError::Validation(

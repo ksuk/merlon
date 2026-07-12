@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/crypto"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/crypto"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func testEncryptor(t *testing.T) *crypto.Encryptor {
@@ -24,7 +24,7 @@ func testEncryptor(t *testing.T) *crypto.Encryptor {
 }
 
 // TestCustomerAttributesDirectPIIEncryptedAtRest verifies encryptDirectPII
-// replaces every direct-PII field (data-model.md §3.1) with ciphertext,
+// replaces every direct-PII field (the data model §3.1) with ciphertext,
 // never leaving the plaintext value in what would be persisted.
 func TestCustomerAttributesDirectPIIEncryptedAtRest(t *testing.T) {
 	e := testEncryptor(t)

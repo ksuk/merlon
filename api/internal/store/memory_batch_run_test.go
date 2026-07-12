@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func TestMemoryBatchRunRepo_CreateAndGet(t *testing.T) {

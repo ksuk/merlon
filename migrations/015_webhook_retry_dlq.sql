@@ -1,5 +1,5 @@
 -- Webhook exponential-backoff retry state and Dead Letter Queue
--- (api.md §3.1 "配信失敗時は指数バックオフ（初回30秒、最大6時間、最大10回）で
+-- (the HTTP API contract §3.1 "配信失敗時は指数バックオフ（初回30秒、最大6時間、最大10回）で
 -- 再送する。最大再送回数を超過したイベントは Dead Letter Queue（DLQ）に退避する").
 CREATE TABLE IF NOT EXISTS webhook_dlq (
     id            TEXT PRIMARY KEY,

@@ -11,7 +11,7 @@ const (
 	// CustomerTypeTrust, CustomerTypePartnership, CustomerTypeNPO,
 	// CustomerTypeGovernment, and CustomerTypeForeignLegalArrangement extend
 	// customer_type for non-natural-person entities beyond ordinary
-	// corporations (data-model.md §1.1.1). Beneficial-owner confirmation is
+	// corporations (the data model §1.1.1). Beneficial-owner confirmation is
 	// required for all of these except CustomerTypeGovernment (犯収法上の取引
 	// 時確認義務は原則免除、ただし制裁リスト照合は実施) — that distinction is
 	// screening-scheduler policy (WS-7), not encoded in this type.
@@ -30,7 +30,7 @@ const (
 	RiskTierHigh   RiskTier = "high"
 )
 
-// CustomerStatus is the customer lifecycle state (data-model.md §1.1.2). The
+// CustomerStatus is the customer lifecycle state (the data model §1.1.2). The
 // core banking/exchange system owns state-transition validity; this system
 // only records whatever status it is notified of (Adapter Isolation).
 type CustomerStatus string
@@ -51,7 +51,7 @@ type Customer struct {
 	Status       CustomerStatus `json:"status"`
 	// Attributes holds business-scalar fields (occupation, industry, etc.) as
 	// strings, plus structured fields that are arrays/objects of their own —
-	// notably attributes.trust_parties (data-model.md §1.1.1: JSONB array of
+	// notably attributes.trust_parties (the data model §1.1.1: JSONB array of
 	// settlor/trustee/beneficiary entries for trust/partnership/
 	// foreign_legal_arrangement customers) and the direct-PII fields WS-11
 	// Task 7 encrypts in place. any (rather than string) is required to round
@@ -64,7 +64,7 @@ type Customer struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
 
-	// EDD escalation tracking (case-management.md §EDD未実施継続時の段階的
+	// EDD escalation tracking (the case-management workflow §EDD未実施継続時の段階的
 	// 措置). EddRequestedAt marks when the customer entered the current
 	// High-tier EDD requirement window (nil when not in that state).
 	// StageNotifiedAt fields make RunEDDEscalationJob idempotent: stage 2/3
@@ -77,7 +77,7 @@ type Customer struct {
 
 	// AnonymizedAt marks that this customer's direct-PII Attributes fields
 	// have been replaced in response to an APPI deletion request made after
-	// the statutory retention period elapsed (RET-004, data-model.md §3.7).
+	// the statutory retention period elapsed (RET-004, the data model §3.7).
 	// nil means not anonymized.
 	AnonymizedAt *time.Time `json:"anonymized_at,omitempty"`
 }
@@ -100,6 +100,7 @@ type ScoreRecord struct {
 	Tier           RiskTier  `json:"tier"`
 	Factors        []Factor  `json:"factors"`
 	RuleSetID      string    `json:"rule_set_id"`
+	RuleSetSHA256  string    `json:"rule_set_sha256,omitempty"`
 	RuleSetVersion int       `json:"rule_set_version"`
 	ScoredAt       time.Time `json:"scored_at"`
 }

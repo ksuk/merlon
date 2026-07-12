@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -155,7 +155,7 @@ func TestUpdateAlertStatusNotFound(t *testing.T) {
 // alert's current updated_at as expected_updated_at succeeds, and a PATCH
 // supplying a stale updated_at (an intervening update happened first) is
 // rejected with 409 rather than silently overwriting it (WS-11 Task 8,
-// data-model.md §3.9).
+// the data model §3.9).
 func TestAlertStatusUpdateOptimisticLock(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)
@@ -361,7 +361,7 @@ func TestListAlerts_ResponseFieldsUnchanged(t *testing.T) {
 	}
 }
 
-// TestCreateAlertIncrementsMetric is Task 9 (overview.md §4.4 OPS-003):
+// TestCreateAlertIncrementsMetric is Task 9 (the operational design §4.4 OPS-003):
 // creating an alert (via batch monitoring, the only path that raises
 // alerts) must increment merlon_alerts_total for that alert's
 // scenario/severity.

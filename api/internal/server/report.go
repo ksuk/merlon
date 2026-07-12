@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type CreateSTRRequest struct {
@@ -47,13 +47,25 @@ func (s *Server) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var currency string
 	var totalAmount float64
 	for _, txnID := range alert.TransactionIDs {
 		txn, err := s.transactions.Get(r.Context(), txnID)
 		if err != nil {
 			continue
 		}
+		if currency == "" {
+			currency = txn.Currency
+		} else if txn.Currency != currency {
+			writeErrorCode(w, http.StatusUnprocessableEntity, apierr.CodeValidationFailed, "STR requires transactions in one currency")
+			return
+		}
 		totalAmount += txn.Amount
+	}
+
+	if currency == "" {
+		writeErrorCode(w, http.StatusUnprocessableEntity, apierr.CodeValidationFailed, "STR requires at least one available transaction")
+		return
 	}
 
 	now := time.Now()
@@ -66,7 +78,7 @@ func (s *Server) handleCreateSTR(w http.ResponseWriter, r *http.Request) {
 		SuspiciousPoint: req.SuspiciousPoint,
 		TransactionIDs:  alert.TransactionIDs,
 		TotalAmount:     totalAmount,
-		Currency:        "JPY",
+		Currency:        currency,
 		CreatedAt:       now,
 		CreatedBy:       req.CreatedBy,
 	}

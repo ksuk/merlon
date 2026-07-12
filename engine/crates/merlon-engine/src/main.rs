@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
+
 use merlon_engine::grpc::backtest_service::BacktestServiceImpl;
 use merlon_engine::grpc::config_service::ConfigServiceImpl;
 use merlon_engine::grpc::metrics_interceptor::MetricsLayer;
@@ -25,6 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "cdd_weights.yaml".to_string());
 
     let cdd_config = CddWeightConfig::load(&cdd_path)?;
+    let cdd_digest = config_path_digest(&cdd_path)?;
     let cdd_engine = CddScoringEngine::new(cdd_config)?;
     let scoring_service = ScoringServiceImpl::new(cdd_engine);
 
@@ -32,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "tm_scenarios".to_string());
 
     let tm_configs = load_tm_scenario_configs(&tm_paths)?;
+    let tm_digest = config_path_digest(&tm_paths)?;
     let tm_engine = Arc::new(TmEngine::new(tm_configs)?);
     let monitoring_service = MonitoringServiceImpl::from_arc(Arc::clone(&tm_engine));
     let backtest_service = BacktestServiceImpl::new(Arc::clone(&tm_engine));
@@ -45,27 +49,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(0.85);
 
     let screening_lists = load_yaml_configs::<ScreeningListConfig>(&screening_paths)?;
+    let screening_digest = config_path_digest(&screening_paths)?;
     let screening_engine = ScreeningEngine::new(screening_lists, screening_threshold)?;
     let screening_service = ScreeningServiceImpl::new(screening_engine);
-    let config_service = ConfigServiceImpl::new();
+    let config_service = ConfigServiceImpl::with_runtime_config_digests(vec![
+        ("cdd_weights".to_string(), cdd_digest.clone()),
+        ("tm_scenarios".to_string(), tm_digest.clone()),
+        ("screening_lists".to_string(), screening_digest.clone()),
+    ]);
 
     let addr = std::env::var("MERLON_ENGINE_ADDR")
         .unwrap_or_else(|_| "[::]:50051".to_string())
         .parse()?;
 
-    // /metrics HTTP endpoint (Task 8, OPS-003, overview.md §4.4) on a
+    // /metrics HTTP endpoint (Task 8, OPS-003, the operational design §4.4) on a
     // separate port from the gRPC server, so scraping never contends with
     // the gRPC transport.
     let metrics_addr: std::net::SocketAddr = std::env::var("MERLON_ENGINE_METRICS_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:9090".to_string())
         .parse()?;
+    eprintln!("engine configuration digest path={} sha256={}", cdd_path, cdd_digest);
+    eprintln!("engine configuration digest path={} sha256={}", tm_paths, tm_digest);
+    eprintln!("engine configuration digest path={} sha256={}", screening_paths, screening_digest);
+
     tokio::spawn(async move {
         if let Err(err) = merlon_engine::metrics_server::serve(metrics_addr).await {
             eprintln!("metrics server error: {err}");
         }
     });
 
-    // Standard grpc.health.v1 health check (OPS-002, overview.md §4.4),
+    // Standard grpc.health.v1 health check (OPS-002, the operational design §4.4),
     // superseding the per-service deprecated custom Health rpc. The overall
     // ("" service name) check is SERVING as soon as health_reporter() is
     // created; this process has nothing left to initialize asynchronously
@@ -109,6 +122,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn config_path_digest(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let metadata = std::fs::metadata(path)?;
+    let mut hasher = Sha256::new();
+    if metadata.is_file() {
+        hasher.update(std::fs::read(path)?);
+    } else {
+        let mut entries: Vec<_> = std::fs::read_dir(path)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|entry| entry.path())
+            .filter(|entry| entry.extension().is_some_and(|ext| ext == "yaml" || ext == "yml"))
+            .collect();
+        entries.sort();
+        for entry in entries {
+            hasher.update(entry.file_name().unwrap_or_default().as_encoded_bytes());
+            hasher.update([0]);
+            hasher.update(std::fs::read(entry)?);
+            hasher.update([0]);
+        }
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn load_yaml_configs<T: serde::de::DeserializeOwned>(
     dir: &str,
 ) -> Result<Vec<T>, Box<dyn std::error::Error>> {
@@ -125,7 +161,7 @@ fn load_yaml_configs<T: serde::de::DeserializeOwned>(
     Ok(configs)
 }
 
-/// Loads TM scenario content with the v1/v2 dual loader (rule-schema.md
+/// Loads TM scenario content with the v1/v2 dual loader (the rule schema
 /// §3.1), unlike `load_yaml_configs` which the CDD weight/screening list
 /// configs still use (those have no v2 format yet).
 fn load_tm_scenario_configs(dir: &str) -> Result<Vec<ScenarioConfig>, Box<dyn std::error::Error>> {

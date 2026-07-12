@@ -2,23 +2,23 @@ package server
 
 import (
 	"context"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/auth"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/notify"
-	"github.com/merlon-aml/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/screening"
 )
 
 const maxRequestBodyBytes = 1 << 20
 
 // DBPinger reports whether the PostgreSQL connection pool is reachable. It
 // is satisfied directly by *pgxpool.Pool, kept as a narrow interface here so
-// /healthz/ready (Task 3, overview.md §4.4) can be tested without a real
+// /healthz/ready (Task 3, the operational design §4.4) can be tested without a real
 // database.
 type DBPinger interface {
 	Ping(ctx context.Context) error
@@ -54,7 +54,7 @@ type Server struct {
 	accounts                 domain.AccountRepository
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
-	// dashboard's list-freshness display (screening.md; Task 4). Nil until
+	// dashboard's list-freshness display (the screening workflow; Task 4). Nil until
 	// Task 6 wires the import job's concrete instances into main.go.
 	screeningListStore      screening.ListStore
 	screeningFailureTracker screening.FailureTracker
@@ -174,7 +174,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz/ready", s.handleHealthReady)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 
-	// Initial setup (overview.md §4.5)
+	// Initial setup (the operational design §4.5)
 	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)
 
 	// Customers
@@ -190,7 +190,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/screening/check", s.handleScreeningCheck)
 	s.mux.HandleFunc("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
 
-	// Accounts (joint accounts, data-model.md §1.1.3)
+	// Accounts (joint accounts, the data model §1.1.3)
 	s.mux.HandleFunc("POST /api/v1/accounts", s.handleCreateAccount)
 	s.mux.HandleFunc("GET /api/v1/accounts/{id}", s.handleGetAccount)
 	s.mux.HandleFunc("POST /api/v1/accounts/{id}/customers", s.handleAddAccountCustomer)
@@ -231,7 +231,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/batch/score", s.handleBatchScore)
 	s.mux.HandleFunc("POST /api/v1/batch/monitor", s.handleBatchMonitor)
 
-	// Inbound webhooks (core system notifications, data-model.md §1.1.2)
+	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.mux.HandleFunc("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
 
 	// Webhooks
@@ -252,8 +252,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/admin/users", s.handleListUsers)
 
 	// Retention policies (admin only via /api/v1/admin/ prefix gate,
-	// audit.md RET-001/RET-002). Update additionally enforces
-	// shorten-prevention in handleUpdateRetentionPolicy.
+	// the audit design RET-001/RET-002). Update additionally enforces a
+	// positive period and any optional deployment-defined minimum.
 	s.mux.HandleFunc("GET /api/v1/admin/retention-policies", s.handleListRetentionPolicies)
 	s.mux.HandleFunc("PUT /api/v1/admin/retention-policies/{category}", s.handleUpdateRetentionPolicy)
 
@@ -273,7 +273,7 @@ func (s *Server) routes() {
 	// Config validation
 	s.mux.HandleFunc("POST /api/v1/config/validate", s.handleValidateConfig)
 
-	// Rules (api.md §1.4): reads are open to all roles, writes require
+	// Rules (the HTTP API contract §1.4): reads are open to all roles, writes require
 	// auth.PermRuleWrite (Admin only) on top of the coarse role check, since
 	// hasPermission alone would let Analyst write like most other resources.
 	s.mux.HandleFunc("GET /api/v1/rules", s.handleListRules)

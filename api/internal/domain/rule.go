@@ -6,9 +6,9 @@ import (
 	"time"
 )
 
-// RuleType enumerates the rule_definitions.type Postgres ENUM (rule-schema.md,
-// api.md §1.4). COUNTRY_RISK was added by migration 008 for the independent
-// country risk table content (rule-schema.md §3.5).
+// RuleType enumerates the rule_definitions.type Postgres ENUM (the rule schema,
+// the HTTP API contract §1.4). COUNTRY_RISK was added by migration 008 for the independent
+// country risk table content (the rule schema §3.5).
 type RuleType string
 
 const (

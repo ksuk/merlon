@@ -2,11 +2,11 @@ package server
 
 import (
 	"context"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/screening"
 )
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // screeningListFreshness reports each configured list's staleness
-// (screening.md "リストの鮮度情報（最終更新日時）をダッシュボードに表示する"). A list
+// (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示する"). A list
 // that has never completed an import yet is omitted rather than shown as
 // freshly imported.
 func (s *Server) screeningListFreshness(ctx context.Context) []domain.ScreeningListFreshnessStat {

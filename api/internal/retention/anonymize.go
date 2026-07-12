@@ -1,4 +1,4 @@
-// Package retention implements the data retention lifecycle (audit.md
+// Package retention implements the data retention lifecycle (the audit design
 // RET-001〜004): the automatic purge framework (purge.go) and APPI
 // individual-deletion anonymization (anonymize.go).
 package retention
@@ -8,18 +8,18 @@ import (
 	"errors"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-// anonymizedPlaceholder replaces direct-PII attribute values (data-model.md
+// anonymizedPlaceholder replaces direct-PII attribute values (the data model
 // §3.1: 氏名、住所、生年月日、電話番号、メール、口座情報、身分証番号).
 const anonymizedPlaceholder = "[ANONYMIZED]"
 
 // directPIIAttributeKeys are the customers.attributes JSONB keys classified
-// as 直接PII (data-model.md §3.1). Keys not in this set (occupation,
+// as 直接PII (the data model §3.1). Keys not in this set (occupation,
 // incorporation_country, beneficial_owners, etc.) are 準PII or AML risk
 // attributes kept in plaintext for statistics/backtesting even after
-// anonymization (audit.md §11: 匿名化後のデータは統計・バックテスト目的で
+// anonymization (the audit design §11: 匿名化後のデータは統計・バックテスト目的で
 // 保持可能).
 var directPIIAttributeKeys = map[string]bool{
 	"name":            true,
@@ -37,7 +37,7 @@ var directPIIAttributeKeys = map[string]bool{
 
 // maxTransactionScanForAnonymize bounds the ListByCustomer scan used to find
 // the most recent transaction (the RET-004 statutory-period anchor,
-// audit.md §6). A single compliance-driven anonymization request is rare
+// the audit design §6). A single compliance-driven anonymization request is rare
 // enough that this bound is not a real cap in practice; if a customer ever
 // exceeds it, ListByCustomerCursor pagination should replace this scan.
 const maxTransactionScanForAnonymize = 100000
@@ -58,7 +58,7 @@ type AnonymizeRequest struct {
 // Anonymize replaces a customer's direct-PII attributes with a fixed
 // placeholder and sets AnonymizedAt, unless the customer's data is still
 // within the statutory retention period anchored at their last transaction
-// (audit.md §6: 顧客データの起算点は最終取引日). Deviates from the task
+// (the audit design §6: 顧客データの起算点は最終取引日). Deviates from the task
 // document's narrower CustomerRepository/AuditRepository-only signature by
 // also taking TransactionRepository (to resolve the last-transaction anchor)
 // and RetentionRepository (to read the configurable customer_data retention

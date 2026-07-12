@@ -30,7 +30,7 @@ type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, u *User) error
 	Update(ctx context.Context, u *User) error
-	// Count is used to determine whether initial setup (overview.md §4.5) has
+	// Count is used to determine whether initial setup (the operational design §4.5) has
 	// already been completed.
 	Count(ctx context.Context) (int, error)
 	// List returns all users, for the admin user-management screen.

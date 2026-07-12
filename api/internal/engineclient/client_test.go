@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // stubMonitoringEngine lets tests control how many times EvaluateTransactions

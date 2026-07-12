@@ -1,6 +1,6 @@
 // Package metrics defines Merlon's Prometheus-compatible metric registry
-// (OPS-003, overview.md §4.4). Metric names and labels here must match the
-// overview.md §4.4 "OPS-003 メトリクス一覧" table exactly; it is the
+// (OPS-003, the operational design §4.4). Metric names and labels here must match the
+// the operational design §4.4 "OPS-003 メトリクス一覧" table exactly; it is the
 // contract other tooling (Grafana dashboards, WS-4's alerting) is built on.
 package metrics
 
@@ -72,11 +72,11 @@ var (
 
 	CDDEventChainTruncatedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "merlon_cdd_event_chain_truncated_total",
-		Help: "Total number of CDD event chains truncated after exceeding the hop limit (cdd-scoring.md safety valve 4).",
+		Help: "Total number of CDD event chains truncated after exceeding the hop limit (the CDD scoring design safety valve 4).",
 	})
 
 	// AuditIntegrityCheckFailedTotal is incremented by merlon-audit verify
-	// (audit.md §7) whenever it detects an audit_logs anomaly (id gap,
+	// (the audit design §7) whenever it detects an audit_logs anomaly (id gap,
 	// created_at regression, or daily count drop). merlon-audit is a
 	// one-shot CLI, not a long-running process scraped by Prometheus, so
 	// this counter is only meaningful if the deployment pushes it to a
@@ -84,7 +84,7 @@ var (
 	// concern documented alongside the recommended daily cron
 	// (docs/compliance/data-retention.md), not implemented here.
 	AuditIntegrityCheckFailedTotal = promauto.NewCounter(prometheus.CounterOpts{
-		// Name matches audit.md §6/§7 verbatim (merlon_audit_integrity_check_failed,
+		// Name matches the audit design §6/§7 verbatim (merlon_audit_integrity_check_failed,
 		// no _total suffix) — that name is the operational-alerting contract
 		// documented for self-hosting deployments.
 		Name: "merlon_audit_integrity_check_failed",
@@ -94,7 +94,7 @@ var (
 
 // knownAlertSeverities/knownCaseStatuses/etc. seed zero-value series for
 // known label combinations at process start, so /metrics shows every metric
-// name (overview.md §4.4 OPS-003) even before any matching business event
+// name (the operational design §4.4 OPS-003) even before any matching business event
 // has occurred. Labels with unbounded cardinality (scenario_id, list_type)
 // are seeded with a representative placeholder value rather than every
 // possible value.

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/notify"
 )
 
 // fakeNotifier is a test double for notify.Notifier that records every

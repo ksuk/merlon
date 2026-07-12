@@ -4,21 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/casemgmt"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/casemgmt"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 type UpdateAlertStatusRequest struct {
 	Status     domain.AlertStatus `json:"status"`
 	ResolvedBy string             `json:"resolved_by"`
-	// ExpectedUpdatedAt enables optimistic locking (data-model.md §3.9,
+	// ExpectedUpdatedAt enables optimistic locking (the data model §3.9,
 	// WS-11 Task 8): when set, the update is rejected with 409 if the
 	// alert's stored updated_at no longer matches. Omitted entirely, the
 	// update proceeds unconditionally (legacy callers).
@@ -29,7 +29,7 @@ func alertCursor(a domain.Alert) Cursor {
 	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID}
 }
 
-// recordAlertCreated increments merlon_alerts_total (OPS-003, overview.md
+// recordAlertCreated increments merlon_alerts_total (OPS-003, the operational design
 // §4.4) for a single newly created alert. Call this exactly once per alert,
 // right after its creation is confirmed, to avoid double-counting.
 func recordAlertCreated(a *domain.Alert) {
@@ -38,7 +38,7 @@ func recordAlertCreated(a *domain.Alert) {
 
 // consolidateAlertIntoCase joins a into an existing open case for the same
 // customer within casemgmt.DefaultConsolidationWindow, or creates a new one
-// (transaction-monitoring.md「アラート統合ロジック」). Call this once per
+// (the transaction-monitoring design「アラート統合ロジック」). Call this once per
 // newly created alert, after it has been persisted. A failure here (e.g.
 // the case store being unavailable) is logged and does not roll back or
 // fail the alert creation itself; the alert still exists and can be
@@ -64,7 +64,7 @@ func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	s.handleListAlertsOffset(w, r, customerID)
 }
 
-// handleListAlertsCursor serves api.md §1.1 cursor-based pagination.
+// handleListAlertsCursor serves the HTTP API contract §1.1 cursor-based pagination.
 func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, customerID string) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, 
 }
 
 // handleListAlertsOffset preserves the pre-existing offset/limit contract
-// (api.md §1.2 dual-support / deprecation period) while still returning the
+// (the HTTP API contract §1.2 dual-support / deprecation period) while still returning the
 // additive {"data", "pagination"} envelope.
 func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, customerID string) {
 	offsetParam := r.URL.Query().Get("offset")

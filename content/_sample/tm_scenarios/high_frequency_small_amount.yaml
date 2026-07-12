@@ -1,4 +1,4 @@
-# tm_scenario_v2 (rule-schema.md §1). WS-5 Task8: velocity check distinct
+# tm_scenario_v2 (the rule schema §1). WS-5 Task8: velocity check distinct
 # from structuring -- flags transaction *count* within a short window
 # regardless of total sum, so many small transfers below the per-transaction
 # cap are caught even if their sum never reaches structuring's threshold.

@@ -3,12 +3,12 @@ package engineclient
 import (
 	"context"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
 // Client wraps api/internal/engine.Client, routing every call through a
-// CircuitBreaker so a stalled Rust engine trips the breaker (overview.md
+// CircuitBreaker so a stalled Rust engine trips the breaker (the operational design
 // §4.4) instead of leaving every caller blocked on a hung gRPC call. It
 // implements engine.ScoringEngine / engine.MonitoringEngine /
 // engine.ScreeningEngine with identical signatures, so it drops directly

@@ -19,7 +19,7 @@ const (
 	AccountRoleCoHolder AccountRole = "co_holder"
 )
 
-// Account is a joint/shared account (data-model.md §1.1.3), distinct from
+// Account is a joint/shared account (the data model §1.1.3), distinct from
 // the pre-existing single-customer transaction model: Transaction.CustomerID
 // still identifies the acting party, while AccountID (optional) links a
 // transaction to a shared account with multiple holders.
@@ -43,7 +43,7 @@ type AccountRepository interface {
 	AddCustomer(ctx context.Context, accountID, customerID string, role AccountRole) error
 	ListCustomers(ctx context.Context, accountID string) ([]AccountCustomer, error)
 	// RepresentativeRiskScore returns the highest risk_score among all
-	// customers linked to accountID (data-model.md §1.1.3 "保守的評価": a
+	// customers linked to accountID (the data model §1.1.3 "保守的評価": a
 	// joint account is represented by its riskiest holder, not an average),
 	// or nil if none of the linked customers has been scored yet.
 	RepresentativeRiskScore(ctx context.Context, accountID string) (*float64, error)

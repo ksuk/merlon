@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 // fakeBus is an in-memory test double for events.Bus that records every
@@ -388,7 +388,7 @@ func TestScoreCustomer_PublishesTierChangeEvent(t *testing.T) {
 
 // TestScoreCustomer_SetsEddRequestedAtOnHighTier verifies WS-8 Task 6: a
 // scoring call that promotes a customer to High tier starts the EDD
-// escalation window (case-management.md §EDD未実施継続時の段階的措置),
+// escalation window (the case-management workflow §EDD未実施継続時の段階的措置),
 // and a second High-tier re-score does not reset it.
 func TestScoreCustomer_SetsEddRequestedAtOnHighTier(t *testing.T) {
 	s := New(":0", Deps{

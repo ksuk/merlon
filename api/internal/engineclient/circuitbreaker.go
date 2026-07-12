@@ -24,7 +24,7 @@ const (
 // entirely.
 var ErrCircuitOpen = errors.New("engineclient: circuit breaker open")
 
-// circuitBreakerConfig holds the numeric constants overview.md §4.4's
+// circuitBreakerConfig holds the numeric constants the operational design §4.4's
 // "障害対応マトリクス" Rust engine row specifies, plus a clock hook so tests
 // can advance time deterministically instead of sleeping for real.
 type circuitBreakerConfig struct {
@@ -35,7 +35,7 @@ type circuitBreakerConfig struct {
 	now          func() time.Time
 }
 
-// CircuitBreaker guards calls to the Rust engine. Per overview.md §4.4: gRPC
+// CircuitBreaker guards calls to the Rust engine. Per the operational design §4.4: gRPC
 // calls get a 3s timeout and 2 retries with exponential backoff; if all
 // attempts fail the breaker opens for 30s, then allows exactly one
 // half-open probe request before deciding whether to close or reopen.

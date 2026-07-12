@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package merlon.v1;
 
-option go_package = "github.com/merlon-aml/merlon/api/gen/merlon/v1;merlonv1";
+option go_package = "github.com/ksuk/merlon/api/gen/merlon/v1;merlonv1";
 
 enum RiskTier {
   RISK_TIER_UNSPECIFIED = 0;
@@ -16,7 +16,7 @@ enum CustomerType {
   CUSTOMER_TYPE_INDIVIDUAL = 1;
   CUSTOMER_TYPE_CORPORATE_DOMESTIC = 2;
   CUSTOMER_TYPE_CORPORATE_FOREIGN = 3;
-  // Non-natural-person types added by WS-11 Task 3 (data-model.md §1.1.1).
+  // Non-natural-person types added by WS-11 Task 3 (the data model §1.1.1).
   CUSTOMER_TYPE_TRUST = 4;
   CUSTOMER_TYPE_PARTNERSHIP = 5;
   CUSTOMER_TYPE_NPO = 6;

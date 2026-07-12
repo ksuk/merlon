@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/apierr"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type auditResponseWriter struct {

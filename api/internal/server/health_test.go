@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 // stubDBPinger is a test double for the DBPinger dependency /healthz/ready
-// uses to check PostgreSQL connectivity (Task 3, overview.md §4.4 "ヘルス
+// uses to check PostgreSQL connectivity (Task 3, the operational design §4.4 "ヘルス
 // チェックの粒度").
 type stubDBPinger struct {
 	err error

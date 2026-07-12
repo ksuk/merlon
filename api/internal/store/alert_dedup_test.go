@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func newTestAlert(id, customerID, scenarioID string, windowStart *time.Time, at time.Time) *domain.Alert {

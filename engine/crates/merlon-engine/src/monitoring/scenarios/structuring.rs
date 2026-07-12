@@ -73,7 +73,7 @@ impl Scenario for StructuringScenario {
                 let total: f64 = window_txns.iter().map(|t| t.amount).sum();
 
                 // absolute_threshold is a safety valve independent of the
-                // tier-based threshold (transaction-monitoring.md「絶対閾値
+                // tier-based threshold (the transaction-monitoring design「絶対閾値
                 // の安全弁」): it can fire alone, and never produces a
                 // second alert when the tier threshold already fired.
                 let breaches_tier_threshold = total >= threshold;

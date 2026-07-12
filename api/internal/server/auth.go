@@ -7,13 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/auth"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type contextKey string
@@ -162,7 +162,7 @@ func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, cont
 		}
 	}
 
-	// CSRF (Double Submit Cookie, auth.md §2): cookie-based auth is subject to
+	// CSRF (Double Submit Cookie, the authentication model §2): cookie-based auth is subject to
 	// CSRF, unlike the Bearer API key path, so state-changing requests must
 	// echo the non-HttpOnly csrf_token cookie back in a header.
 	if !isSafeMethod(r.Method) && !csrfTokenMatches(r) {

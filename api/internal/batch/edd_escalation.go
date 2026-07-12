@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-// eddStage1Days is the fixed reminder threshold (case-management.md §EDD
+// eddStage1Days is the fixed reminder threshold (the case-management workflow §EDD
 // 未実施継続時の段階的措置: "EDD要求から30日経過"). Unlike stages 2/3, this
 // is not configurable in the spec.
 const eddStage1Days = 30
 
 // defaultEDDStage2Days/defaultEDDStage3Days back Stage2Days/Stage3Days when
-// EDDEscalationDeps leaves them at zero (case-management.md: "60日経過（デフォ
+// EDDEscalationDeps leaves them at zero (the case-management workflow: "60日経過（デフォ
 // ルト、設定可）", "90日経過（デフォルト、設定可）").
 const (
 	defaultEDDStage2Days = 60
@@ -41,7 +41,7 @@ type EDDEscalationDeps struct {
 	// Now overrides time.Now for deterministic tests. Nil uses time.Now.
 	Now func() time.Time
 	// Stage2Days/Stage3Days override the default 60/90-day thresholds
-	// (case-management.md: "デフォルト、設定可"). Zero uses the default.
+	// (the case-management workflow: "デフォルト、設定可"). Zero uses the default.
 	Stage2Days int
 	Stage3Days int
 }
@@ -60,7 +60,7 @@ type eddNotifyPayload struct {
 }
 
 // RunEDDEscalationJob implements the 3-stage EDD escalation
-// (case-management.md §EDD未実施継続時の段階的措置). For each High-tier
+// (the case-management workflow §EDD未実施継続時の段階的措置). For each High-tier
 // customer with an open EDD requirement (EddRequestedAt set), it checks how
 // many days have elapsed and fires at most one stage per run:
 //

@@ -9,12 +9,12 @@ import (
 
 // defaultDropThreshold is the default fraction (50%) by which a day's
 // audit_logs count must fall below the preceding 7-day moving average to be
-// flagged (audit.md §7).
+// flagged (the audit design §7).
 const defaultDropThreshold = 0.5
 
 // IDGap is a break in audit_logs.id's expected consecutive sequence, the
 // simplest signal of deleted rows on a table that should be append-only
-// (audit.md §7).
+// (the audit design §7).
 type IDGap struct {
 	PreviousID int64 `json:"previous_id"`
 	NextID     int64 `json:"next_id"`
@@ -38,13 +38,13 @@ type CountDrop struct {
 	MovingAverage float64   `json:"moving_average_7d"`
 }
 
-// VerifyOptions configures Verify (audit.md §7 CLI options table).
+// VerifyOptions configures Verify (the audit design §7 CLI options table).
 type VerifyOptions struct {
 	Since         *time.Time
 	Until         *time.Time
 	DropThreshold float64
 	Format        string
-	// ReadOnly signals the connection cannot INSERT (audit.md §7: "read-only
+	// ReadOnly signals the connection cannot INSERT (the audit design §7: "read-only
 	// 接続で実行可能なこと"), so callers should skip recording the verify
 	// execution itself to the audit log. Verify does not use this field
 	// directly (it only issues SELECT queries); run() in main.go reads it.
@@ -59,12 +59,12 @@ type VerifyResult struct {
 }
 
 // HasAnomalies reports whether any anomaly was found (drives exit code 1
-// vs 0, audit.md §7).
+// vs 0, the audit design §7).
 func (r VerifyResult) HasAnomalies() bool {
 	return len(r.IDGaps) > 0 || len(r.TimeRegressions) > 0 || len(r.CountDrops) > 0
 }
 
-// Verify runs the three checks audit.md §7 defines against audit_logs,
+// Verify runs the three checks the audit design §7 defines against audit_logs,
 // using only read queries so it works over a read-only connection.
 func Verify(ctx context.Context, pool *pgxpool.Pool, opts VerifyOptions) (VerifyResult, error) {
 	if opts.DropThreshold <= 0 {

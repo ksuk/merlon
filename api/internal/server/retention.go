@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
+	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func (s *Server) handleListRetentionPolicies(w http.ResponseWriter, r *http.Request) {
@@ -30,18 +33,9 @@ type updateRetentionPolicyRequest struct {
 	RetentionDays int `json:"retention_days"`
 }
 
-// handleUpdateRetentionPolicy extends (never shortens) a data category's
-// retention period (audit.md RET-002, 設計原則5: 延長のみ可). The
-// below-minimum check is performed here first so the response is a clear
-// error_code-style message (retention_shorten_forbidden) rather than a raw
-// CHECK-constraint error surfaced from the store as a generic 500; the store
-// layer (retention_no_shorten CHECK, migrations/017_retention.sql) still
-// enforces the same rule as defense in depth for callers that bypass this
-// handler.
-//
-// TODO(WS-10 error_code): once WS-10's error_code-based error envelope
-// lands, replace the "retention_shorten_forbidden: " message prefix with a
-// structured error_code field.
+// handleUpdateRetentionPolicy updates a deployment-controlled retention
+// period. Zero and negative periods are rejected to prevent a bad setting
+// from making all records immediately eligible for purge.
 func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Request) {
 	if s.retention == nil {
 		writeError(w, http.StatusServiceUnavailable, "retention policy management not configured")
@@ -53,6 +47,10 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 	var req updateRetentionPolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.RetentionDays <= 0 {
+		writeError(w, http.StatusBadRequest, (&domain.ErrInvalidRetentionDays{Days: req.RetentionDays}).Error())
 		return
 	}
 
@@ -76,6 +74,24 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, shorten.Error())
 		return
 	}
+	if s.audit == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeInternal, "audit repository not configured")
+		return
+	}
+	if err := s.audit.Create(r.Context(), &domain.AuditEntry{
+		UserID:       resolveAuditUserID(r),
+		Action:       "retention_policy_update_started",
+		ResourceType: "retention_policy",
+		ResourceID:   category,
+		Details: map[string]string{
+			"previous_retention_days":  strconv.Itoa(existing.RetentionDays),
+			"requested_retention_days": strconv.Itoa(req.RetentionDays),
+		},
+		CreatedAt: time.Now(),
+	}); err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
 
 	updated, err := s.retention.Update(r.Context(), category, req.RetentionDays, resolveAuditUserID(r))
 	if err != nil {
@@ -90,6 +106,22 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	entry := &domain.AuditEntry{
+		UserID:       resolveAuditUserID(r),
+		Action:       "update_retention_policy",
+		ResourceType: "retention_policy",
+		ResourceID:   category,
+		Details: map[string]string{
+			"previous_retention_days": strconv.Itoa(existing.RetentionDays),
+			"retention_days":          strconv.Itoa(updated.RetentionDays),
+		},
+		CreatedAt: time.Now(),
+	}
+	if err := s.audit.Create(r.Context(), entry); err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

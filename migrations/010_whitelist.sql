@@ -9,7 +9,7 @@
 
 CREATE TABLE IF NOT EXISTS whitelist_entries (
     id                 TEXT PRIMARY KEY,
-    customer_id        TEXT NOT NULL REFERENCES customers(id),
+    customer_id        UUID NOT NULL REFERENCES customers(id),
     status             TEXT NOT NULL DEFAULT 'pending_approval'
                         CHECK (status IN ('pending_approval', 'active', 'expired', 'revoked')),
     reason             TEXT NOT NULL,

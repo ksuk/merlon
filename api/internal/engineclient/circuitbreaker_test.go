@@ -9,7 +9,7 @@ import (
 
 // newTestCircuitBreaker builds a CircuitBreaker with short, deterministic
 // durations and an injectable clock so tests don't need to sleep for the
-// real 3s timeout / 30s open window (overview.md §4.4 Rust engine row).
+// real 3s timeout / 30s open window (the operational design §4.4 Rust engine row).
 func newTestCircuitBreaker(clock *fakeClock) *CircuitBreaker {
 	return newCircuitBreaker(circuitBreakerConfig{
 		timeout:      20 * time.Millisecond,

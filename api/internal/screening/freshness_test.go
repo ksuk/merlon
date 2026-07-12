@@ -6,7 +6,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 func TestComputeListFreshness_ReportsDaysSinceLastSuccess(t *testing.T) {
@@ -39,7 +39,7 @@ func TestComputeListFreshness_TriggersOperationalAlertAt3Days(t *testing.T) {
 		t.Fatalf("StaleDays = %d, want >= %d", got[0].StaleDays, staleFailureThreshold)
 	}
 	if !got[0].NeedsOperationalAlert {
-		t.Error("NeedsOperationalAlert = false, want true at the 3-day threshold (screening.md default)")
+		t.Error("NeedsOperationalAlert = false, want true at the 3-day threshold (the screening workflow default)")
 	}
 }
 

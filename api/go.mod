@@ -1,4 +1,4 @@
-module github.com/merlon-aml/merlon/api
+module github.com/ksuk/merlon/api
 
 go 1.25.0
 

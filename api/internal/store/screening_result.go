@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // PgScreeningResultRepo implements domain.ScreeningResultRepository against
@@ -44,7 +44,7 @@ func scanScreeningResult(row pgx.Row) (*domain.ScreeningResultRecord, error) {
 
 func (r *PgScreeningResultRepo) Get(ctx context.Context, id string) (*domain.ScreeningResultRecord, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT `+screeningResultColumns+` FROM screening_results WHERE id = $1`,
+		`SELECT `+screeningResultColumns+` FROM screening_results WHERE id = $1 AND purge_marked_at IS NULL`,
 		id,
 	)
 	sr, err := scanScreeningResult(row)
@@ -103,25 +103,25 @@ func (r *PgScreeningResultRepo) listScreeningResults(ctx context.Context, query 
 
 func (r *PgScreeningResultRepo) ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]domain.ScreeningResultRecord, error) {
 	return r.listScreeningResults(ctx,
-		`SELECT `+screeningResultColumns+` FROM screening_results WHERE customer_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+		`SELECT `+screeningResultColumns+` FROM screening_results WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		customerID, limit, offset,
 	)
 }
 
 func (r *PgScreeningResultRepo) ListByStatus(ctx context.Context, status domain.ScreeningResultStatus, limit, offset int) ([]domain.ScreeningResultRecord, error) {
 	return r.listScreeningResults(ctx,
-		`SELECT `+screeningResultColumns+` FROM screening_results WHERE status = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+		`SELECT `+screeningResultColumns+` FROM screening_results WHERE status = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		status, limit, offset,
 	)
 }
 
 // ListPastFalsePositives lets a reviewer see prior False Positive
-// determinations against the same list entry (screening.md "同一リストエントリへの
+// determinations against the same list entry (the screening workflow "同一リストエントリへの
 // 再ヒット時に過去の False Positive 判定を参照可能とする"), regardless of which
 // customer triggered the earlier hit.
 func (r *PgScreeningResultRepo) ListPastFalsePositives(ctx context.Context, entryID string) ([]domain.ScreeningResultRecord, error) {
 	return r.listScreeningResults(ctx,
-		`SELECT `+screeningResultColumns+` FROM screening_results WHERE entry_id = $1 AND status = $2 ORDER BY created_at DESC, id DESC`,
+		`SELECT `+screeningResultColumns+` FROM screening_results WHERE entry_id = $1 AND status = $2 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC`,
 		entryID, domain.ScreeningResultStatusFalsePositive,
 	)
 }

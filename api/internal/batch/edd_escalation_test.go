@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 // fakeWebhookRecorder records every event dispatched through a
@@ -55,7 +55,7 @@ func seedHighTierCustomerWithEDD(t *testing.T, customers domain.CustomerReposito
 }
 
 // TestRunEDDEscalationJob_Stage1At30Days_ResendsReminder verifies
-// case-management.md's stage 1: 30 days after the EDD requirement began, the
+// the case-management workflow's stage 1: 30 days after the EDD requirement began, the
 // edd_required webhook is re-sent (and no case is created for a mere
 // reminder).
 func TestRunEDDEscalationJob_Stage1At30Days_ResendsReminder(t *testing.T) {
@@ -197,7 +197,7 @@ func TestRunEDDEscalationJob_Stage3At90Days_RecommendsDeclineAndEscalatesToCriti
 }
 
 // TestRunEDDEscalationJob_DoesNotChangeCustomerStatus verifies
-// case-management.md: "本システムは各段階の推奨通知を発行するのみであり、
+// the case-management workflow: "本システムは各段階の推奨通知を発行するのみであり、
 // customers.status の変更は基幹からの明示的なステータス変更通知を受けて
 // 反映する" — this job must never mutate the customer's core attributes
 // (risk tier, risk score, type, country), only its own EDD tracking columns.

@@ -1,4 +1,4 @@
-//! `/metrics` HTTP endpoint (Task 8, OPS-003, overview.md §4.4), exposed on
+//! `/metrics` HTTP endpoint (Task 8, OPS-003, the operational design §4.4), exposed on
 //! a separate port/process from the gRPC server so Prometheus scraping
 //! never contends with the gRPC transport. Serves whatever is currently
 //! registered in the process-wide `prometheus` default registry, which

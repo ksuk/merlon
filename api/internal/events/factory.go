@@ -7,7 +7,7 @@ import (
 )
 
 // Config selects and configures the Bus implementation via the EVENT_BUS
-// environment variable (03_implementation-plan.md design decision).
+// environment variable (the implementation plan design decision).
 type Config struct {
 	// Driver is "pg_notify" (default) or "nats".
 	Driver string

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 // metricsMiddleware records merlon_api_request_duration_seconds (OPS-003,
-// overview.md §4.4) for every request. The path label uses the matched
+// the operational design §4.4) for every request. The path label uses the matched
 // ServeMux pattern (e.g. "/api/v1/alerts/{id}") rather than the literal
 // request path, so real ID values never appear in a label and cardinality
 // stays bounded by the number of registered routes.

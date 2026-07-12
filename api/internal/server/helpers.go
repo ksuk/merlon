@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 )
 
 type errorResponse struct {
@@ -15,7 +15,7 @@ type errorResponse struct {
 	Code  apierr.Code `json:"error_code,omitempty"`
 }
 
-// deprecatedOffsetSunsetWindow is the minimum migration period api.md §1.2
+// deprecatedOffsetSunsetWindow is the minimum migration period the HTTP API contract §1.2
 // requires between deprecating a parameter and removing it.
 const deprecatedOffsetSunsetWindow = 6 * 30 * 24 * time.Hour
 
@@ -37,7 +37,7 @@ func writeErrorCode(w http.ResponseWriter, status int, code apierr.Code, msg str
 }
 
 // paginatedResponse is the additive {"data": [...], "pagination": {...}}
-// envelope api.md §1.1 specifies for list endpoints.
+// envelope the HTTP API contract §1.1 specifies for list endpoints.
 type paginatedResponse[T any] struct {
 	Data       []T            `json:"data"`
 	Pagination PaginationMeta `json:"pagination"`
@@ -51,7 +51,7 @@ func writePaginatedJSON[T any](w http.ResponseWriter, status int, data []T, meta
 }
 
 // setOffsetDeprecationHeaders marks the legacy offset/limit pagination
-// parameters as deprecated per api.md §1.2 (Deprecation header + Sunset date
+// parameters as deprecated per the HTTP API contract §1.2 (Deprecation header + Sunset date
 // at least 6 months out).
 func setOffsetDeprecationHeaders(w http.ResponseWriter) {
 	w.Header().Set("Deprecation", "true")

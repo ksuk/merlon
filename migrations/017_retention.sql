@@ -1,4 +1,4 @@
--- Data retention policy (audit.md RET-001/RET-002/RET-003, §6 保持期間表).
+-- Data retention policy (the audit design RET-001/RET-002/RET-003, §6 保持期間表).
 -- Statutory retention data categories (customer/transaction/alert-case/CDD
 -- score history) may only be extended, never shortened, hence
 -- min_retention_days is set equal to the initial retention_days and enforced
@@ -24,13 +24,13 @@ INSERT INTO retention_policies (data_category, retention_days, min_retention_day
     ('cdd_score_history', 2555, 2555),
     ('audit_log', 3650, NULL);
 
--- APPI anonymization (RET-004, data-model.md §3.7): anonymized_at marks a
+-- APPI anonymization (RET-004, the data model §3.7): anonymized_at marks a
 -- customer whose direct-PII attributes fields have been replaced after the
 -- statutory retention period elapsed. NULL means not anonymized.
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
 
--- Rule effectiveness review tracking (audit.md §8): last time a scenario's
+-- Rule effectiveness review tracking (the audit design §8): last time a scenario's
 -- backtest/detection-analytics review was recorded as completed. NULL means
--- never reviewed, which the dashboard (overview.md §3.3) flags once the
+-- never reviewed, which the dashboard (the operational design §3.3) flags once the
 -- configured review interval (default 1 year) has elapsed.
 ALTER TABLE rule_definitions ADD COLUMN IF NOT EXISTS last_effectiveness_review_at TIMESTAMPTZ;

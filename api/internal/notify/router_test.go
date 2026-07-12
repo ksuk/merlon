@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func defaultTestRules() []RoutingRule {

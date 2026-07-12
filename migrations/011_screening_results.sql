@@ -1,8 +1,8 @@
--- WS-7: screening_results persistence (screening.md §7 data model /
+-- WS-7: screening_results persistence (the screening workflow §7 data model /
 -- §スクリーニングヒット後の調査ワークフロー). Additive only.
 CREATE TABLE IF NOT EXISTS screening_results (
     id                    TEXT PRIMARY KEY,
-    customer_id           TEXT NOT NULL REFERENCES customers(id),
+    customer_id           UUID NOT NULL REFERENCES customers(id),
     list_id               TEXT NOT NULL,
     list_type             TEXT NOT NULL,
     entry_id              TEXT NOT NULL,

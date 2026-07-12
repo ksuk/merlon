@@ -11,48 +11,59 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/auth"
-	"github.com/merlon-aml/merlon/api/internal/batch"
-	"github.com/merlon-aml/merlon/api/internal/config"
-	"github.com/merlon-aml/merlon/api/internal/crypto"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/engineclient"
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/events/handlers"
-	_ "github.com/merlon-aml/merlon/api/internal/events/nats"
-	_ "github.com/merlon-aml/merlon/api/internal/events/pgnotify"
-	"github.com/merlon-aml/merlon/api/internal/logging"
-	"github.com/merlon-aml/merlon/api/internal/notify"
-	"github.com/merlon-aml/merlon/api/internal/screening"
-	"github.com/merlon-aml/merlon/api/internal/seed"
-	"github.com/merlon-aml/merlon/api/internal/server"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/batch"
+	"github.com/ksuk/merlon/api/internal/config"
+	"github.com/ksuk/merlon/api/internal/crypto"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/engineclient"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events/handlers"
+	_ "github.com/ksuk/merlon/api/internal/events/nats"
+	_ "github.com/ksuk/merlon/api/internal/events/pgnotify"
+	"github.com/ksuk/merlon/api/internal/logging"
+	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/retention"
+	"github.com/ksuk/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/seed"
+	"github.com/ksuk/merlon/api/internal/server"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 // whitelistExpiryCheckInterval governs how often the ticker checks for
 // overdue/soon-to-expire whitelist entries (whitelist.md §2, WL-006). The
 // job itself (batch.RunWhitelistExpiryJob) is idempotent, so an hourly
 // cadence is safe regardless of exact expiry timing.
+var version = "dev"
+
 const whitelistExpiryCheckInterval = time.Hour
 
 // webhookRetryCheckInterval governs how often the retry worker polls for
-// deliveries whose next_attempt_at is due (api.md §3.1). 30s matches the
+// deliveries whose next_attempt_at is due (the HTTP API contract §3.1). 30s matches the
 // shortest possible backoff (attempt 1) so a due retry isn't delayed further
 // than necessary.
 const webhookRetryCheckInterval = 30 * time.Second
 
 // eddEscalationCheckInterval governs how often RunEDDEscalationJob runs
-// (case-management.md §EDD未実施継続時の段階的措置). Its finest granularity
+// (the case-management workflow §EDD未実施継続時の段階的措置). Its finest granularity
 // is one calendar day (stage 1 dedup), so hourly is more than sufficient and
 // harmless since the job is idempotent.
 const eddEscalationCheckInterval = time.Hour
 
+// retentionPurgeSchedule is deliberately separate from transaction
+// monitoring so that a retention pass is observable and operationally
+// controllable as its own daily job. Concrete purge targets are registered
+// only after their logical-delete lifecycle and referential constraints have
+// been migrated.
+const retentionPurgeSchedule = "03:00"
+
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
-// imports and screens against (screening.md §リスト自動取り込み table).
+// imports and screens against (the screening workflow §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
 
 func main() {
+	server.Version = version
 	slog.SetDefault(logging.NewLogger(os.Stdout))
 
 	cfg := config.Load()
@@ -96,7 +107,7 @@ func main() {
 	// ring leaves customers.attributes' direct PII fields in plaintext --
 	// acceptable for local/dev use but not production.
 	var encryptor *crypto.Encryptor
-	if os.Getenv("MERLON_ENCRYPTION_KEY_RING") != "" {
+	if cfg.EncryptionKeyRing != "" {
 		keyRing, err := crypto.NewKeyRingFromEnv("MERLON_ENCRYPTION_KEY_RING")
 		if err != nil {
 			slog.Error("encryption key ring", "error", err)
@@ -109,7 +120,7 @@ func main() {
 	}
 
 	var pool *pgxpool.Pool
-	if os.Getenv("MERLON_DATABASE_URL") != "" {
+	if cfg.DatabaseURL != "" {
 		var err error
 		pool, err = pgxpool.New(context.Background(), cfg.DatabaseURL)
 		if err != nil {
@@ -198,6 +209,9 @@ func main() {
 
 	if cfg.EngineAddr != "" {
 		var engineOpts []engine.ClientOption
+		if cfg.Env == "production" {
+			engineOpts = append(engineOpts, engine.RequireTLS())
+		}
 		if cfg.EngineTLSCert != "" {
 			engineOpts = append(engineOpts, engine.WithTLS(cfg.EngineTLSCert, cfg.EngineTLSServerName))
 		}
@@ -207,7 +221,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer client.Close()
-		// Wrap in a circuit breaker (overview.md §4.4: 3s timeout, 2 retries,
+		// Wrap in a circuit breaker (the operational design §4.4: 3s timeout, 2 retries,
 		// 30s open, half-open allows 1 request) so a stalled engine trips
 		// instead of leaving every caller blocked on a hung gRPC call.
 		cbClient := engineclient.Wrap(client)
@@ -222,7 +236,7 @@ func main() {
 		slog.Warn("MERLON_ENGINE_ADDR not set, engine endpoints disabled")
 	}
 
-	if os.Getenv("MERLON_SEED") == "true" {
+	if cfg.Seed {
 		seed.Run(context.Background(), seed.Repos{
 			Customers:    deps.Customers,
 			Transactions: deps.Transactions,
@@ -316,6 +330,38 @@ func main() {
 		slog.Info("EDD escalation job enabled", "stage2_days", cfg.EDDStage2Days, "stage3_days", cfg.EDDStage3Days)
 	}
 
+	if deps.Retention != nil && deps.Audit != nil {
+		targets := map[string]retention.PurgeFunc{}
+		if pool != nil {
+			purger := retention.NewPostgresPurger(pool)
+			targets = map[string]retention.PurgeFunc{
+				"customer_data":     purger.CustomerData,
+				"transaction_data":  purger.Transactions,
+				"alert_case_data":   purger.AlertCaseData,
+				"cdd_score_history": purger.ScoreHistory,
+				"audit_log":         purger.AuditLogs,
+			}
+		}
+		purgeJob := &retention.PurgeJob{
+			Retention: deps.Retention,
+			Audit:     deps.Audit,
+			Targets:   targets,
+		}
+		purgeScheduler := batch.NewScheduler(retentionPurgeSchedule, func(ctx context.Context, _ string) error {
+			results, err := purgeJob.Run(ctx, time.Now().UTC())
+			if err != nil {
+				return err
+			}
+			for _, result := range results {
+				slog.Info("retention purge completed", "category", result.Category,
+					"logically_deleted", result.LogicallyDeleted, "physically_deleted", result.PhysicallyDeleted)
+			}
+			return nil
+		})
+		go purgeScheduler.Start(jobsCtx)
+		slog.Info("retention purge scheduler started", "schedule", retentionPurgeSchedule, "targets", len(targets))
+	}
+
 	if cfg.UIDir != "" {
 		srv.SetUIDir(cfg.UIDir)
 		slog.Info("serving UI", "dir", cfg.UIDir)
@@ -376,7 +422,7 @@ func main() {
 		}
 
 		// Resume a run left behind by a killed process immediately, rather
-		// than waiting for the next scheduled time (overview.md §4.4「再起動時
+		// than waiting for the next scheduled time (the operational design §4.4「再起動時
 		// は未処理分のみを再開」).
 		if existing, err := batchRuns.GetLatestRunning(tmBatchCtx, batch.TMBatchEvaluationJobType); err == nil && existing != nil {
 			slog.Info("resuming interrupted TM batch evaluation run", "batch_run_id", existing.ID)

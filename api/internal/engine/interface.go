@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type ScoringEngine interface {
@@ -13,7 +13,7 @@ type ScoringEngine interface {
 type MonitoringEngine interface {
 	// EvaluateTransactions runs the realtime evaluation pass (mode_filter
 	// unset on the wire, which the engine treats as REALTIME;
-	// transaction-monitoring.md「評価モード」).
+	// the transaction-monitoring design「評価モード」).
 	EvaluateTransactions(
 		ctx context.Context,
 		customerID string,

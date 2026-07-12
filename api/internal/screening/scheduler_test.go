@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func riskTier(t domain.RiskTier) *domain.RiskTier { return &t }
@@ -311,7 +311,7 @@ func TestRunRescreeningBatch_PriorityOrderHighMediumLow(t *testing.T) {
 }
 
 // TestDormantCustomerContinuesScreeningSkipsTMWithoutTransaction verifies the
-// screening half of data-model.md §1.1.2's per-status table: closed
+// screening half of the data model §1.1.2's per-status table: closed
 // customers stop periodic rescreening entirely, while dormant customers
 // continue to be screened (undetected sanctions listing during a dormant
 // period is exactly what this cadence exists to catch). The TM half — that

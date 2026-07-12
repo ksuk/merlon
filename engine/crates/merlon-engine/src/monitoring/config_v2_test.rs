@@ -75,7 +75,7 @@ severity: CRITICAL
 
 #[test]
 fn test_load_v2_scenario_evaluation_mode_defaults_to_batch() {
-    // rule-schema.md §1.2: evaluation_mode defaults to "batch" for v2
+    // the rule schema §1.2: evaluation_mode defaults to "batch" for v2
     // (unlike v1, which defaults to "both" for backward compatibility).
     let yaml = r#"
 schema_version: "2.0"
@@ -139,7 +139,7 @@ severity: LOW
 }
 
 // WS-5 Task1: by_customer_type -> by_risk_tier resolution against the
-// canonical structuring example (transaction-monitoring.md TM-004a).
+// canonical structuring example (the transaction-monitoring design TM-004a).
 
 #[test]
 fn test_resolve_threshold_individual_high_tier() {

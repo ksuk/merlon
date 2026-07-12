@@ -13,7 +13,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/merlon-aml/merlon/api/internal/server"
+	"github.com/ksuk/merlon/api/internal/server"
 )
 
 func main() {

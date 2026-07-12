@@ -3,7 +3,7 @@ package domain
 import "testing"
 
 // TestValidCaseStatusTransition_AllowsSpecTransitions verifies every edge in
-// case-management.md's status transition diagram (NEW -> INVESTIGATING ->
+// the case-management workflow's status transition diagram (NEW -> INVESTIGATING ->
 // ESCALATED/CLOSED/STR_FILED, with ESCALATED->INVESTIGATING and
 // CLOSED->REOPENED->INVESTIGATING as the only backward edges).
 func TestValidCaseStatusTransition_AllowsSpecTransitions(t *testing.T) {
@@ -33,7 +33,7 @@ func TestValidCaseStatusTransition_AllowsSpecTransitions(t *testing.T) {
 // terminal states cannot transition further and that skip-level jumps are
 // rejected. str_filed is terminal for the existing case; a new alert on the
 // same customer becomes a separate case with a reference link instead
-// (case-management.md "STR_FILED は終端状態").
+// (the case-management workflow "STR_FILED は終端状態").
 func TestValidCaseStatusTransition_RejectsInvalidTransitions(t *testing.T) {
 	tests := []struct {
 		name string

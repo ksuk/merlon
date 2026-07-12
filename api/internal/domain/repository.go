@@ -23,12 +23,12 @@ type CustomerRepository interface {
 	SaveScoreRecord(ctx context.Context, r *ScoreRecord) error
 	ListScoreHistory(ctx context.Context, customerID string, limit int) ([]ScoreRecord, error)
 	// ListEDDPending returns High-tier customers with an open EDD requirement
-	// (edd_requested_at set), for RunEDDEscalationJob (case-management.md §EDD
+	// (edd_requested_at set), for RunEDDEscalationJob (the case-management workflow §EDD
 	// 未実施継続時の段階的措置). The job itself computes elapsed days per
 	// customer and decides which stage (if any) applies.
 	ListEDDPending(ctx context.Context) ([]Customer, error)
 	// UpdateStatus reflects a customer_status_changed notification from the
-	// core system (data-model.md §1.1.2). This system does not judge
+	// core system (the data model §1.1.2). This system does not judge
 	// transition validity; it records whatever status it is told (Adapter
 	// Isolation). reason is stored by the caller for the audit log entry,
 	// not persisted on the customer row itself.
@@ -43,7 +43,7 @@ type TransactionRepository interface {
 }
 
 // AlertBulkFilter narrows ListByFilter's results for bulk alert operations
-// (case-management.md §アラートの一括処理: "フィルタ条件（シナリオID、期間、
+// (the case-management workflow §アラートの一括処理: "フィルタ条件（シナリオID、期間、
 // severity）"). Zero-value fields are wildcards (no restriction on that axis).
 type AlertBulkFilter struct {
 	ScenarioID string
@@ -62,12 +62,12 @@ type AlertRepository interface {
 	UpdateStatus(ctx context.Context, id string, status AlertStatus, resolvedBy string) error
 	// UpdateStatusIfUnmodified applies the same update as UpdateStatus, but
 	// only if the alert's stored updated_at still equals expectedUpdatedAt
-	// (optimistic locking, data-model.md §3.9). Returns *ErrConflict on
+	// (optimistic locking, the data model §3.9). Returns *ErrConflict on
 	// mismatch.
 	UpdateStatusIfUnmodified(ctx context.Context, id string, status AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error
 	// CreateIfNotDuplicate inserts a unless another alert already exists for
 	// the same (customer_id, scenario_id, aggregation_window_start) tuple
-	// (transaction-monitoring.md「バッチ/リアルタイム評価の重複アラート防止」).
+	// (the transaction-monitoring design「バッチ/リアルタイム評価の重複アラート防止」).
 	// A nil AggregationWindowStart is exempt from the constraint (scenarios
 	// with no aggregation window), so it always creates. On conflict,
 	// created=false and existing holds the pre-existing alert; on success,
@@ -79,7 +79,7 @@ type AlertRepository interface {
 	AnnotateBatchReviewed(ctx context.Context, alertID string, batchRunID string) error
 	// ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7).
 	ListByFilter(ctx context.Context, f AlertBulkFilter) ([]Alert, error)
-	// EscalateSeverity raises a single alert's severity (data-model.md
+	// EscalateSeverity raises a single alert's severity (the data model
 	// §1.1.2: customer death -> frozen escalates all of that customer's
 	// alerts to HIGH), independent of its status.
 	EscalateSeverity(ctx context.Context, id string, severity AlertSeverity) error

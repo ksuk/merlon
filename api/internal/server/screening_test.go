@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/screening"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func testServerWithScreeningResults() *Server {
@@ -184,7 +184,7 @@ func TestHandleUpdateScreeningResult_TruePositiveCreatesCriticalCase(t *testing.
 		t.Fatalf("cases = %+v, want exactly 1 auto-created case", cases)
 	}
 	// TODO(WS-7): domain.CasePriority has no CRITICAL level yet
-	// (screening.md wants severity = CRITICAL); High is the closest
+	// (the screening workflow wants severity = CRITICAL); High is the closest
 	// available priority until CasePriority is extended.
 	if cases[0].Priority != domain.CasePriorityHigh {
 		t.Errorf("case priority = %q, want %q (highest available pending CRITICAL support)", cases[0].Priority, domain.CasePriorityHigh)

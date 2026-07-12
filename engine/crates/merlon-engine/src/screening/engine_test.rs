@@ -137,7 +137,7 @@ fn test_multiple_matches_sorted() {
 
 // PEP-RCA (family/close-associate) entries must pass through list_type
 // unchanged: RCA relationship/name-matching logic is the provider's
-// responsibility, not this engine's (screening.md "RCA 自体の名寄せ・関係性
+// responsibility, not this engine's (the screening workflow "RCA 自体の名寄せ・関係性
 // 判定ロジック...は本システムでは実装しない").
 const PEP_RCA_LIST_YAML: &str = r#"
 schema_version: "1.0"

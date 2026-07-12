@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
 // maxPendingRetries bounds how many times RunOnce re-attempts a PENDING_REVIEW
 // record before giving up and marking it FAILED, so a permanently-broken
-// customer/transaction record cannot retry forever (overview.md §4.4 does not
+// customer/transaction record cannot retry forever (the operational design §4.4 does not
 // mandate a specific count for this application-level retry, unlike the
 // circuit breaker's timeout/retry/open-duration values).
 const maxPendingRetries = 5
@@ -22,7 +22,7 @@ const maxPendingRetries = 5
 const defaultPollInterval = 30 * time.Second
 
 // RecoveryJob re-evaluates transactions queued as PENDING_REVIEW (OPS-005,
-// overview.md §4.4 Fail-Alert) once the monitoring engine becomes reachable
+// the operational design §4.4 Fail-Alert) once the monitoring engine becomes reachable
 // again, so detection resumes automatically instead of requiring manual
 // intervention.
 type RecoveryJob struct {

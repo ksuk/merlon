@@ -1,4 +1,4 @@
-# tm_scenario_v2 (rule-schema.md §1). WS-5 Task8: outbound transfer to a
+# tm_scenario_v2 (the rule schema §1). WS-5 Task8: outbound transfer to a
 # high-risk country, above a threshold amount. high_risk_countries is a
 # scenario-local parameter for this WS; WS-2's independent
 # country_risk_table content can replace it later without changing the

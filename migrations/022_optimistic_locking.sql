@@ -1,4 +1,4 @@
--- WS-11 Task 8: optimistic locking (data-model.md §3.9).
+-- WS-11 Task 8: optimistic locking (the data model §3.9).
 --
 -- cases.updated_at (migrations/004_cases.sql) and alerts.updated_at
 -- (migrations/002_transactions_alerts.sql) already exist and already default

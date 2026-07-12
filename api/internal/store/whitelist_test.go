@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func newTestWhitelistEntry(id, customerID string, status domain.WhitelistEntryStatus, at time.Time) *domain.WhitelistEntry {

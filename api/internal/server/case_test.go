@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -194,7 +194,7 @@ func TestUpdateCase(t *testing.T) {
 	}
 }
 
-// TestCaseStatusChangeUpdatesGauge is Task 9 (overview.md §4.4 OPS-003):
+// TestCaseStatusChangeUpdatesGauge is Task 9 (the operational design §4.4 OPS-003):
 // merlon_cases_open must track a case through its open sub-statuses and
 // stop counting it once closed, without ever counting "closed" itself
 // (closed cases are not "open" cases by definition).
@@ -630,7 +630,7 @@ func TestAddCaseNoteEmptyContent(t *testing.T) {
 
 // TestCaseUpdateSucceedsWithCurrentUpdatedAt verifies a PATCH that supplies
 // the case's current updated_at as expected_updated_at succeeds (WS-11 Task
-// 8, data-model.md §3.9 optimistic locking).
+// 8, the data model §3.9 optimistic locking).
 func TestCaseUpdateSucceedsWithCurrentUpdatedAt(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)
@@ -660,7 +660,7 @@ func TestCaseUpdateSucceedsWithCurrentUpdatedAt(t *testing.T) {
 // TestCaseUpdateConflictReturns409 verifies a PATCH that supplies a stale
 // expected_updated_at (i.e. another update happened after the client last
 // read the case) is rejected with 409 rather than silently overwriting the
-// intervening change (data-model.md §3.9 "後勝ちを許容せず409").
+// intervening change (the data model §3.9 "後勝ちを許容せず409").
 func TestCaseUpdateConflictReturns409(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)

@@ -21,19 +21,19 @@ type Transaction struct {
 	CounterpartyCountry string               `json:"counterparty_country,omitempty"`
 	Channel             string               `json:"channel,omitempty"`
 	// AccountID optionally links this transaction to a joint account
-	// (data-model.md §1.1.3, WS-11 Task 4). Nil preserves the pre-existing
+	// (the data model §1.1.3, WS-11 Task 4). Nil preserves the pre-existing
 	// single-customer-account model.
 	AccountID *string `json:"account_id,omitempty"`
 	// Counterparty holds travel-rule (originator/beneficiary) data for
-	// virtual-asset transfers (data-model.md §1.3.1, WS-11 Task 5). Nil for
+	// virtual-asset transfers (the data model §1.3.1, WS-11 Task 5). Nil for
 	// transactions with no travel-rule counterparty (e.g. domestic fiat).
 	Counterparty *Counterparty `json:"counterparty,omitempty"`
 	// Metadata carries optional out-of-band enrichment such as
-	// chain_analysis_result from an external vendor (data-model.md §1.3.1 —
+	// chain_analysis_result from an external vendor (the data model §1.3.1 —
 	// wallet sanctions screening itself is out of this system's scope; this
 	// field is only a receptacle for the vendor's result).
 	Metadata map[string]any `json:"metadata,omitempty"`
-	// IdempotencyKey mirrors the client's Idempotency-Key header (api.md
+	// IdempotencyKey mirrors the client's Idempotency-Key header (the HTTP API contract
 	// §4.1). Nil when the client omitted the header (optional, not
 	// required). A resend using an already-used key must be rejected with
 	// 409 rather than creating a second transaction, even if external_id
@@ -44,7 +44,7 @@ type Transaction struct {
 }
 
 // CounterpartyType classifies the counterparty side of a virtual-asset
-// transfer (data-model.md §1.3.1).
+// transfer (the data model §1.3.1).
 type CounterpartyType string
 
 const (
@@ -54,7 +54,7 @@ const (
 )
 
 // TravelRuleStatus records whether travel-rule originator/beneficiary
-// information is complete for a transfer (data-model.md §1.3.1).
+// information is complete for a transfer (the data model §1.3.1).
 // Incomplete does not block TM evaluation (Fail-Alert: prefer evaluating
 // with partial data over silently dropping the transaction).
 type TravelRuleStatus string

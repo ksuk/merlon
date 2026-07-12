@@ -1,4 +1,4 @@
--- WS-11 Task1: customers.status lifecycle (data-model.md §1.1, §1.1.2)
+-- WS-11 Task1: customers.status lifecycle (the data model §1.1, §1.1.2)
 
 CREATE TYPE customer_status AS ENUM ('active', 'dormant', 'frozen', 'closed');
 

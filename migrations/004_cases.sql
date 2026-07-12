@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS cases (
     id          TEXT PRIMARY KEY,
-    customer_id TEXT NOT NULL REFERENCES customers(id),
+    customer_id UUID NOT NULL REFERENCES customers(id),
     alert_ids   TEXT[] NOT NULL DEFAULT '{}',
     status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'investigating', 'escalated', 'closed')),
     priority    TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),

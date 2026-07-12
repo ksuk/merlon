@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func TestScheduler_DefaultRunTimeIs0200(t *testing.T) {
@@ -74,7 +74,7 @@ func TestScheduler_RunNowInvokesJobWithFreshRunID(t *testing.T) {
 // killed after processing only some customers: a batch_runs row is left
 // behind with status=running and a partial ProcessedCustomerIDs list.
 // Re-invoking the resumable job runner must skip those already recorded and
-// process only the rest (overview.md §4.4 バッチジョブ障害復旧).
+// process only the rest (the operational design §4.4 バッチジョブ障害復旧).
 func TestScheduler_KilledMidwayResumesUnprocessedOnly(t *testing.T) {
 	runs := store.NewMemoryBatchRunRepo()
 	ctx := context.Background()
@@ -156,7 +156,7 @@ func TestScheduler_ResumeOrCreateRunStartsFreshWhenNoneRunning(t *testing.T) {
 // SnapshotBefore excludes transactions ingested (CreatedAt) at or after the
 // batch start time, so transactions arriving mid-run are left for the next
 // batch instead of being evaluated twice or racing with the current run
-// (transaction-monitoring.md「バッチ実行中に到着した新規取引は次回バッチの対象とする」).
+// (the transaction-monitoring design「バッチ実行中に到着した新規取引は次回バッチの対象とする」).
 func TestScheduler_SnapshotIngestedAtBeforeBatchStart(t *testing.T) {
 	batchStart := time.Date(2026, 7, 5, 2, 0, 0, 0, time.UTC)
 

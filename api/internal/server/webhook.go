@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type webhookPayload struct {
@@ -55,14 +55,14 @@ func (s *Server) dispatchWebhook(ctx context.Context, event domain.WebhookEventT
 	}
 
 	// eventID is generated once per dispatched event and reused across every
-	// hook and every retry attempt (api.md §4.2 webhook output idempotency).
+	// hook and every retry attempt (the HTTP API contract §4.2 webhook output idempotency).
 	eventID := generateID()
 	for _, hook := range hooks {
 		go s.deliverWebhook(hook, event, eventID, body)
 	}
 }
 
-// webhookHeaders builds the headers api.md §3 requires on every delivery
+// webhookHeaders builds the headers the HTTP API contract §3 requires on every delivery
 // attempt: X-Merlon-Event-Id and X-Merlon-Timestamp stay identical across
 // retries (only the timestamp is refreshed to reflect the actual send time),
 // while X-Merlon-Signature is recomputed from the (unchanged) body each time.
@@ -99,7 +99,7 @@ func sendWebhookRequest(ctx context.Context, rawURL string, body []byte, headers
 // deliverWebhook makes the first delivery attempt (attempt_count=1) for
 // event/eventID against hook, and persists a WebhookDelivery recording the
 // result. On failure it schedules attempt 2 via NextAttemptAt so the retry
-// worker (processDueRetries) picks it up (api.md §3.1 exponential backoff).
+// worker (processDueRetries) picks it up (the HTTP API contract §3.1 exponential backoff).
 func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventType, eventID string, body []byte) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -5,7 +5,7 @@ use crate::monitoring::engine::{
 use crate::monitoring::scenarios::Scenario;
 
 /// Detects outbound transfers to a configured list of high-risk countries
-/// (rule-schema.md: this WS carries the list as a scenario parameter,
+/// (the rule schema: this WS carries the list as a scenario parameter,
 /// `high_risk_countries`; WS-2's independent `country_risk_table` content
 /// can replace it later without changing this evaluate logic). Unlike the
 /// aggregation scenarios, this is a per-transaction check: every qualifying

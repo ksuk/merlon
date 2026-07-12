@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func testServerWithAccounts() (*Server, *store.MemoryCustomerRepo) {
@@ -97,7 +97,7 @@ func TestAccountCreateJointWithMultipleCustomers(t *testing.T) {
 	}
 }
 
-// TestAccountScreeningAPIListsAllLinkedCustomers verifies data-model.md
+// TestAccountScreeningAPIListsAllLinkedCustomers verifies the data model
 // §1.1.3: every customer linked to a joint account can be enumerated
 // individually for screening, not just the account's representative holder.
 func TestAccountScreeningAPIListsAllLinkedCustomers(t *testing.T) {

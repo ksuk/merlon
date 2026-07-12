@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-// TriggerType is the reason a rescreening batch was started (screening.md
+// TriggerType is the reason a rescreening batch was started (the screening workflow
 // §CDDティア連動の再照合頻度: periodic schedule triggers plus four immediate
 // triggers).
 type TriggerType string
@@ -31,7 +31,7 @@ const (
 )
 
 // RescreeningIntervalDays returns the default periodic rescreening interval,
-// in days, for a CDD risk tier (screening.md §CDDティア連動の再照合頻度:
+// in days, for a CDD risk tier (the screening workflow §CDDティア連動の再照合頻度:
 // High=daily, Medium=weekly, Low=monthly).
 func RescreeningIntervalDays(tier domain.RiskTier) int {
 	switch tier {
@@ -71,7 +71,7 @@ func scheduledTierFor(trigger TriggerType) (domain.RiskTier, bool) {
 }
 
 // tierPriority orders customers High -> Medium -> Low -> (unscored) for
-// list-update rescreening (screening.md "リスト更新時の再照合は...High → Medium
+// list-update rescreening (the screening workflow "リスト更新時の再照合は...High → Medium
 // → Low の優先順で実行").
 func tierPriority(tier *domain.RiskTier) int {
 	if tier == nil {
@@ -104,7 +104,7 @@ type SchedulerDeps struct {
 	// TargetCustomerID restricts the batch to a single customer, used for
 	// the tier_promoted/customer_changed/account_opened/api_request
 	// immediate triggers, which concern one specific customer rather than
-	// the whole book (screening.md 即時再照合契機). Left empty for the
+	// the whole book (the screening workflow 即時再照合契機). Left empty for the
 	// batch triggers (scheduled_daily/weekly/monthly, list_updated).
 	TargetCustomerID string
 
@@ -151,7 +151,7 @@ type BatchResult struct {
 // (deps.TargetCustomerID, for the immediate triggers) or the customer book
 // as of the moment this function is called (for the periodic/list-update
 // triggers). The customer set is snapshotted once at the start and never
-// re-queried mid-batch (screening.md "対象顧客セットのスナップショット...
+// re-queried mid-batch (the screening workflow "対象顧客セットのスナップショット...
 // バッチ開始後に追加された新規顧客は...当該バッチの対象には含めない").
 func RunRescreeningBatch(ctx context.Context, deps SchedulerDeps, trigger TriggerType) (BatchResult, error) {
 	batchStart := deps.now()
@@ -183,13 +183,13 @@ func RunRescreeningBatch(ctx context.Context, deps SchedulerDeps, trigger Trigge
 // periodic-schedule trigger only includes customers at its designated tier
 // who are actually due (elapsed >= the tier's interval); list_updated
 // includes every customer regardless of tier or due-ness, ordered
-// High -> Medium -> Low (screening.md).
+// High -> Medium -> Low (the screening workflow).
 func selectCustomersForTrigger(ctx context.Context, deps SchedulerDeps, all []domain.Customer, trigger TriggerType) []domain.Customer {
 	tier, isScheduled := scheduledTierFor(trigger)
 
 	filtered := make([]domain.Customer, 0, len(all))
 	for _, c := range all {
-		// data-model.md §1.1.2: closed customers stop periodic rescreening;
+		// the data model §1.1.2: closed customers stop periodic rescreening;
 		// dormant continues (undetected sanctions listing during dormancy is
 		// exactly the risk this rescreening cadence exists to catch).
 		if c.EffectiveStatus() == domain.CustomerStatusClosed {
@@ -227,7 +227,7 @@ func isDueByLastScreening(ctx context.Context, deps SchedulerDeps, customerID st
 // screenOneForBatch screens a single customer, first checking whether an
 // immediate rescreen (e.g. a name change) already screened this customer
 // after batchStart; if so, the batch defers to it instead of duplicating
-// the work (screening.md "氏名変更との排他制御...判定は screening_results.screened_at
+// the work (the screening workflow "氏名変更との排他制御...判定は screening_results.screened_at
 // のタイムスタンプ比較で行う").
 func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Customer, batchStart time.Time) CustomerScreenOutcome {
 	if deps.Results != nil {
@@ -287,7 +287,7 @@ type runFunc func(ctx context.Context, deps SchedulerDeps, trigger TriggerType) 
 // runs at a time; a trigger that arrives while a batch is already running
 // is recorded as pending (collapsing any number of triggers that arrive
 // meanwhile into a single follow-up run) rather than starting a second,
-// concurrent batch (screening.md "実行中のバッチは中断せず完了まで継続する。新しい
+// concurrent batch (the screening workflow "実行中のバッチは中断せず完了まで継続する。新しい
 // 更新は完了後にキューイングされ、連続して実行する（多重実行はしない）").
 type Scheduler struct {
 	deps SchedulerDeps
@@ -347,12 +347,12 @@ func (s *Scheduler) runLoop(ctx context.Context, trigger TriggerType) {
 }
 
 // RunPeriodic triggers the tier-appropriate scheduled rescreening batch
-// (High=daily/Medium=weekly/Low=monthly, screening.md §CDDティア連動の再照合
+// (High=daily/Medium=weekly/Low=monthly, the screening workflow §CDDティア連動の再照合
 // 頻度) by polling every checkInterval for a UTC day/week/month boundary
 // crossing, until ctx is cancelled. Because Trigger already serializes
 // execution, a batch still running when a boundary is crossed is not
 // interrupted; the new trigger simply queues behind it
-// (screening.md バッチ実行中の排他制御).
+// (the screening workflow バッチ実行中の排他制御).
 func (s *Scheduler) RunPeriodic(ctx context.Context, checkInterval time.Duration) {
 	now := time.Now().UTC()
 	lastDay := now.YearDay()

@@ -46,12 +46,12 @@ export function AlertsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // 一括ケース統合（case-management.md §アラートの一括処理）: 選択済みアラート
+  // 一括ケース統合（the case-management workflow §アラートの一括処理）: 選択済みアラート
   // の ID をそのまま bulk-case へ渡す（既存ケースに追加、または新規ケースと
   // してまとめる）。
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  // 一括クローズ（case-management.md §アラートの一括処理）: bulk-close は
+  // 一括クローズ（the case-management workflow §アラートの一括処理）: bulk-close は
   // シナリオID・期間・severity の「フィルタ条件」でアラートを絞り込んで
   // CLOSED にする API であり、個別のアラートID指定ではない。そのため UI も
   // チェックボックス選択とは独立したフィルタ入力フォームとする。

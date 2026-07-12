@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func createTestCustomer(t *testing.T, s *Server) domain.Customer {
@@ -52,7 +52,7 @@ func TestCreateTransaction(t *testing.T) {
 func TestCreateTransactionMissingCustomer(t *testing.T) {
 	s := testServer()
 
-	body := `{"customer_id":"nonexistent","external_id":"TX002","amount":100,"direction":"inbound"}`
+	body := `{"customer_id":"nonexistent","external_id":"TX002","amount":100,"currency":"JPY","direction":"inbound"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -186,14 +186,14 @@ func TestCreateTransactionMissingDirection(t *testing.T) {
 }
 
 // TestCreateTransactionIdempotencyKeyConflict verifies the Idempotency-Key
-// header (api.md §4.1) rejects a resend with the same key, even with a
+// header (the HTTP API contract §4.1) rejects a resend with the same key, even with a
 // different external_id, as a 409 rather than silently creating a second
 // transaction.
 func TestCreateTransactionIdempotencyKeyConflict(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)
 
-	body1 := `{"customer_id":"` + cust.ID + `","external_id":"TX-IDEMP-1","amount":100,"direction":"inbound"}`
+	body1 := `{"customer_id":"` + cust.ID + `","external_id":"TX-IDEMP-1","amount":100,"currency":"JPY","direction":"inbound"}`
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body1))
 	req1.Header.Set("Idempotency-Key", "idem-key-1")
 	rec1 := httptest.NewRecorder()
@@ -202,7 +202,7 @@ func TestCreateTransactionIdempotencyKeyConflict(t *testing.T) {
 		t.Fatalf("first request: status = %d, want %d, body: %s", rec1.Code, http.StatusCreated, rec1.Body.String())
 	}
 
-	body2 := `{"customer_id":"` + cust.ID + `","external_id":"TX-IDEMP-2","amount":200,"direction":"inbound"}`
+	body2 := `{"customer_id":"` + cust.ID + `","external_id":"TX-IDEMP-2","amount":200,"currency":"JPY","direction":"inbound"}`
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body2))
 	req2.Header.Set("Idempotency-Key", "idem-key-1")
 	rec2 := httptest.NewRecorder()
@@ -218,7 +218,7 @@ func TestCreateTransactionWithoutIdempotencyKey(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)
 
-	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-NOIDEMP","amount":100,"direction":"inbound"}`
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-NOIDEMP","amount":100,"currency":"JPY","direction":"inbound"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -229,7 +229,7 @@ func TestCreateTransactionWithoutIdempotencyKey(t *testing.T) {
 
 // TestTransactionAccountIDOptional verifies the pre-existing
 // single-customer-account transaction model still works unchanged after
-// WS-11 Task 4 adds an optional account_id (data-model.md §1.1.3).
+// WS-11 Task 4 adds an optional account_id (the data model §1.1.3).
 func TestTransactionAccountIDOptional(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)
@@ -279,7 +279,7 @@ func TestTransactionWithAccountIDLinksToAccount(t *testing.T) {
 }
 
 // TestTransactionIncompleteTravelRuleDoesNotBlockTMEvaluation verifies
-// data-model.md §1.3.1 / Fail-Alert: an incomplete travel-rule record must
+// the data model §1.3.1 / Fail-Alert: an incomplete travel-rule record must
 // not block transaction creation. WS-4's PENDING_REVIEW queue integration
 // (routing incomplete-travel-rule transactions there for TM) is a separate
 // concern verified once that queue exists; this test only asserts creation

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func seedBatchCustomerAndTransaction(t *testing.T, customers domain.CustomerRepository, transactions domain.TransactionRepository, externalID string, txCreatedAt time.Time) (*domain.Customer, *domain.Transaction) {
@@ -94,7 +94,7 @@ func TestRunTMBatchEvaluation_EvaluatesAllCustomersAndCompletesRun(t *testing.T)
 // status=running with one customer already recorded as processed. Calling
 // RunTMBatchEvaluation again (as main.go does on restart) must resume that
 // same run, skip the already-processed customer, and only evaluate the rest
-// (overview.md §4.4 バッチジョブ障害復旧, acceptance criterion "バッチを途中kill→
+// (the operational design §4.4 バッチジョブ障害復旧, acceptance criterion "バッチを途中kill→
 // 再実行で未処理分のみ処理").
 func TestRunTMBatchEvaluation_ResumesAfterKillSkipsAlreadyProcessed(t *testing.T) {
 	ctx := context.Background()
@@ -210,7 +210,7 @@ func TestRunTMBatchEvaluation_ExcludesTransactionsIngestedDuringBatch(t *testing
 }
 
 // TestRunTMBatchEvaluation_SkipsClosedAndDormantCustomers verifies
-// data-model.md §1.1.2's per-status scheduled-TM-batch scope: closed
+// the data model §1.1.2's per-status scheduled-TM-batch scope: closed
 // customers stop TM evaluation entirely, and dormant customers are
 // evaluated only "取引発生時" (the realtime path, WS-11 Task 2's
 // handleBatchMonitor) rather than on this periodic 02:00 schedule — even

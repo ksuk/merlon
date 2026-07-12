@@ -1,5 +1,5 @@
 -- WS-5 Task 6: batch job run tracking for idempotent resume
--- (transaction-monitoring.md「バッチ評価のスケジューリング」, overview.md §4.4 バッチジョブ障害復旧)
+-- (the transaction-monitoring design「バッチ評価のスケジューリング」, the operational design §4.4 バッチジョブ障害復旧)
 
 CREATE TABLE batch_runs (
     id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),

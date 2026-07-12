@@ -1,6 +1,6 @@
 // Package screening implements the Go-side orchestration around the Rust
 // screening engine: external sanctions/PEP list ingestion, CDD-tier-driven
-// rescreening scheduling, and list freshness monitoring (screening.md).
+// rescreening scheduling, and list freshness monitoring (the screening workflow).
 //
 // All external-source-specific parsing (OFAC SDN XML, EU/MOF CSV, UN XML,
 // PEP provider JSON) is confined to this file (Adapter Isolation principle):
@@ -44,7 +44,7 @@ type RawListData struct {
 
 // ErrPEPNotConfigured is returned by PEPAdapter.FetchList when no PEP data
 // provider endpoint has been configured. RunImportJob treats this as a
-// skip-and-audit-log case, not a failure (screening.md "PEP リスト未設定の場合、
+// skip-and-audit-log case, not a failure (the screening workflow "PEP リスト未設定の場合、
 // PEP 照合はスキップされるが、その旨を監査ログに記録する").
 var ErrPEPNotConfigured = errors.New("PEP list provider not configured")
 
@@ -102,7 +102,7 @@ func (f *defaultHTTPFetcher) Fetch(ctx context.Context, url string) ([]byte, err
 // ListAdapter fetches and parses one external sanctions/PEP list source.
 // Concrete adapters (OFACAdapter, EUAdapter, UNAdapter, MOFAdapter,
 // PEPAdapter) encapsulate the format-specific parser for their source
-// (screening.md §リスト自動取り込み table); RunImportJob only depends on this
+// (the screening workflow §リスト自動取り込み table); RunImportJob only depends on this
 // interface.
 type ListAdapter interface {
 	FetchList(ctx context.Context) (*RawListData, error)
@@ -215,7 +215,7 @@ func parseEUCSV(listID string, body []byte) (*RawListData, error) {
 
 // MOFAdapter fetches the Japanese MOF/METI foreign exchange act sanctions
 // list (外国為替及び外国貿易法), published as CSV or HTML depending on the
-// operator's mirrored source (screening.md table). Format defaults to CSV.
+// operator's mirrored source (the screening workflow table). Format defaults to CSV.
 type MOFAdapter struct {
 	ListID  string
 	URL     string
@@ -419,7 +419,7 @@ func unEntryToRaw(e unListEntry, entryType string) RawListEntry {
 // family/close-associate) data provider feed (JSON, differential update).
 // PEP data is commercial-only; when URL is empty the provider has not been
 // contracted/configured and FetchList returns ErrPEPNotConfigured so the
-// import job can skip and audit-log it rather than fail (screening.md).
+// import job can skip and audit-log it rather than fail (the screening workflow).
 type PEPAdapter struct {
 	ListID   string
 	ListType string // "pep" (default) or "PEP-RCA"

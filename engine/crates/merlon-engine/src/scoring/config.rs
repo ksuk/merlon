@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -35,6 +36,8 @@ impl From<serde_yaml::Error> for ConfigError {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CddWeightConfig {
+    #[serde(skip)]
+    pub rule_set_sha256: String,
     pub schema_version: String,
     pub preset_id: String,
     pub name: String,
@@ -72,13 +75,20 @@ pub struct ThresholdRange {
 }
 
 impl CddWeightConfig {
+    pub fn rule_set_version_fingerprint(&self) -> i32 {
+        let bytes = hex_to_bytes(&self.rule_set_sha256);
+        let value = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) & 0x7fff_ffff;
+        value.max(1) as i32
+    }
+
     pub fn load(path: &str) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
         Self::from_yaml(&content)
     }
 
     pub fn from_yaml(yaml: &str) -> Result<Self, ConfigError> {
-        let config: CddWeightConfig = serde_yaml::from_str(yaml)?;
+        let mut config: CddWeightConfig = serde_yaml::from_str(yaml)?;
+        config.rule_set_sha256 = format!("{:x}", Sha256::digest(yaml.as_bytes()));
         config.validate()?;
         Ok(config)
     }
@@ -130,6 +140,14 @@ impl CddWeightConfig {
 
         Ok(())
     }
+}
+
+fn hex_to_bytes(hex: &str) -> [u8; 32] {
+    let mut bytes = [0_u8; 32];
+    for (index, chunk) in hex.as_bytes().chunks_exact(2).enumerate() {
+        bytes[index] = u8::from_str_radix(std::str::from_utf8(chunk).expect("SHA-256 is UTF-8"), 16).expect("SHA-256 is hex");
+    }
+    bytes
 }
 
 #[cfg(test)]

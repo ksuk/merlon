@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/events"
-	"github.com/merlon-aml/merlon/api/internal/events/nats"
-	"github.com/merlon-aml/merlon/api/internal/events/pgnotify"
-	"github.com/merlon-aml/merlon/api/internal/logging"
+	"github.com/ksuk/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events/nats"
+	"github.com/ksuk/merlon/api/internal/events/pgnotify"
+	"github.com/ksuk/merlon/api/internal/logging"
 )
 
 func withTestLogger(t *testing.T) *bytes.Buffer {
@@ -22,7 +22,7 @@ func withTestLogger(t *testing.T) *bytes.Buffer {
 }
 
 // TestNewBus_PgNotifyDefault verifies pg_notify is selected when EVENT_BUS
-// is unset (03_implementation-plan.md design decision: pg_notify default).
+// is unset (the implementation plan design decision: pg_notify default).
 func TestNewBus_PgNotifyDefault(t *testing.T) {
 	withTestLogger(t)
 
@@ -52,7 +52,7 @@ func TestNewBus_NatsSelection(t *testing.T) {
 // TestNewBus_HorizontalScaleWarning verifies that selecting pg_notify with
 // more than one API instance configured logs a warning, since pg_notify
 // does not fan out NOTIFYs across separate LISTEN connections on different
-// instances the way NATS would (overview.md §4.4 / 03_implementation-plan.md
+// instances the way NATS would (the operational design §4.4 / the implementation plan
 // horizontal-scale constraint).
 func TestNewBus_HorizontalScaleWarning(t *testing.T) {
 	buf := withTestLogger(t)

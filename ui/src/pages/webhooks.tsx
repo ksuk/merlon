@@ -47,7 +47,7 @@ export function WebhooksPage() {
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([])
   const [loadingDeliveries, setLoadingDeliveries] = useState(false)
 
-  // DLQ タブ（api.md §3.1「DLQ内イベントの再処理はUI上から実行可能」）。
+  // DLQ タブ（the HTTP API contract §3.1「DLQ内イベントの再処理はUI上から実行可能」）。
   const [tab, setTab] = useState<"webhooks" | "dlq">("webhooks")
   const [dlqEntries, setDlqEntries] = useState<WebhookDLQEntry[] | null>(null)
   const [loadingDlq, setLoadingDlq] = useState(false)

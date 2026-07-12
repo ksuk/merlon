@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type CreateAccountRequest struct {
@@ -124,7 +124,7 @@ func (s *Server) handleAddAccountCustomer(w http.ResponseWriter, r *http.Request
 }
 
 // handleListAccountCustomers returns every customer linked to the account
-// individually (data-model.md §1.1.3: each holder of a joint account is
+// individually (the data model §1.1.3: each holder of a joint account is
 // screened separately, not just the account's representative score/holder).
 func (s *Server) handleListAccountCustomers(w http.ResponseWriter, r *http.Request) {
 	accountID := r.PathValue("id")

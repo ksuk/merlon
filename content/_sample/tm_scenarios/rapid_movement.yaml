@@ -1,6 +1,6 @@
-# tm_scenario_v2 (rule-schema.md §1). Semantically equivalent to the v1
+# tm_scenario_v2 (the rule schema §1). Semantically equivalent to the v1
 # fixture at content/_sample/tm_scenarios_v1_compat/rapid_movement.yaml for
-# the inbound-threshold axis (rule-schema.md §3.1 migration item 2); v1's
+# the inbound-threshold axis (the rule schema §3.1 migration item 2); v1's
 # separate outbound_threshold/outbound_ratio_min parameters do not have a
 # per-risk-tier home in the v2 schema yet, so they are kept flat under
 # conditions.additional at their v1 MEDIUM-tier (baseline) values. Full

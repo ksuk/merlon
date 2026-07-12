@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func newAnonymizeFixtures(t *testing.T, lastTransactionAt time.Time) (domain.CustomerRepository, domain.TransactionRepository, domain.RetentionRepository, domain.AuditRepository, string) {
@@ -56,7 +56,7 @@ func newAnonymizeFixtures(t *testing.T, lastTransactionAt time.Time) (domain.Cus
 
 // TestAnonymizeRejectsWithinStatutoryPeriod verifies an APPI deletion
 // request for a customer whose last transaction is within the customer_data
-// statutory retention period (2555 days / 7 years, audit.md §6) is rejected
+// statutory retention period (2555 days / 7 years, the audit design §6) is rejected
 // (RET-004: 保存義務期間内のデータは削除対象外).
 func TestAnonymizeRejectsWithinStatutoryPeriod(t *testing.T) {
 	lastTransactionAt := time.Now().AddDate(0, 0, -100) // well within 7 years
@@ -86,7 +86,7 @@ func TestAnonymizeRejectsWithinStatutoryPeriod(t *testing.T) {
 
 // TestAnonymizeSucceedsAfterStatutoryPeriod verifies a customer whose last
 // transaction predates the statutory retention period can be anonymized:
-// direct-PII attributes fields (data-model.md §3.1) are replaced with a
+// direct-PII attributes fields (the data model §3.1) are replaced with a
 // fixed placeholder and anonymized_at is set.
 func TestAnonymizeSucceedsAfterStatutoryPeriod(t *testing.T) {
 	lastTransactionAt := time.Now().AddDate(0, 0, -3000) // more than 2555 days ago
@@ -117,14 +117,14 @@ func TestAnonymizeSucceedsAfterStatutoryPeriod(t *testing.T) {
 	if got.Attributes["email"] != anonymizedPlaceholder {
 		t.Errorf("attributes[email] = %q, want %q", got.Attributes["email"], anonymizedPlaceholder)
 	}
-	// occupation is 準PII (data-model.md §3.1), retained for statistical use.
+	// occupation is 準PII (the data model §3.1), retained for statistical use.
 	if got.Attributes["occupation"] != "engineer" {
 		t.Errorf("attributes[occupation] should be retained, got %q", got.Attributes["occupation"])
 	}
 }
 
 // TestAnonymizeRecordsAuditLog verifies the anonymization operation itself
-// is recorded in the audit log (data-model.md §3.7: APPI 削除要求自体も監査
+// is recorded in the audit log (the data model §3.7: APPI 削除要求自体も監査
 // ログに記録する).
 func TestAnonymizeRecordsAuditLog(t *testing.T) {
 	lastTransactionAt := time.Now().AddDate(0, 0, -3000)

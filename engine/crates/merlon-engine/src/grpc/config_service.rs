@@ -2,6 +2,7 @@ use tonic::{Request, Response, Status};
 
 use crate::proto::merlon::v1::{
     config_service_server::ConfigService,
+    GetRuntimeConfigDigestsRequest, GetRuntimeConfigDigestsResponse, RuntimeConfigDigest,
     ValidateConfigRequest, ValidateConfigResponse, ValidationError,
 };
 use crate::scoring::config::CddWeightConfig;
@@ -9,7 +10,9 @@ use crate::scoring::country_risk::CountryRiskTable;
 use crate::monitoring::config::ScenarioConfig;
 use crate::screening::config::ScreeningListConfig;
 
-pub struct ConfigServiceImpl;
+pub struct ConfigServiceImpl {
+    runtime_config_digests: Vec<(String, String)>,
+}
 
 impl Default for ConfigServiceImpl {
     fn default() -> Self {
@@ -18,13 +21,28 @@ impl Default for ConfigServiceImpl {
 }
 
 impl ConfigServiceImpl {
-    pub fn new() -> Self {
-        Self
+
+    pub fn with_runtime_config_digests(digests: Vec<(String, String)>) -> Self {
+        Self { runtime_config_digests: digests }
     }
+    pub fn new() -> Self {
+        Self { runtime_config_digests: Vec::new() }    }
 }
 
 #[tonic::async_trait]
 impl ConfigService for ConfigServiceImpl {
+    async fn get_runtime_config_digests(
+        &self,
+        _request: Request<GetRuntimeConfigDigestsRequest>,
+    ) -> Result<Response<GetRuntimeConfigDigestsResponse>, Status> {
+        Ok(Response::new(GetRuntimeConfigDigestsResponse {
+            digests: self.runtime_config_digests.iter().map(|(config_type, sha256)| RuntimeConfigDigest {
+                config_type: config_type.clone(),
+                sha256: sha256.clone(),
+            }).collect(),
+        }))
+    }
+
     async fn validate_config(
         &self,
         request: Request<ValidateConfigRequest>,

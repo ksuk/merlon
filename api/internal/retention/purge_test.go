@@ -2,101 +2,129 @@ package retention
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/store"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
-// fakeTarget simulates a per-category purge against an in-memory list of
-// record timestamps: records at or before cutoff are "logically deleted",
-// and (for simplicity in this fixture) also counted as physically deleted
-// in the same pass.
-type fakeTarget struct {
-	recordTimes []time.Time
+type failingAuditRepo struct{ err error }
+
+func (r *failingAuditRepo) Create(context.Context, *domain.AuditEntry) error { return r.err }
+func (r *failingAuditRepo) List(context.Context, domain.AuditListFilter) ([]domain.AuditEntry, error) {
+	return nil, nil
 }
 
-func (f *fakeTarget) purge(_ context.Context, cutoff time.Time) (logicallyDeleted, physicallyDeleted int, err error) {
-	for _, ts := range f.recordTimes {
-		if !ts.After(cutoff) {
+// fakeTarget models the retention lifecycle: an expired record is marked on
+// the first pass and only physically removed after the grace period.
+type fakeTarget struct {
+	recordTimes []time.Time
+	markedAt    map[int]time.Time
+	deleted     map[int]bool
+}
+
+func (f *fakeTarget) purge(_ context.Context, cutoff, now time.Time) (logicallyDeleted, physicallyDeleted int, err error) {
+	if f.markedAt == nil {
+		f.markedAt = make(map[int]time.Time)
+	}
+	if f.deleted == nil {
+		f.deleted = make(map[int]bool)
+	}
+	for i, ts := range f.recordTimes {
+		if ts.After(cutoff) || f.deleted[i] {
+			continue
+		}
+		marked, ok := f.markedAt[i]
+		if !ok {
+			f.markedAt[i] = now
 			logicallyDeleted++
+			continue
+		}
+		if !now.Before(marked.Add(PhysicalDeletionGracePeriod)) {
+			f.deleted[i] = true
 			physicallyDeleted++
 		}
 	}
 	return logicallyDeleted, physicallyDeleted, nil
 }
 
-// TestPurgeJobSkipsWithinRetentionPeriod verifies records newer than the
-// category's cutoff (now - retention_days) are not purged (audit.md RET-003).
-func TestPurgeJobSkipsWithinRetentionPeriod(t *testing.T) {
-	now := time.Now()
-	target := &fakeTarget{recordTimes: []time.Time{now.AddDate(0, 0, -10)}} // well within 2555-day retention
-
-	job := &PurgeJob{
+func newPurgeJob(target *fakeTarget) *PurgeJob {
+	return &PurgeJob{
 		Retention: store.NewMemoryRetentionRepo(),
 		Audit:     store.NewMemoryAuditRepo(),
 		Targets:   map[string]PurgeFunc{"customer_data": target.purge},
 	}
+}
 
-	results, err := job.Run(context.Background(), now)
+func findPurgeResult(t *testing.T, results []PurgeResult) PurgeResult {
+	t.Helper()
+	for _, result := range results {
+		if result.Category == "customer_data" {
+			return result
+		}
+	}
+	t.Fatal("expected a customer_data result")
+	return PurgeResult{}
+}
+
+// TestPurgeJobSkipsWithinRetentionPeriod verifies records newer than the
+// category's cutoff are not marked or deleted.
+func TestPurgeJobSkipsWithinRetentionPeriod(t *testing.T) {
+	now := time.Now()
+	target := &fakeTarget{recordTimes: []time.Time{now.AddDate(0, 0, -10)}}
+
+	results, err := newPurgeJob(target).Run(context.Background(), now)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-
-	var got *PurgeResult
-	for i := range results {
-		if results[i].Category == "customer_data" {
-			got = &results[i]
-		}
-	}
-	if got == nil {
-		t.Fatal("expected a customer_data result")
-	}
+	got := findPurgeResult(t, results)
 	if got.LogicallyDeleted != 0 || got.PhysicallyDeleted != 0 {
 		t.Errorf("got %+v, want 0 deletions (record within retention period)", got)
 	}
 }
 
-// TestPurgeJobPurgesRecordsPastRetention verifies records older than the
-// cutoff are purged.
-func TestPurgeJobPurgesRecordsPastRetention(t *testing.T) {
+// TestPurgeJobMarksExpiredRecordsBeforePhysicalDeletion fixes the 30-day
+// grace period: expiration makes data unavailable before it is irreversible.
+func TestPurgeJobMarksExpiredRecordsBeforePhysicalDeletion(t *testing.T) {
 	now := time.Now()
-	target := &fakeTarget{recordTimes: []time.Time{now.AddDate(0, 0, -3000)}} // past the 2555-day retention
+	target := &fakeTarget{recordTimes: []time.Time{now.AddDate(0, 0, -3000)}}
 
-	job := &PurgeJob{
-		Retention: store.NewMemoryRetentionRepo(),
-		Audit:     store.NewMemoryAuditRepo(),
-		Targets:   map[string]PurgeFunc{"customer_data": target.purge},
-	}
-
-	results, err := job.Run(context.Background(), now)
+	results, err := newPurgeJob(target).Run(context.Background(), now)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	got := findPurgeResult(t, results)
+	if got.LogicallyDeleted != 1 || got.PhysicallyDeleted != 0 {
+		t.Errorf("got %+v, want one mark and no physical deletion", got)
+	}
+}
 
-	var got *PurgeResult
-	for i := range results {
-		if results[i].Category == "customer_data" {
-			got = &results[i]
-		}
+func TestPurgeJobPhysicallyDeletesAfterGracePeriod(t *testing.T) {
+	now := time.Now()
+	target := &fakeTarget{recordTimes: []time.Time{now.AddDate(0, 0, -3000)}}
+	job := newPurgeJob(target)
+	if _, err := job.Run(context.Background(), now); err != nil {
+		t.Fatalf("first Run: %v", err)
 	}
-	if got == nil {
-		t.Fatal("expected a customer_data result")
+
+	results, err := job.Run(context.Background(), now.Add(PhysicalDeletionGracePeriod))
+	if err != nil {
+		t.Fatalf("second Run: %v", err)
 	}
-	if got.LogicallyDeleted != 1 || got.PhysicallyDeleted != 1 {
-		t.Errorf("got %+v, want 1 deletion (record past retention period)", got)
+	got := findPurgeResult(t, results)
+	if got.LogicallyDeleted != 0 || got.PhysicallyDeleted != 1 {
+		t.Errorf("got %+v, want one physical deletion after grace period", got)
 	}
 }
 
 // TestPurgeJobLogsExecutionHistory verifies the purge run itself is recorded
-// in the audit log (audit.md §6 自動パージ: パージの設定と実行履歴は監査ロ
-// グに記録する).
+// in the audit log.
 func TestPurgeJobLogsExecutionHistory(t *testing.T) {
 	now := time.Now()
 	audit := store.NewMemoryAuditRepo()
 	target := &fakeTarget{recordTimes: []time.Time{now.AddDate(0, 0, -3000)}}
-
 	job := &PurgeJob{
 		Retention: store.NewMemoryRetentionRepo(),
 		Audit:     audit,
@@ -111,20 +139,52 @@ func TestPurgeJobLogsExecutionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	var found bool
 	for _, e := range entries {
 		if e.Action == "purge_execution" {
-			found = true
+			return
 		}
 	}
-	if !found {
-		t.Fatalf("expected a purge_execution audit entry, got %+v", entries)
+	t.Fatalf("expected a purge_execution audit entry, got %+v", entries)
+}
+
+func TestPurgeJobDoesNotMutateWhenStartAuditFails(t *testing.T) {
+	wantErr := errors.New("audit unavailable")
+	called := false
+	job := &PurgeJob{
+		Retention: store.NewMemoryRetentionRepo(),
+		Audit:     &failingAuditRepo{err: wantErr},
+		Targets: map[string]PurgeFunc{"customer_data": func(context.Context, time.Time, time.Time) (int, int, error) {
+			called = true
+			return 1, 1, nil
+		}},
+	}
+
+	if _, err := job.Run(context.Background(), time.Now()); !errors.Is(err, wantErr) {
+		t.Fatalf("Run error = %v, want %v", err, wantErr)
+	}
+	if called {
+		t.Fatal("purge target called before audit availability was established")
 	}
 }
 
-// TestPurgeJobSkipsCategoriesWithoutTarget verifies categories with no
-// PurgeFunc registered (the framework's extension point for tables not yet
-// wired, e.g. pending WS-11) are silently skipped rather than erroring.
+func TestPurgeJobRequiresAuditRepository(t *testing.T) {
+	called := false
+	job := &PurgeJob{
+		Retention: store.NewMemoryRetentionRepo(),
+		Targets: map[string]PurgeFunc{"customer_data": func(context.Context, time.Time, time.Time) (int, int, error) {
+			called = true
+			return 1, 1, nil
+		}},
+	}
+
+	if _, err := job.Run(context.Background(), time.Now()); err == nil {
+		t.Fatal("Run should reject a missing audit repository")
+	}
+	if called {
+		t.Fatal("purge target called without an audit repository")
+	}
+}
+
 func TestPurgeJobSkipsCategoriesWithoutTarget(t *testing.T) {
 	job := &PurgeJob{
 		Retention: store.NewMemoryRetentionRepo(),

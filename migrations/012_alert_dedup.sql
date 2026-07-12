@@ -1,4 +1,4 @@
--- WS-5: TM enhancement — alert deduplication, transaction-monitoring.md
+-- WS-5: TM enhancement — alert deduplication, the transaction-monitoring design
 -- 「アラート統合ロジック」/「バッチ/リアルタイム評価の重複アラート防止」
 --
 -- Migration number 012 (not 011, which WS-7 already used for

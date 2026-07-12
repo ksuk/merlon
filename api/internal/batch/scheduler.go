@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/casemgmt"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/casemgmt"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
-// DefaultTMBatchSchedule is transaction-monitoring.md's default daily run
+// DefaultTMBatchSchedule is the transaction-monitoring design's default daily run
 // time for TM batch evaluation ("バッチ評価のスケジューリング": デフォルト実行時刻は
 // 毎日02:00、システム設定のタイムゾーンに従う。設定で変更可能).
 const DefaultTMBatchSchedule = "02:00"
@@ -24,12 +24,12 @@ const TMBatchEvaluationJobType = "tm_batch_evaluation"
 
 // Scheduler runs a job once per day at a fixed HH:MM time. A full cron
 // syntax is intentionally not supported: daily-at-fixed-time is the only
-// schedule transaction-monitoring.md specifies for TM batch evaluation, so a
+// schedule the transaction-monitoring design specifies for TM batch evaluation, so a
 // time.Timer computing the delay until the next occurrence is sufficient
 // without adding a third-party cron dependency.
 type Scheduler struct {
 	// Location is the timezone hour/minute are interpreted in
-	// (transaction-monitoring.md「システム設定のタイムゾーンに従う」). Defaults to
+	// (the transaction-monitoring design「システム設定のタイムゾーンに従う」). Defaults to
 	// time.Local; set directly after construction to override.
 	Location *time.Location
 
@@ -114,7 +114,7 @@ func (s *Scheduler) RunNow(ctx context.Context) (string, error) {
 
 // ResumeOrCreateRun returns the batch_run_id a job invocation should use: if
 // a previous run of jobType is still status=running (left behind by a
-// killed process, overview.md §4.4「再起動時は未処理分のみを再開」), its ID and
+// killed process, the operational design §4.4「再起動時は未処理分のみを再開」), its ID and
 // recorded progress are reused so ProcessCustomersResumably skips
 // already-processed customers; otherwise a new run is created under
 // candidateID.
@@ -144,7 +144,7 @@ func ResumeOrCreateRun(ctx context.Context, runs domain.BatchRunRepository, jobT
 // ProcessCustomersResumably runs process for each customer not already
 // present in alreadyProcessed, recording each one via
 // runs.AppendProcessedCustomer as it completes so a subsequent resume (after
-// a kill) skips it (overview.md §4.4). It stops and returns the first error
+// a kill) skips it (the operational design §4.4). It stops and returns the first error
 // from process, leaving customers not yet reached unprocessed for the next
 // resume.
 func ProcessCustomersResumably(
@@ -172,7 +172,7 @@ func ProcessCustomersResumably(
 
 // TMBatchEvaluationDeps bundles what RunTMBatchEvaluation needs to evaluate
 // every customer's transactions in one daily batch pass
-// (transaction-monitoring.md「バッチ評価のスケジューリング」). Alert creation routes
+// (the transaction-monitoring design「バッチ評価のスケジューリング」). Alert creation routes
 // through domain.AlertRepository.CreateIfNotDuplicate and (for newly created
 // alerts) casemgmt.ConsolidateAlert, sharing the dedup constraint and case
 // consolidation with the realtime evaluation path (server.handleBatchMonitor).
@@ -191,7 +191,7 @@ const maxTMBatchCustomers = 1000
 
 // RunTMBatchEvaluation is the daily TM batch evaluation job body
 // (TMBatchEvaluationJobType). It resumes an interrupted previous run
-// instead of starting over (overview.md §4.4「再起動時は未処理分のみを再開」), and
+// instead of starting over (the operational design §4.4「再起動時は未処理分のみを再開」), and
 // snapshots each customer's transactions at batch start so transactions
 // arriving mid-run are left for the next batch (SnapshotBefore).
 func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candidateRunID string) error {
@@ -220,7 +220,7 @@ func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candi
 }
 
 func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *domain.Customer, batchStart time.Time, runID string) error {
-	// data-model.md §1.1.2: closed customers stop TM evaluation entirely;
+	// the data model §1.1.2: closed customers stop TM evaluation entirely;
 	// dormant customers are evaluated only "取引発生時" (at the moment a
 	// transaction occurs via the realtime path), not on this periodic
 	// schedule. frozen customers continue on existing data as usual.
@@ -281,7 +281,7 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 // SnapshotBefore filters transactions to those ingested strictly before
 // batchStart, so transactions arriving mid-run are excluded from the
 // current batch and left for the next one
-// (transaction-monitoring.md「バッチ実行中に到着した新規取引は次回バッチの対象とする」).
+// (the transaction-monitoring design「バッチ実行中に到着した新規取引は次回バッチの対象とする」).
 // Transaction.CreatedAt is set once at intake (server.handleCreateTransaction)
 // and never modified afterward, so it serves directly as the ingestion
 // timestamp without a dedicated ingested_at column.

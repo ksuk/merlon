@@ -93,7 +93,7 @@ fn test_absolute_threshold_does_not_suppress_tier_based_alert() {
 #[test]
 fn test_absolute_threshold_default_when_omitted() {
     // v1 content has no absolute_threshold field at all, so it resolves to
-    // the system default of 10,000,000 (rule-schema.md §3.1 migration item
+    // the system default of 10,000,000 (the rule schema §3.1 migration item
     // 3). The tier threshold is overridden to 50,000,000 (far above the
     // test totals) so only the default absolute_threshold can trigger.
     let yaml = r#"

@@ -28,7 +28,7 @@ type AuditListFilter struct {
 	ResourceID   string
 	UserID       string
 	// ActionCategory groups entries by ResourceTypesForCategory below
-	// (audit.md §1 操作カテゴリ), rather than filtering on Action directly.
+	// (the audit design §1 操作カテゴリ), rather than filtering on Action directly.
 	ActionCategory string
 	Since          *time.Time
 	Until          *time.Time
@@ -42,7 +42,7 @@ type AuditRepository interface {
 }
 
 // actionCategoryResourceTypes groups the resource_type values recorded by
-// auditMiddleware's resolveResource into the 操作カテゴリ audit.md §1
+// auditMiddleware's resolveResource into the 操作カテゴリ the audit design §1
 // enumerates, for ALD-001's category filter. resource_type values not
 // listed here have no category (ActionCategory filtering excludes them).
 var actionCategoryResourceTypes = map[string][]string{
@@ -56,7 +56,7 @@ var actionCategoryResourceTypes = map[string][]string{
 }
 
 // ResourceTypesForCategory returns the resource_type values belonging to
-// category (audit.md §1), or nil for an empty/unrecognized category (no
+// category (the audit design §1), or nil for an empty/unrecognized category (no
 // category filter applied).
 func ResourceTypesForCategory(category string) []string {
 	return actionCategoryResourceTypes[category]

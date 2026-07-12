@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlon-aml.example.com/schemas/tm_scenario_v2.json",
+  "$id": "https://github.com/ksuk/merlon/schemas/tm_scenario_v2.json",
   "title": "TM Scenario Definition v2",
   "type": "object",
   "required": ["schema_version", "scenario_id", "name", "type", "conditions", "severity"],

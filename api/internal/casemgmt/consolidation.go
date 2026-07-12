@@ -1,5 +1,5 @@
 // Package casemgmt implements case-management side effects triggered by
-// alert creation (transaction-monitoring.md「アラート統合ロジック」).
+// alert creation (the transaction-monitoring design「アラート統合ロジック」).
 package casemgmt
 
 import (
@@ -8,17 +8,17 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // DefaultConsolidationWindow is the default aggregation window for automatic
-// case consolidation (transaction-monitoring.md「アラート統合ロジック」:
+// case consolidation (the transaction-monitoring design「アラート統合ロジック」:
 // デフォルト24時間、設定可能).
 const DefaultConsolidationWindow = 24 * time.Hour
 
 // investigatingOrLater reports whether status ranks at or above
 // INVESTIGATING, so ConsolidateAlert can prefer such a case over a merely
-// OPEN one (transaction-monitoring.md「既に INVESTIGATING 以降のケースが存在
+// OPEN one (the transaction-monitoring design「既に INVESTIGATING 以降のケースが存在
 // する場合は、そのケースに追加アラートとして紐づける」).
 func investigatingOrLater(status domain.CaseStatus) bool {
 	return status == domain.CaseStatusInvestigating || status == domain.CaseStatusEscalated
@@ -35,7 +35,7 @@ func eligible(c *domain.Case, windowStart time.Time) bool {
 // ConsolidateAlert joins alert to an existing, non-closed case for the same
 // customer created within window of alert.DetectedAt, preferring a case
 // already INVESTIGATING or later over a merely OPEN one
-// (transaction-monitoring.md「アラート統合ロジック」). If no eligible case
+// (the transaction-monitoring design「アラート統合ロジック」). If no eligible case
 // exists, it creates and returns a new one.
 func ConsolidateAlert(
 	ctx context.Context,

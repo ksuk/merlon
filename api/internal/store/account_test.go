@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // TestMemoryAccountRepoRepresentativeScoreUsesHighestRisk verifies
-// data-model.md §1.1.3 "保守的評価": a joint account's representative risk
+// the data model §1.1.3 "保守的評価": a joint account's representative risk
 // score is the highest score among its linked customers, not an average or
 // the primary holder's score alone. Exercised against MemoryAccountRepo
 // since it needs no live Postgres connection.
@@ -131,5 +131,16 @@ func TestPgAccountCreateJointWithMultipleCustomers(t *testing.T) {
 	}
 	if len(links) != 2 {
 		t.Fatalf("len(links) = %d, want 2", len(links))
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE customers SET purge_marked_at = now() WHERE id = $1`, coHolder.ID); err != nil {
+		t.Fatalf("mark co-holder for purge: %v", err)
+	}
+	links, err = repo.ListCustomers(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("list customers after purge mark: %v", err)
+	}
+	if len(links) != 1 || links[0].CustomerID != primary.ID {
+		t.Fatalf("links after purge mark = %+v, want only primary customer", links)
 	}
 }

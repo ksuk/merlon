@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// TestMetricsAllRegistered verifies overview.md §4.4 OPS-003's metric list is
+// TestMetricsAllRegistered verifies the operational design §4.4 OPS-003's metric list is
 // all registered and has at least one series exposed at process start (zero
 // value), so /metrics shows every metric name even before any business event
 // occurs.

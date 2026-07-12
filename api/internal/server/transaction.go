@@ -3,12 +3,12 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 type CreateTransactionRequest struct {
@@ -37,7 +37,7 @@ func isValidCounterpartyType(t domain.CounterpartyType) bool {
 
 // isValidTravelRuleStatus intentionally accepts TravelRuleIncomplete: an
 // incomplete travel-rule record must not block transaction creation or TM
-// evaluation (Fail-Alert, data-model.md §1.3.1 — prefer evaluating with
+// evaluation (Fail-Alert, the data model §1.3.1 — prefer evaluating with
 // partial data over dropping the transaction).
 func isValidTravelRuleStatus(s domain.TravelRuleStatus) bool {
 	switch s {
@@ -66,7 +66,7 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 	s.handleListTransactionsOffset(w, r, customerID)
 }
 
-// handleListTransactionsCursor serves api.md §1.1 cursor-based pagination.
+// handleListTransactionsCursor serves the HTTP API contract §1.1 cursor-based pagination.
 func (s *Server) handleListTransactionsCursor(w http.ResponseWriter, r *http.Request, customerID string) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
@@ -85,7 +85,7 @@ func (s *Server) handleListTransactionsCursor(w http.ResponseWriter, r *http.Req
 }
 
 // handleListTransactionsOffset preserves the pre-existing offset/limit
-// contract (api.md §1.2 dual-support / deprecation period) while still
+// contract (the HTTP API contract §1.2 dual-support / deprecation period) while still
 // returning the additive {"data", "pagination"} envelope.
 func (s *Server) handleListTransactionsOffset(w http.ResponseWriter, r *http.Request, customerID string) {
 	offsetParam := r.URL.Query().Get("offset")
@@ -172,7 +172,8 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 
 	currency := req.Currency
 	if currency == "" {
-		currency = "JPY"
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "currency required")
+		return
 	}
 
 	now := time.Now()
@@ -197,7 +198,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		ExecutedAt:          executedAt,
 		CreatedAt:           now,
 	}
-	// Idempotency-Key (api.md §4.1): a resend using an already-used key is
+	// Idempotency-Key (the HTTP API contract §4.1): a resend using an already-used key is
 	// rejected with 409, independent of whether external_id also matches.
 	if key := r.Header.Get("Idempotency-Key"); key != "" {
 		t.IdempotencyKey = &key

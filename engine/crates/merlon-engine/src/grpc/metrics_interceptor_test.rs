@@ -1,4 +1,4 @@
-//! Verifies `MetricsLayer` (Task 7, overview.md §4.4 OPS-003) records
+//! Verifies `MetricsLayer` (Task 7, the operational design §4.4 OPS-003) records
 //! `merlon_grpc_request_duration_seconds` for a real gRPC call, wrapping the
 //! actual generated `MonitoringServiceServer` the same way main.rs does
 //! (rather than a stand-in `tower::Service`), so this exercises the real

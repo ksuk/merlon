@@ -9,7 +9,7 @@ type CaseStatus string
 
 const (
 	// CaseStatusOpen is the legacy initial status. Contract Stability keeps
-	// it accepted for 12 months as an alias of CaseStatusNew (case-management.md
+	// it accepted for 12 months as an alias of CaseStatusNew (the case-management workflow
 	// §ケースのステータス遷移); normalizeCaseStatus treats the two identically.
 	CaseStatusOpen          CaseStatus = "open"
 	CaseStatusNew           CaseStatus = "new"
@@ -29,7 +29,7 @@ func normalizeCaseStatus(s CaseStatus) CaseStatus {
 	return s
 }
 
-// caseStatusTransitions encodes case-management.md's status transition
+// caseStatusTransitions encodes the case-management workflow's status transition
 // diagram. str_filed has no outgoing edges: it is a terminal state, and any
 // new alert on the same customer becomes a separate case that references
 // this one rather than reopening it.
@@ -43,7 +43,7 @@ var caseStatusTransitions = map[CaseStatus][]CaseStatus{
 }
 
 // ValidCaseStatusTransition reports whether a case may move from "from" to
-// "to" per the status transition diagram (case-management.md). The legacy
+// "to" per the status transition diagram (the case-management workflow). The legacy
 // "open" status is treated as equivalent to "new" on both sides.
 func ValidCaseStatusTransition(from, to CaseStatus) bool {
 	from = normalizeCaseStatus(from)
@@ -62,7 +62,7 @@ const (
 	CasePriorityLow      CasePriority = "low"
 	CasePriorityMedium   CasePriority = "medium"
 	CasePriorityHigh     CasePriority = "high"
-	// CasePriorityCritical is used by EDD stage-3 escalation (case-management.md
+	// CasePriorityCritical is used by EDD stage-3 escalation (the case-management workflow
 	// §EDD未実施継続時の段階的措置: "ケースをCRITICALに引き上げる") and is
 	// available for other WS's severity=CRITICAL case generation as well.
 	CasePriorityCritical CasePriority = "critical"
@@ -100,7 +100,7 @@ type CaseRepository interface {
 	Update(ctx context.Context, c *Case) error
 	// UpdateIfUnmodified applies the same update as Update, but only if the
 	// case's stored updated_at still equals expectedUpdatedAt (optimistic
-	// locking, data-model.md §3.9: two concurrent updates must not silently
+	// locking, the data model §3.9: two concurrent updates must not silently
 	// lose one to the other). Returns *ErrConflict on mismatch.
 	UpdateIfUnmodified(ctx context.Context, c *Case, expectedUpdatedAt time.Time) error
 	AddNote(ctx context.Context, caseID string, note *CaseNote) error

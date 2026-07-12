@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func newTestRule(name string, ruleType domain.RuleType, active bool, at time.Time) *domain.RuleDefinition {

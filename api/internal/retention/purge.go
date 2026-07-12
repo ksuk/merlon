@@ -2,16 +2,17 @@ package retention
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-// PurgeFunc performs the logical-then-physical purge (audit.md §6 自動パー
+// PurgeFunc performs the logical-then-physical purge (the audit design §6 自動パー
 // ジ) for one data category, given the cutoff (now - retention_days) before
 // which records are eligible for purge.
-type PurgeFunc func(ctx context.Context, cutoff time.Time) (logicallyDeleted, physicallyDeleted int, err error)
+type PurgeFunc func(ctx context.Context, cutoff, now time.Time) (logicallyDeleted, physicallyDeleted int, err error)
 
 // PurgeResult summarizes one category's purge pass.
 type PurgeResult struct {
@@ -35,14 +36,25 @@ type PurgeJob struct {
 }
 
 // Run evaluates every configured retention policy against now and invokes
-// the matching Target, then records the run itself in the audit log
-// (audit.md §6: パージの設定と実行履歴は監査ログに記録する). Per the Global
-// Constraint that an audit write failure fails the operation, a failed
-// audit write returns an error even though the purges themselves already
-// committed.
+// the matching Target. It requires a start audit record before any mutation
+// and writes a completion record after the targets finish.
 func (j *PurgeJob) Run(ctx context.Context, now time.Time) ([]PurgeResult, error) {
+	if j.Audit == nil {
+		return nil, errors.New("purge audit repository is required")
+	}
 	policies, err := j.Retention.List(ctx)
 	if err != nil {
+		return nil, err
+	}
+
+	// Establish an audit trail before any target can commit an irreversible
+	// deletion. The completion record below carries the result counts; this
+	// start record remains evidence if a target or the final audit write fails.
+	if err := j.Audit.Create(ctx, &domain.AuditEntry{
+		Action:       "purge_execution_started",
+		ResourceType: "retention_policy",
+		CreatedAt:    now,
+	}); err != nil {
 		return nil, err
 	}
 
@@ -53,7 +65,7 @@ func (j *PurgeJob) Run(ctx context.Context, now time.Time) ([]PurgeResult, error
 			continue
 		}
 		cutoff := now.AddDate(0, 0, -p.RetentionDays)
-		logical, physical, err := fn(ctx, cutoff)
+		logical, physical, err := fn(ctx, cutoff, now)
 		if err != nil {
 			return results, err
 		}
@@ -64,15 +76,13 @@ func (j *PurgeJob) Run(ctx context.Context, now time.Time) ([]PurgeResult, error
 		})
 	}
 
-	if j.Audit != nil {
-		if err := j.Audit.Create(ctx, &domain.AuditEntry{
-			Action:       "purge_execution",
-			ResourceType: "retention_policy",
-			Details:      map[string]string{"categories_processed": strconv.Itoa(len(results))},
-			CreatedAt:    now,
-		}); err != nil {
-			return results, err
-		}
+	if err := j.Audit.Create(ctx, &domain.AuditEntry{
+		Action:       "purge_execution",
+		ResourceType: "retention_policy",
+		Details:      map[string]string{"categories_processed": strconv.Itoa(len(results))},
+		CreatedAt:    now,
+	}); err != nil {
+		return results, err
 	}
 
 	return results, nil

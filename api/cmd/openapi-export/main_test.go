@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/server"
+	"github.com/ksuk/merlon/api/internal/server"
 )
 
 // wantPaths derives the expected path set from the same spec builder the

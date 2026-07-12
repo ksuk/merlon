@@ -1,5 +1,9 @@
 # Merlon Content Packs
 
+## Production warning
+
+Sample rules and thresholds are public by design and can be used to infer detection behavior. They are not production-ready controls. Replace every sample threshold, scenario, and list with values derived from the deploying institution's documented risk assessment, and keep production values confidential. The sample content exists to demonstrate the configuration format, not to provide regulatory coverage.
+
 本ディレクトリは、Merlon のルール定義コンテンツを格納する。AML/CFT のルール（CDD ウェイト、TM シナリオ等）は、Configuration as the Product 原則に基づき、JSON/YAML の設定として表現される。
 
 ## ディレクトリ構成
@@ -34,3 +38,7 @@
 ## Enterprise コンテンツパック（将来）
 
 業種別・リスク類型別にチューニングされたルールプリセットを、Enterprise 向けコンテンツパックとして提供する予定である。コンテンツパックはソフトウェア本体（BSL 1.1）とは独立した商用ライセンスで提供される。
+
+## Engine configuration audit boundary
+
+When the Engine loads content files directly, those files are outside the database-backed rule audit trail. Deploying organizations must control, approve, and retain the exact files they deploy. The Engine records deterministic configuration digests at startup and exposes them through ConfigService for post-hoc verification; this does not replace file access controls or change management. See [ADR-0012](../docs/decisions/0012-engine-config-file-trust-boundary.md).

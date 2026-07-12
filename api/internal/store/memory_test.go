@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 func TestMemoryCustomerRepo_ListByCursor_MatchesListTraversal(t *testing.T) {

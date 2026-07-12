@@ -7,7 +7,7 @@ import (
 )
 
 // ScreeningResultStatus is the investigation-workflow status of a
-// screening_results row (screening.md §スクリーニングヒット後の調査ワークフロー).
+// screening_results row (the screening workflow §スクリーニングヒット後の調査ワークフロー).
 type ScreeningResultStatus string
 
 const (
@@ -19,7 +19,7 @@ const (
 
 // screeningResultTransitions enumerates the only allowed forward moves in the
 // NEW -> REVIEWING -> {TRUE_POSITIVE, FALSE_POSITIVE} state machine
-// (screening.md). Any transition not listed here, including regressions like
+// (the screening workflow). Any transition not listed here, including regressions like
 // FALSE_POSITIVE -> TRUE_POSITIVE, is rejected.
 var screeningResultTransitions = map[ScreeningResultStatus]map[ScreeningResultStatus]bool{
 	ScreeningResultStatusNew: {
@@ -38,7 +38,7 @@ func IsValidScreeningResultTransition(from, to ScreeningResultStatus) bool {
 	return screeningResultTransitions[from][to]
 }
 
-// ScreeningResultRecord is a persisted screening hit (screening.md §7 data
+// ScreeningResultRecord is a persisted screening hit (the screening workflow §7 data
 // model / §スクリーニングヒット後の調査ワークフロー). Unlike ScreenMatch/ScreenResult
 // (screening.go), which are transient API response shapes returned directly
 // from the engine's single-shot screen call, this type is the durable
@@ -60,7 +60,7 @@ type ScreeningResultRecord struct {
 }
 
 // ApplyStatusTransition validates and applies a status change in place. For
-// FALSE_POSITIVE, reason is mandatory (screening.md "判定理由（テキスト、必須）を記録").
+// FALSE_POSITIVE, reason is mandatory (the screening workflow "判定理由（テキスト、必須）を記録").
 // It never mutates r on an invalid transition.
 func (r *ScreeningResultRecord) ApplyStatusTransition(to ScreeningResultStatus, falsePositiveReason string) error {
 	if !IsValidScreeningResultTransition(r.Status, to) {
@@ -78,7 +78,7 @@ func (r *ScreeningResultRecord) ApplyStatusTransition(to ScreeningResultStatus, 
 }
 
 // ScreeningResultRepository persists screening hits and supports lookup of
-// past False Positive determinations for the same list entry (screening.md
+// past False Positive determinations for the same list entry (the screening workflow
 // "同一リストエントリへの再ヒット時に過去の False Positive 判定を参照可能とする").
 type ScreeningResultRepository interface {
 	Get(ctx context.Context, id string) (*ScreeningResultRecord, error)

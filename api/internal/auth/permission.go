@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // Permission is a fine-grained authorization grant, distinct from the
-// coarse method/path role check in server.hasPermission (auth.md §3).
+// coarse method/path role check in server.hasPermission (the authentication model §3).
 type Permission string
 
 const (
@@ -17,14 +17,14 @@ const (
 	PermWhitelistApprove Permission = "whitelist:approve"
 	PermAuditRead        Permission = "audit:read"
 	// PermRuleWrite gates rule definition create/update/activate/deactivate/
-	// import (api.md §1.4). Unlike the coarse method-based check in
+	// import (the HTTP API contract §1.4). Unlike the coarse method-based check in
 	// server.hasPermission (which lets Analyst write most resources), rule
-	// changes affect scoring/monitoring behavior system-wide, so api.md
+	// changes affect scoring/monitoring behavior system-wide, so the HTTP API contract
 	// restricts them to Admin specifically.
 	PermRuleWrite Permission = "rule:write"
 )
 
-// RolePermissions maps each role to its granted permissions (auth.md §3).
+// RolePermissions maps each role to its granted permissions (the authentication model §3).
 // Admin holds every permission; Analyst may request whitelist entries but
 // may not approve them or read the audit log (segregation of duties);
 // Viewer holds none.

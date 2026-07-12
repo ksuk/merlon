@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlon-aml.example.com/schemas/tm_scenario_v1.json",
+  "$id": "https://github.com/ksuk/merlon/schemas/tm_scenario_v1.json",
   "title": "TM Scenario Definition",
   "description": "Schema for transaction monitoring scenario definitions",
   "type": "object",

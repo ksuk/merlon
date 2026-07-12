@@ -1,4 +1,4 @@
--- Extends cases.status with new/reopened/str_filed (case-management.md
+-- Extends cases.status with new/reopened/str_filed (the case-management workflow
 -- §ケースのステータス遷移). Additive only: existing values (open,
 -- investigating, escalated, closed) are kept for Contract Stability; "open"
 -- remains valid and is treated as an alias of "new" by ValidCaseStatusTransition.

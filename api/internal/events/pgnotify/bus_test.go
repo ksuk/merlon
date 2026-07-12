@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events"
 )
 
 // newTestPool connects to MERLON_DATABASE_URL for integration tests. It
@@ -33,7 +33,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 
 // TestPgNotifyBus_PublishSubscribe verifies the basic LISTEN/NOTIFY round
 // trip: an Event published on a topic is delivered to a handler subscribed
-// to that same topic (api.md §5).
+// to that same topic (the HTTP API contract §5).
 func TestPgNotifyBus_PublishSubscribe(t *testing.T) {
 	pool := newTestPool(t)
 	bus := New(pool)
@@ -70,7 +70,7 @@ func TestPgNotifyBus_PublishSubscribe(t *testing.T) {
 }
 
 // TestPgNotifyBus_ReconnectRequeriesCatchup verifies the reconnect path
-// (overview.md §4.4 event delivery guarantees): after a dropped connection,
+// (the operational design §4.4 event delivery guarantees): after a dropped connection,
 // the injected Requery callback is invoked to catch up on events missed
 // while disconnected, and its results are delivered to the handler.
 func TestPgNotifyBus_ReconnectRequeriesCatchup(t *testing.T) {
@@ -104,7 +104,7 @@ func TestPgNotifyBus_ReconnectRequeriesCatchup(t *testing.T) {
 
 // TestPgNotifyBus_SequenceGapWaitsThenFallsBackToRequery verifies that a
 // detected sequence-number gap waits the configured GapWait (default 5s,
-// overview.md §4.4) before falling back to a source-of-truth requery. The
+// the operational design §4.4) before falling back to a source-of-truth requery. The
 // sleep function is injected so the test does not actually block.
 func TestPgNotifyBus_SequenceGapWaitsThenFallsBackToRequery(t *testing.T) {
 	bus := New(nil)

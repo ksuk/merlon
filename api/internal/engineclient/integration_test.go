@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // toggleMonitoringEngine lets a test flip between failing and succeeding

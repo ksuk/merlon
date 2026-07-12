@@ -1,4 +1,4 @@
--- WS-11 Task4: joint account entity (data-model.md §1.1.3). account_id on
+-- WS-11 Task4: joint account entity (the data model §1.1.3). account_id on
 -- transactions is nullable and opt-in: existing single-account operation
 -- (customer_id only) is unaffected.
 

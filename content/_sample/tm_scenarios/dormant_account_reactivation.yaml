@@ -1,4 +1,4 @@
-# tm_scenario_v2 (rule-schema.md §1). WS-5 Task8: flags a customer resuming
+# tm_scenario_v2 (the rule schema §1). WS-5 Task8: flags a customer resuming
 # activity, above a threshold amount, after a long gap with no transactions.
 schema_version: "2.0"
 scenario_id: tm_dormant_account_reactivation

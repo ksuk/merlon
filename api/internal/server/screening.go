@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/merlon-aml/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/screening"
 )
 
 // ScreeningCheckRequest is the body for POST /api/v1/screening/check, the
-// explicit-request immediate rescreen trigger (screening.md 即時再照合契機
+// explicit-request immediate rescreen trigger (the screening workflow 即時再照合契機
 // "基幹からの明示的リクエスト").
 type ScreeningCheckRequest struct {
 	CustomerID string   `json:"customer_id"`
@@ -62,7 +62,7 @@ func (s *Server) handleScreeningCheck(w http.ResponseWriter, r *http.Request) {
 
 // UpdateScreeningResultRequest is the body for
 // PATCH /api/v1/screening/results/{id}, the screening hit investigation
-// workflow transition (screening.md §スクリーニングヒット後の調査ワークフロー).
+// workflow transition (the screening workflow §スクリーニングヒット後の調査ワークフロー).
 type UpdateScreeningResultRequest struct {
 	Status              domain.ScreeningResultStatus `json:"status"`
 	FalsePositiveReason string                       `json:"false_positive_reason,omitempty"`
@@ -118,7 +118,7 @@ func (s *Server) handleUpdateScreeningResult(w http.ResponseWriter, r *http.Requ
 
 // onScreeningTruePositive auto-creates a case and notifies the core system
 // via webhook when a screening hit is confirmed a true positive
-// (screening.md "自動的にケース管理にケースを生成し（severity = CRITICAL）、該当顧客の
+// (the screening workflow "自動的にケース管理にケースを生成し（severity = CRITICAL）、該当顧客の
 // 取引を即時凍結の判断を基幹に通知する（Webhook screening_true_positive イベント）").
 func (s *Server) onScreeningTruePositive(ctx context.Context, record *domain.ScreeningResultRecord, now time.Time) {
 	if s.cases != nil {

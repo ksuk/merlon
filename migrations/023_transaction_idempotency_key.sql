@@ -1,4 +1,4 @@
--- Idempotency-Key header support for POST /api/v1/transactions (api.md §4.1).
+-- Idempotency-Key header support for POST /api/v1/transactions (the HTTP API contract §4.1).
 -- Nullable and additive: a resend using an already-used key is rejected via
 -- the partial unique index (only enforced when the header was actually
 -- supplied), independent of the pre-existing external_id UNIQUE constraint.

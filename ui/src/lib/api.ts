@@ -1,7 +1,7 @@
 const BASE = "/api/v1"
 
 // getCookie reads the non-HttpOnly csrf_token cookie set at login, so it can
-// be echoed back per the Double Submit Cookie CSRF scheme (auth.md §2).
+// be echoed back per the Double Submit Cookie CSRF scheme (the authentication model §2).
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
   return match ? decodeURIComponent(match[1]) : null
@@ -99,7 +99,7 @@ export interface Customer {
   last_scored_at?: string
   created_at: string
   updated_at: string
-  // EDD 3段階エスカレーション（case-management.md §EDD未実施継続時の段階的
+  // EDD 3段階エスカレーション（the case-management workflow §EDD未実施継続時の段階的
   // 措置）。edd_requested_at が未設定なら EDD 要求状態にない。
   edd_requested_at?: string
   edd_stage1_last_sent_at?: string
@@ -146,7 +146,7 @@ export interface CaseNote {
   created_at: string
 }
 
-// RelatedCase pairs a case with how it was linked (case-management.md
+// RelatedCase pairs a case with how it was linked (the case-management workflow
 // §ケース間の関連付け: 同一顧客の自動抽出 or 手動リンク).
 export interface RelatedCase {
   case: Case

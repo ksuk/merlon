@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	pb "github.com/merlon-aml/merlon/api/gen/merlon/v1"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	pb "github.com/ksuk/merlon/api/gen/merlon/v1"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -33,8 +33,13 @@ func observeGRPCCall(method string, start time.Time, errp *error) func() {
 type ClientOption func(*clientOptions)
 
 type clientOptions struct {
-	creds grpc.DialOption
-	err   error
+	creds      grpc.DialOption
+	requireTLS bool
+	err        error
+}
+
+func RequireTLS() ClientOption {
+	return func(o *clientOptions) { o.requireTLS = true }
 }
 
 func WithTLS(certFile, serverName string) ClientOption {
@@ -75,6 +80,9 @@ func NewClient(addr string, opts ...ClientOption) (*Client, error) {
 	}
 	if o.err != nil {
 		return nil, o.err
+	}
+	if o.creds == nil && o.requireTLS {
+		return nil, fmt.Errorf("TLS is required for this gRPC connection")
 	}
 	if o.creds == nil {
 		log.Printf("warning: gRPC connection to %s using insecure transport", addr)
@@ -240,6 +248,7 @@ func (c *Client) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		Tier:           tier,
 		Factors:        factors,
 		RuleSetID:      resp.RuleSetId,
+		RuleSetSHA256:  resp.RuleSetSha256,
 		RuleSetVersion: int(resp.RuleSetVersion),
 		ScoredAt:       now,
 	}, nil

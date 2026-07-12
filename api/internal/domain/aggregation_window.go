@@ -5,7 +5,7 @@ import "time"
 // DailyAggregationWindowStart returns the UTC midnight boundary of the day
 // containing t. It is used as Alert.AggregationWindowStart for scenarios
 // whose aggregation period is a calendar day
-// (transaction-monitoring.md「アラート統合ロジック」/「バッチ評価のスケジューリング」:
+// (the transaction-monitoring design「アラート統合ロジック」/「バッチ評価のスケジューリング」:
 // 24h = 前日00:00:00〜23:59:59). Both the realtime evaluation path
 // (server.handleBatchMonitor) and the daily batch job (batch.RunTMBatchEvaluation)
 // call this with the alert's detection time, so a same-day scenario alert

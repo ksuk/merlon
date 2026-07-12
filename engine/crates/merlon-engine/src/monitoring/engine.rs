@@ -99,8 +99,8 @@ impl TmEngine {
     }
 
     /// Like `evaluate`, but additionally restricts scenarios to those whose
-    /// `evaluation_mode` runs under `mode_filter` (rule-schema.md §1.2,
-    /// transaction-monitoring.md「評価モード」). `evaluate` remains for
+    /// `evaluation_mode` runs under `mode_filter` (the rule schema §1.2,
+    /// the transaction-monitoring design「評価モード」). `evaluate` remains for
     /// callers that don't need mode filtering (e.g. backtesting historical
     /// data against every configured scenario regardless of mode).
     #[allow(clippy::too_many_arguments)]

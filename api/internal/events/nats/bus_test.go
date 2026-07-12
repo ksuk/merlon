@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/merlon-aml/merlon/api/internal/events"
+	"github.com/ksuk/merlon/api/internal/events"
 )
 
 // TestNew_SatisfiesBusInterface documents that Bus implements events.Bus
 // even though the underlying JetStream connection is not yet implemented
-// (03_implementation-plan.md: NATS is interface-only for D2's first half).
+// (the implementation plan: NATS is interface-only for D2's first half).
 func TestNew_SatisfiesBusInterface(t *testing.T) {
 	var _ events.Bus = (*Bus)(nil)
 }

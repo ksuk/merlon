@@ -1,4 +1,4 @@
-//! OPS-002 (overview.md §4.4): standard grpc.health.v1 health check.
+//! OPS-002 (the operational design §4.4): standard grpc.health.v1 health check.
 //! Exercises the same `tonic_health::server::health_reporter()` wiring
 //! main.rs uses, via `HealthService::from_health_reporter` so the `Health`
 //! trait's `check` method can be called directly without starting a server.

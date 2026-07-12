@@ -11,7 +11,7 @@ type DashboardStats struct {
 	RecentTransactions  int            `json:"recent_transactions"`
 
 	// ScreeningListFreshness reports each configured sanctions/PEP list's
-	// staleness (screening.md "リストの鮮度情報（最終更新日時）をダッシュボードに表示
+	// staleness (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示
 	// する"). Empty when no list has completed an import yet.
 	ScreeningListFreshness []ScreeningListFreshnessStat `json:"screening_list_freshness,omitempty"`
 }

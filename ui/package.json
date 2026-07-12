@@ -1,12 +1,13 @@
 {
   "name": "@merlon/ui",
   "private": true,
+  "license": "BSL-1.1",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . && npm run lint:i18n",
+    "lint": "eslint src scripts eslint.config.js vite.config.ts && npm run lint:i18n",
     "lint:i18n": "node scripts/check-hardcoded-cjk.mjs",
     "test": "vitest",
     "preview": "vite preview"

@@ -37,7 +37,7 @@ export function WhitelistPage() {
   }
   const { data: user } = useApi(api.auth.me)
   // whitelist:request (create/revoke) is granted to admin and analyst;
-  // whitelist:approve is admin-only (auth.md §3, RolePermissions). The
+  // whitelist:approve is admin-only (the authentication model §3, RolePermissions). The
   // server enforces both; these are just UI affordance hints.
   const canRequest = user?.role === "admin" || user?.role === "analyst"
   const canApprove = user?.role === "admin"

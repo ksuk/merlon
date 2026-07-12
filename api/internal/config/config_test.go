@@ -175,9 +175,41 @@ func TestValidateProductionWithoutAuth(t *testing.T) {
 }
 
 func TestValidateProductionWithAuth(t *testing.T) {
-	cfg := &Config{Env: "production", AuthEnabled: true}
+	cfg := &Config{
+		Env:               "production",
+		AuthEnabled:       true,
+		DatabaseURL:       "postgres://example.invalid/merlon",
+		EncryptionKeyRing: "v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() unexpected error: %v", err)
+	}
+}
+
+func TestValidateProductionRequiresPersistentDatabase(t *testing.T) {
+	cfg := &Config{Env: "production", AuthEnabled: true, EncryptionKeyRing: "configured"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() should reject production without MERLON_DATABASE_URL")
+	}
+}
+
+func TestValidateProductionRequiresPIIEncryption(t *testing.T) {
+	cfg := &Config{Env: "production", AuthEnabled: true, DatabaseURL: "postgres://example.invalid/merlon"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() should reject production without MERLON_ENCRYPTION_KEY_RING")
+	}
+}
+
+func TestValidateProductionRejectsDemoSeed(t *testing.T) {
+	cfg := &Config{
+		Env:               "production",
+		AuthEnabled:       true,
+		DatabaseURL:       "postgres://example.invalid/merlon",
+		EncryptionKeyRing: "configured",
+		Seed:              true,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() should reject MERLON_SEED=true in production")
 	}
 }
 

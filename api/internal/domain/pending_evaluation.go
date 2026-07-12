@@ -15,7 +15,7 @@ const (
 )
 
 // PendingEvaluation records a transaction batch that could not be evaluated
-// by the Rust engine (OPS-005, overview.md §4.4 Fail-Alert). It is queued
+// by the Rust engine (OPS-005, the operational design §4.4 Fail-Alert). It is queued
 // rather than dropped so that detection resumes automatically once the
 // engine recovers (Task 5's RecoveryJob).
 type PendingEvaluation struct {

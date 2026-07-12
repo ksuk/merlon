@@ -1,5 +1,5 @@
 //! Generic tower middleware that records `merlon_grpc_request_duration_seconds`
-//! (OPS-003, overview.md §4.4) for every gRPC call handled by this process,
+//! (OPS-003, the operational design §4.4) for every gRPC call handled by this process,
 //! regardless of which service handles it.
 //!
 //! `tonic::service::Interceptor` only sees the *request*, so it cannot time a

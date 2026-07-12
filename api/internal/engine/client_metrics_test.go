@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/merlon-aml/merlon/api/gen/merlon/v1"
-	"github.com/merlon-aml/merlon/api/internal/domain"
-	"github.com/merlon-aml/merlon/api/internal/metrics"
+	pb "github.com/ksuk/merlon/api/gen/merlon/v1"
+	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/grpc"

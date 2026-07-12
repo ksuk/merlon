@@ -10,11 +10,11 @@ import (
 	"sort"
 	"time"
 
-	"github.com/merlon-aml/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // MaxConcurrentSessions is the default cap on simultaneous active sessions
-// (refresh token families) per user (auth.md §2).
+// (refresh token families) per user (the authentication model §2).
 const MaxConcurrentSessions = 5
 
 // ErrTokenReuseDetected is returned when a refresh token that has already
@@ -55,7 +55,7 @@ func randomHex(numBytes int) (string, error) {
 
 // IssueRefreshToken starts a brand-new session (token family) for userID. If
 // the user already has MaxConcurrentSessions active sessions, the oldest one
-// is evicted first (auth.md §2 "同時セッション制限").
+// is evicted first (the authentication model §2 "同時セッション制限").
 func IssueRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository, userID string) (rawToken, family string, err error) {
 	active, err := repo.ListActiveByUser(ctx, userID)
 	if err != nil {

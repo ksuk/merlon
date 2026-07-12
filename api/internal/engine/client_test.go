@@ -10,6 +10,12 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+func TestClientRequireTLSFailsWithoutCertificate(t *testing.T) {
+	_, err := NewClient("127.0.0.1:1", RequireTLS())
+	if err == nil {
+		t.Fatal("expected TLS-required client without certificate to fail")
+	}
+}
 func TestWithTLSMissingCertificateFailsClosed(t *testing.T) {
 	_, err := NewClient("127.0.0.1:1", WithTLS("does-not-exist.pem", "engine.local"))
 	if err == nil {
