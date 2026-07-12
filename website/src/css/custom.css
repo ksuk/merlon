@@ -1,30 +1,177 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * Merlon "Hybrid Trust-Tech" design system.
+ * Light-first, ink-blue -> cyan brand axis, dark console accents.
+ * Any CSS included here is global. Infima variables are overridden below.
  */
 
-/* You can override the default Infima variables here. */
+@import '@fontsource-variable/inter';
+@import '@fontsource/jetbrains-mono';
+
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
-  --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  /* Brand: ink-blue -> cyan axis */
+  --ifm-color-primary: #1e40af;
+  --ifm-color-primary-dark: #1b3a9e;
+  --ifm-color-primary-darker: #1a3695;
+  --ifm-color-primary-darkest: #152c7a;
+  --ifm-color-primary-light: #2146c0;
+  --ifm-color-primary-lighter: #234ac7;
+  --ifm-color-primary-lightest: #3b5fd9;
+
+  --merlon-primary-bright: #3b82f6;
+  --merlon-primary-container: #eff6ff;
+  --merlon-accent: #0e7490;
+  --merlon-accent-bright: #06b6d4;
+  --merlon-accent-container: #ecfeff;
+
+  /* Surfaces / text (light) */
+  --ifm-background-color: #ffffff;
+  --ifm-background-surface-color: #ffffff;
+  --merlon-surface: #ffffff;
+  --merlon-surface-variant: #fafafa;
+  --merlon-surface-high: #f4f4f5;
+  --ifm-color-content: #09090b;
+  --ifm-color-content-secondary: #52525b;
+  --merlon-outline-variant: #e4e4e7;
+
+  --ifm-font-family-base: 'Inter Variable', Inter, system-ui, -apple-system,
+    sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', ui-monospace, SFMono-Regular,
+    monospace;
+  --ifm-code-font-size: 92%;
+  --ifm-heading-font-weight: 700;
+
+  --ifm-link-color: var(--merlon-accent);
+  --ifm-link-hover-color: var(--merlon-accent-bright);
+
+  --ifm-code-border-radius: 4px;
+  --ifm-global-radius: 8px;
+  --ifm-pagination-nav-border-radius: 12px;
+  --ifm-card-border-radius: 12px;
+
+  --merlon-motion-duration: 200ms;
+  --merlon-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --docusaurus-highlighted-code-line-bg: rgba(30, 64, 175, 0.08);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* For readability concerns, dark mode uses a brighter primary + console
+   surfaces rather than a straight inversion of the light palette. */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #3b82f6;
+  --ifm-color-primary-dark: #2a72e8;
+  --ifm-color-primary-darker: #226ae0;
+  --ifm-color-primary-darkest: #1b57b8;
+  --ifm-color-primary-light: #5793f8;
+  --ifm-color-primary-lighter: #649cf9;
+  --ifm-color-primary-lightest: #8ab6fb;
+
+  --merlon-primary-bright: #60a5fa;
+  --merlon-primary-container: #17234a;
+  --merlon-accent: #06b6d4;
+  --merlon-accent-bright: #22d3ee;
+  --merlon-accent-container: #0b2a30;
+
+  --ifm-background-color: #09090b;
+  --ifm-background-surface-color: #18181b;
+  --merlon-surface: #18181b;
+  --merlon-surface-variant: #18181b;
+  --merlon-surface-high: #27272a;
+  --ifm-color-content: #fafafa;
+  --ifm-color-content-secondary: #a1a1aa;
+  --merlon-outline-variant: #27272a;
+
+  --ifm-link-color: var(--merlon-accent-bright);
+  --ifm-link-hover-color: var(--merlon-accent);
+
+  --docusaurus-highlighted-code-line-bg: rgba(59, 130, 246, 0.16);
+}
+
+h1,
+h2 {
+  letter-spacing: -0.02em;
+}
+
+h3,
+h4 {
+  letter-spacing: -0.01em;
+}
+
+/* Navbar */
+.navbar {
+  border-bottom: 1px solid var(--merlon-outline-variant);
+  box-shadow: none;
+}
+
+/* Sidebar active item */
+.theme-doc-sidebar-item-link-level-1
+  > .menu__link--active:not(.menu__link--sublist),
+.menu__link--active:not(.menu__link--sublist) {
+  background-color: var(--merlon-primary-container);
+  border-radius: 8px;
+}
+
+[data-theme='dark'] .menu__link--active:not(.menu__link--sublist) {
+  background-color: var(--merlon-primary-container);
+}
+
+/* Cards / callouts */
+.card,
+.alert {
+  border-radius: 12px;
+}
+
+/* Tables */
+table thead tr {
+  background-color: var(--merlon-surface-high);
+}
+
+table th {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Buttons: slightly softer radius + motion */
+.button {
+  border-radius: 8px;
+  transition: background-color var(--merlon-motion-duration)
+      var(--merlon-motion-ease),
+    border-color var(--merlon-motion-duration) var(--merlon-motion-ease),
+    color var(--merlon-motion-duration) var(--merlon-motion-ease),
+    transform var(--merlon-motion-duration) var(--merlon-motion-ease);
+}
+
+.button:active {
+  transform: translateY(1px);
+}
+
+/* Hero */
+.hero--merlon {
+  position: relative;
+  overflow: hidden;
+  background: var(--ifm-background-color);
+  color: var(--ifm-color-content);
+}
+
+.hero--merlon::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 80% 60% at 50% -10%,
+    color-mix(in srgb, var(--merlon-primary-bright) 16%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+[data-theme='dark'] .hero--merlon::before {
+  background: radial-gradient(
+    ellipse 80% 60% at 50% -10%,
+    color-mix(in srgb, var(--merlon-accent-bright) 14%, transparent),
+    transparent 70%
+  );
+}
+
+.hero--merlon .hero__subtitle {
+  color: var(--ifm-color-content-secondary);
 }
