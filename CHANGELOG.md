@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Canonical repository URLs and Go/protobuf import paths now use
+  `github.com/ksuk/merlon`.
+- JSON Schema identifiers now use the repository-based
+  `https://github.com/ksuk/merlon/schemas/` namespace.
+- Documentation deployment now targets Cloudflare Workers instead of GitHub
+  Pages.
+
 ### Added
 
 - Transaction monitoring engine with structuring and rapid movement scenarios (M2.1)

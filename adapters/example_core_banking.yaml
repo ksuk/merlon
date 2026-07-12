@@ -34,4 +34,4 @@ endpoints:
       amount: "$.amount"
       currency: "$.currency"
       type: "$.transaction_type"
-      amount_fiat_equivalent: "$.jpy_equivalent"
+      base_currency_equivalent: "$.base_currency_equivalent"
