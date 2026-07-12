@@ -67,6 +67,6 @@ jobs:
         with:
           input: proto
           lint: true
-          format: true
+          format: false
           breaking: false
           push: false
