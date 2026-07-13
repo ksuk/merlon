@@ -58,6 +58,9 @@ desktop.ini
 /api/merlon-api
 *.orig
 
+# Repo-review audit reports and evidence (/repo-review skill output; never commit)
+/.audit/
+
 # Local agent state
 .claude/settings.json
 .claude/worktrees/
