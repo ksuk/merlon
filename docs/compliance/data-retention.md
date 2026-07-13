@@ -37,13 +37,38 @@ and their own deletion policy. Configuration changes are recorded in the
 audit log, and data is physically deleted 30 days after its retention
 deadline is reached.
 
-| Data category | Default retention period | Reference point | Configurable |
-|---|---|---|---|
-| Transaction data | 7 years (2555 days) | Date the transaction occurred (`transactions.executed_at`) | Yes, to any positive number of days |
-| Customer data | 7 years (2555 days) | Date of the last transaction | Yes, to any positive number of days |
-| Alerts / cases | 7 years (2555 days) | `resolved_at` / `closed_at` (unresolved/open records are excluded) | Yes, to any positive number of days |
-| Audit logs | 10 years (3650 days) | Date the log was recorded (`created_at`) | Yes, to any positive number of days |
-| CDD score history | 7 years (2555 days) | `scored_at` | Yes, to any positive number of days |
+| Data category | Default retention period | Seeded minimum | Reference point | Configurable |
+|---|---|---|---|---|
+| Transaction data | 7 years (2555 days) | 2555 days | Date the transaction occurred (`transactions.executed_at`) | Yes, at or above the minimum |
+| Customer data | 7 years (2555 days) | 2555 days | Date of the last transaction | Yes, at or above the minimum |
+| Alerts / cases | 7 years (2555 days) | 2555 days | `resolved_at` / `closed_at` (unresolved/open records are excluded) | Yes, at or above the minimum |
+| Audit logs | 10 years (3650 days) | none | Date the log was recorded (`created_at`) | Yes, to any positive number of days |
+| CDD score history | 7 years (2555 days) | 2555 days | `scored_at` | Yes, at or above the minimum |
+
+### Minimum retention guardrail
+
+Each `retention_policies` row carries an optional `min_retention_days` lower
+bound. The seed data sets it to 2555 days — seven years, matching the Act's
+retention obligations — for `transaction_data`, `customer_data`,
+`alert_case_data`, and `cdd_score_history`; `audit_log` has no seeded
+minimum. The retention API rejects any period below a row's minimum
+(`api/internal/server/retention.go`), so a mistyped setting cannot silently
+make records inside the statutory window eligible for purge.
+
+The minimum is deployment data, not a fixed rule of the software. A
+deployment whose obligations differ — for example, a shorter mandatory
+deletion horizon under GDPR or another regime — changes the bound directly
+in the database, under its own legal assessment:
+
+```sql
+-- Example: permit customer_data retention shorter than seven years
+UPDATE retention_policies
+SET min_retention_days = 1095   -- or NULL to remove the bound entirely
+WHERE data_category = 'customer_data';
+```
+
+After the bound is adjusted, the retention API accepts any positive number
+of days at or above it.
 
 ## Data lifecycle design in Merlon
 
@@ -193,6 +218,38 @@ CREATE TABLE alerts_2026_07 PARTITION OF alerts
   selection guidance, capacity planning, read-replica routing policy, and
   recommended autovacuum tuning, see
   [`docs/operations/partitioning-guide.md`](../operations/partitioning-guide.md).
+
+## Legal holds
+
+This release does not provide a per-record legal-hold mechanism. When
+records become subject to a preservation obligation — a regulator's inquiry,
+litigation, or an internal investigation — that outlasts the configured
+retention period, the deploying organization must implement the hold
+operationally:
+
+- **Before the retention cutoff**: extend the affected category's retention
+  period through the retention API. This is a category-level lever; it keeps
+  every record in the category, not only those under hold.
+- **After a record has been purge-marked**: extending the retention period
+  does **not** rescue records whose `purge_marked_at` is already set — they
+  are still physically deleted once the 30-day grace period elapses. Within
+  the grace period, either export and preserve the affected records outside
+  Merlon under the organization's evidence-management procedures, or clear
+  the marks directly, under the organization's own change-control and legal
+  assessment:
+
+  ```sql
+  -- Example: release purge marks on transactions under a legal hold
+  UPDATE transactions SET purge_marked_at = NULL
+  WHERE purge_marked_at IS NOT NULL AND customer_id = '<customer under hold>';
+  ```
+
+  Records whose marks are cleared will be re-marked by the next purge run
+  unless the category's retention period has also been extended, so both
+  steps are normally required.
+
+Unresolved alerts and open cases are always excluded from purging, so active
+investigations tracked in Merlon are protected without manual steps.
 
 ## Limits of audit-log tamper resistance
 
