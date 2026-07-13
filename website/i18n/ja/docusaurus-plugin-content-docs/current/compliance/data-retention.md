@@ -23,7 +23,7 @@
 | 監査ログ | 10年（3650日） | なし | ログ記録日（`created_at`） | 正の日数に変更可 |
 | CDDスコア履歴 | 7年（2555日） | 2555日 | `scored_at` | 下限以上の日数に変更可 |
 
-### 保持期間の下限ガードレール {#minimum-retention-guardrail}
+### 保持期間の下限ガードレール
 
 `retention_policies` の各行は、任意の下限値 `min_retention_days` を持てる。シードデータは、犯収法の保存義務に対応する 2555 日（7 年）を `transaction_data`・`customer_data`・`alert_case_data`・`cdd_score_history` に設定する。`audit_log` には下限をシードしない。保持期間 API は行の下限を下回る設定を拒否する（`api/internal/server/retention.go`）。これにより、誤入力によって法定期間内のレコードがパージ対象になる事故を防ぐ。
 
@@ -145,7 +145,7 @@ CREATE TABLE alerts_2026_07 PARTITION OF alerts
 - `alerts` はケース管理・監査の根拠となるため、パーティションの detach 後もアーカイブとして保持する。
 - 既に非パーティション運用で稼働している導入企業がパーティション化へ移行する場合の一般的な手順、GIN インデックスのオペレータクラス選択方針、キャパシティプランニング、リードレプリカのルーティング方針、autovacuum 調整推奨値は [`docs/operations/partitioning-guide.md`](../operations/partitioning-guide.md) を参照。
 
-## リーガルホールド {#legal-holds}
+## リーガルホールド
 
 本リリースはレコード単位のリーガルホールド機構を提供しない。設定済み保持期間を超えて保全義務が生じたレコード — 当局からの照会、訴訟、内部調査など — については、導入組織が運用でホールドを実現する必要がある：
 
