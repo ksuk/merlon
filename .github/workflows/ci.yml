@@ -92,7 +92,13 @@ jobs:
         with:
           fetch-depth: 0
       - name: Materialize main ref for Buf comparison
-        run: git branch --force main origin/main
+        run: |
+          # On a push to main the checkout already owns the main worktree;
+          # recreating that branch would fail. PR checkouts are detached and
+          # still need a local main ref for the comparison.
+          if [ "$(git symbolic-ref --short -q HEAD)" != "main" ]; then
+            git branch --force main origin/main
+          fi
       - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
         with:
           setup_only: true
