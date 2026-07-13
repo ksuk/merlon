@@ -2,14 +2,19 @@ Business Source License 1.1
 
 Parameters
 
-Licensor:             Merlon Project (LEGAL_REVIEW_REQUIRED: confirm legal entity name)
+Licensor:             Keisuke Kuribara
 Licensed Work:        Merlon (the contents of this repository, excluding files under
                       content/_sample/ which are separately licensed under Apache-2.0)
-Additional Use Grant: You may use the Licensed Work for non-production evaluation,
-                      development, and testing purposes.
-                      (LEGAL_REVIEW_REQUIRED: finalize Additional Use Grant terms)
-Change Date:          LEGAL_REVIEW_REQUIRED: set Change Date (recommended: 4 years
-                      from initial release)
+Additional Use Grant: You may make production use of the Licensed Work, provided
+                      that you do not use the Licensed Work for a Compliance
+                      Service. A "Compliance Service" is a commercial offering
+                      that provides third parties (other than your Affiliates)
+                      with access to the functionality of the Licensed Work, in
+                      original or modified form, as a hosted, managed, or
+                      embedded service. "Affiliates" means entities that
+                      control, are controlled by, or are under common control
+                      with you.
+Change Date:          2030-09-30
 Change License:       Apache License, Version 2.0
 
 Terms

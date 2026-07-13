@@ -14,6 +14,8 @@ Merlon is **source-available** software licensed under the [Business Source Lice
 - Sample content (`content/_sample/`): Apache-2.0
 - Enterprise features are controlled by license key within the same codebase
 
+Production use is permitted under the Additional Use Grant; offering Merlon to third parties as a hosted, managed, or embedded service is not. See [LICENSE](LICENSE) for the exact terms.
+
 See [docs/decisions/0003-bsl-license-choice.md](docs/decisions/0003-bsl-license-choice.md) for the rationale.
 
 ## Architecture
