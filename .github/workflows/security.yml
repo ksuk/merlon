@@ -100,6 +100,24 @@ jobs:
       - run: npm ci
       - run: npx license-checker --production --excludePrivatePackages --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;MPL-2.0'
 
+  npm-licenses-website:
+    name: Website License Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      # OFL-1.1 (Fontsource fonts) and MPL-1.1 (lunr-languages, unmodified)
+      # are attributed in NOTICE. CC-BY-4.0 is caniuse-lite build-time data.
+      - run: npx license-checker --production --excludePrivatePackages --onlyAllow 'MIT;MIT-0;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;MPL-2.0;MPL-1.1;OFL-1.1;Python-2.0;CC-BY-4.0;BlueOak-1.0.0;WTFPL'
+
   npm-audit:
     name: NPM Dependency Audit
     runs-on: ubuntu-latest

@@ -10,6 +10,17 @@ The UI build dependency Lightning CSS 1.32.0 and its platform packages are
 licensed under the Mozilla Public License 2.0 (MPL-2.0).
 https://github.com/parcel-bundler/lightningcss
 
+The documentation website bundles the Inter and JetBrains Mono typefaces
+(via the @fontsource-variable/inter and @fontsource/jetbrains-mono npm
+packages), each licensed under the SIL Open Font License 1.1 (OFL-1.1).
+https://github.com/rsms/inter
+https://github.com/JetBrains/JetBrainsMono
+
+The documentation website's client-side search bundles lunr-languages,
+licensed under the Mozilla Public License 1.1 (MPL-1.1) and used in
+unmodified form.
+https://github.com/MihaiValentin/lunr-languages
+
 Other third-party dependency licenses are checked by the repository's license
 workflow. The complete, version-specific dependency graph is recorded in the
 component lock files.
