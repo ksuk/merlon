@@ -1,60 +1,61 @@
-# 監査レポート様式
+# Report Template
 
-出力先: `.audit/repo-review-<YYYYMMDD>-<shortsha>.md`(コミットしない)。
-以下の骨格に従う。各様式の定義は標準の付録A(所見)・付録D(スコアシート)を正とする。
+Output path: `.audit/repo-review-<YYYYMMDD>-<shortsha>.md` (never commit).
+Follow the skeleton below. The Standard's Appendix A (findings) and Appendix D
+(score sheet) are the authoritative definitions for each format.
 
 ```markdown
-# リポジトリ品質監査レポート
+# Repository Quality Audit Report
 
-| 項目 | 内容 |
+| Field | Value |
 |---|---|
-| リポジトリ / 対象リビジョン | <name> / <full sha> |
-| 標準バージョン | リポジトリ品質レビュー標準 v<x.y.z> |
-| プロファイル | oss / internal / regulated |
-| 実施日時 / 実施者 | <ISO8601> / <agent + model> |
-| 利用可能エビデンスクラス | E1 / E2 / (E3) — E4 なし |
-| エビデンス保存先 | .audit/evidence-<...>/ |
+| Repository / target revision | <name> / <full sha> |
+| Standard version | Repository Quality Review Standard v<x.y.z> |
+| Profile | oss / internal / regulated |
+| Executed at / by | <ISO8601> / <agent + model> |
+| Available evidence classes | E1 / E2 / (E3) — no E4 |
+| Evidence storage path | .audit/evidence-<...>/ |
 
-## 1. 総合判定
+## 1. Overall Rating
 
-- 総合スコア: <0.0-4.0> / ランク: <A|B|C|D|不適合>
-- ゲーティング該当: <なし | 内容>
-- 所見件数: Blocker n / Critical n / Major n / Minor n / Info n(うち要確認 n)
+- Overall score: <0.0-4.0> / Rank: <A|B|C|D|Non-compliant>
+- Gating triggered: <none | details>
+- Finding counts: Blocker n / Critical n / Major n / Minor n / Info n (of which n Unconfirmed)
 
-## 2. 領域別サマリ
+## 2. Domain Summary
 
-| 領域 | スコア | キャップ | 主な根拠(1行) |
+| Domain | Score | Cap applied | Key rationale (1 line) |
 |---|---|---|---|
-| D1〜D12(適用領域のみ) | | | |
+| D1–D12 (applicable domains only) | | | |
 
-強み(2〜3点)/ 弱み(2〜3点)を箇条書きで。
+List 2–3 strengths and 2–3 weaknesses as bullets.
 
-## 3. 所見一覧(重大度順)
+## 3. Findings (by severity)
 
-各所見は付録A のフィールドで記載:
+Each finding uses the Appendix A fields:
 
-### F-<YYYY>-<NNN>: <一文要約>
-- 項目: Dn-m / 重大度: <> / 確信度: <> / 状態: Open
-- エビデンス: <path:line>(E1)、<commit>(E2)、実行: `<cmd>` → <結果要約>
-- 影響: <失敗シナリオ>
-- 推奨是正: <方向性>
-- 期限目安: <重大度既定 or 調整理由>
+### F-<YYYY>-<NNN>: <one-line summary>
+- Item: Dn-m / Severity: <> / Confidence: <> / Status: Open
+- Evidence: <path:line> (E1), <commit> (E2), executed: `<cmd>` → <result summary>
+- Impact: <failure scenario>
+- Recommendation: <direction, not a prescribed implementation>
+- Due: <default from severity, or reason for adjustment>
 
-## 4. 良好事例(Info)
+## 4. Good Practices (Info)
 
-## 5. NE(評価不能)一覧と人間確認事項
+## 5. NE (Not Evaluable) Items and Human Follow-up
 
-| 項目 | NE 理由 | 必要なもの(E3/E4 等) |
+| Item | Reason for NE | What's needed (E3/E4, etc.) |
 |---|---|---|
 
-## 6. テーラリング記録
+## 6. Tailoring Log
 
-| 対象 | 調整 | 理由 |
+| Target | Adjustment | Reason |
 |---|---|---|
 
-## 7. 手法の記録
+## 7. Methodology Notes
 
-- サンプリング: 抽出方法 / 件数 / 母集団(実施した項目ごと)
-- 実行した collectors とバージョン情報
-- 前回監査との比較(定期実行時): スコア推移 / 新規所見 / 解消所見
+- Sampling: method / sample size / population (for each item where sampling was used)
+- Collectors run, with version info
+- Comparison against the previous audit (recurring runs only): score trend / new findings / resolved findings
 ```

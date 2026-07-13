@@ -1,79 +1,132 @@
 ---
 name: repo-review
 description: >-
-  リポジトリ品質レビュー標準(docs/standards/repository-quality-review-standard.md)に基づき、
-  このリポジトリの品質監査を実行し、所見(付録A形式)とスコアシート(付録D様式)を含む監査レポートを出力する。
-  Use when asked to audit or review repository quality against the internal standard
-  (e.g. "リポジトリ監査", "品質監査を実施", "repo audit", "/repo-review").
+  Runs a repository quality audit against the internal Repository Quality Review
+  Standard (docs/standards/repository-quality-review-standard.md, written in
+  Japanese) and produces an audit report with findings (Appendix A format) and a
+  score sheet (Appendix D format). Use when asked to audit or review repository
+  quality against the internal standard (e.g. "audit the repo", "run a quality
+  review", "リポジトリ監査", "品質監査を実施", "/repo-review").
   Args: "[profile] [domains] [--delegate]" — profile: oss|internal|regulated,
   domains: comma-separated subset like D1,D6,D7 (default: all), --delegate: evaluate
   domains via Sonnet subagents with main-agent acceptance.
 ---
 
-# リポジトリ品質監査 (/repo-review)
+# Repository Quality Audit (/repo-review)
 
-本スキルは、**リポジトリ品質レビュー標準**(`docs/standards/repository-quality-review-standard.md`、以下「標準」)の 1.4 節が定める「フレームワークから導出された監査インスタンス」の実行手順である。評価の意味論(評価項目・評価基準・重大度・AI判断基準)はすべて標準本文に従う。本スキルが定義するのは実行の骨格だけである。
+This skill is the execution procedure for producing an audit **instance derived
+from** the Repository Quality Review Standard (`docs/standards/repository-quality-review-standard.md`,
+hereafter "the Standard" — written in Japanese; see section 1.4 of the Standard for
+why derived checklists, not the framework itself, are what gets executed). All
+evaluation semantics — evaluation items, maturity criteria, severity, AI-agent
+judgment rules — live in the Standard. This skill defines only the execution
+skeleton.
 
-## 引数
+## Arguments
 
-| 引数 | 値 | 既定 |
+| Argument | Values | Default |
 |---|---|---|
-| profile | `oss` / `internal` / `regulated` | 未指定なら AskUserQuestion で確認する(本リポジトリの推奨: `internal`。導入先の規制文脈まで評価する場合のみ `regulated`) |
-| domains | `D1,D6,D7` のようなカンマ区切り | 全領域(プロファイルで重み 0 の領域は除く) |
-| `--delegate` | フラグ | 領域評価を Sonnet サブエージェントへ委任し、メインエージェントは受入判定に徹する |
+| profile | `oss` / `internal` / `regulated` | If unspecified, confirm via AskUserQuestion (recommended default for this repository: `internal`; use `regulated` only when evaluating against the adopting organization's regulatory context) |
+| domains | Comma-separated, e.g. `D1,D6,D7` | All domains (excluding any the profile weights to 0) |
+| `--delegate` | Flag | Delegate domain evaluation to Sonnet subagents; the main agent performs acceptance review only |
 
-## 実行手順
+## Procedure
 
-### 0. 標準の読込(スキップ禁止)
+### 0. Read the Standard first (do not skip)
 
-`docs/standards/repository-quality-review-standard.md` を **必ず読む**。記憶・要約からの評価は禁止する。特に第I部 7 章(AIエージェント運用プロトコル)は本監査全体の制約である。
+Read `docs/standards/repository-quality-review-standard.md` in full before evaluating.
+Evaluating from memory or a prior summary is prohibited. Chapter 7 of Part I (AI
+Agent Operating Protocol) constrains every step below.
 
-### 1. スコーピング
+### 1. Scoping
 
-1. 対象リビジョンを固定する: `git rev-parse HEAD`。`git status --porcelain` が非空なら、ダーティな作業ツリーを監査対象に含めるかをユーザーに確認する(既定: HEAD のみを対象とし、その旨を記録)。
-2. `git rev-parse --is-shallow-repository` が `true` なら履歴系判定はすべて NE(標準 7.5)。
-3. プロファイルを確定し、標準 8 章の標準テーラリング表を適用する。適用したテーラリングはすべてレポートの「テーラリング記録」に残す。
-4. エビデンスクラスを確定する: E1/E2 は常時。E3 は `gh api repos/{owner}/{repo} --jq .full_name` の疎通で判定(PR レビュー実績・ブランチ保護は E3 が無ければ NE)。E4(聞き取り)は本スキルの範囲外 — E4 を要する項目は NE とし、レポートに「人間確認事項」として列挙する。
+1. Pin the target revision: `git rev-parse HEAD`. If `git status --porcelain` is
+   non-empty, confirm with the user whether to include the dirty working tree in
+   scope (default: audit HEAD only, and record that choice).
+2. If `git rev-parse --is-shallow-repository` is `true`, history-dependent
+   judgments are NE (Standard section 7.5).
+3. Confirm the profile and apply the standard tailoring table (Standard chapter 8).
+   Record every applied tailoring decision in the report's tailoring log.
+4. Determine available evidence classes: E1/E2 are always available. E3 (platform
+   records — PR reviews, branch protection) requires reachability, e.g.
+   `gh api repos/{owner}/{repo} --jq .full_name`; if unreachable, items requiring
+   E3 are NE. E4 (interviews) is out of scope for this skill — list E4-dependent
+   items under "items requiring human follow-up" in the report.
 
-### 2. エビデンス収集
+### 2. Evidence collection
 
-`references/collectors.md` のコマンド群を実行し、生出力を `.audit/evidence-<YYYYMMDD>-<shortsha>/` に保存する。収集は**読み取り専用**で行う(リポジトリ状態を変更するコマンド、ネットワークへの能動的アクセスは実行しない。EOL 照合など外部照会が必要な判定は、照会できなければ NE)。
+Run the read-only command set in `references/collectors.md` and save raw output
+under `.audit/evidence-<YYYYMMDD>-<shortsha>/`. Collection must be read-only: do
+not run commands that mutate repository state, and do not make outbound network
+calls (e.g. EOL lookups) — if a lookup can't be made, mark the dependent judgment
+NE.
 
-### 3. 領域別評価
+### 3. Domain-by-domain evaluation
 
-各領域について、標準第II部の「確認方法」→「AIエージェント向け判断基準」の順で評価する:
+For each domain, evaluate in the order given in the Standard's Part II: "How to
+verify" first, then "AI agent judgment criteria":
 
-- **機械判定シグナルを先に**実行し(collectors 出力を再利用)、その後に判断的評価を行う。
-- 評価項目ごとに L0〜L4(0.5 刻み可)と根拠を記録する。判定不能は NE + 理由。
-- サンプリングを行う場合は標準 7.4 に従い、抽出方法・件数・母集団を記録する。
-- 大規模領域の目安時間を超えて完璧を目指さない。深掘りが必要な論点は「要確認」として人間に引き継ぐ方が、根拠の薄い断定より価値が高い。
+- Run **machine-checkable signals first** (reusing collector output), then perform
+  judgment-based evaluation.
+- For each evaluation item, record a maturity level (L0–L4, half-steps allowed)
+  with rationale. Mark undeterminable items NE with a reason.
+- When sampling, follow Standard section 7.4: record the sampling method, sample
+  size, and population size.
+- Don't chase completeness past the point of diminishing returns on large
+  domains — flagging an open question as "needs human follow-up" is worth more
+  than an unsupported assertion.
 
-**`--delegate` 時の分担**: 領域を 3〜4 バンドル(例: D1+D2+D10 / D3+D4+D11 / D5+D8 / D6+D7+D9+D12)に分け、バンドルごとに Sonnet サブエージェントを起動する。指示書には必ず含める: 対象リビジョン / 担当領域(標準本文の該当節を読むこと) / collectors 出力パス / 出力契約(項目判定表+付録A形式の所見、エビデンス参照必須) / 標準 7 章の制約。**受入判定**: メインエージェントは、各所見の引用エビデンス(パス・行・コマンド)を自ら再実行・実在確認し、検証できない所見は棄却する。
+**Delegation (`--delegate`)**: split domains into 3–4 bundles (e.g. D1+D2+D10 /
+D3+D4+D11 / D5+D8 / D6+D7+D9+D12) and launch one Sonnet subagent per bundle. Each
+briefing must include: the pinned revision / the assigned domains (instruct the
+subagent to read the corresponding sections of the Standard) / the collector
+output path / the output contract (per-item ratings plus Appendix-A-format
+findings, evidence references mandatory) / the constraints in Standard chapter 7.
+**Acceptance review**: the main agent independently re-runs or re-checks the cited
+evidence (path, line, command) for every finding and discards any finding it
+cannot verify.
 
-### 4. 所見の確定(標準 7 章の適用)
+### 4. Finalizing findings (applying Standard chapter 7)
 
-- 所見は付録A のフィールドで記録する。**出力前にエビデンスの実在を再確認**する。
-- Critical 以上で High 確信度エビデンスが無いものは「要確認(Unconfirmed)」として区別する。
-- シークレット様の検出は値を一切転記しない(パス・コミット ID・種別のみ)。検出したクレデンシャルでの認証試行など**能動的検証は禁止**。
-- 良好事例(Info)を必ず含める。
-- 作者統計を扱う場合、レポートには個人名でなく役割・構造情報として記載する(標準 1.3)。
+- Record findings using the Appendix A fields. **Re-confirm evidence exists**
+  before writing it into the report.
+- Findings at Critical or above without High-confidence evidence must be flagged
+  "Unconfirmed."
+- Never transcribe secret-like values into output (path, commit ID, and category
+  only). Never actively verify a credential (e.g. by attempting authentication).
+- Always include good practices (Info-level).
+- When reporting author statistics, describe them as structural information
+  (roles, concentration) rather than by individual name (Standard section 1.3).
 
-### 5. スコアリング
+### 5. Scoring
 
-標準 4 章に従う: 項目平均 → 重大度キャップ → プロファイル重み(標準 4.2 の表)→ 総合スコア → ゲーティング → ランク。NE は分母から除外し、NE が領域の項目数の半数を超えた領域は「評価不能領域」とする。
+Follow Standard chapter 4: per-item average → severity cap → profile weighting
+(Standard section 4.2 table) → overall score → gating → rank. Exclude NE items
+from the denominator; if NE items exceed half of a domain's items, mark that
+domain "not evaluable."
 
-### 6. レポート出力
+### 6. Report output
 
-1. `references/report-template.md` の構成で `.audit/repo-review-<YYYYMMDD>-<shortsha>.md` に書き出す(`.audit/` は gitignore 済み — レポートはコミットしない)。
-2. ユーザーへの提示: 総合判定・領域ハイライト(強み/弱み各 2〜3 点)・Blocker/Critical 所見(あれば)・人間確認事項の件数を要約し、レポートファイルを SendUserFile で送る。
-3. Blocker 検出時は手順を中断してでも即時報告する(標準 6 章 ステップ4)。
+1. Write the report to `.audit/repo-review-<YYYYMMDD>-<shortsha>.md` using the
+   structure in `references/report-template.md` (`.audit/` is gitignored — never
+   commit reports).
+2. Summarize for the user: overall rating, domain highlights (2–3 strengths, 2–3
+   weaknesses), any Blocker/Critical findings, and the count of items needing
+   human follow-up; send the report file to the user.
+3. If a Blocker is found, report it immediately — interrupt the remaining
+   procedure rather than waiting until the end (Standard chapter 6, step 4).
 
-## 制約(要約)
+## Constraints (summary)
 
-- 監査は**評価のみ**。是正の実装・コミットは行わない(所見と推奨まで)。
-- 本スキルの出力を個人の人事評価に転用しない(標準 1.3)。
-- 出力には対象リビジョン・実施日時・標準のバージョン(改訂履歴参照)を必ず含める。
+- The audit is **evaluation only**. Do not implement fixes or commit changes —
+  stop at findings and recommendations.
+- Never repurpose this skill's output for individual performance evaluation
+  (Standard section 1.3).
+- Always include the target revision, execution timestamp, and the Standard's
+  version (see its revision history) in the output.
 
-## 定期実行
+## Recurring runs
 
-月次運用にする場合は `/schedule` で `/repo-review internal --delegate` を登録する。定期実行時は前回レポートとの差分(スコア推移・新規/解消所見)を要約に含める。
+For a monthly cadence, register `/repo-review internal --delegate` via
+`/schedule`. On recurring runs, include a diff against the previous report
+(score trend, new/resolved findings) in the summary.
