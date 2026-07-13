@@ -14,8 +14,9 @@ use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
-use prometheus::{register_histogram_vec, HistogramVec};
+use prometheus::{HistogramVec, register_histogram_vec};
 use tower::{Layer, Service};
+use tracing::{Instrument, info_span};
 
 /// Matches the Go API's `merlon_grpc_request_duration_seconds` histogram
 /// (api/internal/metrics/metrics.go) so both sides of the gRPC boundary
@@ -47,7 +48,10 @@ pub struct MetricsService<S> {
 
 impl<S, ReqBody, RespBody> Service<http::Request<ReqBody>> for MetricsService<S>
 where
-    S: Service<http::Request<ReqBody>, Response = http::Response<RespBody>> + Clone + Send + 'static,
+    S: Service<http::Request<ReqBody>, Response = http::Response<RespBody>>
+        + Clone
+        + Send
+        + 'static,
     S::Future: Send + 'static,
     ReqBody: Send + 'static,
     RespBody: Send + 'static,
@@ -62,20 +66,31 @@ where
 
     fn call(&mut self, req: http::Request<ReqBody>) -> Self::Future {
         let method = grpc_method_name(req.uri().path());
+        let request_id = req
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.is_empty() && value.len() <= 128)
+            .unwrap_or("missing")
+            .to_owned();
+        let span = info_span!("grpc_request", rpc_method = %method, request_id = %request_id);
         let start = Instant::now();
         let mut inner = self.inner.clone();
 
-        Box::pin(async move {
-            let result = inner.call(req).await;
-            let status = match &result {
-                Ok(response) => grpc_status_label(response),
-                Err(_) => "error",
-            };
-            GRPC_REQUEST_DURATION
-                .with_label_values(&[method.as_str(), status])
-                .observe(start.elapsed().as_secs_f64());
-            result
-        })
+        Box::pin(
+            async move {
+                let result = inner.call(req).await;
+                let status = match &result {
+                    Ok(response) => grpc_status_label(response),
+                    Err(_) => "error",
+                };
+                GRPC_REQUEST_DURATION
+                    .with_label_values(&[method.as_str(), status])
+                    .observe(start.elapsed().as_secs_f64());
+                result
+            }
+            .instrument(span),
+        )
     }
 }
 

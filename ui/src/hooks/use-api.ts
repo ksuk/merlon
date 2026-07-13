@@ -32,7 +32,7 @@ export function useApi<T>(fetcher: () => Promise<T>): UseApiResult<T> {
     return () => {
       cancelled = true
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- request callback is stable by contract
   }, [])
 
   return { data, error, loading }

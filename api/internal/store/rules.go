@@ -66,6 +66,21 @@ func (r *PgRuleRepo) Get(ctx context.Context, id string) (*domain.RuleDefinition
 	return rd, nil
 }
 
+func (r *PgRuleRepo) GetActive(ctx context.Context, id string) (*domain.RuleDefinition, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT `+ruleColumns+` FROM rule_definitions WHERE name = $1 AND is_active = true ORDER BY version DESC LIMIT 1`,
+		id,
+	)
+	rd, err := scanRule(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &domain.ErrNotFound{Entity: "active_rule_definition", ID: id}
+		}
+		return nil, err
+	}
+	return rd, nil
+}
+
 func (r *PgRuleRepo) GetVersion(ctx context.Context, id string, version int) (*domain.RuleDefinition, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT `+ruleColumns+` FROM rule_definitions WHERE name = $1 AND version = $2`,
@@ -195,10 +210,8 @@ func (r *PgRuleRepo) SetActive(ctx context.Context, id string, active bool) erro
 		return &domain.ErrNotFound{Entity: "rule_definition", ID: id}
 	}
 
-	if active {
-		if _, err := tx.Exec(ctx, `UPDATE rule_definitions SET is_active = false WHERE name = $1`, id); err != nil {
-			return err
-		}
+	if _, err := tx.Exec(ctx, `UPDATE rule_definitions SET is_active = false WHERE name = $1`, id); err != nil {
+		return err
 	}
 
 	tag, err := tx.Exec(ctx,

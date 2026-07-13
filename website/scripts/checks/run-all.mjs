@@ -12,6 +12,7 @@ import { run as checkTitleStyle } from "./check-title-style.mjs";
 import { run as checkI18nParity } from "./check-i18n-parity.mjs";
 import { run as checkI18nFreshness } from "./check-i18n-freshness.mjs";
 import { run as checkUiTranslations } from "./check-ui-translations.mjs";
+import { run as checkReadme } from "./check-readme.mjs";
 
 const CHECKS = [
   { name: "check-en-language", run: checkEnLanguage },
@@ -19,6 +20,7 @@ const CHECKS = [
   { name: "check-i18n-parity", run: checkI18nParity },
   { name: "check-i18n-freshness", run: checkI18nFreshness },
   { name: "check-ui-translations", run: checkUiTranslations },
+  { name: "check-readme", run: checkReadme },
 ];
 
 function main() {

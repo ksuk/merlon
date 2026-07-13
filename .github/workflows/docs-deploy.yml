@@ -36,26 +36,26 @@ env:
   DOCS_SITE_URL: ${{ vars.DOCS_SITE_URL }}
 
 jobs:
-  deploy:
-    name: Build & Deploy Docs Site
+  build:
+    name: Build & Check Docs Site
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.12'
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: website/package-lock.json
 
       - name: Install buf
-        uses: bufbuild/buf-action@v1
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
         with:
           setup_only: true
 
@@ -78,32 +78,45 @@ jobs:
           npm run typecheck
           npm run build
 
-      - name: Validate production URL
-        if: github.event_name != 'pull_request'
-        run: test -n "$DOCS_SITE_URL"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: docs-build
+          path: website/build
 
+  deploy:
+    name: Deploy Docs Site
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: docs-production
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: docs-build
+          path: website/build
+      - name: Validate production URL
+        run: test -n "$DOCS_SITE_URL"
       - name: Deploy to Cloudflare Workers
         id: deploy
-        if: github.event_name != 'pull_request'
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: '4.110.0'
           workingDirectory: website
           command: deploy --message "Docs ${{ github.sha }}"
-
       - name: Smoke test deployment
-        if: github.event_name != 'pull_request'
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
         run: |
           set -euo pipefail
           test -n "$DEPLOYMENT_URL"
           base_url="${DEPLOYMENT_URL%/}"
-          en_body="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
-            "$base_url/docs/getting-started")"
+          en_body="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 2 "$base_url/docs/getting-started")"
           grep -qi '<html' <<<"$en_body"
-          ja_body="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 2 \
-            "$base_url/ja/docs/getting-started")"
+          ja_body="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 2 "$base_url/ja/docs/getting-started")"
           grep -qi '<html' <<<"$ja_body"

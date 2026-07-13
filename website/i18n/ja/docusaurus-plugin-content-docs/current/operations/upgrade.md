@@ -1,5 +1,7 @@
 # アップグレード運用手順
 
+`MERLON_MIGRATION_DATABASE_URL` の専用接続で checksum ledger 付きの `make migrate` を実行する。台帳がない既存データベースでは、確認済みの最終ファイル名を `MERLON_MIGRATION_BASELINE` に指定し、自動推測を行わない。
+
 ## アップグレード前
 
 1. リリースノートを読み、PostgreSQL データベースと暗号鍵材料をバックアップする。

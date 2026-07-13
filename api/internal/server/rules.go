@@ -150,6 +150,10 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "type and name are required")
 		return
 	}
+	if req.IsActive {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "new rules require independent activation")
+		return
+	}
 	if len(req.Definition) == 0 {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "definition is required")
 		return
@@ -167,7 +171,7 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 		Name:        req.Name,
 		Description: req.Description,
 		Definition:  req.Definition,
-		IsActive:    req.IsActive,
+		IsActive:    false,
 		CreatedBy:   resolveAuditUserID(r),
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -217,6 +221,10 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "definition is required")
 		return
 	}
+	if req.IsActive {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "new rule versions require independent activation")
+		return
+	}
 
 	if err := s.validateRuleDefinition(r, existing.Type, req.Definition); err != nil {
 		s.writeRuleValidationError(w, err)
@@ -235,7 +243,7 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 		Name:        existing.Name,
 		Description: description,
 		Definition:  req.Definition,
-		IsActive:    req.IsActive,
+		IsActive:    false,
 		CreatedBy:   resolveAuditUserID(r),
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -268,6 +276,34 @@ func (s *Server) setRuleActive(w http.ResponseWriter, r *http.Request, active bo
 	}
 
 	id := r.PathValue("id")
+	actor := resolveAuditUserID(r)
+	if activeRule, err := s.rules.GetActive(r.Context(), id); err == nil {
+		if activeRule.CreatedBy != "" && activeRule.CreatedBy == actor {
+			writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "the rule author cannot change its active state")
+			return
+		}
+	} else {
+		var nf *domain.ErrNotFound
+		if !errors.As(err, &nf) {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+		if active {
+			latest, latestErr := s.rules.Get(r.Context(), id)
+			if latestErr != nil {
+				if errors.As(latestErr, &nf) {
+					writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, latestErr.Error())
+					return
+				}
+				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, latestErr.Error())
+				return
+			}
+			if latest.CreatedBy != "" && latest.CreatedBy == actor {
+				writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "the rule author cannot change its active state")
+				return
+			}
+		}
+	}
 	if err := s.rules.SetActive(r.Context(), id, active); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {

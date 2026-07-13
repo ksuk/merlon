@@ -87,7 +87,8 @@ impl TmEngine {
     ) -> Vec<AlertOutput> {
         let mut alerts = Vec::new();
         for scenario in &self.scenarios {
-            if !scenario_ids.is_empty() && !scenario_ids.contains(&scenario.scenario_id().to_string())
+            if !scenario_ids.is_empty()
+                && !scenario_ids.contains(&scenario.scenario_id().to_string())
             {
                 continue;
             }
@@ -103,6 +104,7 @@ impl TmEngine {
     /// the transaction-monitoring design「評価モード」). `evaluate` remains for
     /// callers that don't need mode filtering (e.g. backtesting historical
     /// data against every configured scenario regardless of mode).
+    // Evaluation inputs map directly to the rule contract; keep explicit arguments.
     #[allow(clippy::too_many_arguments)]
     pub fn evaluate_with_mode(
         &self,
@@ -115,7 +117,8 @@ impl TmEngine {
     ) -> Vec<AlertOutput> {
         let mut alerts = Vec::new();
         for scenario in &self.scenarios {
-            if !scenario_ids.is_empty() && !scenario_ids.contains(&scenario.scenario_id().to_string())
+            if !scenario_ids.is_empty()
+                && !scenario_ids.contains(&scenario.scenario_id().to_string())
             {
                 continue;
             }

@@ -4,6 +4,8 @@ sidebar_position: 3
 
 # 設定リファレンス
 
+マイグレーション専用接続には `MERLON_MIGRATION_DATABASE_URL` を使用し、既存データベースを台帳へ登録する場合だけ `MERLON_MIGRATION_BASELINE` を明示する。API の接続とは分離すること。
+
 Merlon は環境変数で設定する。ローカル開発では `.env.example` を `.env` にコピーする。そこに含まれる認証情報やシークレットを本番環境で使用してはならない。
 
 ## 環境変数

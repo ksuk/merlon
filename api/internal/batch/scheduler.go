@@ -2,6 +2,7 @@ package batch
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 // DefaultTMBatchSchedule is the transaction-monitoring design's default daily run
@@ -46,7 +48,7 @@ type Scheduler struct {
 func NewScheduler(cronExpr string, job func(ctx context.Context, runID string) error) *Scheduler {
 	hour, minute, err := parseHHMM(cronExpr)
 	if err != nil {
-		hour, minute, _ = parseHHMM(DefaultTMBatchSchedule)
+		hour, minute = 2, 0
 	}
 	return &Scheduler{
 		Location: time.Local,
@@ -204,19 +206,27 @@ func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candi
 
 	customers, err := deps.Customers.List(ctx, maxTMBatchCustomers, 0)
 	if err != nil {
-		_ = deps.Runs.Fail(ctx, runID)
-		return err
+		return failRun(ctx, deps.Runs, runID, err)
 	}
 
 	err = ProcessCustomersResumably(ctx, deps.Runs, runID, customers, alreadyProcessed, func(ctx context.Context, c *domain.Customer) error {
 		return evaluateCustomerBatch(ctx, deps, c, batchStart, runID)
 	})
 	if err != nil {
-		_ = deps.Runs.Fail(ctx, runID)
-		return err
+		return failRun(ctx, deps.Runs, runID, err)
 	}
 
-	return deps.Runs.Complete(ctx, runID)
+	if err := deps.Runs.Complete(ctx, runID); err != nil {
+		return fmt.Errorf("complete batch run %s: %w", runID, err)
+	}
+	return nil
+}
+
+func failRun(ctx context.Context, runs domain.BatchRunRepository, runID string, cause error) error {
+	if err := runs.Fail(ctx, runID); err != nil {
+		return errors.Join(cause, fmt.Errorf("mark batch run failed: %w", err))
+	}
+	return cause
 }
 
 func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *domain.Customer, batchStart time.Time, runID string) error {
@@ -263,16 +273,23 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 
 		created, existing, err := deps.Alerts.CreateIfNotDuplicate(ctx, a)
 		if err != nil {
-			continue
+			metrics.AlertPersistenceFailuresTotal.WithLabelValues("create").Inc()
+			return fmt.Errorf("persist batch alert for customer %s: %w", c.ID, err)
 		}
 		if !created {
 			if existing != nil {
-				_ = deps.Alerts.AnnotateBatchReviewed(ctx, existing.ID, runID)
+				if err := deps.Alerts.AnnotateBatchReviewed(ctx, existing.ID, runID); err != nil {
+					metrics.AlertPersistenceFailuresTotal.WithLabelValues("annotate").Inc()
+					return fmt.Errorf("annotate duplicate alert %s: %w", existing.ID, err)
+				}
 			}
 			continue
 		}
 		if deps.Cases != nil {
-			_, _ = casemgmt.ConsolidateAlert(ctx, deps.Cases, a, casemgmt.DefaultConsolidationWindow)
+			if _, err := casemgmt.ConsolidateAlert(ctx, deps.Cases, a, casemgmt.DefaultConsolidationWindow); err != nil {
+				metrics.AlertPersistenceFailuresTotal.WithLabelValues("case_consolidation").Inc()
+				return fmt.Errorf("consolidate alert %s: %w", a.ID, err)
+			}
 		}
 	}
 	return nil

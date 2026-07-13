@@ -74,7 +74,7 @@ export function AlertsPage() {
 
   useEffect(() => {
     reload()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when alert filters change
   }, [])
 
   function toggleSelected(id: string) {

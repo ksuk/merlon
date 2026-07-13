@@ -206,7 +206,7 @@ func TestHandleUpdateRule_IncrementsVersion(t *testing.T) {
 	}
 
 	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
-	body := `{"definition":{"note":"v2"},"is_active":true}`
+	body := `{"definition":{"note":"v2"},"is_active":false}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/rules/cdd_basic", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+adminKey)
 	rec := httptest.NewRecorder()
@@ -276,6 +276,36 @@ func TestHandleActivateRule_TriggersHotReload(t *testing.T) {
 	}
 	if got.IsActive {
 		t.Error("expected rule to be inactive after deactivate")
+	}
+}
+
+func TestRuleActivationRequiresDifferentAdmin(t *testing.T) {
+	s := testServerWithRules()
+	adminOne := createAPIKey(t, s, "admin-one", domain.RoleAdmin)
+	adminTwo := createAPIKeyAs(t, s, adminOne, "admin-two", domain.RoleAdmin)
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/rules", strings.NewReader(`{"type":"CDD_WEIGHT","name":"dual_control","definition":{}}`))
+	create.Header.Set("Authorization", "Bearer "+adminOne)
+	created := httptest.NewRecorder()
+	s.Handler().ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: status = %d, body: %s", created.Code, created.Body.String())
+	}
+
+	activate := httptest.NewRequest(http.MethodPost, "/api/v1/rules/dual_control/activate", nil)
+	activate.Header.Set("Authorization", "Bearer "+adminOne)
+	blocked := httptest.NewRecorder()
+	s.Handler().ServeHTTP(blocked, activate)
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("same-admin activation status = %d, want %d", blocked.Code, http.StatusForbidden)
+	}
+
+	activate = httptest.NewRequest(http.MethodPost, "/api/v1/rules/dual_control/activate", nil)
+	activate.Header.Set("Authorization", "Bearer "+adminTwo)
+	approved := httptest.NewRecorder()
+	s.Handler().ServeHTTP(approved, activate)
+	if approved.Code != http.StatusOK {
+		t.Fatalf("second-admin activation status = %d, want %d, body: %s", approved.Code, http.StatusOK, approved.Body.String())
 	}
 }
 

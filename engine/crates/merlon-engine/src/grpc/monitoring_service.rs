@@ -3,14 +3,13 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use crate::monitoring::config::EvaluationMode;
-use crate::monitoring::engine::{
-    AlertSeverity, TmEngine, TransactionDirection, TransactionInput,
-};
+use crate::monitoring::engine::{AlertSeverity, TmEngine, TransactionDirection, TransactionInput};
 use crate::proto::merlon::v1::{
-    monitoring_service_server::MonitoringService, Alert, AlertSeverity as ProtoAlertSeverity,
-    CustomerType as ProtoCustomerType, EvaluateTransactionsRequest, EvaluateTransactionsResponse,
+    Alert, AlertSeverity as ProtoAlertSeverity, CustomerType as ProtoCustomerType,
+    EvaluateTransactionsRequest, EvaluateTransactionsResponse,
     EvaluationModeFilter as ProtoEvaluationModeFilter, HealthRequest, HealthResponse,
     RiskTier as ProtoRiskTier, Timestamp, TransactionDirection as ProtoDirection,
+    monitoring_service_server::MonitoringService,
 };
 
 pub struct MonitoringServiceImpl {
@@ -35,6 +34,7 @@ impl MonitoringServiceImpl {
 
 // tonic::Status is the error type every gRPC handler in this codebase uses;
 // boxing it here alone would just move the cost to callers that unwrap it.
+// Tonic fixes this generated service signature; the large error is intentional.
 #[allow(clippy::result_large_err)]
 fn proto_direction_to_internal(d: i32) -> Result<TransactionDirection, Status> {
     match ProtoDirection::try_from(d) {
@@ -104,12 +104,15 @@ impl MonitoringService for MonitoringServiceImpl {
             return Err(Status::invalid_argument("transactions must not be empty"));
         }
         if req.transactions.len() > 10_000 {
-            return Err(Status::invalid_argument("too many transactions (max 10000)"));
+            return Err(Status::invalid_argument(
+                "too many transactions (max 10000)",
+            ));
         }
 
         let risk_tier = risk_tier_str(req.customer_risk_tier);
         let customer_type = customer_type_str(req.customer_type);
 
+        // Tonic fixes this generated service signature; the large error is intentional.
         #[allow(clippy::result_large_err)]
         let transactions: Vec<TransactionInput> = req
             .transactions
@@ -228,7 +231,10 @@ mod tests {
                     counterparty_id: "CP001".to_string(),
                     counterparty_country: "JP".to_string(),
                     direction: ProtoDirection::Outbound as i32,
-                    executed_at: Some(Timestamp { seconds: base, nanos: 0 }),
+                    executed_at: Some(Timestamp {
+                        seconds: base,
+                        nanos: 0,
+                    }),
                     channel: "web".to_string(),
                 },
                 TransactionData {
@@ -239,7 +245,10 @@ mod tests {
                     counterparty_id: "CP002".to_string(),
                     counterparty_country: "JP".to_string(),
                     direction: ProtoDirection::Outbound as i32,
-                    executed_at: Some(Timestamp { seconds: base + 3600, nanos: 0 }),
+                    executed_at: Some(Timestamp {
+                        seconds: base + 3600,
+                        nanos: 0,
+                    }),
                     channel: "web".to_string(),
                 },
                 TransactionData {
@@ -250,7 +259,10 @@ mod tests {
                     counterparty_id: "CP003".to_string(),
                     counterparty_country: "JP".to_string(),
                     direction: ProtoDirection::Outbound as i32,
-                    executed_at: Some(Timestamp { seconds: base + 7200, nanos: 0 }),
+                    executed_at: Some(Timestamp {
+                        seconds: base + 7200,
+                        nanos: 0,
+                    }),
                     channel: "web".to_string(),
                 },
             ],
@@ -268,10 +280,7 @@ mod tests {
         assert_eq!(resp.customer_id, "C001");
         assert_eq!(resp.alerts.len(), 1);
         assert_eq!(resp.alerts[0].scenario_id, "test_structuring");
-        assert_eq!(
-            resp.alerts[0].severity,
-            ProtoAlertSeverity::Medium as i32
-        );
+        assert_eq!(resp.alerts[0].severity, ProtoAlertSeverity::Medium as i32);
         assert!(resp.alerts[0].detected_at.is_some());
     }
 
@@ -289,7 +298,10 @@ mod tests {
                 counterparty_id: String::new(),
                 counterparty_country: String::new(),
                 direction: ProtoDirection::Inbound as i32,
-                executed_at: Some(Timestamp { seconds: 0, nanos: 0 }),
+                executed_at: Some(Timestamp {
+                    seconds: 0,
+                    nanos: 0,
+                }),
                 channel: String::new(),
             }],
             scenario_ids: vec![],
@@ -297,9 +309,7 @@ mod tests {
             mode_filter: 0,
         };
 
-        let result = service
-            .evaluate_transactions(Request::new(req))
-            .await;
+        let result = service.evaluate_transactions(Request::new(req)).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
     }
@@ -316,9 +326,7 @@ mod tests {
             mode_filter: 0,
         };
 
-        let result = service
-            .evaluate_transactions(Request::new(req))
-            .await;
+        let result = service.evaluate_transactions(Request::new(req)).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
     }
@@ -350,7 +358,10 @@ severity: HIGH
                 counterparty_id: "CP001".to_string(),
                 counterparty_country: "JP".to_string(),
                 direction: ProtoDirection::Outbound as i32,
-                executed_at: Some(Timestamp { seconds: base, nanos: 0 }),
+                executed_at: Some(Timestamp {
+                    seconds: base,
+                    nanos: 0,
+                }),
                 channel: "web".to_string(),
             },
             TransactionData {
@@ -361,7 +372,10 @@ severity: HIGH
                 counterparty_id: "CP002".to_string(),
                 counterparty_country: "JP".to_string(),
                 direction: ProtoDirection::Outbound as i32,
-                executed_at: Some(Timestamp { seconds: base + 3600, nanos: 0 }),
+                executed_at: Some(Timestamp {
+                    seconds: base + 3600,
+                    nanos: 0,
+                }),
                 channel: "web".to_string(),
             },
             TransactionData {
@@ -372,7 +386,10 @@ severity: HIGH
                 counterparty_id: "CP003".to_string(),
                 counterparty_country: "JP".to_string(),
                 direction: ProtoDirection::Outbound as i32,
-                executed_at: Some(Timestamp { seconds: base + 7200, nanos: 0 }),
+                executed_at: Some(Timestamp {
+                    seconds: base + 7200,
+                    nanos: 0,
+                }),
                 channel: "web".to_string(),
             },
         ]
@@ -396,7 +413,10 @@ severity: HIGH
             .await
             .unwrap()
             .into_inner();
-        assert!(resp.alerts.is_empty(), "batch-only scenario should not fire without mode_filter=BATCH");
+        assert!(
+            resp.alerts.is_empty(),
+            "batch-only scenario should not fire without mode_filter=BATCH"
+        );
     }
 
     #[tokio::test]

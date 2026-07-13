@@ -120,22 +120,24 @@ impl CddWeightConfig {
             }
         }
 
-        if let Some(max) = self.tier_thresholds.low.max
-            && let Some(min) = self.tier_thresholds.medium.min
-            && (max - min).abs() > f64::EPSILON * 100.0
-        {
-            return Err(ConfigError::Validation(format!(
-                "LOW.max ({max}) must equal MEDIUM.min ({min})"
-            )));
+        if let Some(max) = self.tier_thresholds.low.max {
+            if let Some(min) = self.tier_thresholds.medium.min {
+                if (max - min).abs() > f64::EPSILON * 100.0 {
+                    return Err(ConfigError::Validation(format!(
+                        "LOW.max ({max}) must equal MEDIUM.min ({min})"
+                    )));
+                }
+            }
         }
 
-        if let Some(max) = self.tier_thresholds.medium.max
-            && let Some(min) = self.tier_thresholds.high.min
-            && (max - min).abs() > f64::EPSILON * 100.0
-        {
-            return Err(ConfigError::Validation(format!(
-                "MEDIUM.max ({max}) must equal HIGH.min ({min})"
-            )));
+        if let Some(max) = self.tier_thresholds.medium.max {
+            if let Some(min) = self.tier_thresholds.high.min {
+                if (max - min).abs() > f64::EPSILON * 100.0 {
+                    return Err(ConfigError::Validation(format!(
+                        "MEDIUM.max ({max}) must equal HIGH.min ({min})"
+                    )));
+                }
+            }
         }
 
         Ok(())
@@ -145,7 +147,9 @@ impl CddWeightConfig {
 fn hex_to_bytes(hex: &str) -> [u8; 32] {
     let mut bytes = [0_u8; 32];
     for (index, chunk) in hex.as_bytes().chunks_exact(2).enumerate() {
-        bytes[index] = u8::from_str_radix(std::str::from_utf8(chunk).expect("SHA-256 is UTF-8"), 16).expect("SHA-256 is hex");
+        bytes[index] =
+            u8::from_str_radix(std::str::from_utf8(chunk).expect("SHA-256 is UTF-8"), 16)
+                .expect("SHA-256 is hex");
     }
     bytes
 }

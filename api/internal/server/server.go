@@ -312,6 +312,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.rateLimitMiddleware(h)
 	h = requestBodyLimitMiddleware(h)
 	h = s.metricsMiddleware(h)
+	h = requestIDMiddleware(h)
 	return h
 }
 

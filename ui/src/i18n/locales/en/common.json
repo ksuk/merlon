@@ -498,7 +498,8 @@
     },
     "status": {
       "active": "Active",
-      "inactive": "Inactive"
+      "inactive": "Inactive",
+      "pending": "Pending approval"
     },
     "entry": {
       "created": "Created: {{date}}"
@@ -730,7 +731,9 @@
       "updatedAt": "Updated: {{date}}",
       "export": "Export",
       "activate": "Activate",
-      "deactivate": "Deactivate"
+      "deactivate": "Deactivate",
+      "createdBy": "Created by: {{actor}}",
+      "selfActionBlocked": "A different Admin must approve this version"
     },
     "empty": "No rules registered"
   },

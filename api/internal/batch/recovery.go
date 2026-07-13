@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/metrics"
 )
 
 // maxPendingRetries bounds how many times RunOnce re-attempts a PENDING_REVIEW
@@ -80,28 +84,35 @@ func (j *RecoveryJob) RunOnce(ctx context.Context) (processed int, err error) {
 		return 0, err
 	}
 
+	var joined error
 	for _, pe := range records {
-		if j.reevaluate(ctx, &pe) {
+		if err := j.reevaluate(ctx, &pe); err == nil {
 			processed++
+		} else {
+			slog.ErrorContext(ctx, "pending evaluation recovery failed", "pending_evaluation_id", pe.ID, "error", err)
+			if joined == nil {
+				joined = err
+			} else {
+				joined = errors.Join(joined, err)
+			}
 		}
 	}
-	return processed, nil
+	return processed, joined
 }
 
 // reevaluate attempts to re-run monitoring for a single PENDING_REVIEW
-// record, returning true if it was resolved.
-func (j *RecoveryJob) reevaluate(ctx context.Context, pe *domain.PendingEvaluation) bool {
+// record, returning nil only after all persistence and status updates succeed.
+func (j *RecoveryJob) reevaluate(ctx context.Context, pe *domain.PendingEvaluation) error {
 	c, err := j.customers.Get(ctx, pe.CustomerID)
 	if err != nil {
-		j.recordFailure(ctx, pe)
-		return false
+		return j.recordFailure(ctx, pe, fmt.Errorf("load customer: %w", err))
 	}
 
 	var txns []domain.Transaction
 	for _, id := range pe.TransactionIDs {
 		t, err := j.transactions.Get(ctx, id)
 		if err != nil {
-			continue
+			return j.recordFailure(ctx, pe, fmt.Errorf("load transaction %s: %w", id, err))
 		}
 		txns = append(txns, *t)
 	}
@@ -113,8 +124,7 @@ func (j *RecoveryJob) reevaluate(ctx context.Context, pe *domain.PendingEvaluati
 
 	alerts, err := j.monitoring.EvaluateTransactions(ctx, pe.CustomerID, riskTier, txns, nil)
 	if err != nil {
-		j.recordFailure(ctx, pe)
-		return false
+		return j.recordFailure(ctx, pe, fmt.Errorf("evaluate transactions: %w", err))
 	}
 
 	for _, a := range alerts {
@@ -122,13 +132,21 @@ func (j *RecoveryJob) reevaluate(ctx context.Context, pe *domain.PendingEvaluati
 		now := time.Now()
 		a.CreatedAt = now
 		a.UpdatedAt = now
-		if err := j.alerts.Create(ctx, &a); err != nil {
-			continue
+		created, existing, err := j.alerts.CreateIfNotDuplicate(ctx, &a)
+		if err != nil {
+			return j.recordFailure(ctx, pe, fmt.Errorf("persist alert: %w", err))
+		}
+		if !created && existing != nil {
+			if err := j.alerts.AnnotateBatchReviewed(ctx, existing.ID, pe.ID); err != nil {
+				return j.recordFailure(ctx, pe, fmt.Errorf("annotate duplicate alert: %w", err))
+			}
 		}
 	}
 
-	_ = j.pending.UpdateStatus(ctx, pe.ID, domain.PendingEvaluationStatusResolved)
-	return true
+	if err := j.pending.UpdateStatus(ctx, pe.ID, domain.PendingEvaluationStatusResolved); err != nil {
+		return j.recordFailure(ctx, pe, fmt.Errorf("mark pending evaluation resolved: %w", err))
+	}
+	return nil
 }
 
 func generateID() string {
@@ -139,9 +157,17 @@ func generateID() string {
 
 // recordFailure increments retry_count and, once maxPendingRetries is
 // exceeded, transitions the record to FAILED.
-func (j *RecoveryJob) recordFailure(ctx context.Context, pe *domain.PendingEvaluation) {
-	_ = j.pending.IncrementRetry(ctx, pe.ID)
-	if pe.RetryCount+1 >= maxPendingRetries {
-		_ = j.pending.UpdateStatus(ctx, pe.ID, domain.PendingEvaluationStatusFailed)
+func (j *RecoveryJob) recordFailure(ctx context.Context, pe *domain.PendingEvaluation, cause error) error {
+	if err := j.pending.IncrementRetry(ctx, pe.ID); err != nil {
+		metrics.PendingEvaluationFailuresTotal.WithLabelValues("increment_retry").Inc()
+		return fmt.Errorf("%w; increment retry: %v", cause, err)
 	}
+	if pe.RetryCount+1 >= maxPendingRetries {
+		if err := j.pending.UpdateStatus(ctx, pe.ID, domain.PendingEvaluationStatusFailed); err != nil {
+			metrics.PendingEvaluationFailuresTotal.WithLabelValues("mark_failed").Inc()
+			return fmt.Errorf("%w; mark failed: %v", cause, err)
+		}
+	}
+	metrics.PendingEvaluationFailuresTotal.WithLabelValues("reevaluate").Inc()
+	return cause
 }

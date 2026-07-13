@@ -15,6 +15,8 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_ENV` | `development` | Set to `production`. Production Engine connections require TLS. |
 | `MERLON_HTTP_ADDR` | `:8080` | Bind behind a TLS-terminating reverse proxy. |
 | `MERLON_DATABASE_URL` | unset | Use TLS (`sslmode=require` or stronger) and a least-privilege application role. |
+| `MERLON_MIGRATION_DATABASE_URL` | unset | Migration command only; use a separate schema-owner connection. Required by `make migrate` in production. |
+| `MERLON_MIGRATION_BASELINE` | unset | Explicit last-applied migration filename for a pre-ledger database; never inferred automatically. |
 | `MERLON_ENGINE_ADDR` | unset | Keep the gRPC endpoint on an internal network. |
 | `MERLON_ENGINE_TLS_CERT` | unset | Required when `MERLON_ENV=production` and `MERLON_ENGINE_ADDR` is set. It is the CA certificate used to verify the Engine. |
 | `MERLON_ENGINE_TLS_SERVER_NAME` | unset | Set the expected Engine TLS server name when it differs from the address host. |

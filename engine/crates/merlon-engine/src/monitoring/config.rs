@@ -132,13 +132,19 @@ struct V2Raw {
     #[serde(default)]
     description: String,
     #[serde(rename = "type")]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "kept for schema compatibility and future validation"
+    )]
     scenario_type: String,
     conditions: V2Conditions,
     #[serde(default = "default_v2_evaluation_mode")]
     evaluation_mode: String,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "kept for schema compatibility and future validation"
+    )]
     severity: String,
 }
 
@@ -219,24 +225,28 @@ impl ScenarioConfig {
         self.parameters
             .get(key)
             .and_then(|v| v.as_sequence())
-            .map(|seq| seq.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
     pub fn adjusted_f64(&self, key: &str, risk_tier: &str) -> Option<f64> {
-        if let Some(adjustments) = self.risk_tier_adjustments.get(risk_tier)
-            && let Some(val) = adjustments.get(key).and_then(|v| v.as_f64())
-        {
-            return Some(val);
+        if let Some(adjustments) = self.risk_tier_adjustments.get(risk_tier) {
+            if let Some(val) = adjustments.get(key).and_then(|v| v.as_f64()) {
+                return Some(val);
+            }
         }
         self.get_f64(key)
     }
 
     pub fn adjusted_i64(&self, key: &str, risk_tier: &str) -> Option<i64> {
-        if let Some(adjustments) = self.risk_tier_adjustments.get(risk_tier)
-            && let Some(val) = adjustments.get(key).and_then(|v| v.as_i64())
-        {
-            return Some(val);
+        if let Some(adjustments) = self.risk_tier_adjustments.get(risk_tier) {
+            if let Some(val) = adjustments.get(key).and_then(|v| v.as_i64()) {
+                return Some(val);
+            }
         }
         self.get_i64(key)
     }
@@ -276,15 +286,13 @@ impl ScenarioConfig {
         self.schema_version_kind = ScenarioSchemaVersion::V1;
         self.evaluation_mode = default_evaluation_mode();
 
-        let threshold_key = V1_THRESHOLD_KEYS
-            .into_iter()
-            .find(|key| {
-                self.parameters.contains_key(*key)
-                    || self
-                        .risk_tier_adjustments
-                        .values()
-                        .any(|tier| tier.contains_key(*key))
-            });
+        let threshold_key = V1_THRESHOLD_KEYS.into_iter().find(|key| {
+            self.parameters.contains_key(*key)
+                || self
+                    .risk_tier_adjustments
+                    .values()
+                    .any(|tier| tier.contains_key(*key))
+        });
 
         let mut per_tier = HashMap::new();
         if let Some(key) = threshold_key {
@@ -372,7 +380,9 @@ impl ScenarioConfig {
             .values()
             .filter_map(|tiers| tiers.get(risk_tier))
             .copied()
-            .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.min(v))))
+            .fold(None, |acc: Option<f64>, v| {
+                Some(acc.map_or(v, |a| a.min(v)))
+            })
     }
 }
 

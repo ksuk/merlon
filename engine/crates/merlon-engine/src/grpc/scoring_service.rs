@@ -6,9 +6,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 use crate::proto::merlon::v1::{
-    scoring_service_server::ScoringService, BatchEvaluateRequest, BatchEvaluateResponse,
-    EvaluateCustomerRiskRequest, EvaluateCustomerRiskResponse, HealthRequest, HealthResponse,
-    RiskFactor, RiskTier as ProtoRiskTier, Timestamp,
+    BatchEvaluateRequest, BatchEvaluateResponse, EvaluateCustomerRiskRequest,
+    EvaluateCustomerRiskResponse, HealthRequest, HealthResponse, RiskFactor,
+    RiskTier as ProtoRiskTier, Timestamp, scoring_service_server::ScoringService,
 };
 use crate::scoring::engine::{CddScoringEngine, RiskTier, ScoringInput};
 
@@ -23,6 +23,7 @@ impl ScoringServiceImpl {
         }
     }
 
+    // Tonic fixes this generated service signature; the large error is intentional.
     #[allow(clippy::result_large_err)]
     fn evaluate_request(
         &self,
@@ -218,9 +219,7 @@ mod tests {
             rule_set_id: "test".to_string(),
         };
 
-        let result = service
-            .evaluate_customer_risk(Request::new(req))
-            .await;
+        let result = service.evaluate_customer_risk(Request::new(req)).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
     }
@@ -290,9 +289,7 @@ mod tests {
             rule_set_id: "test_preset".to_string(),
         };
 
-        let result = service
-            .evaluate_customer_risk(Request::new(req))
-            .await;
+        let result = service.evaluate_customer_risk(Request::new(req)).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code(), tonic::Code::InvalidArgument);
     }
@@ -324,10 +321,7 @@ mod tests {
             rule_set_id: "test_preset".to_string(),
         };
 
-        let resp = service
-            .batch_evaluate(Request::new(req))
-            .await
-            .unwrap();
+        let resp = service.batch_evaluate(Request::new(req)).await.unwrap();
 
         let mut stream = resp.into_inner();
         let mut results = Vec::new();
@@ -340,5 +334,16 @@ mod tests {
         assert!(results[1].result.is_some());
         assert_eq!(results[0].result.as_ref().unwrap().customer_id, "C001");
         assert_eq!(results[1].result.as_ref().unwrap().customer_id, "C002");
+    }
+
+    #[tokio::test]
+    async fn test_batch_rejects_more_than_maximum_customers() {
+        let service = test_service();
+        let req = BatchEvaluateRequest {
+            customers: vec![EvaluateCustomerRiskRequest::default(); 10_001],
+            rule_set_id: "test_preset".to_string(),
+        };
+        let err = service.batch_evaluate(Request::new(req)).await.unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
     }
 }

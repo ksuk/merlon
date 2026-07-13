@@ -133,6 +133,12 @@ func main() {
 			slog.Error("database ping", "error", err)
 			os.Exit(1)
 		}
+		if cfg.Env == "production" {
+			if err := store.VerifyAuditLogPrivileges(context.Background(), pool); err != nil {
+				slog.Error("database audit privilege preflight failed", "error", err)
+				os.Exit(1)
+			}
+		}
 
 		deps.Customers = store.NewPgCustomerRepo(pool, encryptor)
 		deps.Transactions = store.NewPgTransactionRepo(pool)
@@ -145,6 +151,7 @@ func main() {
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
 		deps.Retention = store.NewPgRetentionRepo(pool)
 		deps.Accounts = store.NewPgAccountRepo(pool)
+		deps.Rules = store.NewPostgresRuleRepo(pool)
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		slog.Info("database connected", "backend", "postgresql")
@@ -161,6 +168,7 @@ func main() {
 		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
 		deps.Retention = store.NewMemoryRetentionRepo()
 		deps.Accounts = store.NewMemoryAccountRepo(memCustomers)
+		deps.Rules = store.NewMemoryRuleRepo()
 		batchRuns = store.NewMemoryBatchRunRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}

@@ -1,13 +1,13 @@
 use tonic::{Request, Response, Status};
 
+use crate::monitoring::config::ScenarioConfig;
 use crate::proto::merlon::v1::{
-    config_service_server::ConfigService,
     GetRuntimeConfigDigestsRequest, GetRuntimeConfigDigestsResponse, RuntimeConfigDigest,
     ValidateConfigRequest, ValidateConfigResponse, ValidationError,
+    config_service_server::ConfigService,
 };
 use crate::scoring::config::CddWeightConfig;
 use crate::scoring::country_risk::CountryRiskTable;
-use crate::monitoring::config::ScenarioConfig;
 use crate::screening::config::ScreeningListConfig;
 
 pub struct ConfigServiceImpl {
@@ -21,12 +21,16 @@ impl Default for ConfigServiceImpl {
 }
 
 impl ConfigServiceImpl {
-
     pub fn with_runtime_config_digests(digests: Vec<(String, String)>) -> Self {
-        Self { runtime_config_digests: digests }
+        Self {
+            runtime_config_digests: digests,
+        }
     }
     pub fn new() -> Self {
-        Self { runtime_config_digests: Vec::new() }    }
+        Self {
+            runtime_config_digests: Vec::new(),
+        }
+    }
 }
 
 #[tonic::async_trait]
@@ -36,10 +40,14 @@ impl ConfigService for ConfigServiceImpl {
         _request: Request<GetRuntimeConfigDigestsRequest>,
     ) -> Result<Response<GetRuntimeConfigDigestsResponse>, Status> {
         Ok(Response::new(GetRuntimeConfigDigestsResponse {
-            digests: self.runtime_config_digests.iter().map(|(config_type, sha256)| RuntimeConfigDigest {
-                config_type: config_type.clone(),
-                sha256: sha256.clone(),
-            }).collect(),
+            digests: self
+                .runtime_config_digests
+                .iter()
+                .map(|(config_type, sha256)| RuntimeConfigDigest {
+                    config_type: config_type.clone(),
+                    sha256: sha256.clone(),
+                })
+                .collect(),
         }))
     }
 
@@ -50,7 +58,9 @@ impl ConfigService for ConfigServiceImpl {
         let req = request.into_inner();
 
         if req.yaml_content.len() > 512 * 1024 {
-            return Err(Status::invalid_argument("yaml_content too large (max 512KB)"));
+            return Err(Status::invalid_argument(
+                "yaml_content too large (max 512KB)",
+            ));
         }
 
         let errors = match req.config_type.as_str() {
@@ -283,5 +293,16 @@ entries:
         });
         let resp = svc.validate_config(req).await.unwrap().into_inner();
         assert!(resp.valid);
+    }
+
+    #[tokio::test]
+    async fn test_validate_rejects_oversized_yaml_before_parsing() {
+        let svc = ConfigServiceImpl::new();
+        let req = Request::new(ValidateConfigRequest {
+            config_type: "cdd_weights".to_string(),
+            yaml_content: "x".repeat(512 * 1024 + 1),
+        });
+        let err = svc.validate_config(req).await.unwrap_err();
+        assert_eq!(err.code(), tonic::Code::InvalidArgument);
     }
 }

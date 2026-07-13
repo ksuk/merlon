@@ -16,6 +16,7 @@ The repository Docker Compose files are development/demo topologies. They are no
 - Keep `MERLON_SEED=false` outside local development.
 - Restrict PostgreSQL, the Engine gRPC endpoint, API `/metrics`, and the Engine metrics port (`9090`) to private networks or authenticated monitoring infrastructure.
 - Back up `MERLON_ENCRYPTION_KEY_RING` and verify that recovery procedures can restore both database data and required key material.
+- Run `make migrate` with `MERLON_MIGRATION_DATABASE_URL` before starting the API. The serving role must not own application tables.
 
 ## Configuration verification
 
@@ -23,4 +24,9 @@ Before rollout, record the Engine configuration digests from startup logs or Con
 
 ## Audit-log database roles
 
-The application database role should not have `UPDATE` or `DELETE` privileges on `audit_logs`. Grant read-only audit access through a separate role and test the grants in the target environment. See `audit-hardening.sql.example` (in this directory) for a role-template example.
+The application database role should not have `UPDATE` or `DELETE` privileges on
+`audit_logs`, and must not own that table. Apply
+`docs/operations/audit-hardening.sql` as the migration owner, then verify the
+preflight query before rollout. The API refuses to start in production when
+the check fails. Grant read-only audit access through a separate role and
+retain the verification output with deployment evidence.

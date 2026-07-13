@@ -54,6 +54,7 @@ func TestDemoScenario_ImportActivateScoreWithinTimeLimit(t *testing.T) {
 		BootstrapToken: testBootstrapToken,
 	})
 	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
+	approverKey := createAPIKeyAs(t, s, adminKey, "approver", domain.RoleAdmin)
 
 	start := time.Now()
 
@@ -76,7 +77,7 @@ func TestDemoScenario_ImportActivateScoreWithinTimeLimit(t *testing.T) {
 	}
 
 	activateReq := httptest.NewRequest(http.MethodPost, "/api/v1/rules/country_risk_sample/activate", nil)
-	activateReq.Header.Set("Authorization", "Bearer "+adminKey)
+	activateReq.Header.Set("Authorization", "Bearer "+approverKey)
 	activateRec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(activateRec, activateReq)
 	if activateRec.Code != http.StatusOK {

@@ -498,7 +498,8 @@
     },
     "status": {
       "active": "有効",
-      "inactive": "無効"
+      "inactive": "無効",
+      "pending": "承認待ち"
     },
     "entry": {
       "created": "作成: {{date}}"
@@ -730,7 +731,9 @@
       "updatedAt": "更新: {{date}}",
       "export": "エクスポート",
       "activate": "有効化",
-      "deactivate": "無効化"
+      "deactivate": "無効化",
+      "createdBy": "作成者: {{actor}}",
+      "selfActionBlocked": "別のAdminが承認する必要があります"
     },
     "empty": "ルールが登録されていません"
   },

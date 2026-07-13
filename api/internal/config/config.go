@@ -9,26 +9,28 @@ import (
 )
 
 type Config struct {
-	Env                 string
-	HTTPAddr            string
-	EngineAddr          string
-	DatabaseURL         string
-	EncryptionKeyRing   string
-	Seed                bool
-	JWTSecret           string
-	JWTPrivateKeyFile   string
-	JWTPublicKeyFile    string
-	ConfigPath          string
-	CacheBackend        string
-	EventBus            string
-	LogLevel            string
-	AdapterConfigPath   string
-	UIDir               string
-	RateLimit           int
-	AuthEnabled         bool
-	BootstrapToken      string
-	EngineTLSCert       string
-	EngineTLSServerName string
+	Env                  string
+	HTTPAddr             string
+	EngineAddr           string
+	DatabaseURL          string
+	MigrationDatabaseURL string
+	MigrationBaseline    string
+	EncryptionKeyRing    string
+	Seed                 bool
+	JWTSecret            string
+	JWTPrivateKeyFile    string
+	JWTPublicKeyFile     string
+	ConfigPath           string
+	CacheBackend         string
+	EventBus             string
+	LogLevel             string
+	AdapterConfigPath    string
+	UIDir                string
+	RateLimit            int
+	AuthEnabled          bool
+	BootstrapToken       string
+	EngineTLSCert        string
+	EngineTLSServerName  string
 	// WhitelistMaxValidDays is the maximum whitelist validity period (WL-002,
 	// whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）").
 	// TODO(WS-2): move to the rule management API once it supports
@@ -106,6 +108,8 @@ func Load() *Config {
 		HTTPAddr:              getEnv("MERLON_HTTP_ADDR", ":8080"),
 		EngineAddr:            getEnv("MERLON_ENGINE_ADDR", ""),
 		DatabaseURL:           getEnv("MERLON_DATABASE_URL", ""),
+		MigrationDatabaseURL:  getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
+		MigrationBaseline:     getEnv("MERLON_MIGRATION_BASELINE", ""),
 		EncryptionKeyRing:     getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
 		Seed:                  getEnv("MERLON_SEED", "") == "true",
 		JWTSecret:             getEnv("MERLON_JWT_SECRET", ""),

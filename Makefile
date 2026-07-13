@@ -1,4 +1,4 @@
-.PHONY: help fmt lint test build proto migrate seed dev-up dev-down minimal-up minimal-down generate-openapi generate-proto-docs docs-build docs-check
+.PHONY: help fmt lint lint-go lint-rust lint-ui lint-proto test test-go test-rust test-ui build proto migrate audit-harden seed dev-up dev-down minimal-up minimal-down generate-openapi generate-proto-docs docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -8,30 +8,48 @@ fmt: ## Format all code
 	@cd engine && cargo fmt
 	@cd ui && npx prettier --write "src/**/*.{ts,tsx}"
 
-lint: ## Lint all code
-	@cd api && go vet ./...
-	@cd engine && cargo clippy -- -D warnings
-	@cd ui && npm run lint
-	@cd proto && buf lint
+lint: lint-go lint-rust lint-ui lint-proto ## Lint all code
 
-test: ## Run all tests
+lint-go: ## Run Go static analysis
+	@cd api && go vet ./...
+
+lint-rust: ## Run Rust static analysis
+	@cd engine && CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo clippy --all-targets -- -D warnings
+
+lint-ui: ## Run UI lint
+	@cd ui && npm run lint
+
+lint-proto: ## Run protobuf lint
+	@buf lint proto
+
+test: test-go test-rust test-ui ## Run all tests
+
+test-go: ## Run Go tests
 	@cd api && go test ./...
-	@cd engine && cargo test
+
+test-rust: ## Run Rust tests
+	@cd engine && CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo test
+
+test-ui: ## Run UI tests
 	@cd ui && npm run test -- --run
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
+CARGO_TARGET_DIR ?= /tmp/merlon-target
 
 build: ## Build all components
 	@cd api && go build -buildvcs=false -ldflags "-X main.version=$(VERSION)" ./cmd/merlon-api
-	@cd engine && cargo build
+	@cd engine && CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build
 	@cd ui && npm run build
 
 proto: ## Generate protobuf code
 	@./scripts/generate-proto.sh
 
-migrate: ## Apply SQL migrations using MERLON_DATABASE_URL
-	@test -n "$${MERLON_DATABASE_URL}" || (echo "MERLON_DATABASE_URL is required"; exit 1)
-	@for migration in migrations/*.sql; do psql "$${MERLON_DATABASE_URL}" -v ON_ERROR_STOP=1 -f "$$migration"; done
+migrate: ## Apply SQL migrations with a versioned ledger (use a migration role)
+	@go run ./api/cmd/merlon-migrate
+
+audit-harden: ## Apply audit_logs least-privilege grants using a migration role
+	@test -n "$${MERLON_MIGRATION_DATABASE_URL}" || (echo "MERLON_MIGRATION_DATABASE_URL is required"; exit 1)
+	@psql "$${MERLON_MIGRATION_DATABASE_URL}" -v ON_ERROR_STOP=1 -v MERLON_APP_ROLE="$${MERLON_APP_ROLE:-merlon_app}" -f docs/operations/audit-hardening.sql
 
 seed: ## Start the development topology with demo data
 	@MERLON_SEED=true docker compose up --build

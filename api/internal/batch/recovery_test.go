@@ -124,9 +124,7 @@ func TestRecoveryJob_LeavesFailedStatusOnRepeatedFailure(t *testing.T) {
 	job := NewRecoveryJob(pending, monitoring, alerts, transactions, customers)
 
 	for i := 0; i < maxPendingRetries; i++ {
-		if _, err := job.RunOnce(ctx); err != nil {
-			t.Fatalf("RunOnce iteration %d: %v", i, err)
-		}
+		_, _ = job.RunOnce(ctx)
 		got, err := pending.Get(ctx, pe.ID)
 		if err != nil {
 			t.Fatalf("Get: %v", err)

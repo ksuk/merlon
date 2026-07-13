@@ -70,6 +70,16 @@ var (
 		Help: "Batch evaluation job execution time in seconds, by job type.",
 	}, []string{"job_type"})
 
+	AlertPersistenceFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "merlon_alert_persistence_failures_total",
+		Help: "Alert persistence or case-consolidation failures, by operation.",
+	}, []string{"operation"})
+
+	PendingEvaluationFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "merlon_pending_evaluation_failures_total",
+		Help: "Pending evaluation recovery failures, by operation.",
+	}, []string{"operation"})
+
 	CDDEventChainTruncatedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "merlon_cdd_event_chain_truncated_total",
 		Help: "Total number of CDD event chains truncated after exceeding the hop limit (the CDD scoring design safety valve 4).",
@@ -127,5 +137,11 @@ func init() {
 	GRPCRequestDuration.WithLabelValues("unspecified", "ok").Observe(0)
 	for _, jobType := range knownBatchJobTypes {
 		BatchEvaluationDuration.WithLabelValues(jobType).Observe(0)
+	}
+	for _, operation := range []string{"create", "annotate", "case_consolidation"} {
+		AlertPersistenceFailuresTotal.WithLabelValues(operation).Add(0)
+	}
+	for _, operation := range []string{"increment_retry", "mark_failed", "reevaluate"} {
+		PendingEvaluationFailuresTotal.WithLabelValues(operation).Add(0)
 	}
 }

@@ -223,6 +223,30 @@ func TestRuleRepo_SetActive_OnlyOneVersionActivePerName(t *testing.T) {
 	}
 }
 
+func TestRuleRepo_SetActiveFalse_DeactivatesEveryVersion(t *testing.T) {
+	repo := NewMemoryRuleRepo()
+	ctx := context.Background()
+	now := time.Now()
+	if err := repo.Create(ctx, newTestRule("all_versions", domain.RuleTypeTMScenario, true, now)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateNewVersion(ctx, newTestRule("all_versions", domain.RuleTypeTMScenario, true, now.Add(time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetActive(ctx, "all_versions", false); err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 2; version++ {
+		rule, err := repo.GetVersion(ctx, "all_versions", version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rule.IsActive {
+			t.Errorf("version %d remained active", version)
+		}
+	}
+}
+
 func TestRuleRepo_List_CursorPagination(t *testing.T) {
 	repo := NewMemoryRuleRepo()
 	ctx := context.Background()

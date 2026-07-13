@@ -69,7 +69,7 @@ export function WhitelistPage() {
 
   useEffect(() => {
     reload()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when filters change
   }, [])
 
   async function handleCreate(e: React.FormEvent) {

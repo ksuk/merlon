@@ -20,19 +20,27 @@ use merlon_engine::scoring::engine::CddScoringEngine;
 use merlon_engine::screening::config::ScreeningListConfig;
 use merlon_engine::screening::engine::ScreeningEngine;
 use tonic::transport::Server;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let cdd_path = std::env::var("MERLON_CDD_WEIGHTS_PATH")
-        .unwrap_or_else(|_| "cdd_weights.yaml".to_string());
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+    let cdd_path =
+        std::env::var("MERLON_CDD_WEIGHTS_PATH").unwrap_or_else(|_| "cdd_weights.yaml".to_string());
 
     let cdd_config = CddWeightConfig::load(&cdd_path)?;
     let cdd_digest = config_path_digest(&cdd_path)?;
     let cdd_engine = CddScoringEngine::new(cdd_config)?;
     let scoring_service = ScoringServiceImpl::new(cdd_engine);
 
-    let tm_paths = std::env::var("MERLON_TM_SCENARIOS_PATH")
-        .unwrap_or_else(|_| "tm_scenarios".to_string());
+    let tm_paths =
+        std::env::var("MERLON_TM_SCENARIOS_PATH").unwrap_or_else(|_| "tm_scenarios".to_string());
 
     let tm_configs = load_tm_scenario_configs(&tm_paths)?;
     let tm_digest = config_path_digest(&tm_paths)?;
@@ -68,13 +76,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics_addr: std::net::SocketAddr = std::env::var("MERLON_ENGINE_METRICS_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:9090".to_string())
         .parse()?;
-    eprintln!("engine configuration digest path={} sha256={}", cdd_path, cdd_digest);
-    eprintln!("engine configuration digest path={} sha256={}", tm_paths, tm_digest);
-    eprintln!("engine configuration digest path={} sha256={}", screening_paths, screening_digest);
+    info!(config_digest = %cdd_digest, config_path = %cdd_path, "loaded CDD configuration");
+    info!(config_digest = %tm_digest, config_path = %tm_paths, "loaded TM configuration");
+    info!(config_digest = %screening_digest, config_path = %screening_paths, "loaded screening configuration");
 
     tokio::spawn(async move {
         if let Err(err) = merlon_engine::metrics_server::serve(metrics_addr).await {
-            eprintln!("metrics server error: {err}");
+            error!(error = %err, "metrics server error");
         }
     });
 
@@ -101,11 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .set_serving::<ConfigServiceServer<ConfigServiceImpl>>()
         .await;
 
-    eprintln!(
-        "merlon-engine v{} starting gRPC server on {}",
-        merlon_engine::VERSION,
-        addr
-    );
+    info!(version = merlon_engine::VERSION, address = %addr, "starting gRPC server");
 
     Server::builder()
         .max_frame_size(Some(4 * 1024 * 1024))
@@ -132,7 +136,11 @@ fn config_path_digest(path: &str) -> Result<String, Box<dyn std::error::Error>> 
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .map(|entry| entry.path())
-            .filter(|entry| entry.extension().is_some_and(|ext| ext == "yaml" || ext == "yml"))
+            .filter(|entry| {
+                entry
+                    .extension()
+                    .is_some_and(|ext| ext == "yaml" || ext == "yml")
+            })
             .collect();
         entries.sort();
         for entry in entries {
@@ -152,7 +160,10 @@ fn load_yaml_configs<T: serde::de::DeserializeOwned>(
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+        if path
+            .extension()
+            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
             let content = std::fs::read_to_string(&path)?;
             let config: T = serde_yaml::from_str(&content)?;
             configs.push(config);
@@ -169,7 +180,10 @@ fn load_tm_scenario_configs(dir: &str) -> Result<Vec<ScenarioConfig>, Box<dyn st
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "yaml" || ext == "yml") {
+        if path
+            .extension()
+            .is_some_and(|ext| ext == "yaml" || ext == "yml")
+        {
             let content = std::fs::read_to_string(&path)?;
             configs.push(ScenarioConfig::from_yaml_dual(&content)?);
         }

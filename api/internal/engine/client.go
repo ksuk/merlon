@@ -12,10 +12,12 @@ import (
 	pb "github.com/ksuk/merlon/api/gen/merlon/v1"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/requestid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 )
 
 // observeGRPCCall records merlon_grpc_request_duration_seconds for a single
@@ -92,7 +94,13 @@ func NewClient(addr string, opts ...ClientOption) (*Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, addr, o.creds)
+	requestIDInterceptor := grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if id := requestid.FromContext(ctx); id != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, "x-request-id", id)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	})
+	conn, err := grpc.DialContext(ctx, addr, o.creds, requestIDInterceptor)
 	if err != nil {
 		return nil, fmt.Errorf("engine dial: %w", err)
 	}

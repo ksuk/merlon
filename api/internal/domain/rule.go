@@ -40,6 +40,7 @@ type RuleDefinition struct {
 // inserts.
 type RuleRepository interface {
 	Get(ctx context.Context, id string) (*RuleDefinition, error)
+	GetActive(ctx context.Context, id string) (*RuleDefinition, error)
 	GetVersion(ctx context.Context, id string, version int) (*RuleDefinition, error)
 	List(ctx context.Context, ruleType RuleType, activeOnly bool, limit int, after *Cursor) ([]RuleDefinition, error)
 	// Create inserts a brand-new rule (version=1).

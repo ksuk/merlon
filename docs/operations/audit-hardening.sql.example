@@ -1,5 +1,5 @@
--- Example only. Adapt role names and grants to the deployment's PostgreSQL
--- role model; do not apply blindly.
+-- Example only. The executable counterpart is audit-hardening.sql. Adapt role
+-- names and ownership changes to the deployment's PostgreSQL model.
 --
 -- Prevent the application role from altering or removing audit records.
 REVOKE UPDATE, DELETE ON TABLE audit_logs FROM merlon_app;

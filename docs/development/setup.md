@@ -35,11 +35,12 @@ If you're not using the DevContainer, install the following tools yourself.
 go version   # confirm go1.25 or higher
 ```
 
-### Rust (via rustup)
+### Rust 1.87.0 (via rustup)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustc --version   # stable, with 2024 edition support
+rustup toolchain install 1.87.0 --component rustfmt --component clippy
+rustc +1.87.0 --version
 ```
 
 ### Node.js 20+ / npm
@@ -101,7 +102,7 @@ make seed
 | `make test` | Run all tests (Go / Rust / UI / proto lint) |
 | `make lint` | Run all linters |
 | `make fmt` | Format all code (Go, Rust, UI) |
-| `make migrate` | Apply DB migrations using `MERLON_DATABASE_URL` |
+| `make migrate` | Apply DB migrations with a checksum ledger using `MERLON_MIGRATION_DATABASE_URL` |
 | `make seed` | Start the full docker-compose topology with demo data (`MERLON_SEED=true docker compose up --build`) |
 | `make dev-up` / `make dev-down` | Start/stop the development topology (`docker-compose.yml` + `docker-compose.dev.yml`) |
 | `make minimal-up` / `make minimal-down` | Start/stop the minimal topology (PostgreSQL + API only) |

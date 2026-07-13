@@ -72,7 +72,7 @@ See [docs/getting-started.md](docs/getting-started.md) for the full guide.
 
 ## Development
 
-Requirements: Go 1.25+, Rust (stable), Node.js 20+, [buf](https://buf.build/)
+Requirements: Go 1.25+, Rust 1.87.0 (with `rustfmt` and `clippy`), Node.js 20+, [buf](https://buf.build/)
 
 ```bash
 # Run all tests

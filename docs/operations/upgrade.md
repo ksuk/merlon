@@ -12,13 +12,19 @@ title: Upgrade Runbook
 
 ## Apply migrations
 
-Set `MERLON_DATABASE_URL` to the target database and run:
+Set `MERLON_MIGRATION_DATABASE_URL` to a dedicated schema-owner connection and
+run:
 
 ```bash
 make migrate
 ```
 
-The target applies `migrations/*.sql` in lexical order and stops on the first SQL error. It is intended for an operator workstation or deployment job that has `psql` installed. Do not use it against an unverified production backup.
+The migration runner records every filename and checksum in
+`schema_migrations`, takes an advisory lock, and applies each file in its own
+transaction. A second run is a no-op; a checksum mismatch stops the rollout.
+For a database that predates the ledger, set
+`MERLON_MIGRATION_BASELINE=<last-applied-filename>` explicitly after verifying
+the backup. The runner never infers a baseline from table contents.
 
 ## Rollback
 

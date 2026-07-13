@@ -1,5 +1,7 @@
 # 開発環境構築
 
+データベースマイグレーションは checksum ledger を使用する `MERLON_MIGRATION_DATABASE_URL` で実行する。ローカル以外では API role と migration role を分離する。
+
 Merlon の開発環境構築手順。DevContainer（推奨）とローカル環境の 2 通りを示す。
 
 ## 方法 1: DevContainer（推奨）

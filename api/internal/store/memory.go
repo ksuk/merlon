@@ -931,6 +931,19 @@ func (r *MemoryRuleRepo) Get(_ context.Context, id string) (*domain.RuleDefiniti
 	return &cp, nil
 }
 
+func (r *MemoryRuleRepo) GetActive(_ context.Context, id string) (*domain.RuleDefinition, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	vs := r.versions[id]
+	for i := len(vs) - 1; i >= 0; i-- {
+		if vs[i].IsActive {
+			cp := *vs[i]
+			return &cp, nil
+		}
+	}
+	return nil, &domain.ErrNotFound{Entity: "active_rule_definition", ID: id}
+}
+
 func (r *MemoryRuleRepo) GetVersion(_ context.Context, id string, version int) (*domain.RuleDefinition, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -1003,10 +1016,10 @@ func (r *MemoryRuleRepo) SetActive(_ context.Context, id string, active bool) er
 	if len(vs) == 0 {
 		return &domain.ErrNotFound{Entity: "rule_definition", ID: id}
 	}
+	deactivateAll(vs)
 	if active {
-		deactivateAll(vs)
+		vs[len(vs)-1].IsActive = true
 	}
-	vs[len(vs)-1].IsActive = active
 	return nil
 }
 

@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use tonic::{Request, Response, Status};
 
-use crate::backtest::engine::{
-    BacktestCustomer, BacktestEngine, BacktestInput,
-};
+use crate::backtest::engine::{BacktestCustomer, BacktestEngine, BacktestInput};
 use crate::monitoring::engine::{TmEngine, TransactionDirection, TransactionInput};
 use crate::proto::merlon::v1::{
-    backtest_service_server::BacktestService, CustomerType as ProtoCustomerType, HealthRequest,
-    HealthResponse, RunBacktestRequest, RunBacktestResponse, ScenarioResult as ProtoScenarioResult,
+    CustomerType as ProtoCustomerType, HealthRequest, HealthResponse, RunBacktestRequest,
+    RunBacktestResponse, ScenarioResult as ProtoScenarioResult,
+    backtest_service_server::BacktestService,
 };
 
 pub struct BacktestServiceImpl {
@@ -23,6 +22,7 @@ impl BacktestServiceImpl {
 
 // tonic::Status is the error type every gRPC handler in this codebase uses;
 // boxing it here alone would just move the cost to callers that unwrap it.
+// Tonic fixes this generated service signature; the large error is intentional.
 #[allow(clippy::result_large_err)]
 fn direction_from_proto(d: i32) -> Result<TransactionDirection, Status> {
     match d {
@@ -71,7 +71,9 @@ impl BacktestService for BacktestServiceImpl {
             return Err(Status::invalid_argument("too many customers (max 1000)"));
         }
         if req.transactions.len() > 100_000 {
-            return Err(Status::invalid_argument("too many transactions (max 100000)"));
+            return Err(Status::invalid_argument(
+                "too many transactions (max 100000)",
+            ));
         }
 
         let customers: Vec<BacktestCustomer> = req
@@ -84,16 +86,13 @@ impl BacktestService for BacktestServiceImpl {
             })
             .collect();
 
+        // Tonic fixes this generated service signature; the large error is intentional.
         #[allow(clippy::result_large_err)]
         let transactions: Vec<TransactionInput> = req
             .transactions
             .iter()
             .map(|t| {
-                let executed_at_secs = t
-                    .executed_at
-                    .as_ref()
-                    .map(|ts| ts.seconds)
-                    .unwrap_or(0);
+                let executed_at_secs = t.executed_at.as_ref().map(|ts| ts.seconds).unwrap_or(0);
 
                 Ok(TransactionInput {
                     transaction_id: t.transaction_id.clone(),
@@ -201,7 +200,10 @@ mod tests {
                     counterparty_id: String::new(),
                     counterparty_country: String::new(),
                     direction: 1, // INBOUND
-                    executed_at: Some(Timestamp { seconds: 1000, nanos: 0 }),
+                    executed_at: Some(Timestamp {
+                        seconds: 1000,
+                        nanos: 0,
+                    }),
                     channel: String::new(),
                 },
                 BacktestTransaction {
@@ -212,7 +214,10 @@ mod tests {
                     counterparty_id: String::new(),
                     counterparty_country: String::new(),
                     direction: 1,
-                    executed_at: Some(Timestamp { seconds: 1100, nanos: 0 }),
+                    executed_at: Some(Timestamp {
+                        seconds: 1100,
+                        nanos: 0,
+                    }),
                     channel: String::new(),
                 },
                 BacktestTransaction {
@@ -223,7 +228,10 @@ mod tests {
                     counterparty_id: String::new(),
                     counterparty_country: String::new(),
                     direction: 1,
-                    executed_at: Some(Timestamp { seconds: 1200, nanos: 0 }),
+                    executed_at: Some(Timestamp {
+                        seconds: 1200,
+                        nanos: 0,
+                    }),
                     channel: String::new(),
                 },
             ],
@@ -231,10 +239,7 @@ mod tests {
             description: "rpc test".to_string(),
         };
 
-        let resp = service
-            .run_backtest(Request::new(req))
-            .await
-            .unwrap();
+        let resp = service.run_backtest(Request::new(req)).await.unwrap();
         let resp = resp.into_inner();
 
         assert_eq!(resp.total_transactions, 3);

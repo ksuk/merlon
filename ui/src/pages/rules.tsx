@@ -59,7 +59,7 @@ export function RulesPage() {
 
   useEffect(() => {
     reload()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload after rule mutations
   }, [typeFilter, activeOnly])
 
   async function handleCreate(e: React.FormEvent) {
@@ -272,6 +272,7 @@ export function RulesPage() {
                       <Badge variant={rule.is_active ? "low" : "secondary"}>
                         {rule.is_active ? t("rules.status.active") : t("rules.status.inactive")}
                       </Badge>
+                      {!rule.is_active && <Badge variant="outline">{t("rules.status.pending")}</Badge>}
                       <span className="text-xs text-muted-foreground">v{rule.version}</span>
                     </div>
                     {rule.description && (
@@ -280,6 +281,11 @@ export function RulesPage() {
                     <p className="text-xs text-muted-foreground">
                       {t("rules.entry.updatedAt", { date: formatDateTime(rule.updated_at, i18n.language) })}
                     </p>
+                    {rule.created_by && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("rules.entry.createdBy", { actor: rule.created_by })}
+                      </p>
+                    )}
                   </div>
                   <div className="flex gap-1">
                     <a
@@ -291,7 +297,13 @@ export function RulesPage() {
                       {t("rules.entry.export")}
                     </a>
                     {isAdmin && (
-                      <Button variant="ghost" size="sm" onClick={() => handleToggleActive(rule)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={rule.created_by === user?.id}
+                        title={rule.created_by === user?.id ? t("rules.entry.selfActionBlocked") : undefined}
+                        onClick={() => handleToggleActive(rule)}
+                      >
                         <PowerOff className="h-4 w-4" />
                         {rule.is_active ? t("rules.entry.deactivate") : t("rules.entry.activate")}
                       </Button>

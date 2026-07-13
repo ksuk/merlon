@@ -104,7 +104,7 @@ export function AuditPage() {
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when audit filters change
   }, [since, until, userId, resourceId, actionCategory])
 
   async function handleExport(format: "csv" | "json") {
