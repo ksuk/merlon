@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -58,7 +59,7 @@ jobs:
         with:
           toolchain: 1.87.0
           components: rustfmt, clippy
-      - run: cargo install cargo-audit
+      - run: cargo install cargo-audit --version 0.22.1 --locked
       - run: cargo audit
 
   go-licenses:
@@ -92,7 +93,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: 1.87.0
-      - run: cargo install cargo-deny
+      - run: cargo install cargo-deny --version 0.18.3 --locked
       - run: cargo deny check licenses
 
   npm-licenses:

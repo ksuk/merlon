@@ -19,7 +19,9 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -eu
-          for commit in $(git rev-list "$BASE_SHA..HEAD"); do
+          # pull_request checkouts use a synthetic merge commit. Only inspect
+          # commits authored by the contributor branch itself.
+          for commit in $(git rev-list --no-merges "$BASE_SHA..HEAD"); do
             # Bot-authored commits (Dependabot, GitHub Actions, ...) carry no
             # DCO sign-off; the DCO covers human contributions only.
             author_email=$(git log -1 --format=%ae "$commit")
