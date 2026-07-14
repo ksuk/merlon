@@ -14,7 +14,7 @@ sidebar_position: 6
 - `content/schema/` — 各ルール種別を検証する JSON Schema。
 - `content/_sample/` — フォーマットを示す Apache-2.0 ライセンスのサンプルルール。これらは本番運用に対応した管理策ではなく、サンプルディレクトリの `README.md` および各サンプルファイルがこの点を明示している（該当する場合は `is_sample: true`）。
 
-Rust Engine は CDD ウェイト、国リスクテーブル、TM シナリオを運用者が提供するファイルから直接読み込む。例えば `MERLON_CDD_WEIGHTS_PATH` や `MERLON_TM_SCENARIOS_PATH`（[設定リファレンス](./configuration.md)参照）である。これらのファイルはデータベースに基づくルール監査証跡の外にあるため、ADR-0012（Engine Configuration File Trust Boundary）に記載の通り、そのソース管理、変更承認、アクセス制御、バックアップは自組織の責任となる。Engine は起動時及び ConfigService RPC を通じて、読み込んだ設定の決定論的ダイジェストを出力するため、事後にデプロイ済みのルールセットを検証できる。これは監査を支援するものであり、ファイルレベルのアクセス制御を代替するものではない。
+ネイティブ Go エンジンは CDD ウェイト、国リスクテーブル、TM シナリオを運用者が提供するファイルから直接読み込む。例えば `MERLON_CDD_WEIGHTS_PATH` や `MERLON_TM_SCENARIOS_PATH`（[設定リファレンス](./configuration.md)参照）である。これらのファイルはデータベースに基づくルール監査証跡の外にあるため、ADR-0012（Engine Configuration File Trust Boundary）に記載の通り、そのソース管理、変更承認、アクセス制御、バックアップは自組織の責任となる。エンジンは起動時に、読み込んだ設定の決定論的ダイジェストを出力するため、事後にデプロイ済みのルールセットを検証できる。これは監査を支援するものであり、ファイルレベルのアクセス制御を代替するものではない。
 
 ## CDD ウェイト定義
 
@@ -66,7 +66,7 @@ tier_thresholds:
 
 スキーマ上の必須フィールド: `schema_version`（リテラル `cdd_weight_v1` である必要がある）、`id`（小文字、`^[a-z][a-z0-9_]*$`）、`name`、`version`（正の整数）、`axes`、及び `tier_thresholds`（`low`、`medium`、`high` を定義する必要がある）。`axes` 配下の各エントリには `weight`（0〜1）と `factors` 配列が必須。factor は値を直接スコアリングする（観測値をキーとする `scores`）か、数値範囲をスコアリングする（`min`/`max` の境界と `score` を持つ `ranges`）ことができる。
 
-factor はインラインの `scores` マップの代わりに、`source` を `country_risk_table` に設定することで国リスクテーブルへスコアリングを委譲することもできる（`engine/crates/merlon-engine/src/scoring/country_risk.rs` 参照）。国別のリスクロジックを、すべての CDD ウェイト定義に重複させるのではなく一箇所で保守すべき場合にこれを利用する。
+factor はインラインの `scores` マップの代わりに、`source` を `country_risk_table` に設定することで国リスクテーブルへスコアリングを委譲することもできる（`api/internal/engine/native` の国リスク実装を参照）。国別のリスクロジックを、すべての CDD ウェイト定義に重複させるのではなく一箇所で保守すべき場合にこれを利用する。
 
 サンプルを本番用ルールに置き換えた場合は、`content/README.md` の指針に従い `is_sample: false` を設定する（または省略する）。
 

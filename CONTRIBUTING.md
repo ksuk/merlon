@@ -43,9 +43,7 @@ See [docs/development/setup.md](docs/development/setup.md) for detailed instruct
 ### Code Style
 
 - **Go**: Follow standard `gofmt` formatting. Use `go vet` for static analysis.
-- **Rust**: Follow standard `rustfmt` formatting. Use `cargo clippy` for linting.
 - **TypeScript**: Follow ESLint configuration in `ui/eslint.config.js`.
-- **Proto**: Follow `buf lint` rules (STANDARD).
 
 ### Commit Messages
 

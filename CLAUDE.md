@@ -4,16 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Merlon — self-hosted AML/CFT software for non-bank financial institutions in Japan. Monorepo with Go API + Rust Engine + React UI.
+Merlon — self-hosted AML/CFT software for non-bank financial institutions in Japan. Monorepo with Go API + React UI.
 
 ## Commands
 
 ```bash
-make build    # Build all components
-make test     # Run all tests (Go + Rust + UI)
+make build    # Build the Go API and UI
+make test     # Run all tests (Go + UI)
 make lint     # Run all linters
 make fmt      # Format all code
-make proto    # Generate Go/Rust code from proto (buf lint + buf generate)
 make seed     # Load demo data
 ```
 
@@ -22,7 +21,7 @@ Per-component commands are in each subdirectory's CLAUDE.md.
 ## Architecture
 
 ```
-React UI (Vite) → REST → Go API → gRPC (protobuf) → Rust Engine
+React UI (Vite) → REST → Go API (native engine)
                             ↓
                         PostgreSQL
 ```
@@ -30,9 +29,8 @@ React UI (Vite) → REST → Go API → gRPC (protobuf) → Rust Engine
 | Component | Directory | Role |
 |---|---|---|
 | Go API | `api/` | CRUD and business orchestration (net/http, pgx) |
-| Rust Engine | `engine/` | CDD scoring, TM evaluation, screening, backtesting |
 | React UI | `ui/` | Vite + React 19 + Tailwind CSS v4 + React Router v7 |
-| Proto definitions | `proto/merlon/v1/` | gRPC contract between Go and Rust (managed by buf) |
+| Native engine | `api/internal/engine/native/` | CDD scoring, TM evaluation, screening, backtesting |
 | Rule configs | `content/` | CDD weights and TM scenarios (JSON/YAML) |
 
 When `MERLON_DATABASE_URL` is unset, the API runs with an in-memory store. Set `MERLON_SEED=true` to load demo data.
@@ -45,7 +43,7 @@ These are system-wide decision criteria. Refer to them during implementation and
 - **Auditability First** — Record all decision rationale reproducibly. Pin deterministic output for identical input via tests
 - **Fail-Alert** — On failure, err toward alerting (prefer false positives over missed detections)
 - **Configuration as the Product** — Express rules as JSON/YAML config. Never hardcode
-- **Contract Stability** — Proto-defined external contracts must maintain backward compatibility for 12+ months
+- **Contract Stability** — REST/OpenAPI contracts must maintain backward compatibility for 12+ months
 
 ## Testing
 

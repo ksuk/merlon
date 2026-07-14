@@ -11,16 +11,16 @@ The repository Docker Compose files are development/demo topologies. They are no
 ## Required production controls
 
 - Set `MERLON_ENV=production` and enable authentication.
-- Terminate external TLS at a trusted ingress or reverse proxy. The API refuses an Engine connection without TLS configuration in production.
+- Terminate external TLS at a trusted ingress or reverse proxy.
 - Store database passwords, bootstrap tokens, JWT material, and encryption keys in a secret manager; do not commit them or place production values in `.env` files.
 - Keep `MERLON_SEED=false` outside local development.
-- Restrict PostgreSQL, the Engine gRPC endpoint, API `/metrics`, and the Engine metrics port (`9090`) to private networks or authenticated monitoring infrastructure.
+- Restrict PostgreSQL and API `/metrics` to private networks or authenticated monitoring infrastructure.
 - Back up `MERLON_ENCRYPTION_KEY_RING` and verify that recovery procedures can restore both database data and required key material.
 - Run `make migrate` with `MERLON_MIGRATION_DATABASE_URL` before starting the API. The serving role must not own application tables.
 
 ## Configuration verification
 
-Before rollout, record the Engine configuration digests from startup logs or ConfigService and retain the approved rule files with the release evidence. See ADR-0012.
+Before rollout, record the native engine configuration digests from startup logs and retain the approved rule files with the release evidence. See ADR-0012.
 
 ## Audit-log database roles
 

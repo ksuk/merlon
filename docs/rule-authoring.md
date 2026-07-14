@@ -23,17 +23,16 @@ Rule content lives under `content/` in the repository:
   `README.md` and every sample file mark this explicitly (`is_sample: true`
   where applicable).
 
-The Rust Engine loads CDD weights, country risk tables, and TM scenarios
+The native Go engine loads CDD weights, country risk tables, and TM scenarios
 directly from operator-supplied files — for example, `MERLON_CDD_WEIGHTS_PATH`
 and `MERLON_TM_SCENARIOS_PATH` (see
 [Configuration Reference](./configuration.md)). Because these files sit
 outside the database-backed rule audit trail, your organization is
 responsible for their source control, change approval, access control, and
 backup, as described in ADR-0012 (Engine Configuration File Trust Boundary).
-The Engine
-emits a deterministic digest of the loaded configuration at startup and
-through its ConfigService RPC so a deployed rule set can be verified after the
-fact — this supports audit, but does not replace file-level access control.
+The engine emits a deterministic digest of the loaded configuration at startup
+so a deployed rule set can be verified after the fact — this supports audit,
+but does not replace file-level access control.
 
 ## CDD weight definitions
 
@@ -97,7 +96,7 @@ bounds and a `score`).
 
 A factor can also delegate scoring to the country risk table instead of an
 inline `scores` map, by setting its `source` to `country_risk_table`
-(see `engine/crates/merlon-engine/src/scoring/country_risk.rs`) — use this
+(see the native Go country-risk implementation) — use this
 when a factor's risk-by-country logic should be maintained in one place
 rather than duplicated across every CDD weight definition.
 

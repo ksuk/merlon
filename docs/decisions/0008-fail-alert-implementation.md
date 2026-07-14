@@ -8,13 +8,13 @@
 
 ## コンテキスト
 
-Rust エンジン（gRPC）が無応答・クラッシュした場合、Go API がどう振る舞うかを決める必要がある。Merlon の Fail-Alert 原則（検知漏れよりも誤検知・保留を許容する）に従えば、エンジン障害時に取引評価そのものを失敗させて顧客対応を止めるのではなく、評価を保留しつつ操作自体は継続させ、復旧後に確実に再評価する仕組みが要る。
+評価エンジンが無応答・クラッシュした場合、Go API がどう振る舞うかを決める必要がある。Merlon の Fail-Alert 原則（検知漏れよりも誤検知・保留を許容する）に従えば、エンジン障害時に取引評価そのものを失敗させて顧客対応を止めるのではなく、評価を保留しつつ操作自体は継続させ、復旧後に確実に再評価する仕組みが要る。
 
-一方、エンジンが実際にハングしている場合、リトライなしに呼び出し続けると呼び出し元（HTTP ハンドラ、バッチジョブ）が gRPC のデフォルトタイムアウトまで無期限に近い形でブロックされ、API 全体のスループットを道連れにする恐れがある。
+一方、エンジンが実際にハングしている場合、リトライなしに呼び出し続けると呼び出し元（HTTP ハンドラ、バッチジョブ）が長時間ブロックされ、API 全体のスループットを道連れにする恐れがある。
 
 ## 決定
 
-`api/internal/engineclient` パッケージに、既存の `engine.Client`（`ScoringEngine`/`MonitoringEngine`/`ScreeningEngine`）をラップするサーキットブレーカー内蔵クライアントを実装する。
+旧来のリモート呼び出しでは、`api/internal/engineclient` パッケージにサーキットブレーカー内蔵クライアントを実装した。
 
 - **タイムアウト：** 呼び出し1回あたり 3 秒
 - **リトライ：** 最大 2 回、指数バックオフ（初回 100ms）
@@ -25,11 +25,11 @@ Rust エンジン（gRPC）が無応答・クラッシュした場合、Go API �
 
 ブレーカーが Open、または個別呼び出しが最終的に失敗した場合、呼び出し元（`server/transaction.go`、`server/batch.go`）は当該取引を `pending_evaluations` テーブルに `PENDING_REVIEW` としてキューイングし、HTTP 500 を返さない。`api/internal/batch.RecoveryJob` がポーリングし、エンジン復旧後に再評価して `RESOLVED` にマークする。再評価も失敗する場合は `retry_count` をインクリメントし、一定回数超過で `FAILED` に遷移させる。
 
-ScoreCustomer / EvaluateTransactions / ScreenCustomer は単一の CircuitBreaker インスタンスを共有する。エンジンプロセスが 1 つである以上、スコアリング・モニタリング・スクリーニングの障害は同時に起きるため、個別にブレーカーを持たせても復旧タイミングは揃う。
+ScoreCustomer / EvaluateTransactions / ScreenCustomer は単一の評価エンジンに委譲する。旧リモート構成では単一の CircuitBreaker インスタンスを共有した。
 
 ## 根拠
 
-- 数値（3秒/2回/30秒/Half-Open 1リクエスト）は 障害対応要件として定義された Rust エンジンの値をそのまま採用する。実装判断ではなく仕様の転記であるため独自の調整は行わない
+- 数値（3秒/2回/30秒/Half-Open 1リクエスト）は旧リモート構成の障害対応要件から引き継いだ。
 - PENDING_REVIEW キューイングにより、エンジン障害時も取引の受付自体は継続でき、Fail-Alert 原則（検知停止より誤検知・保留を優先）を満たす
 - Half-Open で 1 リクエストのみ許可することで、エンジンが完全復旧していない状態への一斉リクエスト再開（thundering herd）を避けられる
 - ブレーカーを 3 エンジン系統で共有する設計は、エンジンプロセスが単一である現行アーキテクチャ（ADR-0002）を前提にしている。将来エンジンをスコアリング/モニタリング/スクリーニングで別プロセスに分割する場合はブレーカーも分離が必要になる
@@ -41,6 +41,14 @@ ScoreCustomer / EvaluateTransactions / ScreenCustomer は単一の CircuitBreake
 - **エンジン障害時に即時エラーを返す（PENDING_REVIEW を導入しない）** — Fail-Alert 原則に反し、エンジン障害中の取引がノーチェックのまま通過するか、あるいは業務そのものが止まってしまう
 
 ## 影響
+
+### PH9 amendment
+
+Go consolidation removes the Rust/gRPC transport and the circuit-breaker client.
+The Fail-Alert contract remains unchanged: realtime, batch, and recovery
+evaluation errors (including non-normalized currency input) are written to
+`pending_evaluations` and retried by the worker. Native evaluation is bounded by
+the request context and does not require a remote-process breaker.
 
 - `api/internal/engineclient/circuitbreaker.go`・`client.go` がブレーカー本体とラッパーを提供し、`server.Deps.Scoring`/`Monitoring`/`Screening` に既存インターフェースのまま差し込める
 - `api/internal/batch/recovery.go` の `RecoveryJob` が `pending_evaluations` を定期ポーリングして自動再評価する。ポーリング間隔は運用設定可能とする

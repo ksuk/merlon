@@ -21,43 +21,12 @@ jobs:
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.12'
-      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
-        with:
-          setup_only: true
-      - name: Generate protobuf code
-        working-directory: .
-        run: make proto
       - run: go test ./... -coverprofile=coverage.out -covermode=atomic
       - run: go build ./cmd/merlon-api
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
           path: api/coverage.out
-
-  rust-test:
-    name: Rust Test & Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: engine
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-        with:
-          toolchain: 1.87.0
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          workspaces: engine
-      - run: cargo test
-      - run: cargo install cargo-llvm-cov --locked
-      - run: cargo llvm-cov --lcov --output-path coverage.lcov
-      - run: cargo build
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rust-coverage
-          path: engine/coverage.lcov
 
   ui-build:
     name: UI Build & Lint
@@ -80,28 +49,3 @@ jobs:
         with:
           name: ui-coverage
           path: ui/coverage
-
-  proto-lint:
-    name: Proto Lint
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          fetch-depth: 0
-      - name: Materialize main ref for Buf comparison
-        run: |
-          # On a push to main the checkout already owns the main worktree;
-          # recreating that branch would fail. PR checkouts are detached and
-          # still need a local main ref for the comparison.
-          if [ "$(git symbolic-ref --short -q HEAD)" != "main" ]; then
-            git branch --force main origin/main
-          fi
-      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
-        with:
-          setup_only: true
-          push: false
-      - run: buf lint proto
-      - run: buf breaking proto --against '.git#branch=main,subdir=proto'

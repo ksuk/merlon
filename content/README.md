@@ -41,4 +41,4 @@ Sample rules and thresholds are public by design and can be used to infer detect
 
 ## Engine configuration audit boundary
 
-When the Engine loads content files directly, those files are outside the database-backed rule audit trail. Deploying organizations must control, approve, and retain the exact files they deploy. The Engine records deterministic configuration digests at startup and exposes them through ConfigService for post-hoc verification; this does not replace file access controls or change management. See [ADR-0012](../docs/decisions/0012-engine-config-file-trust-boundary.md).
+When the native Go engine loads content files directly, those files are outside the database-backed rule audit trail. Deploying organizations must control, approve, and retain the exact files they deploy. The engine records deterministic configuration digests at startup for post-hoc verification; this does not replace file access controls or change management. See [ADR-0012](../docs/decisions/0012-engine-config-file-trust-boundary.md).

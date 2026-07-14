@@ -8,19 +8,12 @@
 *.out
 vendor/
 
-# Rust
-**/target/
-
 # Node
 node_modules/
 dist/
 *.tsbuildinfo
 
-# Proto generated
-api/gen/
-engine/crates/merlon-proto/src/gen/
-
-# Docs site: generated reference docs (openapi.json, proto/*.md, schema/*.md)
+# Docs site: generated reference docs (openapi.json, schema/*.md)
 # emitted at build time; not committed.
 docs/api/
 

@@ -27,10 +27,6 @@
     "message": "REST API",
     "description": "The label of footer link with label=REST API linking to /docs/api/openapi"
   },
-  "link.item.label.gRPC": {
-    "message": "gRPC",
-    "description": "The label of footer link with label=gRPC linking to /docs/api/proto"
-  },
   "link.item.label.Rule Schemas": {
     "message": "ルールスキーマ",
     "description": "The label of footer link with label=Rule Schemas linking to /docs/api/schema"

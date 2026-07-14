@@ -95,7 +95,7 @@ func TestHandleImportRules_OneInvalid_RejectsAll(t *testing.T) {
 	}
 }
 
-func TestHandleImportRules_UsesConfigServiceValidation(t *testing.T) {
+func TestHandleImportRules_UsesEngineConfigValidation(t *testing.T) {
 	s := New(":0", Deps{
 		Customers:    store.NewMemoryCustomerRepo(),
 		Transactions: store.NewMemoryTransactionRepo(),

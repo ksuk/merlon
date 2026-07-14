@@ -204,3 +204,29 @@ the order of 10⁴+ events/second with resident window state, re-separate a
 dedicated streaming engine behind `api/internal/engine/interface.go` and
 re-evaluate the implementation language at that time (Rust being a strong
 candidate). Until then, the interface seam keeps this decision reversible.
+
+## PH9 implementation notes (2026-07-13)
+
+The first consolidation slice is now present in the repository:
+
+- `api/internal/engine/native` is the in-process implementation of scoring,
+  the five TM scenarios, screening, backtest, and config validation. It loads
+  the same YAML roots and publishes stable SHA-256 digests.
+- `MERLON_MODE=api|worker|all` controls ownership. API mode keeps HTTP,
+  realtime/import/notification/retention work; worker mode runs recovery, TM
+  batch, and durable backtest jobs; `all` is the one-container default.
+- `POST /api/v1/backtests` creates a durable asynchronous job with required UTC
+  `[from,to)` bounds, an IDs-or-filter selector, baseline/candidate rule-set
+  references, immutable config digests, progress, cancellation, and affected
+  customer pagination. Backtests never create alert/case rows. The worker
+  resolves non-`active` references through the versioned rule repository and
+  runs them in an isolated candidate engine; unresolved or unsupported
+  definitions fail closed instead of producing a misleading zero delta. The
+  selected customer population is also snapshotted durably at job start.
+- The legacy gRPC process was retained only long enough to produce the frozen
+  parity corpus. Rust output ordering and all three aggregation windows were
+  made deterministic before the golden gate; the transport and crates are now
+  removed, leaving native Go as the sole runtime.
+- Monetary semantics are intentionally an interim invariant: TM aggregation
+  rejects mixed or non-base currencies into `PENDING_REVIEW`; full FX/decimal
+  and crypto-asset semantics are a separate PH10 public-release gate.

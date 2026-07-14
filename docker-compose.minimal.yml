@@ -32,8 +32,6 @@ services:
       MERLON_UI_DIR: /app/ui
       MERLON_SEED: ${MERLON_SEED:-false}
       MERLON_LOG_LEVEL: info
-    # engine is not included in the minimal profile.
-    # Use docker-compose.yml for the full topology.
 
 volumes:
   pgdata:

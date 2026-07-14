@@ -242,6 +242,30 @@ func (r *MemoryTransactionRepo) ListByCustomerCursor(_ context.Context, customer
 	), nil
 }
 
+func (r *MemoryTransactionRepo) ListByCustomerEventRange(_ context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *domain.TransactionEventCursor) ([]domain.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Transaction
+	for _, id := range r.byCustomer[customerID] {
+		t := *r.data[id]
+		if !t.ExecutedAt.Before(from) && t.ExecutedAt.Before(to) && !t.CreatedAt.After(createdBefore) {
+			if after == nil || t.ExecutedAt.After(after.ExecutedAt) || (t.ExecutedAt.Equal(after.ExecutedAt) && t.ID > after.ID) {
+				all = append(all, t)
+			}
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].ExecutedAt.Equal(all[j].ExecutedAt) {
+			return all[i].ID < all[j].ID
+		}
+		return all[i].ExecutedAt.Before(all[j].ExecutedAt)
+	})
+	if limit > 0 && len(all) > limit {
+		all = all[:limit]
+	}
+	return all, nil
+}
+
 func (r *MemoryTransactionRepo) Create(_ context.Context, t *domain.Transaction) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

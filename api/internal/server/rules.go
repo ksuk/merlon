@@ -18,9 +18,7 @@ import (
 )
 
 // ruleConfigType maps a domain.RuleType to the config_type string
-// engine.ConfigEngine.ValidateConfig expects (engine/crates/merlon-engine/src/grpc/config_service.rs).
-// "country_risk" validation is added to the engine in a later task; until
-// then ValidateConfig will reject it, which is the conservative default.
+// engine.ConfigEngine.ValidateConfig expects the typed config names below.
 func ruleConfigType(t domain.RuleType) string {
 	switch t {
 	case domain.RuleTypeTMScenario:
@@ -36,9 +34,9 @@ func ruleConfigType(t domain.RuleType) string {
 	}
 }
 
-// validateRuleDefinition delegates schema/semantic validation to the Rust
-// engine's ConfigService (the rule schema §5: rule definitions must be
-// JSON-Schema validated; no in-process eval of rule content). It returns a
+// validateRuleDefinition delegates schema/semantic validation to the native
+// engine (the rule schema §5: rule definitions must be JSON-Schema validated;
+// no in-process eval of rule content). It returns a
 // *ruleValidationError (carrying the engine's structured errors) when
 // validation ran and found problems.
 func (s *Server) validateRuleDefinition(r *http.Request, ruleType domain.RuleType, definition json.RawMessage) error {

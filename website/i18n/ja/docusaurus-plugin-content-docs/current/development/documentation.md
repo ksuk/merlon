@@ -13,11 +13,11 @@ sidebar_position: 12
 
 - `docs/decisions/**`（アーキテクチャ決定記録）は構築済みサイトから完全に除外され、日本語で記述されている。翻訳対象ではなく、ドキュメントチェックもこれをスキップする。
 - `docs/standards/**`（社内監査・レビュー標準）も同様に構築済みサイトから除外され、日本語で記述されている。翻訳対象ではなく、ドキュメントチェックもこれをスキップする。
-- `docs/api/**` は生成されたリファレンス出力（OpenAPI、gRPC proto、JSON Schema のリファレンスページ）であり、gitignore されている。直接編集してはならない。`make generate-openapi`、`make generate-proto-docs`、及びウェブサイトのスキーマドキュメントジェネレータによって上書きされる。このパイプラインの proto 側については[Protocol Buffers ワークフロー](./proto-workflow.md)を参照。
+- `docs/api/**` は生成されたリファレンス出力（OpenAPI、JSON Schema のリファレンスページ）であり、gitignore されている。直接編集してはならない。`make generate-openapi` とウェブサイトのスキーマドキュメントジェネレータによって上書きされる。
 
 ## ja 翻訳
 
-日本語訳は `website/i18n/ja/docusaurus-plugin-content-docs/current/` に、`docs/` 配下の各英語ドキュメントの相対パスをそのまま反映する形で配置される。リファレンスジェネレータ（OpenAPI、proto、スキーマ）は、そのソースとなるコメント・スキーマから `en` と `ja` の両方のリファレンスページを直接生成するため、`docs/api/**` とその ja 版は自動的に同期され、翻訳チェックの対象外である。
+日本語訳は `website/i18n/ja/docusaurus-plugin-content-docs/current/` に、`docs/` 配下の各英語ドキュメントの相対パスをそのまま反映する形で配置される。リファレンスジェネレータ（OpenAPI、スキーマ）は、そのソースとなるコメント・スキーマから `en` と `ja` の両方のリファレンスページを直接生成するため、`docs/api/**` とその ja 版は自動的に同期され、翻訳チェックの対象外である。
 
 まだ実際の翻訳が存在しない手書きの英語ドキュメントは、ビルド時に `website/scripts/sync-i18n-fallback.mjs` によって英語のフォールバックコピーで埋められる。これにより、ja ロケール内のページ間の相対リンクが 404 になることはない。フォールバックコピーは `website/.i18n-fallback-manifest.json` に記録され、実際の翻訳では**ない**。以下のチェックはこれらを未翻訳の場合と同様に扱う。
 
@@ -36,7 +36,7 @@ sidebar_position: 12
 
 ### 1. `check-en-language`
 
-手書きの英語ドキュメント、または `proto/merlon/v1/*.proto` のどこかに日本語文字が出現すると失敗する。許容される例外（例えば、意図的に引用された日本の法令名など）は `website/docs-lint/jp-allowlist.json` に、完全一致部分文字列のエントリの配列として列挙する。
+手書きの英語ドキュメントのどこかに日本語文字が出現すると失敗する。許容される例外（例えば、意図的に引用された日本の法令名など）は `website/docs-lint/jp-allowlist.json` に、完全一致部分文字列のエントリの配列として列挙する。
 
 ```json
 [{ "file": "docs/compliance/data-retention.md", "text": "<exact substring to allow>" }]
@@ -46,7 +46,7 @@ sidebar_position: 12
 
 ### 2. `check-title-style`
 
-手書きドキュメント及び `_category_.json` のラベルについて: フロントマターの `title` が存在しなければならず、ドキュメントに H1 がある場合はそれと完全に一致しなければならない。タイトル、フロントマターの `sidebar_label`、カテゴリの `label` はタイトルケース（先頭または末尾でない限り、a, an, the, and, or, nor, but, for, of, in, on, to, at, by, with, vs, via といった小語を除くすべての単語を大文字化）でなければならない。`website/docs-lint/proper-nouns.json` に列挙された固有名詞（gRPC、OpenAPI、API、CDD、JWT など）は、そこに綴られた通り正確に表記しなければならない。
+手書きドキュメント及び `_category_.json` のラベルについて: フロントマターの `title` が存在しなければならず、ドキュメントに H1 がある場合はそれと完全に一致しなければならない。タイトル、フロントマターの `sidebar_label`、カテゴリの `label` はタイトルケース（先頭または末尾でない限り、a, an, the, and, or, nor, but, for, of, in, on, to, at, by, with, vs, via といった小語を除くすべての単語を大文字化）でなければならない。`website/docs-lint/proper-nouns.json` に列挙された固有名詞（OpenAPI、API、CDD、JWT など）は、そこに綴られた通り正確に表記しなければならない。
 
 ### 3. `check-i18n-parity`
 

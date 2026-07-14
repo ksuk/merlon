@@ -40,7 +40,7 @@ test("renders system info with features", async () => {
   expect(await screen.findByText("v1.0.0")).toBeDefined()
   expect(screen.getByText("36")).toBeDefined()
   expect(screen.getByText("Go API")).toBeDefined()
-  expect(screen.getByText("Rust Engine")).toBeDefined()
+  expect(screen.getByText("Go Engine")).toBeDefined()
   expect(screen.getByText("CDDスコアリング")).toBeDefined()
 })
 

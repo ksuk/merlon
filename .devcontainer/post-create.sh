@@ -3,7 +3,6 @@ set -euo pipefail
 
 echo "==> Fetching project dependencies"
 (cd api && go mod download)
-(cd engine && cargo fetch)
 (cd ui && npm ci)
 
 echo "==> Installing Claude Code CLI (latest)"

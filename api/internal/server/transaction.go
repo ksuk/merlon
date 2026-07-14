@@ -1,14 +1,19 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/ksuk/merlon/api/internal/apierr"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
 type CreateTransactionRequest struct {
@@ -159,7 +164,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Verify customer exists
-	_, err := s.customers.Get(r.Context(), req.CustomerID)
+	customer, err := s.customers.Get(r.Context(), req.CustomerID)
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
@@ -214,7 +219,95 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Transaction creation is accepted independently of engine availability,
+	// but the realtime monitoring pass must run before the request is complete.
+	// Any engine/history failure is fail-alerted into PENDING_REVIEW rather than
+	// silently dropping the transaction.
+	s.monitorCreatedTransaction(r.Context(), customer, t)
+
 	writeJSON(w, http.StatusCreated, t)
+}
+
+func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain.Customer, created *domain.Transaction) {
+	if s.monitoring == nil || s.alerts == nil || customer == nil || customer.EffectiveStatus() == domain.CustomerStatusClosed {
+		return
+	}
+
+	txns, err := s.listRealtimeTransactions(ctx, customer.ID, created)
+	if err != nil {
+		_ = s.queuePendingReview(ctx, customer, []domain.Transaction{*created}, err)
+		return
+	}
+	if len(txns) == 0 {
+		txns = []domain.Transaction{*created}
+	}
+	if s.tmBaseCurrency != "" {
+		for _, txn := range txns {
+			if !strings.EqualFold(txn.Currency, s.tmBaseCurrency) {
+				_ = s.queuePendingReview(ctx, customer, txns, fmt.Errorf("currency %s is not normalized to %s", txn.Currency, s.tmBaseCurrency))
+				return
+			}
+		}
+	}
+
+	alerts, err := s.evaluateMonitoring(ctx, customer, txns, engine.EvaluationModeRealtime, nil)
+	if err != nil {
+		_ = s.queuePendingReview(ctx, customer, txns, err)
+		return
+	}
+	for _, alert := range alerts {
+		alert.ID = generateID()
+		now := time.Now()
+		alert.CreatedAt, alert.UpdatedAt = now, now
+		if alert.DetectedAt.IsZero() {
+			alert.DetectedAt = now
+		}
+		windowStart := domain.DailyAggregationWindowStart(alert.DetectedAt)
+		alert.AggregationWindowStart = &windowStart
+		if _, err := s.applyWhitelistSuppression(ctx, &alert); err != nil {
+			slog.WarnContext(ctx, "realtime alert suppression failed", "error", err)
+			continue
+		}
+		createdAlert, _, err := s.alerts.CreateIfNotDuplicate(ctx, &alert)
+		if err != nil || !createdAlert {
+			continue
+		}
+		recordAlertCreated(&alert)
+		s.consolidateAlertIntoCase(ctx, &alert)
+		s.dispatchWebhook(ctx, domain.WebhookEventAlertCreated, alert)
+		s.notifyAlertCreated(ctx, alert)
+	}
+}
+
+func (s *Server) listRealtimeTransactions(ctx context.Context, customerID string, created *domain.Transaction) ([]domain.Transaction, error) {
+	if history, ok := s.transactions.(domain.TransactionHistoryRepository); ok {
+		var out []domain.Transaction
+		var after *domain.TransactionEventCursor
+		to := time.Now().UTC().Add(time.Nanosecond)
+		for {
+			page, err := history.ListByCustomerEventRange(ctx, customerID, time.Time{}, to, created.CreatedAt, 1000, after)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, page...)
+			if len(page) < 1000 {
+				return out, nil
+			}
+			last := page[len(page)-1]
+			after = &domain.TransactionEventCursor{ExecutedAt: last.ExecutedAt, ID: last.ID}
+		}
+	}
+	var out []domain.Transaction
+	for offset := 0; ; offset += 1000 {
+		page, err := s.transactions.ListByCustomer(ctx, customerID, 1000, offset)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if len(page) < 1000 {
+			return out, nil
+		}
+	}
 }
 
 func isValidDirection(d domain.TransactionDirection) bool {

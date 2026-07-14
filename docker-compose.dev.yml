@@ -10,11 +10,3 @@ services:
     environment:
       MERLON_ENV: development
       MERLON_LOG_LEVEL: debug
-
-  engine:
-    volumes:
-      - ./engine:/build/engine
-      - ./proto:/build/proto
-      - ./content/_sample/cdd_weights:/app/cdd_weights:ro
-      - ./content/_sample/tm_scenarios:/app/tm_scenarios:ro
-      - ./content/_sample/screening_lists:/app/screening_lists:ro

@@ -6,12 +6,6 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
-  - package-ecosystem: cargo
-    directory: /engine
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
   - package-ecosystem: npm
     directory: /ui
     schedule:
@@ -26,11 +20,6 @@ updates:
 
   - package-ecosystem: docker
     directory: /api
-    schedule:
-      interval: weekly
-
-  - package-ecosystem: docker
-    directory: /engine
     schedule:
       interval: weekly
 

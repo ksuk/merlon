@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestLoadDefaults(t *testing.T) {
 	cfg := Load()
@@ -10,6 +14,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.HTTPAddr != ":8080" {
 		t.Errorf("HTTPAddr = %q, want %q", cfg.HTTPAddr, ":8080")
+	}
+	if cfg.Mode != "all" || cfg.WorkerConcurrency != 4 || cfg.TMBaseCurrency != "JPY" {
+		t.Errorf("PH9 defaults: mode=%q concurrency=%d currency=%q", cfg.Mode, cfg.WorkerConcurrency, cfg.TMBaseCurrency)
 	}
 	if cfg.CacheBackend != "memory" {
 		t.Errorf("CacheBackend = %q, want %q", cfg.CacheBackend, "memory")
@@ -22,6 +29,35 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.AdapterConfigPath != "" {
 		t.Errorf("AdapterConfigPath = %q, want %q", cfg.AdapterConfigPath, "")
+	}
+}
+
+func TestDigestPathDirectoryIsStableAndNameSensitive(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "b.yaml"), []byte("b"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.yaml"), []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	one, err := DigestPath(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := DigestPath(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one != two || one == "" {
+		t.Fatalf("unstable digest: %q/%q", one, two)
+	}
+}
+
+func TestValidateRejectsInvalidMode(t *testing.T) {
+	cfg := Load()
+	cfg.Mode = "sidecar"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid mode error")
 	}
 }
 

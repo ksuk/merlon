@@ -5,7 +5,7 @@
 | Area | Primary | Backup / escalation |
 |---|---|---|
 | Go API and data stores | `@ksuk` | Assign a second reviewer before the first production release |
-| Rust engine and protobuf | `@ksuk` | Assign a second reviewer before the first production release |
+| Native Go evaluation engine | `@ksuk` | Assign a second reviewer before the first production release |
 | UI and documentation | `@ksuk` | Assign a second reviewer before the first production release |
 | Security, releases, and migrations | `@ksuk` | Assign a second reviewer before the first production release |
 

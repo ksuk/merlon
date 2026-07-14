@@ -1,0 +1,7 @@
+schema_version: "1.0"
+content_type: country_risk_table
+effective_date: "2026-07-01"
+default_score: 3
+countries:
+  JP: {score: 1}
+  KP: {score: 5, reason: "high risk"}

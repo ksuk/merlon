@@ -10,7 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type BacktestResult, type Customer } from "@/lib/api"
+import { api, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
 import { FlaskConical, Play } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -21,7 +21,11 @@ export function BacktestPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
+  const [job, setJob] = useState<BacktestJob | null>(null)
+  const [from, setFrom] = useState(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
   const descRef = useRef<HTMLInputElement>(null)
+  const candidateRef = useRef<HTMLInputElement>(null)
 
   function toggleCustomer(id: string) {
     setSelectedIds((prev) =>
@@ -41,12 +45,24 @@ export function BacktestPage() {
     setRunning(true)
     setResult(null)
     try {
-      const res = await api.backtest.run(
-        selectedIds,
-        [],
-        descRef.current?.value.trim() || "UI backtest",
-      )
-      setResult(res)
+      const candidate = candidateRef.current?.value.trim() || ""
+      if (!candidate) return
+      const created = await api.backtest.create({
+        from: `${from}T00:00:00Z`,
+        to: `${to}T00:00:00Z`,
+        customer_ids: selectedIds,
+        scenario_ids: [],
+        baseline_rule_set_id: "active",
+        candidate_rule_set_id: candidate,
+      })
+      setJob(created)
+      let current = created
+      while (current.status === "queued" || current.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        current = await api.backtest.get(current.id)
+        setJob(current)
+      }
+      if (current.status === "completed" && current.candidate) setResult(current.candidate)
     } finally {
       setRunning(false)
     }
@@ -85,6 +101,18 @@ export function BacktestPage() {
               className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-medium">From (UTC)
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-medium">To (UTC, exclusive)
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            </label>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium">Candidate rule set</label>
+            <input ref={candidateRef} placeholder="active TM rule name" required className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+          </div>
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label className="text-sm font-medium">{t("backtest.form.targetCustomers")}</label>
@@ -115,6 +143,7 @@ export function BacktestPage() {
             <Play className="h-4 w-4" />
             {running ? t("backtest.form.running") : t("backtest.form.submit")}
           </Button>
+          {job && <p className="text-xs text-muted-foreground">Job {job.id}: {job.status} ({Math.round(job.progress * 100)}%)</p>}
         </CardContent>
       </Card>
 

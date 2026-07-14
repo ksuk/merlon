@@ -20,4 +20,4 @@ Back up `MERLON_ENCRYPTION_KEY_RING` separately from the database. A database ba
 
 ## Recovery evidence
 
-Record the backup identifier, restore operator, application version, Engine configuration digests, validation results, and any exceptions in the organization's change-management system.
+Record the backup identifier, restore operator, application version, native engine configuration digests, validation results, and any exceptions in the organization's change-management system.

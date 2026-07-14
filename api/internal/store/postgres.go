@@ -135,7 +135,9 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 	if after == nil {
 		rows, err = r.pool.Query(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
 	} else {
-		rows, err = r.pool.Query(ctx, baseQuery+` WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
+		// baseQuery already contains the soft-delete predicate. Appending a
+		// second WHERE made every cursor page fail in PostgreSQL.
+		rows, err = r.pool.Query(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 			after.CreatedAt, after.ID, limit)
 	}
 	if err != nil {
@@ -391,6 +393,30 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 		txns = append(txns, t)
 	}
 	return txns, rows.Err()
+}
+
+func (r *PgTransactionRepo) ListByCustomerEventRange(ctx context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *domain.TransactionEventCursor) ([]domain.Transaction, error) {
+	query := `SELECT ` + transactionColumns + ` FROM transactions WHERE customer_id=$1 AND purge_marked_at IS NULL AND executed_at >= $2 AND executed_at < $3 AND created_at <= $4`
+	args := []any{customerID, from, to, createdBefore, limit}
+	if after != nil {
+		query += ` AND (executed_at,id) > ($5,$6)`
+		args = []any{customerID, from, to, createdBefore, after.ExecutedAt, after.ID, limit}
+	}
+	query += ` ORDER BY executed_at ASC, id ASC LIMIT $` + strconv.Itoa(len(args))
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Transaction
+	for rows.Next() {
+		t, err := scanTransaction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) error {

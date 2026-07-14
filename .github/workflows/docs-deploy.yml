@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'proto/**'
       - 'api/**'
       - 'content/schema/**'
       - 'scripts/**'
@@ -16,7 +15,6 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'proto/**'
       - 'api/**'
       - 'content/schema/**'
       - 'scripts/**'
@@ -54,22 +52,11 @@ jobs:
           cache: 'npm'
           cache-dependency-path: website/package-lock.json
 
-      - name: Install buf
-        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
-        with:
-          setup_only: true
-
       - name: Docs checks
         run: node website/scripts/checks/run-all.mjs
 
-      - name: Generate protobuf code
-        run: make proto
-
       - name: Generate OpenAPI spec
         run: make generate-openapi
-
-      - name: Generate proto reference docs
-        run: make generate-proto-docs
 
       - name: Build docs site
         run: |

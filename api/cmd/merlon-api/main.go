@@ -12,12 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ksuk/merlon/api/internal/auth"
+	backtestworker "github.com/ksuk/merlon/api/internal/backtest"
 	"github.com/ksuk/merlon/api/internal/batch"
 	"github.com/ksuk/merlon/api/internal/config"
 	"github.com/ksuk/merlon/api/internal/crypto"
 	"github.com/ksuk/merlon/api/internal/domain"
-	"github.com/ksuk/merlon/api/internal/engine"
-	"github.com/ksuk/merlon/api/internal/engineclient"
+	"github.com/ksuk/merlon/api/internal/engine/native"
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/events/handlers"
 	_ "github.com/ksuk/merlon/api/internal/events/nats"
@@ -71,8 +71,27 @@ func main() {
 		slog.Error("config validation", "error", err)
 		os.Exit(1)
 	}
+	runAPIJobs := cfg.Mode == "api" || cfg.Mode == "all"
+	runWorkerJobs := cfg.Mode == "worker" || cfg.Mode == "all"
 
 	deps := server.Deps{}
+	deps.ConfigDigests = make(map[string]string)
+	for name, path := range map[string]string{
+		"application":     cfg.ConfigPath,
+		"adapter":         cfg.AdapterConfigPath,
+		"country_risk":    cfg.CountryRiskPath,
+		"tm_scenarios":    os.Getenv("MERLON_TM_SCENARIOS_PATH"),
+		"screening_lists": os.Getenv("MERLON_SCREENING_LISTS_PATH"),
+	} {
+		if path == "" {
+			continue
+		}
+		if digest, err := config.DigestPath(path); err == nil {
+			deps.ConfigDigests[name] = digest
+		} else {
+			slog.Warn("config digest unavailable", "name", name, "path", path, "error", err)
+		}
+	}
 
 	var batchRuns domain.BatchRunRepository
 
@@ -154,6 +173,7 @@ func main() {
 		deps.Rules = store.NewPostgresRuleRepo(pool)
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
+		deps.BacktestJobs = store.NewPgBacktestJobRepo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
 		memCustomers := store.NewMemoryCustomerRepo()
@@ -170,6 +190,7 @@ func main() {
 		deps.Accounts = store.NewMemoryAccountRepo(memCustomers)
 		deps.Rules = store.NewMemoryRuleRepo()
 		batchRuns = store.NewMemoryBatchRunRepo()
+		deps.BacktestJobs = store.NewMemoryBacktestJobRepo()
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
 
@@ -211,37 +232,24 @@ func main() {
 
 	deps.RateLimit = cfg.RateLimit
 	deps.WhitelistMaxValidDays = cfg.WhitelistMaxValidDays
+	deps.TMBaseCurrency = cfg.TMBaseCurrency
 	if cfg.RateLimit > 0 {
 		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}
 
-	if cfg.EngineAddr != "" {
-		var engineOpts []engine.ClientOption
-		if cfg.Env == "production" {
-			engineOpts = append(engineOpts, engine.RequireTLS())
-		}
-		if cfg.EngineTLSCert != "" {
-			engineOpts = append(engineOpts, engine.WithTLS(cfg.EngineTLSCert, cfg.EngineTLSServerName))
-		}
-		client, err := engine.NewClient(cfg.EngineAddr, engineOpts...)
-		if err != nil {
-			slog.Error("engine client", "error", err)
-			os.Exit(1)
-		}
-		defer client.Close()
-		// Wrap in a circuit breaker (the operational design §4.4: 3s timeout, 2 retries,
-		// 30s open, half-open allows 1 request) so a stalled engine trips
-		// instead of leaving every caller blocked on a hung gRPC call.
-		cbClient := engineclient.Wrap(client)
-		deps.Scoring = cbClient
-		deps.Monitoring = cbClient
-		deps.Screening = cbClient
-		deps.Backtest = client
-		deps.Config = client
-		deps.EngineHealth = client
-		slog.Info("engine connected", "addr", cfg.EngineAddr)
+	// PH9 native mode is the sole production engine path after Go
+	// consolidation. A deployment may intentionally run without rule roots
+	// during setup/migrations; engine-backed endpoints remain disabled then.
+	if nativeEngine, nativeErr := native.NewFromEnv(); nativeErr == nil {
+		deps.Scoring = nativeEngine
+		deps.Monitoring = nativeEngine
+		deps.Screening = nativeEngine
+		deps.Backtest = nativeEngine
+		deps.Config = nativeEngine
+		deps.EngineHealth = nativeEngine
+		slog.Info("native Go engine loaded", "tm_digest", deps.ConfigDigests["tm_scenarios"])
 	} else {
-		slog.Warn("MERLON_ENGINE_ADDR not set, engine endpoints disabled")
+		slog.Warn("native Go engine unavailable", "error", nativeErr)
 	}
 
 	if cfg.Seed {
@@ -262,7 +270,7 @@ func main() {
 	// deployment mode. The in-memory dev mode has no event bus (tier-change
 	// propagation, Task 8, is a no-op then, same as any other Postgres-only
 	// background job in this file).
-	if pool != nil {
+	if runWorkerJobs && pool != nil {
 		bus, err := events.NewBus(events.Config{Driver: cfg.EventBus, Pool: pool})
 		if err != nil {
 			slog.Error("event bus", "error", err)
@@ -279,7 +287,7 @@ func main() {
 		slog.Warn("no PostgreSQL connection, event bus disabled (CDD tier-change propagation, Task 8, will not run)")
 	}
 
-	if deps.Whitelist != nil {
+	if runAPIJobs && deps.Whitelist != nil {
 		batch.StartExpiryTicker(jobsCtx, deps.Whitelist, whitelistExpiryCheckInterval, func(entries []domain.WhitelistEntry) {
 			for _, e := range entries {
 				slog.Info("whitelist entry expiring soon", "id", e.ID, "customer_id", e.CustomerID, "valid_until", e.ValidUntil)
@@ -287,13 +295,16 @@ func main() {
 		})
 	}
 
-	if cfg.ScreeningImportEnabled || cfg.ScreeningRescreenEnabled {
-		// Persistent (Postgres-backed) list storage is a future enhancement
-		// (WS-7 Task 2 design note); the in-process store is sufficient for
-		// the import job's own fail-alert continuity within one running
-		// process.
-		listStore := screening.NewMemoryListStore()
-		failureTracker := screening.NewMemoryFailureTracker()
+	if runAPIJobs && (cfg.ScreeningImportEnabled || cfg.ScreeningRescreenEnabled) {
+		var listStore screening.ListStore
+		var failureTracker screening.FailureTracker
+		if pool != nil {
+			listStore = screening.NewPostgresListStore(pool)
+			failureTracker = screening.NewPostgresFailureTracker(pool)
+		} else {
+			listStore = screening.NewMemoryListStore()
+			failureTracker = screening.NewMemoryFailureTracker()
+		}
 		deps.ScreeningListStore = listStore
 		deps.ScreeningFailureTracker = failureTracker
 		deps.ScreeningListIDs = screeningListIDs
@@ -307,7 +318,11 @@ func main() {
 				"mof_japan":    &screening.MOFAdapter{ListID: "mof_japan", URL: cfg.ScreeningMOFURL, Fetcher: fetcher},
 				"pep_provider": &screening.PEPAdapter{ListID: "pep_provider", URL: cfg.ScreeningPEPURL, Fetcher: fetcher},
 			}
-			go screening.RunImportJobPeriodically(jobsCtx, cfg.ScreeningImportInterval, adapters, listStore, failureTracker)
+			var listConsumer interface{ ReplaceScreeningLists([]screening.RawListData) }
+			if consumer, ok := deps.Screening.(interface{ ReplaceScreeningLists([]screening.RawListData) }); ok {
+				listConsumer = consumer
+			}
+			go screening.RunImportJobPeriodicallyWithConsumer(jobsCtx, cfg.ScreeningImportInterval, adapters, listStore, failureTracker, listConsumer)
 			slog.Info("screening list import job enabled", "interval", cfg.ScreeningImportInterval)
 		}
 
@@ -321,13 +336,17 @@ func main() {
 			go scheduler.RunPeriodic(jobsCtx, cfg.ScreeningCheckInterval)
 			slog.Info("screening rescreening scheduler enabled", "check_interval", cfg.ScreeningCheckInterval)
 		} else if cfg.ScreeningRescreenEnabled {
-			slog.Warn("MERLON_SCREENING_RESCREEN_ENABLED=true but no engine configured (MERLON_ENGINE_ADDR), rescreening scheduler disabled")
+			slog.Warn("MERLON_SCREENING_RESCREEN_ENABLED=true but native engine is unavailable, rescreening scheduler disabled")
 		}
 	}
 
-	srv := server.New(cfg.HTTPAddr, deps)
+	listenAddr := cfg.HTTPAddr
+	if cfg.Mode == "worker" {
+		listenAddr = cfg.WorkerHTTPAddr
+	}
+	srv := server.New(listenAddr, deps)
 
-	if deps.Customers != nil && deps.Cases != nil {
+	if runAPIJobs && deps.Customers != nil && deps.Cases != nil {
 		batch.StartEDDEscalationTicker(jobsCtx, batch.EDDEscalationDeps{
 			Customers:  deps.Customers,
 			Cases:      deps.Cases,
@@ -338,7 +357,7 @@ func main() {
 		slog.Info("EDD escalation job enabled", "stage2_days", cfg.EDDStage2Days, "stage3_days", cfg.EDDStage3Days)
 	}
 
-	if deps.Retention != nil && deps.Audit != nil {
+	if runAPIJobs && deps.Retention != nil && deps.Audit != nil {
 		targets := map[string]retention.PurgeFunc{}
 		if pool != nil {
 			purger := retention.NewPostgresPurger(pool)
@@ -376,12 +395,12 @@ func main() {
 	}
 
 	httpServer := &http.Server{
-		Addr:    cfg.HTTPAddr,
+		Addr:    listenAddr,
 		Handler: srv.Handler(),
 	}
 
 	go func() {
-		slog.Info("merlon-api starting", "env", cfg.Env, "addr", cfg.HTTPAddr)
+		slog.Info("merlon-api starting", "env", cfg.Env, "mode", cfg.Mode, "addr", listenAddr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
@@ -393,13 +412,14 @@ func main() {
 
 	webhookRetryCtx, cancelWebhookRetry := context.WithCancel(context.Background())
 	defer cancelWebhookRetry()
-	if deps.Webhooks != nil {
+	if runAPIJobs && deps.Webhooks != nil {
 		go srv.RunWebhookRetryWorker(webhookRetryCtx, webhookRetryCheckInterval)
 		slog.Info("webhook retry worker started", "interval", webhookRetryCheckInterval)
 	}
 
-	if deps.PendingEvaluations != nil && deps.Monitoring != nil {
+	if runWorkerJobs && deps.PendingEvaluations != nil && deps.Monitoring != nil {
 		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
+		recoveryJob.ConfigDigests = deps.ConfigDigests
 		go func() {
 			if err := recoveryJob.Run(recoveryCtx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("pending evaluation recovery job stopped", "error", err)
@@ -408,17 +428,33 @@ func main() {
 		slog.Info("pending evaluation recovery job started")
 	}
 
+	backtestCtx, cancelBacktest := context.WithCancel(context.Background())
+	defer cancelBacktest()
+	if runWorkerJobs && deps.BacktestJobs != nil && deps.Backtest != nil {
+		for i := 0; i < cfg.WorkerConcurrency; i++ {
+			worker := &backtestworker.Worker{Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules}
+			workerID := i + 1
+			go func() {
+				if err := worker.Run(backtestCtx, time.Second); err != nil && !errors.Is(err, context.Canceled) {
+					slog.Error("backtest worker stopped", "worker_id", workerID, "error", err)
+				}
+			}()
+		}
+		slog.Info("durable backtest workers started", "concurrency", cfg.WorkerConcurrency)
+	}
+
 	tmBatchCtx, cancelTMBatch := context.WithCancel(context.Background())
 	defer cancelTMBatch()
-	if deps.Monitoring != nil {
+	if runWorkerJobs && deps.Monitoring != nil {
 		tmScheduler := batch.NewScheduler(cfg.TMBatchSchedule, func(ctx context.Context, runID string) error {
 			return batch.RunTMBatchEvaluation(ctx, batch.TMBatchEvaluationDeps{
-				Runs:         batchRuns,
-				Customers:    deps.Customers,
-				Transactions: deps.Transactions,
-				Monitoring:   deps.Monitoring,
-				Alerts:       deps.Alerts,
-				Cases:        deps.Cases,
+				Runs:          batchRuns,
+				Customers:     deps.Customers,
+				Transactions:  deps.Transactions,
+				Monitoring:    deps.Monitoring,
+				Alerts:        deps.Alerts,
+				Cases:         deps.Cases,
+				ConfigDigests: deps.ConfigDigests,
 			}, runID)
 		})
 		if cfg.TMBatchTimezone != "" {
@@ -452,6 +488,7 @@ func main() {
 	slog.Info("merlon-api shutting down")
 	cancelRecovery()
 	cancelTMBatch()
+	cancelBacktest()
 	cancelWebhookRetry()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

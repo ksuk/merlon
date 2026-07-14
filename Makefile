@@ -1,48 +1,33 @@
-.PHONY: help fmt lint lint-go lint-rust lint-ui lint-proto test test-go test-rust test-ui build proto migrate audit-harden seed dev-up dev-down minimal-up minimal-down generate-openapi generate-proto-docs docs-build docs-check
+.PHONY: help fmt lint lint-go lint-ui test test-go test-ui build migrate audit-harden seed dev-up dev-down minimal-up minimal-down generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 fmt: ## Format all code
 	@cd api && go fmt ./...
-	@cd engine && cargo fmt
 	@cd ui && npx prettier --write "src/**/*.{ts,tsx}"
 
-lint: lint-go lint-rust lint-ui lint-proto ## Lint all code
+lint: lint-go lint-ui ## Lint all code
 
 lint-go: ## Run Go static analysis
 	@cd api && go vet ./...
 
-lint-rust: ## Run Rust static analysis
-	@cd engine && CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo clippy --all-targets -- -D warnings
-
 lint-ui: ## Run UI lint
 	@cd ui && npm run lint
 
-lint-proto: ## Run protobuf lint
-	@buf lint proto
-
-test: test-go test-rust test-ui ## Run all tests
+test: test-go test-ui ## Run all tests
 
 test-go: ## Run Go tests
 	@cd api && go test ./...
-
-test-rust: ## Run Rust tests
-	@cd engine && CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo test
 
 test-ui: ## Run UI tests
 	@cd ui && npm run test -- --run
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
-CARGO_TARGET_DIR ?= /tmp/merlon-target
 
 build: ## Build all components
 	@cd api && go build -buildvcs=false -ldflags "-X main.version=$(VERSION)" ./cmd/merlon-api
-	@cd engine && CARGO_TARGET_DIR=$(CARGO_TARGET_DIR) cargo build
 	@cd ui && npm run build
-
-proto: ## Generate protobuf code
-	@./scripts/generate-proto.sh
 
 migrate: ## Apply SQL migrations with a versioned ledger (use a migration role)
 	@go run ./api/cmd/merlon-migrate
@@ -73,11 +58,7 @@ generate-openapi: ## Export the OpenAPI spec to docs/api/openapi.json
 	@# `prebuild` (see website/package.json) so it always runs as part of
 	@# `npm run build`, using the openapi.json this target just produced.
 
-generate-proto-docs: ## Generate gRPC proto reference Markdown into docs/api/proto/
-	@cd proto && buf generate --template buf.gen.docs.yaml
-	@node website/scripts/generate-proto-docs.mjs
-
-docs-build: generate-openapi generate-proto-docs ## Build the documentation site with all generated references
+docs-build: generate-openapi ## Build the documentation site
 	@cd website && (npm ci --no-audit --no-fund || npm install) && npm run build
 
 docs-check: ## Run reproducible documentation check gates (language, titles, i18n parity/freshness, UI translations)

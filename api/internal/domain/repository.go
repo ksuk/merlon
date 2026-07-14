@@ -42,6 +42,18 @@ type TransactionRepository interface {
 	Create(ctx context.Context, t *Transaction) error
 }
 
+// TransactionHistoryRepository is an optional capability used by PH9 batch
+// and realtime evaluators. It orders by event time (not ingestion time), pins
+// a created_at snapshot, and carries an explicit half-open event window.
+type TransactionHistoryRepository interface {
+	ListByCustomerEventRange(ctx context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *TransactionEventCursor) ([]Transaction, error)
+}
+
+type TransactionEventCursor struct {
+	ExecutedAt time.Time
+	ID         string
+}
+
 // AlertBulkFilter narrows ListByFilter's results for bulk alert operations
 // (the case-management workflow §アラートの一括処理: "フィルタ条件（シナリオID、期間、
 // severity）"). Zero-value fields are wildcards (no restriction on that axis).

@@ -1,0 +1,11 @@
+schema_version: "2.0"
+scenario_id: tm_dormant_account_reactivation
+name: Dormant parity
+description: parity fixture
+type: aggregation
+conditions:
+  additional:
+    dormant_days: 30
+    reactivation_threshold: 5000
+evaluation_mode: both
+severity: HIGH

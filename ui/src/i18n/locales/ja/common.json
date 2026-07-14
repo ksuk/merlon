@@ -671,7 +671,7 @@
     "components": {
       "title": "コンポーネント",
       "api": "Go API",
-      "engine": "Rust Engine",
+      "engine": "Go Engine",
       "database": "PostgreSQL"
     },
     "features": {

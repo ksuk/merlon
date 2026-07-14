@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
 const maxBatchCustomers = 1000
@@ -119,6 +120,23 @@ func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txn
 	for i, t := range txns {
 		txIDs[i] = t.ID
 	}
+	if finder, ok := s.pendingEvals.(interface {
+		ListPendingByCustomer(context.Context, string, domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error)
+	}); ok {
+		if existing, err := finder.ListPendingByCustomer(ctx, c.ID, domain.PendingEvaluationStatusPendingReview); err == nil {
+			pendingIDs := make(map[string]struct{}, len(txIDs))
+			for _, id := range txIDs {
+				pendingIDs[id] = struct{}{}
+			}
+			for _, pe := range existing {
+				for _, id := range pe.TransactionIDs {
+					if _, found := pendingIDs[id]; found {
+						return true // already queued; concurrent/replayed pass
+					}
+				}
+			}
+		}
+	}
 
 	pe := &domain.PendingEvaluation{
 		ID:             generateID(),
@@ -132,6 +150,20 @@ func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txn
 		return false
 	}
 	return true
+}
+
+func (s *Server) evaluateMonitoring(ctx context.Context, c *domain.Customer, txns []domain.Transaction, mode engine.EvaluationMode, scenarioIDs []string) ([]domain.Alert, error) {
+	tier := domain.RiskTierLow
+	if c.RiskTier != nil {
+		tier = *c.RiskTier
+	}
+	if v2, ok := s.monitoring.(engine.MonitoringEngineV2); ok {
+		return v2.Evaluate(ctx, engine.MonitoringRequest{CustomerID: c.ID, CustomerType: c.CustomerType, RiskTier: tier, Transactions: txns, ScenarioIDs: scenarioIDs, Mode: mode, EvaluatedAt: time.Now().UTC(), ConfigDigests: copyStringMap(s.configDigests)})
+	}
+	if mode == engine.EvaluationModeBatch {
+		return s.monitoring.EvaluateTransactionsBatch(ctx, c.ID, tier, txns, scenarioIDs)
+	}
+	return s.monitoring.EvaluateTransactions(ctx, c.ID, tier, txns, scenarioIDs)
 }
 
 type batchMonitorRequest struct {
@@ -238,11 +270,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		riskTier := domain.RiskTierLow
-		if c.RiskTier != nil {
-			riskTier = *c.RiskTier
-		}
-		alerts, err := s.monitoring.EvaluateTransactions(ctx, c.ID, riskTier, txns, nil)
+		alerts, err := s.evaluateMonitoring(ctx, &c, txns, engine.EvaluationModeRealtime, nil)
 		if err != nil {
 			if s.queuePendingReview(ctx, &c, txns, err) {
 				resp.QueuedForReview++

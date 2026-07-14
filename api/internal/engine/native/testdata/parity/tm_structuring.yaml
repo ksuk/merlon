@@ -1,0 +1,17 @@
+schema_version: "2.0"
+scenario_id: tm_structuring_basic
+name: Structuring parity
+description: parity fixture
+type: aggregation
+conditions:
+  threshold:
+    by_customer_type:
+      individual: {by_risk_tier: {LOW: 1000, MEDIUM: 1000, HIGH: 1000}}
+      corporate_domestic: {by_risk_tier: {LOW: 2000, MEDIUM: 2000, HIGH: 2000}}
+  absolute_threshold: 2500
+  additional:
+    window_hours: 24
+    min_transactions: 3
+    individual_below: 1000
+evaluation_mode: both
+severity: HIGH

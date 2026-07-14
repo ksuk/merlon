@@ -20,9 +20,9 @@ import (
 //
 // This runs entirely against the in-memory ListStore/FailureTracker/
 // ScreeningResultRepository and a fake screening engine. A real deployment
-// wires the Rust engine over gRPC and (per Task 2's design note) a
-// persistent list store; exercising that full stack requires `docker
-// compose up` with Postgres and the Rust engine, which this sandboxed test
+// wires the native engine and (per Task 2's design note) a persistent list
+// store; exercising that full stack requires `docker compose up` with
+// Postgres, which this sandboxed test
 // environment cannot do — see rules_demo_test.go for the same tradeoff
 // made elsewhere in this codebase.
 func TestScreeningPipeline_ImportThenRescreenThenFreshness_E2E(t *testing.T) {

@@ -50,9 +50,9 @@ var (
 		Help: "REST API response time in seconds.",
 	}, []string{"method", "path", "status"})
 
-	GRPCRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "merlon_grpc_request_duration_seconds",
-		Help: "gRPC call duration in seconds, as observed by the Go client.",
+	EngineEvalDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "merlon_engine_eval_duration_seconds",
+		Help: "In-process engine evaluation duration in seconds.",
 	}, []string{"method", "status"})
 
 	DBPoolActiveConnections = promauto.NewGauge(prometheus.GaugeOpts{
@@ -134,7 +134,7 @@ func init() {
 		CDDTierDistribution.WithLabelValues(tier).Set(0)
 	}
 	APIRequestDuration.WithLabelValues("GET", "/healthz", "200").Observe(0)
-	GRPCRequestDuration.WithLabelValues("unspecified", "ok").Observe(0)
+	EngineEvalDuration.WithLabelValues("unspecified", "ok").Observe(0)
 	for _, jobType := range knownBatchJobTypes {
 		BatchEvaluationDuration.WithLabelValues(jobType).Observe(0)
 	}

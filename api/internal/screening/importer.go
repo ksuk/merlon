@@ -144,9 +144,29 @@ func importOne(ctx context.Context, listID string, adapter ListAdapter, store Li
 // future enhancement, so this exposes a tunable interval instead (wired
 // from MERLON_SCREENING_IMPORT_INTERVAL in main.go).
 func RunImportJobPeriodically(ctx context.Context, interval time.Duration, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker) {
+	RunImportJobPeriodicallyWithConsumer(ctx, interval, adapters, store, failureTracker, nil)
+}
+
+// RunImportJobPeriodicallyWithConsumer is the durable import loop plus an
+// optional atomic consumer update (the native engine uses this to swap a
+// last-good list snapshot without restarting the API process).
+func RunImportJobPeriodicallyWithConsumer(ctx context.Context, interval time.Duration, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker, consumer interface{ ReplaceScreeningLists([]RawListData) }) {
 	runOnce := func() {
 		if _, err := RunImportJob(ctx, adapters, store, failureTracker); err != nil {
 			slog.Error("screening list import job failed", "error", err)
+		} else if consumer != nil {
+			ids := make([]string, 0, len(adapters))
+			for id := range adapters {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			lists := make([]RawListData, 0, len(ids))
+			for _, id := range ids {
+				if data, err := store.GetList(ctx, id); err == nil {
+					lists = append(lists, *data)
+				}
+			}
+			consumer.ReplaceScreeningLists(lists)
 		}
 	}
 	runOnce()

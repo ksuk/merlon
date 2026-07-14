@@ -7,7 +7,7 @@ sidebar_position: 2
 Merlon は主に日本の非銀行系金融機関向けに設計された、セルフホスト型の AML/CFT アプリケーションである。本文書は、コンポーネント境界と運用上の統制を理解する必要がある開発者・運用担当者を対象とする。
 
 ```
-External systems ── REST/webhooks ──> Go API ── gRPC ──> Rust Engine
+External systems ── REST/webhooks ──> Go API (native engine)
                                          │
                                          └──────────────> PostgreSQL
 React operator UI ─────────────── REST ────────────────> Go API
@@ -17,10 +17,10 @@ React operator UI ─────────────── REST ───�
 
 - **React UI（`ui/`）** はオペレーター向けダッシュボードを提供する。
 - **Go API（`api/`）** は顧客・取引データを受け付け、REST エンドポイントを公開し、ケースおよびレポートを管理し、バックグラウンド処理をオーケストレーションする。
-- **Rust Engine（`engine/`）** は gRPC 経由で CDD スコアリング、取引モニタリングルール、スクリーニングリスト、バックテストを評価する。
+- **ネイティブ評価エンジン（`api/internal/engine/native/`）** は CDD スコアリング、取引モニタリングルール、スクリーニングリスト、バックテストを Go プロセス内で評価する。
 - **PostgreSQL** は運用記録、スコア履歴、監査ログを永続化する。Redis とオブジェクトストレージはオプションのデプロイメント連携である。
 
-`proto/` 配下の Protocol Buffers 定義は、Go API と Rust Engine 間の互換性境界である。クライアント互換性を維持するため、変更は追加のみ（additive）でなければならない。
+評価エンジンの契約は Go の内部インターフェースで管理し、外部クライアントには REST/OpenAPI 契約を提供する。
 
 ## 設計原則
 
@@ -28,7 +28,7 @@ React operator UI ─────────────── REST ───�
 2. **設定としての製品（Configuration as the product）** — ルールをアプリケーションコードではなく、バージョン管理された YAML/JSON 設定として表現する。
 3. **スコア駆動型アーキテクチャ（Score-driven architecture）** — CDD スコアがモニタリングとレビュー優先度に反映される。
 4. **アダプタによる分離（Adapter isolation）** — 外部システムの差異を境界で正規化する。
-5. **デフォルトで安全（Secure by default）** — 本番環境の Engine 接続には TLS が必須。シークレットとメトリクスエンドポイントはデプロイメント側の統制で保護されなければならない。
+5. **デフォルトで安全（Secure by default）** — シークレットとメトリクスエンドポイントはデプロイメント側の統制で保護されなければならない。
 6. **契約の安定性（Contract stability）** — 外部契約の互換性を最低 12 ヶ月維持する。
 7. **フェイルアラート（Fail-alert）** — 検知漏れを黙って見逃すより、レビュー可能なアラートを優先する。
 

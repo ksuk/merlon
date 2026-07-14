@@ -24,7 +24,6 @@ func TestMetricsAllRegistered(t *testing.T) {
 		{"merlon_tx_missing_fiat_equivalent_total", TxMissingFiatEquivalent},
 		{"merlon_screening_list_stale_days", ScreeningListStaleDays},
 		{"merlon_api_request_duration_seconds", APIRequestDuration},
-		{"merlon_grpc_request_duration_seconds", GRPCRequestDuration},
 		{"merlon_db_pool_active_connections", DBPoolActiveConnections},
 		{"merlon_webhook_dlq_depth", WebhookDLQDepth},
 		{"merlon_batch_evaluation_duration_seconds", BatchEvaluationDuration},

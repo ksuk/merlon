@@ -12,7 +12,7 @@ Merlon を最短で起動するためのクイックスタートガイド。
 - [Docker Compose](https://docs.docker.com/compose/) v2+
 - `git`
 
-ローカルに Go / Rust / Node.js をインストールする必要はない。最小構成はすべてコンテナ内で完結する。
+ローカルに Go / Node.js をインストールする必要はない。最小構成はすべてコンテナ内で完結する。
 
 ## 手順
 
@@ -24,8 +24,7 @@ cd merlon
 # 2. 環境変数ファイルを用意
 cp .env.example .env
 
-# 3. 最小構成で起動（API + PostgreSQL。Engine はこのプロファイルには含まれない。
-#    フルトポロジーには docker-compose.yml を使用する）
+# 3. 最小構成で起動（API + PostgreSQL。評価エンジンは API プロセス内で動作する）
 docker compose -f docker-compose.minimal.yml up --build
 
 # 4. ヘルスチェック（別ターミナルで）

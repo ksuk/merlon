@@ -80,6 +80,28 @@ func (r *PgPendingEvaluationRepo) ListByStatus(ctx context.Context, status domai
 	return out, rows.Err()
 }
 
+// ListPendingByCustomer is used to make realtime/batch fail-alert enqueueing
+// idempotent for one customer while an engine outage is active.
+func (r *PgPendingEvaluationRepo) ListPendingByCustomer(ctx context.Context, customerID string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations WHERE customer_id = $1 AND status = $2 ORDER BY created_at ASC`,
+		customerID, string(status),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.PendingEvaluation
+	for rows.Next() {
+		var pe domain.PendingEvaluation
+		if err := rows.Scan(&pe.ID, &pe.CustomerID, &pe.TransactionIDs, &pe.Status, &pe.Reason, &pe.BatchRunID, &pe.RetryCount, &pe.ResolvedAt, &pe.CreatedAt, &pe.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, pe)
+	}
+	return out, rows.Err()
+}
+
 func (r *PgPendingEvaluationRepo) UpdateStatus(ctx context.Context, id string, status domain.PendingEvaluationStatus) error {
 	var resolvedAtClause string
 	if status == domain.PendingEvaluationStatusResolved {

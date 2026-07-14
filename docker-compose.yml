@@ -1,5 +1,4 @@
-# Development/demo topology: db + engine + api. See docs/operations/deployment.md for production.
-# For minimal (PostgreSQL + API only), use docker-compose.minimal.yml
+# Development/demo topology: db + API. See docs/operations/deployment.md for production.
 
 services:
   db:
@@ -17,29 +16,6 @@ services:
       timeout: 5s
       retries: 5
 
-  engine:
-    build:
-      context: .
-      dockerfile: engine/Dockerfile
-    volumes:
-      - ./content/_sample/cdd_weights:/app/cdd_weights:ro
-      - ./content/_sample/tm_scenarios:/app/tm_scenarios:ro
-      - ./content/_sample/screening_lists:/app/screening_lists:ro
-    ports:
-      - "9090:9090"
-    environment:
-      MERLON_ENGINE_ADDR: "[::]:50051"
-      MERLON_ENGINE_METRICS_ADDR: "0.0.0.0:9090"
-      MERLON_CDD_WEIGHTS_PATH: /app/cdd_weights/crypto_exchange.yaml
-      MERLON_TM_SCENARIOS_PATH: /app/tm_scenarios
-      MERLON_SCREENING_LISTS_PATH: /app/screening_lists
-      MERLON_SCREENING_THRESHOLD: "0.85"
-    healthcheck:
-      test: ["CMD-SHELL", "true"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   api:
     build:
       context: .
@@ -47,15 +23,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      engine:
-        condition: service_started
     ports:
       - "8080:8080"
     environment:
       MERLON_ENV: ${MERLON_ENV:-development}
       MERLON_HTTP_ADDR: ":8080"
       MERLON_DATABASE_URL: postgres://merlon:${MERLON_POSTGRES_PASSWORD:?set MERLON_POSTGRES_PASSWORD}@db:5432/merlon?sslmode=disable
-      MERLON_ENGINE_ADDR: engine:50051
       MERLON_AUTH_ENABLED: "true"
       MERLON_BOOTSTRAP_TOKEN: ${MERLON_BOOTSTRAP_TOKEN:?set MERLON_BOOTSTRAP_TOKEN}
       MERLON_UI_DIR: /app/ui

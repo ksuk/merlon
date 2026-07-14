@@ -291,6 +291,28 @@ export interface BacktestResult {
   execution_time_ms: number
 }
 
+export type BacktestJobStatus = "queued" | "running" | "completed" | "failed" | "cancelled"
+export interface BacktestJob {
+  id: string
+  status: BacktestJobStatus
+  from: string
+  to: string
+  customer_ids?: string[]
+  scenario_ids?: string[]
+  baseline_rule_set_id: string
+  candidate_rule_set_id: string
+  progress: number
+  processed_customers: number
+  total_customers: number
+  eta_seconds?: number
+  baseline?: BacktestResult
+  candidate?: BacktestResult
+  delta?: BacktestResult
+  error?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface BacktestScenarioResult {
   scenario_id: string
   alerts_generated: number
@@ -573,6 +595,10 @@ export const api = {
       `${BASE}/reports/str/export?alert_id=${encodeURIComponent(alertId)}&format=${format}`,
   },
   backtest: {
+    create: (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string }) =>
+      request<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(input) }),
+    get: (id: string) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}`),
+    cancel: (id: string) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>
       request<BacktestResult>("/backtest", {
         method: "POST",

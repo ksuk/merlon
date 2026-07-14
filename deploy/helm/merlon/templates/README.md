@@ -6,7 +6,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `deployment.yaml` | api / engine / ui の Deployment |
+| `deployment.yaml` | api / ui の Deployment |
 | `service.yaml` | 各コンポーネントの Service |
 | `configmap.yaml` | `config.yaml` 等のアプリ設定 |
 | `secret.yaml` | `MERLON_JWT_SECRET`・DB 認証情報等のシークレット |

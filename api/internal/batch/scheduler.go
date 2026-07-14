@@ -179,16 +179,29 @@ func ProcessCustomersResumably(
 // alerts) casemgmt.ConsolidateAlert, sharing the dedup constraint and case
 // consolidation with the realtime evaluation path (server.handleBatchMonitor).
 type TMBatchEvaluationDeps struct {
-	Runs         domain.BatchRunRepository
-	Customers    domain.CustomerRepository
-	Transactions domain.TransactionRepository
-	Monitoring   engine.MonitoringEngine
-	Alerts       domain.AlertRepository
-	Cases        domain.CaseRepository
+	Runs          domain.BatchRunRepository
+	Customers     domain.CustomerRepository
+	Transactions  domain.TransactionRepository
+	Monitoring    engine.MonitoringEngine
+	Alerts        domain.AlertRepository
+	Cases         domain.CaseRepository
+	ConfigDigests map[string]string
 }
 
-// maxTMBatchCustomers bounds how many customers/transactions a single batch
-// pass loads at once, mirroring server.maxBatchCustomers.
+func copyDigests(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// maxTMBatchCustomers bounds the customer page size for a batch pass. Transaction
+// history is streamed in event-time pages separately, so this is not a
+// transaction-count cap.
 const maxTMBatchCustomers = 1000
 
 // RunTMBatchEvaluation is the daily TM batch evaluation job body
@@ -204,16 +217,28 @@ func RunTMBatchEvaluation(ctx context.Context, deps TMBatchEvaluationDeps, candi
 		return err
 	}
 
-	customers, err := deps.Customers.List(ctx, maxTMBatchCustomers, 0)
-	if err != nil {
-		return failRun(ctx, deps.Runs, runID, err)
-	}
-
-	err = ProcessCustomersResumably(ctx, deps.Runs, runID, customers, alreadyProcessed, func(ctx context.Context, c *domain.Customer) error {
-		return evaluateCustomerBatch(ctx, deps, c, batchStart, runID)
-	})
-	if err != nil {
-		return failRun(ctx, deps.Runs, runID, err)
+	// Walk the customer book with keyset pages. This bounds memory and avoids
+	// OFFSET degradation as the customer table grows; a page may be replayed
+	// after a crash, and the existing idempotent checkpoint skips completed IDs.
+	var after *domain.Cursor
+	for {
+		customers, pageErr := deps.Customers.ListByCursor(ctx, maxTMBatchCustomers, after)
+		if pageErr != nil {
+			return failRun(ctx, deps.Runs, runID, pageErr)
+		}
+		if len(customers) == 0 {
+			break
+		}
+		if err := ProcessCustomersResumably(ctx, deps.Runs, runID, customers, alreadyProcessed, func(ctx context.Context, c *domain.Customer) error {
+			return evaluateCustomerBatch(ctx, deps, c, batchStart, runID)
+		}); err != nil {
+			return failRun(ctx, deps.Runs, runID, err)
+		}
+		last := customers[len(customers)-1]
+		after = &domain.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
+		if len(customers) < maxTMBatchCustomers {
+			break
+		}
 	}
 
 	if err := deps.Runs.Complete(ctx, runID); err != nil {
@@ -239,11 +264,10 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 		return nil
 	}
 
-	txns, err := deps.Transactions.ListByCustomer(ctx, c.ID, maxTMBatchCustomers, 0)
+	txns, err := snapshotCustomerTransactions(ctx, deps.Transactions, c.ID, batchStart)
 	if err != nil {
 		return err
 	}
-	txns = SnapshotBefore(txns, batchStart)
 	if len(txns) == 0 {
 		return nil
 	}
@@ -253,7 +277,12 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 		riskTier = *c.RiskTier
 	}
 
-	alerts, err := deps.Monitoring.EvaluateTransactionsBatch(ctx, c.ID, riskTier, txns, nil)
+	var alerts []domain.Alert
+	if v2, ok := deps.Monitoring.(engine.MonitoringEngineV2); ok {
+		alerts, err = v2.Evaluate(ctx, engine.MonitoringRequest{CustomerID: c.ID, CustomerType: c.CustomerType, RiskTier: riskTier, Transactions: txns, Mode: engine.EvaluationModeBatch, EvaluatedAt: batchStart, ConfigDigests: copyDigests(deps.ConfigDigests)})
+	} else {
+		alerts, err = deps.Monitoring.EvaluateTransactionsBatch(ctx, c.ID, riskTier, txns, nil)
+	}
 	if err != nil {
 		return err
 	}
@@ -293,6 +322,40 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 		}
 	}
 	return nil
+}
+
+// snapshotCustomerTransactions reads the complete history available at the
+// batch snapshot. PostgreSQL and the in-memory store expose the event-time
+// keyset capability; the cursor fallback keeps adapter compatibility while
+// retaining the same cutoff semantics.
+func snapshotCustomerTransactions(ctx context.Context, repo domain.TransactionRepository, customerID string, snapshot time.Time) ([]domain.Transaction, error) {
+	if history, ok := repo.(domain.TransactionHistoryRepository); ok {
+		var out []domain.Transaction
+		var after *domain.TransactionEventCursor
+		for {
+			page, err := history.ListByCustomerEventRange(ctx, customerID, time.Time{}, snapshot, snapshot, 1000, after)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, page...)
+			if len(page) < 1000 {
+				return out, nil
+			}
+			last := page[len(page)-1]
+			after = &domain.TransactionEventCursor{ExecutedAt: last.ExecutedAt, ID: last.ID}
+		}
+	}
+	var out []domain.Transaction
+	for offset := 0; ; offset += 1000 {
+		page, err := repo.ListByCustomer(ctx, customerID, 1000, offset)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, SnapshotBefore(page, snapshot)...)
+		if len(page) < 1000 {
+			return out, nil
+		}
+	}
 }
 
 // SnapshotBefore filters transactions to those ingested strictly before
