@@ -4,7 +4,7 @@
 |---|---|
 | Status | Accepted |
 | Date | 2026-07-11 |
-| Related ADRs | ADR-0004 |
+| Related ADRs | ADR-0004, ADR-0014 |
 
 ## Context
 
@@ -18,4 +18,4 @@ Configuration files loaded by the engine remain an operator-managed trust bounda
 
 Deploying organizations must apply source control, change approval, access control, backup, and deployment controls to engine configuration files. The startup logs and runtime digest support post-hoc verification; they do not prevent unauthorized file modification. Centralizing engine configuration in the database is a future architectural change and is not provided by this release.
 
-Rule creation and rule activation do not currently enforce a creator-versus-activator separation of duties in the application. Until that control is implemented, deploying organizations must enforce it through IAM roles and their documented change-management process.
+This decision applies only to operator-supplied configuration files. Database-backed rules created through the rules API are inactive by default and use the atomic maker-checker control and approval ledger defined in ADR-0014. File-based engine configuration remains outside that database control, so deploying organizations must enforce independent author and deployer roles through IAM and their documented change-management process.

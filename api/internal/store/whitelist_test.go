@@ -177,14 +177,18 @@ func TestPostgres_WhitelistActiveUniqueConstraint(t *testing.T) {
 
 	repo := NewPostgresWhitelistRepo(pool)
 	base := time.Now()
-	customerID := "pg-integration-cust-" + base.Format("20060102150405")
+	customerID := seedTestCustomer(t, pool)
+	suffix := newTestUUID()
 
-	first := newTestWhitelistEntry("pg-wl-1-"+base.Format("20060102150405"), customerID, domain.WhitelistEntryStatusActive, base)
+	first := newTestWhitelistEntry("pg-wl-1-"+suffix, customerID, domain.WhitelistEntryStatusActive, base)
 	if err := repo.Create(ctx, first); err != nil {
 		t.Fatalf("Create first (active): %v", err)
 	}
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), `DELETE FROM whitelist_entries WHERE id IN ($1, $2)`, first.ID, "pg-wl-2-"+suffix)
+	})
 
-	second := newTestWhitelistEntry("pg-wl-2-"+base.Format("20060102150405"), customerID, domain.WhitelistEntryStatusActive, base.Add(time.Minute))
+	second := newTestWhitelistEntry("pg-wl-2-"+suffix, customerID, domain.WhitelistEntryStatusActive, base.Add(time.Minute))
 	err = repo.Create(ctx, second)
 	var conflict *domain.ErrConflict
 	if !errors.As(err, &conflict) {

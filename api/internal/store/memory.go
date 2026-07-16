@@ -1033,18 +1033,58 @@ func (r *MemoryRuleRepo) CreateNewVersion(_ context.Context, rd *domain.RuleDefi
 	return nil
 }
 
-func (r *MemoryRuleRepo) SetActive(_ context.Context, id string, active bool) error {
+func (r *MemoryRuleRepo) SetActive(_ context.Context, id string, active bool, actor string) (*domain.RuleStateChange, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	vs := r.versions[id]
 	if len(vs) == 0 {
-		return &domain.ErrNotFound{Entity: "rule_definition", ID: id}
+		return nil, &domain.ErrNotFound{Entity: "rule_definition", ID: id}
 	}
+
+	latest := vs[len(vs)-1]
+	target := latest
+	if !active {
+		target = nil
+		for i := len(vs) - 1; i >= 0; i-- {
+			if vs[i].IsActive {
+				target = vs[i]
+				break
+			}
+		}
+		if target == nil {
+			current := *latest
+			return &domain.RuleStateChange{Current: &current, TargetVersion: latest.Version, TargetCreatedBy: latest.CreatedBy}, nil
+		}
+	}
+
+	if actor == "" {
+		return nil, separationOfDutiesError(target, "approver identity is missing")
+	}
+	if target.CreatedBy == "" {
+		return nil, separationOfDutiesError(target, "rule creator identity is missing")
+	}
+	if target.CreatedBy == actor {
+		return nil, separationOfDutiesError(target, "the rule author cannot change its active state")
+	}
+
+	changed := target.IsActive != active
 	deactivateAll(vs)
 	if active {
-		vs[len(vs)-1].IsActive = true
+		latest.IsActive = true
 	}
-	return nil
+	current := *latest
+	return &domain.RuleStateChange{
+		Current:         &current,
+		TargetVersion:   target.Version,
+		TargetCreatedBy: target.CreatedBy,
+		Changed:         changed,
+	}, nil
+}
+
+func separationOfDutiesError(target *domain.RuleDefinition, reason string) error {
+	return &domain.ErrSeparationOfDuties{
+		RuleName: target.Name, Version: target.Version, RuleCreatedBy: target.CreatedBy, Reason: reason,
+	}
 }
 
 // deactivateAll enforces the "at most one active version per rule name"

@@ -23,6 +23,17 @@ Please include:
 - **Initial assessment**: within 5 business days
 - **Fix timeline**: depends on severity, typically within 30 days for critical issues
 
+### Response Exercise
+
+Before the first production release and at least annually thereafter, run a
+tabletop exercise using a fictional advisory. Record detection and
+acknowledgment times, owner, severity decision, affected-version analysis,
+containment, patch or exception decision, coordinated communications, elapsed
+time against the targets above, and follow-up actions. A security owner and an
+independent observer must approve the sanitized record. Do not include exploit
+details, credentials, private advisory content, or customer data in the public
+repository.
+
 ### Scope
 
 This policy covers the Merlon software as distributed in this repository. It does not cover:

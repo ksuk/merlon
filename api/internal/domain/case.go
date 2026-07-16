@@ -59,9 +59,9 @@ func ValidCaseStatusTransition(from, to CaseStatus) bool {
 type CasePriority string
 
 const (
-	CasePriorityLow      CasePriority = "low"
-	CasePriorityMedium   CasePriority = "medium"
-	CasePriorityHigh     CasePriority = "high"
+	CasePriorityLow    CasePriority = "low"
+	CasePriorityMedium CasePriority = "medium"
+	CasePriorityHigh   CasePriority = "high"
 	// CasePriorityCritical is used by EDD stage-3 escalation (the case-management workflow
 	// §EDD未実施継続時の段階的措置: "ケースをCRITICALに引き上げる") and is
 	// available for other WS's severity=CRITICAL case generation as well.

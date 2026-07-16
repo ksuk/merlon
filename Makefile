@@ -1,4 +1,4 @@
-.PHONY: help fmt lint lint-go lint-ui test test-go test-ui build migrate audit-harden seed dev-up dev-down minimal-up minimal-down generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui verify-go test test-go test-ui test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -7,7 +7,10 @@ fmt: ## Format all code
 	@cd api && go fmt ./...
 	@cd ui && npx prettier --write "src/**/*.{ts,tsx}"
 
-lint: lint-go lint-ui ## Lint all code
+fmt-check: ## Check formatting without modifying files
+	@files="$$(cd api && gofmt -l .)"; test -z "$$files" || (echo "Go files require gofmt:"; echo "$$files"; exit 1)
+
+lint: fmt-check lint-go lint-ui ## Lint all code
 
 lint-go: ## Run Go static analysis
 	@cd api && go vet ./...
@@ -17,20 +20,34 @@ lint-ui: ## Run UI lint
 
 test: test-go test-ui ## Run all tests
 
+GO_TEST_FLAGS ?=
+
 test-go: ## Run Go tests
-	@cd api && go test ./...
+	@cd api && go test $(GO_TEST_FLAGS) ./...
 
 test-ui: ## Run UI tests
 	@cd ui && npm run test -- --run
 
+test-integration: ## Apply migrations twice and run all Go tests against PostgreSQL
+	@test -n "$${MERLON_MIGRATION_DATABASE_URL:-$${MERLON_DATABASE_URL:-}}" || (echo "MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required"; exit 1)
+	@$(MAKE) migrate
+	@$(MAKE) migrate
+	@cd api && go test -count=1 ./...
+
+verify-go: fmt-check lint-go test-go build-go ## Run the complete Go verification gate
+
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 
-build: ## Build all components
+build: build-go build-ui ## Build all components
+
+build-go: ## Build the Go API
 	@cd api && go build -buildvcs=false -ldflags "-X main.version=$(VERSION)" ./cmd/merlon-api
+
+build-ui: ## Build the operator UI
 	@cd ui && npm run build
 
 migrate: ## Apply SQL migrations with a versioned ledger (use a migration role)
-	@go run ./api/cmd/merlon-migrate
+	@cd api && go run ./cmd/merlon-migrate --migrations-dir ../migrations
 
 audit-harden: ## Apply audit_logs least-privilege grants using a migration role
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL}" || (echo "MERLON_MIGRATION_DATABASE_URL is required"; exit 1)

@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -35,6 +36,30 @@ type RuleDefinition struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
+// RuleStateChange describes the exact version considered by an activation or
+// deactivation request. Current is the latest version returned by the HTTP API
+// after the operation; TargetVersion and TargetCreatedBy identify the row on
+// which separation of duties was evaluated.
+type RuleStateChange struct {
+	Current         *RuleDefinition
+	TargetVersion   int
+	TargetCreatedBy string
+	Changed         bool
+}
+
+// ErrSeparationOfDuties is returned when a rule state change cannot prove an
+// independent maker-checker relationship. Callers translate it to HTTP 403.
+type ErrSeparationOfDuties struct {
+	RuleName      string
+	Version       int
+	RuleCreatedBy string
+	Reason        string
+}
+
+func (e *ErrSeparationOfDuties) Error() string {
+	return fmt.Sprintf("rule_definition separation of duties: %s@v%d: %s", e.RuleName, e.Version, e.Reason)
+}
+
 // RuleRepository manages versioned rule definitions. Updates never mutate an
 // existing version row (Auditability First) — CreateNewVersion always
 // inserts.
@@ -48,5 +73,7 @@ type RuleRepository interface {
 	// CreateNewVersion inserts a new row for an existing rule name with an
 	// incremented version. It never UPDATEs an existing row.
 	CreateNewVersion(ctx context.Context, r *RuleDefinition) error
-	SetActive(ctx context.Context, id string, active bool) error
+	// SetActive atomically selects the affected version, checks that actor is
+	// independent from its creator, changes state, and records the approval.
+	SetActive(ctx context.Context, id string, active bool, actor string) (*RuleStateChange, error)
 }

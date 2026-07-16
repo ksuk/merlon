@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint src scripts eslint.config.js vite.config.ts && npm run lint:i18n",
     "lint:i18n": "node scripts/check-hardcoded-cjk.mjs",
+    "license:check": "license-checker --production --excludePrivatePackages --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;MPL-2.0'",
     "test": "vitest",
     "preview": "vite preview"
   },
@@ -41,6 +42,8 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^16.1.0",
     "jsdom": "^26.1.0",
+    "license-checker": "25.0.1",
+    "prettier": "3.9.5",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.33.1",
     "vite": "^6.3.5",

@@ -1,0 +1,12 @@
+.git
+.audit
+.env
+.env.*
+**/.DS_Store
+**/node_modules
+**/dist
+**/build
+**/coverage
+api/coverage.out
+api/merlon-api
+website/.docusaurus

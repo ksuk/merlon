@@ -166,7 +166,7 @@ func TestBatchMonitorAll(t *testing.T) {
 // customer whose transactions keep triggering the same scenario must not
 // create a second alert for the same (customer_id, scenario_id,
 // aggregation_window_start) tuple (the transaction-monitoring design「バッチ/リアルタイム
-//評価の重複アラート防止」).
+// 評価の重複アラート防止」).
 func TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow(t *testing.T) {
 	s := testServerWithAllEngines()
 	s.monitoring = &engine.MockMonitoringEngine{

@@ -39,6 +39,7 @@ func (r *PgAccountRepo) Get(ctx context.Context, id string) (*domain.Account, er
 		}
 		return nil, err
 	}
+	a.ID = compactUUID(a.ID)
 	return &a, nil
 }
 
@@ -68,6 +69,8 @@ func (r *PgAccountRepo) ListCustomers(ctx context.Context, accountID string) ([]
 		if err := rows.Scan(&ac.AccountID, &ac.CustomerID, &ac.Role); err != nil {
 			return nil, err
 		}
+		ac.AccountID = compactUUID(ac.AccountID)
+		ac.CustomerID = compactUUID(ac.CustomerID)
 		result = append(result, ac)
 	}
 	return result, rows.Err()

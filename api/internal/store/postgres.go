@@ -188,11 +188,15 @@ func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 	if status == "" {
 		status = domain.CustomerStatusActive
 	}
+	productTypes := c.ProductTypes
+	if productTypes == nil {
+		productTypes = []string{}
+	}
 	_, err = r.pool.Exec(ctx,
 		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
-		c.ProductTypes, attrs,
+		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
@@ -206,11 +210,15 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 		return err
 	}
 	attrs, _ := json.Marshal(encryptedAttrs)
+	productTypes := c.ProductTypes
+	if productTypes == nil {
+		productTypes = []string{}
+	}
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, anonymized_at=$16 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
-		c.ProductTypes, attrs,
+		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
@@ -476,11 +484,12 @@ func scanAlertRow(row interface {
 }, a *domain.Alert) error {
 	var suppressionReason *string
 	var batchRunID *string
+	var resolvedBy *string
 	if err := row.Scan(
 		&a.ID, &a.CustomerID, &a.ScenarioID,
 		&a.Severity, &a.Status, &a.Score, &a.Description,
 		&a.TransactionIDs,
-		&a.DetectedAt, &a.ResolvedAt, &a.ResolvedBy,
+		&a.DetectedAt, &a.ResolvedAt, &resolvedBy,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.Suppressed, &suppressionReason,
 		&a.AggregationWindowStart, &batchRunID, &a.BatchReviewedAt,
@@ -490,8 +499,15 @@ func scanAlertRow(row interface {
 	if suppressionReason != nil {
 		a.SuppressionReason = *suppressionReason
 	}
+	if resolvedBy != nil {
+		a.ResolvedBy = *resolvedBy
+	}
 	if batchRunID != nil {
 		a.BatchRunID = *batchRunID
+	}
+	a.ID = compactUUID(a.ID)
+	for i := range a.TransactionIDs {
+		a.TransactionIDs[i] = compactUUID(a.TransactionIDs[i])
 	}
 	return nil
 }

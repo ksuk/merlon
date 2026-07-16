@@ -239,7 +239,7 @@ func TestHandleActivateRule_TriggersHotReload(t *testing.T) {
 	now := time.Now()
 	if err := s.rules.Create(ctx, &domain.RuleDefinition{
 		ID: generateID(), Type: domain.RuleTypeCDDWeight, Name: "cdd_basic",
-		Definition: json.RawMessage(`{}`), IsActive: false, CreatedAt: now, UpdatedAt: now,
+		Definition: json.RawMessage(`{}`), IsActive: false, CreatedBy: "system", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -306,6 +306,99 @@ func TestRuleActivationRequiresDifferentAdmin(t *testing.T) {
 	s.Handler().ServeHTTP(approved, activate)
 	if approved.Code != http.StatusOK {
 		t.Fatalf("second-admin activation status = %d, want %d, body: %s", approved.Code, http.StatusOK, approved.Body.String())
+	}
+}
+
+func TestRuleActivationRejectsAuthorOfLatestVersionWhenOlderVersionIsActive(t *testing.T) {
+	s := testServerWithRules()
+	adminA := createAPIKey(t, s, "admin-a", domain.RoleAdmin)
+	adminB := createAPIKeyAs(t, s, adminA, "admin-b", domain.RoleAdmin)
+	adminC := createAPIKeyAs(t, s, adminA, "admin-c", domain.RoleAdmin)
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/rules", strings.NewReader(`{"type":"CDD_WEIGHT","name":"versioned_dual_control","definition":{"note":"v1"}}`))
+	create.Header.Set("Authorization", "Bearer "+adminA)
+	created := httptest.NewRecorder()
+	s.Handler().ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create: status = %d, body: %s", created.Code, created.Body.String())
+	}
+
+	activateV1 := httptest.NewRequest(http.MethodPost, "/api/v1/rules/versioned_dual_control/activate", nil)
+	activateV1.Header.Set("Authorization", "Bearer "+adminB)
+	activatedV1 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(activatedV1, activateV1)
+	if activatedV1.Code != http.StatusOK {
+		t.Fatalf("activate v1: status = %d, body: %s", activatedV1.Code, activatedV1.Body.String())
+	}
+
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/rules/versioned_dual_control", strings.NewReader(`{"definition":{"note":"v2"}}`))
+	update.Header.Set("Authorization", "Bearer "+adminB)
+	updated := httptest.NewRecorder()
+	s.Handler().ServeHTTP(updated, update)
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update: status = %d, body: %s", updated.Code, updated.Body.String())
+	}
+
+	selfApprove := httptest.NewRequest(http.MethodPost, "/api/v1/rules/versioned_dual_control/activate", nil)
+	selfApprove.Header.Set("Authorization", "Bearer "+adminB)
+	blocked := httptest.NewRecorder()
+	s.Handler().ServeHTTP(blocked, selfApprove)
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("same-author activation status = %d, want %d, body: %s", blocked.Code, http.StatusForbidden, blocked.Body.String())
+	}
+	active, err := s.rules.GetActive(context.Background(), "versioned_dual_control")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Version != 1 {
+		t.Fatalf("active version after denied self-approval = %d, want 1", active.Version)
+	}
+
+	approve := httptest.NewRequest(http.MethodPost, "/api/v1/rules/versioned_dual_control/activate", nil)
+	approve.Header.Set("Authorization", "Bearer "+adminC)
+	approved := httptest.NewRecorder()
+	s.Handler().ServeHTTP(approved, approve)
+	if approved.Code != http.StatusOK {
+		t.Fatalf("independent activation: status = %d, body: %s", approved.Code, approved.Body.String())
+	}
+	active, err = s.rules.GetActive(context.Background(), "versioned_dual_control")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Version != 2 {
+		t.Fatalf("active version = %d, want 2", active.Version)
+	}
+
+	entries, err := s.audit.List(context.Background(), domain.AuditListFilter{
+		ResourceType: "rules", ResourceID: "versioned_dual_control", Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundApproval := false
+	foundDenial := false
+	for _, entry := range entries {
+		if entry.Action == "activate_rule" && entry.Details["target_version"] == "2" && entry.Details["approval_result"] == "denied" {
+			if entry.Details["rule_author"] == "" || entry.Details["approver"] == "" || entry.Details["approval_reason"] == "" {
+				t.Fatalf("denied approval audit entry lacks maker/checker rationale: %+v", entry.Details)
+			}
+			if entry.Details["http_status"] != "403" || entry.Details["outcome"] != "denied" {
+				t.Fatalf("denied approval audit outcome = %+v, want HTTP 403 denied", entry.Details)
+			}
+			foundDenial = true
+		}
+		if entry.Action == "activate_rule" && entry.Details["target_version"] == "2" && entry.Details["approval_result"] == "approved" {
+			if entry.Details["rule_author"] == "" || entry.Details["approver"] == "" {
+				t.Fatalf("approval audit entry lacks maker/checker details: %+v", entry.Details)
+			}
+			foundApproval = true
+		}
+	}
+	if !foundApproval {
+		t.Fatalf("no successful v2 approval audit entry found: %+v", entries)
+	}
+	if !foundDenial {
+		t.Fatalf("no denied v2 self-approval audit entry found: %+v", entries)
 	}
 }
 

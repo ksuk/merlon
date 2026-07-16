@@ -34,6 +34,15 @@ The engine emits a deterministic digest of the loaded configuration at startup
 so a deployed rule set can be verified after the fact — this supports audit,
 but does not replace file-level access control.
 
+Rules managed through the rules API use a separate, database-backed path.
+Every new rule version is inactive, and a different authenticated Admin must
+activate or deactivate the exact target version. The creator-versus-approver
+check, state change, and append-only `rule_activation_events` record are
+committed atomically as defined by ADR-0014. If either identity is missing,
+the request fails closed. This application control does not extend to the
+operator-supplied files under `content/`; deployments must preserve independent
+author and deployer approval for those files.
+
 ## CDD weight definitions
 
 A CDD weight definition assigns weighted risk factors ("axes") to a customer

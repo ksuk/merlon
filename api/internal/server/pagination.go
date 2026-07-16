@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultPageLimit = 50
-	maxPageLimit      = 200
+	maxPageLimit     = 200
 	// cursorSeparator is a control character that cannot appear in a UUID or
 	// an RFC3339Nano timestamp, so it safely delimits the two cursor fields.
 	cursorSeparator = "\x1f"

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,7 +28,15 @@ func scanBatchRun(row pgx.Row) (*domain.BatchRun, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.ID = compactUUID(r.ID)
+	for i := range r.ProcessedCustomerIDs {
+		r.ProcessedCustomerIDs[i] = compactUUID(r.ProcessedCustomerIDs[i])
+	}
 	return &r, nil
+}
+
+func compactUUID(value string) string {
+	return strings.ReplaceAll(value, "-", "")
 }
 
 // Create inserts run, matching the PgPendingEvaluationRepo convention of the

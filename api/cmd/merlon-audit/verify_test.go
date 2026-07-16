@@ -2,30 +2,90 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// newTestPgPool connects to MERLON_DATABASE_URL for integration tests,
-// matching api/internal/store's convention (skip, not fail, when unset).
-func newTestPgPool(t *testing.T) *pgxpool.Pool {
+// newTestPgPool creates an isolated database so integrity checks never inspect
+// audit rows left by another package, prior test run, or concurrently running
+// integration test.
+func newTestPgPool(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 	dsn := os.Getenv("MERLON_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("MERLON_DATABASE_URL not set, skipping Postgres integration test")
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	ctx := context.Background()
+	adminConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := pgx.ConnectConfig(ctx, adminConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer admin.Close(ctx)
+
+	random := make([]byte, 8)
+	if _, err := rand.Read(random); err != nil {
+		t.Fatal(err)
+	}
+	name := "merlon_audit_test_" + hex.EncodeToString(random)
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanup, err := pgx.ConnectConfig(context.Background(), adminConfig)
+		if err != nil {
+			return
+		}
+		defer cleanup.Close(context.Background())
+		_, _ = cleanup.Exec(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1`, name)
+		_, _ = cleanup.Exec(context.Background(), "DROP DATABASE IF EXISTS "+pgx.Identifier{name}.Sanitize())
+	})
+
+	testDSN := databaseDSN(dsn, name)
+	pool, err := pgxpool.New(ctx, testDSN)
 	if err != nil {
 		t.Fatalf("pgxpool.New: %v", err)
 	}
-	t.Cleanup(pool.Close)
-	if err := pool.Ping(context.Background()); err != nil {
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		t.Fatalf("pool.Ping: %v", err)
 	}
-	return pool
+	if _, err := pool.Exec(ctx, `CREATE TABLE audit_logs (
+		id BIGSERIAL PRIMARY KEY,
+		user_id VARCHAR(255),
+		action VARCHAR(100) NOT NULL,
+		resource_type VARCHAR(100) NOT NULL,
+		resource_id VARCHAR(255),
+		details JSONB DEFAULT '{}',
+		ip_address INET,
+		user_agent TEXT,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`); err != nil {
+		pool.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool, testDSN
+}
+
+func databaseDSN(dsn, name string) string {
+	parsed, err := url.Parse(dsn)
+	if err == nil && parsed.Scheme != "" {
+		parsed.Path = "/" + name
+		return parsed.String()
+	}
+	return fmt.Sprintf("%s dbname=%s", dsn, name)
 }
 
 // baseTestID offsets fixture rows well past any sequence-generated id, so
@@ -56,7 +116,7 @@ func insertAuditLog(t *testing.T, pool *pgxpool.Pool, id int64, createdAt time.T
 }
 
 func TestVerifyDetectsIDGap(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 
@@ -82,7 +142,7 @@ func TestVerifyDetectsIDGap(t *testing.T) {
 }
 
 func TestVerifyDetectsTimeRegression(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 
@@ -108,7 +168,7 @@ func TestVerifyDetectsTimeRegression(t *testing.T) {
 }
 
 func TestVerifyDetectsCountDrop(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 
@@ -140,7 +200,7 @@ func TestVerifyDetectsCountDrop(t *testing.T) {
 }
 
 func TestVerifyDropThresholdConfigurable(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 
@@ -182,7 +242,7 @@ func TestVerifyDropThresholdConfigurable(t *testing.T) {
 }
 
 func TestVerifySinceUntilFiltersRange(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 
@@ -204,7 +264,7 @@ func TestVerifySinceUntilFiltersRange(t *testing.T) {
 }
 
 func TestVerifyExitCodeNoAnomaly(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 	insertAuditLog(t, pool, base, now)
@@ -221,7 +281,7 @@ func TestVerifyExitCodeNoAnomaly(t *testing.T) {
 }
 
 func TestVerifyExitCodeAnomalyDetected(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 	insertAuditLog(t, pool, base, now.Add(-time.Hour))
@@ -249,7 +309,7 @@ func TestVerifyExitCodeConnectionError(t *testing.T) {
 }
 
 func TestVerifyJSONOutputFormat(t *testing.T) {
-	pool := newTestPgPool(t)
+	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
 	now := time.Now()
 	insertAuditLog(t, pool, base, now)
@@ -266,8 +326,8 @@ func TestVerifyJSONOutputFormat(t *testing.T) {
 }
 
 func TestVerifyRecordsAuditLogOnWritableConnection(t *testing.T) {
-	pool := newTestPgPool(t)
-	code := run([]string{"verify", "--database-url", os.Getenv("MERLON_DATABASE_URL")}, os.Stdout)
+	pool, dsn := newTestPgPool(t)
+	code := run([]string{"verify", "--database-url", dsn}, os.Stdout)
 	if code != 0 {
 		t.Fatalf("run() exit code = %d, want 0", code)
 	}
@@ -285,12 +345,11 @@ func TestVerifyRecordsAuditLogOnWritableConnection(t *testing.T) {
 }
 
 func TestVerifyReadOnlyConnectionSkipsAuditWrite(t *testing.T) {
-	newTestPgPool(t) // ensure MERLON_DATABASE_URL is set, else skip
+	pool, dsn := newTestPgPool(t)
 	var before int
-	pool := newTestPgPool(t)
 	pool.QueryRow(context.Background(), `SELECT COUNT(*) FROM audit_logs WHERE action = 'audit_verify'`).Scan(&before)
 
-	code := run([]string{"verify", "--database-url", os.Getenv("MERLON_DATABASE_URL"), "--read-only"}, os.Stdout)
+	code := run([]string{"verify", "--database-url", dsn, "--read-only"}, os.Stdout)
 	if code != 0 {
 		t.Fatalf("run() exit code = %d, want 0", code)
 	}

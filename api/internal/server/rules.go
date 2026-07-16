@@ -275,34 +275,20 @@ func (s *Server) setRuleActive(w http.ResponseWriter, r *http.Request, active bo
 
 	id := r.PathValue("id")
 	actor := resolveAuditUserID(r)
-	if activeRule, err := s.rules.GetActive(r.Context(), id); err == nil {
-		if activeRule.CreatedBy != "" && activeRule.CreatedBy == actor {
-			writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "the rule author cannot change its active state")
+	change, err := s.rules.SetActive(r.Context(), id, active, actor)
+	if err != nil {
+		var sod *domain.ErrSeparationOfDuties
+		if errors.As(err, &sod) {
+			setAuditDetail(r, "target_version", strconv.Itoa(sod.Version))
+			setAuditDetail(r, "rule_author", sod.RuleCreatedBy)
+			setAuditDetail(r, "approver", actor)
+			setAuditDetail(r, "requested_active", strconv.FormatBool(active))
+			setAuditDetail(r, "changed", "false")
+			setAuditDetail(r, "approval_result", "denied")
+			setAuditDetail(r, "approval_reason", sod.Reason)
+			writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, sod.Error())
 			return
 		}
-	} else {
-		var nf *domain.ErrNotFound
-		if !errors.As(err, &nf) {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-			return
-		}
-		if active {
-			latest, latestErr := s.rules.Get(r.Context(), id)
-			if latestErr != nil {
-				if errors.As(latestErr, &nf) {
-					writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, latestErr.Error())
-					return
-				}
-				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, latestErr.Error())
-				return
-			}
-			if latest.CreatedBy != "" && latest.CreatedBy == actor {
-				writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "the rule author cannot change its active state")
-				return
-			}
-		}
-	}
-	if err := s.rules.SetActive(r.Context(), id, active); err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
 			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
@@ -312,13 +298,13 @@ func (s *Server) setRuleActive(w http.ResponseWriter, r *http.Request, active bo
 		return
 	}
 
-	rd, err := s.rules.Get(r.Context(), id)
-	if err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, rd)
+	setAuditDetail(r, "target_version", strconv.Itoa(change.TargetVersion))
+	setAuditDetail(r, "rule_author", change.TargetCreatedBy)
+	setAuditDetail(r, "approver", actor)
+	setAuditDetail(r, "requested_active", strconv.FormatBool(active))
+	setAuditDetail(r, "changed", strconv.FormatBool(change.Changed))
+	setAuditDetail(r, "approval_result", "approved")
+	writeJSON(w, http.StatusOK, change.Current)
 }
 
 func (s *Server) handleExportRule(w http.ResponseWriter, r *http.Request) {
