@@ -158,15 +158,26 @@ func TestScheduler_ResumeOrCreateRunStartsFreshWhenNoneRunning(t *testing.T) {
 // batch instead of being evaluated twice or racing with the current run
 // (the transaction-monitoring design「バッチ実行中に到着した新規取引は次回バッチの対象とする」).
 func TestScheduler_SnapshotIngestedAtBeforeBatchStart(t *testing.T) {
+	ctx := context.Background()
 	batchStart := time.Date(2026, 7, 5, 2, 0, 0, 0, time.UTC)
+	repo := store.NewMemoryTransactionRepo()
+	for _, txn := range []domain.Transaction{
+		{ID: "before", CustomerID: "c1", ExecutedAt: batchStart.Add(-time.Hour), CreatedAt: batchStart.Add(-time.Second)},
+		{ID: "at-start", CustomerID: "c1", ExecutedAt: batchStart.Add(-time.Hour), CreatedAt: batchStart},
+		{ID: "after", CustomerID: "c1", ExecutedAt: batchStart.Add(-time.Hour), CreatedAt: batchStart.Add(time.Second)},
+	} {
+		txn := txn
+		if err := repo.Create(ctx, &txn); err != nil {
+			t.Fatal(err)
+		}
+	}
 
-	before := domain.Transaction{ID: "before", CreatedAt: batchStart.Add(-time.Second)}
-	atStart := domain.Transaction{ID: "at-start", CreatedAt: batchStart}
-	after := domain.Transaction{ID: "after", CreatedAt: batchStart.Add(time.Second)}
-
-	got := SnapshotBefore([]domain.Transaction{before, atStart, after}, batchStart)
+	got, err := snapshotCustomerTransactions(ctx, repo, "c1", batchStart)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(got) != 1 || got[0].ID != "before" {
-		t.Errorf("SnapshotBefore = %v, want only [before]", got)
+		t.Errorf("snapshot = %v, want only [before]", got)
 	}
 }

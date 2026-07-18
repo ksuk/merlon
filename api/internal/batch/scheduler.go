@@ -13,6 +13,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
 
 // DefaultTMBatchSchedule is the transaction-monitoring design's default daily run
@@ -277,12 +278,7 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 		riskTier = *c.RiskTier
 	}
 
-	var alerts []domain.Alert
-	if v2, ok := deps.Monitoring.(engine.MonitoringEngineV2); ok {
-		alerts, err = v2.Evaluate(ctx, engine.MonitoringRequest{CustomerID: c.ID, CustomerType: c.CustomerType, RiskTier: riskTier, Transactions: txns, Mode: engine.EvaluationModeBatch, EvaluatedAt: batchStart, ConfigDigests: copyDigests(deps.ConfigDigests)})
-	} else {
-		alerts, err = deps.Monitoring.EvaluateTransactionsBatch(ctx, c.ID, riskTier, txns, nil)
-	}
+	alerts, err := engine.EvaluateCompat(ctx, deps.Monitoring, engine.MonitoringRequest{CustomerID: c.ID, CustomerType: c.CustomerType, RiskTier: riskTier, Transactions: txns, Mode: engine.EvaluationModeBatch, EvaluatedAt: batchStart, ConfigDigests: copyDigests(deps.ConfigDigests)})
 	if err != nil {
 		return err
 	}
@@ -329,48 +325,10 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 // keyset capability; the cursor fallback keeps adapter compatibility while
 // retaining the same cutoff semantics.
 func snapshotCustomerTransactions(ctx context.Context, repo domain.TransactionRepository, customerID string, snapshot time.Time) ([]domain.Transaction, error) {
-	if history, ok := repo.(domain.TransactionHistoryRepository); ok {
-		var out []domain.Transaction
-		var after *domain.TransactionEventCursor
-		for {
-			page, err := history.ListByCustomerEventRange(ctx, customerID, time.Time{}, snapshot, snapshot, 1000, after)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, page...)
-			if len(page) < 1000 {
-				return out, nil
-			}
-			last := page[len(page)-1]
-			after = &domain.TransactionEventCursor{ExecutedAt: last.ExecutedAt, ID: last.ID}
-		}
-	}
-	var out []domain.Transaction
-	for offset := 0; ; offset += 1000 {
-		page, err := repo.ListByCustomer(ctx, customerID, 1000, offset)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, SnapshotBefore(page, snapshot)...)
-		if len(page) < 1000 {
-			return out, nil
-		}
-	}
-}
-
-// SnapshotBefore filters transactions to those ingested strictly before
-// batchStart, so transactions arriving mid-run are excluded from the
-// current batch and left for the next one
-// (the transaction-monitoring design「バッチ実行中に到着した新規取引は次回バッチの対象とする」).
-// Transaction.CreatedAt is set once at intake (server.handleCreateTransaction)
-// and never modified afterward, so it serves directly as the ingestion
-// timestamp without a dedicated ingested_at column.
-func SnapshotBefore(transactions []domain.Transaction, batchStart time.Time) []domain.Transaction {
-	out := make([]domain.Transaction, 0, len(transactions))
-	for _, t := range transactions {
-		if t.CreatedAt.Before(batchStart) {
-			out = append(out, t)
-		}
-	}
-	return out
+	return transactionhistory.ListCustomerTransactionsAsOf(ctx, repo, customerID, transactionhistory.Query{
+		From:                   time.Time{},
+		To:                     snapshot,
+		CreatedThrough:         snapshot,
+		CreatedBeforeExclusive: true,
+	})
 }

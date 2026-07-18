@@ -123,12 +123,7 @@ func (j *RecoveryJob) reevaluate(ctx context.Context, pe *domain.PendingEvaluati
 		riskTier = *c.RiskTier
 	}
 
-	var alerts []domain.Alert
-	if v2, ok := j.monitoring.(engine.MonitoringEngineV2); ok {
-		alerts, err = v2.Evaluate(ctx, engine.MonitoringRequest{CustomerID: pe.CustomerID, CustomerType: c.CustomerType, RiskTier: riskTier, Transactions: txns, Mode: engine.EvaluationModeRealtime, EvaluatedAt: time.Now().UTC(), ConfigDigests: copyDigests(j.ConfigDigests)})
-	} else {
-		alerts, err = j.monitoring.EvaluateTransactions(ctx, pe.CustomerID, riskTier, txns, nil)
-	}
+	alerts, err := engine.EvaluateCompat(ctx, j.monitoring, engine.MonitoringRequest{CustomerID: pe.CustomerID, CustomerType: c.CustomerType, RiskTier: riskTier, Transactions: txns, Mode: engine.EvaluationModeRealtime, EvaluatedAt: time.Now().UTC(), ConfigDigests: copyDigests(j.ConfigDigests)})
 	if err != nil {
 		return j.recordFailure(ctx, pe, fmt.Errorf("evaluate transactions: %w", err))
 	}
