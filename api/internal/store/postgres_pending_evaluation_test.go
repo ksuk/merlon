@@ -137,6 +137,35 @@ func TestPostgresPendingEvaluationRepo_ListByStatusFiltersCorrectly(t *testing.T
 	}
 }
 
+func TestPostgresPendingEvaluationRepo_ListPendingByCustomers(t *testing.T) {
+	pool := newTestPgPool(t)
+	repo := NewPgPendingEvaluationRepo(pool)
+	ctx := context.Background()
+	customer1 := seedTestCustomer(t, pool)
+	customer2 := seedTestCustomer(t, pool)
+	for _, pe := range []*domain.PendingEvaluation{
+		{ID: newTestUUID(), CustomerID: customer1, Status: domain.PendingEvaluationStatusPendingReview, Reason: "one"},
+		{ID: newTestUUID(), CustomerID: customer2, Status: domain.PendingEvaluationStatusPendingReview, Reason: "two"},
+		{ID: newTestUUID(), CustomerID: customer1, Status: domain.PendingEvaluationStatusResolved, Reason: "resolved"},
+	} {
+		if err := repo.Create(ctx, pe); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM pending_evaluations WHERE id=$1`, pe.ID) })
+	}
+	got, err := repo.ListPendingByCustomers(ctx, []string{customer1, customer2}, domain.PendingEvaluationStatusPendingReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, pe := range got {
+		found[pe.CustomerID] = true
+	}
+	if !found[customer1] || !found[customer2] {
+		t.Fatalf("records = %+v, want pending records for both requested customers", got)
+	}
+}
+
 func TestPostgresPendingEvaluationRepo_UpdateStatusAndIncrementRetry(t *testing.T) {
 	pool := newTestPgPool(t)
 	repo := NewPgPendingEvaluationRepo(pool)

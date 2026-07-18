@@ -16,6 +16,11 @@ import (
 
 const maxRequestBodyBytes = 1 << 20
 
+const (
+	defaultRealtimeMonitorTimeout   = 30 * time.Second
+	pendingReviewPersistenceTimeout = 5 * time.Second
+)
+
 // DBPinger reports whether the PostgreSQL connection pool is reachable. It
 // is satisfied directly by *pgxpool.Pool, kept as a narrow interface here so
 // /healthz/ready (Task 3, the operational design §4.4) can be tested without a real
@@ -53,11 +58,12 @@ type Server struct {
 	// tmBaseCurrency is the interim PH9 invariant: aggregation only combines
 	// normalized amounts in one configured currency. Full FX/asset semantics
 	// remain a PH10 gate.
-	tmBaseCurrency   string
-	screeningResults domain.ScreeningResultRepository
-	retention        domain.RetentionRepository
-	accounts         domain.AccountRepository
-	configDigests    map[string]string
+	tmBaseCurrency         string
+	realtimeMonitorTimeout time.Duration
+	screeningResults       domain.ScreeningResultRepository
+	retention              domain.RetentionRepository
+	accounts               domain.AccountRepository
+	configDigests          map[string]string
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
 	// dashboard's list-freshness display (the screening workflow; Task 4). Nil until
@@ -103,12 +109,13 @@ type Deps struct {
 	Whitelist      domain.WhitelistRepository
 	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
 	// when positive; zero/negative falls back to the default.
-	WhitelistMaxValidDays int
-	TMBaseCurrency        string
-	ScreeningResults      domain.ScreeningResultRepository
-	Retention             domain.RetentionRepository
-	Accounts              domain.AccountRepository
-	ConfigDigests         map[string]string
+	WhitelistMaxValidDays  int
+	TMBaseCurrency         string
+	RealtimeMonitorTimeout time.Duration
+	ScreeningResults       domain.ScreeningResultRepository
+	Retention              domain.RetentionRepository
+	Accounts               domain.AccountRepository
+	ConfigDigests          map[string]string
 
 	ScreeningListStore      screening.ListStore
 	ScreeningFailureTracker screening.FailureTracker
@@ -156,6 +163,7 @@ func New(addr string, deps Deps) *Server {
 		whitelist:                deps.Whitelist,
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		tmBaseCurrency:           deps.TMBaseCurrency,
+		realtimeMonitorTimeout:   deps.RealtimeMonitorTimeout,
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
@@ -172,6 +180,9 @@ func New(addr string, deps Deps) *Server {
 		notifier:     deps.Notifier,
 		routingRules: deps.RoutingRules,
 		publicURL:    deps.PublicURL,
+	}
+	if s.realtimeMonitorTimeout <= 0 {
+		s.realtimeMonitorTimeout = defaultRealtimeMonitorTimeout
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)

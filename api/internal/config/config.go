@@ -13,29 +13,30 @@ import (
 type Config struct {
 	Env string
 	// Mode controls process ownership: api, worker, or all.
-	Mode                 string
-	HTTPAddr             string
-	WorkerHTTPAddr       string
-	WorkerConcurrency    int
-	DatabaseURL          string
-	MigrationDatabaseURL string
-	MigrationBaseline    string
-	EncryptionKeyRing    string
-	Seed                 bool
-	JWTSecret            string
-	JWTPrivateKeyFile    string
-	JWTPublicKeyFile     string
-	ConfigPath           string
-	CacheBackend         string
-	EventBus             string
-	LogLevel             string
-	AdapterConfigPath    string
-	UIDir                string
-	RateLimit            int
-	AuthEnabled          bool
-	BootstrapToken       string
-	CountryRiskPath      string
-	TMBaseCurrency       string
+	Mode                   string
+	HTTPAddr               string
+	WorkerHTTPAddr         string
+	WorkerConcurrency      int
+	DatabaseURL            string
+	MigrationDatabaseURL   string
+	MigrationBaseline      string
+	EncryptionKeyRing      string
+	Seed                   bool
+	JWTSecret              string
+	JWTPrivateKeyFile      string
+	JWTPublicKeyFile       string
+	ConfigPath             string
+	CacheBackend           string
+	EventBus               string
+	LogLevel               string
+	AdapterConfigPath      string
+	UIDir                  string
+	RateLimit              int
+	AuthEnabled            bool
+	BootstrapToken         string
+	CountryRiskPath        string
+	TMBaseCurrency         string
+	RealtimeMonitorTimeout time.Duration
 	// WhitelistMaxValidDays is the maximum whitelist validity period (WL-002,
 	// whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）").
 	// TODO(WS-2): move to the rule management API once it supports
@@ -148,6 +149,12 @@ func (c *Config) Validate() error {
 	if strings.TrimSpace(c.TMBaseCurrency) == "" {
 		c.TMBaseCurrency = "JPY"
 	}
+	if c.RealtimeMonitorTimeout < 0 {
+		return fmt.Errorf("MERLON_REALTIME_MONITOR_TIMEOUT must be positive")
+	}
+	if c.RealtimeMonitorTimeout == 0 {
+		c.RealtimeMonitorTimeout = 30 * time.Second
+	}
 	if c.Env == "production" {
 		if !c.AuthEnabled {
 			return fmt.Errorf("MERLON_AUTH_ENABLED must be true in production")
@@ -167,31 +174,32 @@ func (c *Config) Validate() error {
 
 func Load() *Config {
 	return &Config{
-		Env:                   getEnv("MERLON_ENV", "development"),
-		Mode:                  getEnv("MERLON_MODE", "all"),
-		HTTPAddr:              getEnv("MERLON_HTTP_ADDR", ":8080"),
-		WorkerHTTPAddr:        getEnv("MERLON_WORKER_HTTP_ADDR", ":8081"),
-		WorkerConcurrency:     getEnvInt("MERLON_WORKER_CONCURRENCY", 4),
-		DatabaseURL:           getEnv("MERLON_DATABASE_URL", ""),
-		MigrationDatabaseURL:  getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
-		MigrationBaseline:     getEnv("MERLON_MIGRATION_BASELINE", ""),
-		EncryptionKeyRing:     getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
-		Seed:                  getEnv("MERLON_SEED", "") == "true",
-		JWTSecret:             getEnv("MERLON_JWT_SECRET", ""),
-		JWTPrivateKeyFile:     getEnv("MERLON_JWT_PRIVATE_KEY_FILE", ""),
-		JWTPublicKeyFile:      getEnv("MERLON_JWT_PUBLIC_KEY_FILE", ""),
-		ConfigPath:            getEnv("MERLON_CONFIG_PATH", "config.yaml"),
-		CacheBackend:          getEnv("MERLON_CACHE_BACKEND", "memory"),
-		EventBus:              getEnv("MERLON_EVENT_BUS", "pg_notify"),
-		LogLevel:              getEnv("MERLON_LOG_LEVEL", "info"),
-		AdapterConfigPath:     getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
-		UIDir:                 getEnv("MERLON_UI_DIR", ""),
-		RateLimit:             getEnvInt("MERLON_RATE_LIMIT", 0),
-		AuthEnabled:           getEnv("MERLON_AUTH_ENABLED", "") == "true",
-		BootstrapToken:        getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
-		CountryRiskPath:       getEnv("MERLON_COUNTRY_RISK_PATH", ""),
-		TMBaseCurrency:        strings.ToUpper(getEnv("MERLON_TM_BASE_CURRENCY", "JPY")),
-		WhitelistMaxValidDays: getEnvInt("MERLON_WHITELIST_MAX_VALID_DAYS", 365),
+		Env:                    getEnv("MERLON_ENV", "development"),
+		Mode:                   getEnv("MERLON_MODE", "all"),
+		HTTPAddr:               getEnv("MERLON_HTTP_ADDR", ":8080"),
+		WorkerHTTPAddr:         getEnv("MERLON_WORKER_HTTP_ADDR", ":8081"),
+		WorkerConcurrency:      getEnvInt("MERLON_WORKER_CONCURRENCY", 4),
+		DatabaseURL:            getEnv("MERLON_DATABASE_URL", ""),
+		MigrationDatabaseURL:   getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
+		MigrationBaseline:      getEnv("MERLON_MIGRATION_BASELINE", ""),
+		EncryptionKeyRing:      getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
+		Seed:                   getEnv("MERLON_SEED", "") == "true",
+		JWTSecret:              getEnv("MERLON_JWT_SECRET", ""),
+		JWTPrivateKeyFile:      getEnv("MERLON_JWT_PRIVATE_KEY_FILE", ""),
+		JWTPublicKeyFile:       getEnv("MERLON_JWT_PUBLIC_KEY_FILE", ""),
+		ConfigPath:             getEnv("MERLON_CONFIG_PATH", "config.yaml"),
+		CacheBackend:           getEnv("MERLON_CACHE_BACKEND", "memory"),
+		EventBus:               getEnv("MERLON_EVENT_BUS", "pg_notify"),
+		LogLevel:               getEnv("MERLON_LOG_LEVEL", "info"),
+		AdapterConfigPath:      getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
+		UIDir:                  getEnv("MERLON_UI_DIR", ""),
+		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 0),
+		AuthEnabled:            getEnv("MERLON_AUTH_ENABLED", "") == "true",
+		BootstrapToken:         getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
+		CountryRiskPath:        getEnv("MERLON_COUNTRY_RISK_PATH", ""),
+		TMBaseCurrency:         strings.ToUpper(getEnv("MERLON_TM_BASE_CURRENCY", "JPY")),
+		RealtimeMonitorTimeout: getEnvDuration("MERLON_REALTIME_MONITOR_TIMEOUT", 30*time.Second),
+		WhitelistMaxValidDays:  getEnvInt("MERLON_WHITELIST_MAX_VALID_DAYS", 365),
 
 		ScreeningImportEnabled:   getEnv("MERLON_SCREENING_IMPORT_ENABLED", "") == "true",
 		ScreeningRescreenEnabled: getEnv("MERLON_SCREENING_RESCREEN_ENABLED", "") == "true",

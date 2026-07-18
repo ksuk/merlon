@@ -114,6 +114,29 @@ func (r *PgPendingEvaluationRepo) ListPendingByCustomer(ctx context.Context, cus
 	return out, rows.Err()
 }
 
+func (r *PgPendingEvaluationRepo) ListPendingByCustomers(ctx context.Context, customerIDs []string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	if len(customerIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations WHERE customer_id = ANY($1::text[]::uuid[]) AND status = $2 ORDER BY created_at ASC`,
+		customerIDs, string(status),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.PendingEvaluation
+	for rows.Next() {
+		pe, err := scanPendingEvaluation(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *pe)
+	}
+	return out, rows.Err()
+}
+
 func (r *PgPendingEvaluationRepo) UpdateStatus(ctx context.Context, id string, status domain.PendingEvaluationStatus) error {
 	var resolvedAtClause string
 	if status == domain.PendingEvaluationStatusResolved {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -17,6 +18,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.Mode != "all" || cfg.WorkerConcurrency != 4 || cfg.TMBaseCurrency != "JPY" {
 		t.Errorf("PH9 defaults: mode=%q concurrency=%d currency=%q", cfg.Mode, cfg.WorkerConcurrency, cfg.TMBaseCurrency)
+	}
+	if cfg.RealtimeMonitorTimeout != 30*time.Second {
+		t.Errorf("RealtimeMonitorTimeout = %s, want 30s", cfg.RealtimeMonitorTimeout)
 	}
 	if cfg.CacheBackend != "memory" {
 		t.Errorf("CacheBackend = %q, want %q", cfg.CacheBackend, "memory")
@@ -66,6 +70,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("MERLON_HTTP_ADDR", ":9090")
 	t.Setenv("MERLON_JWT_SECRET", "secret-value")
 	t.Setenv("MERLON_LOG_LEVEL", "debug")
+	t.Setenv("MERLON_REALTIME_MONITOR_TIMEOUT", "45s")
 
 	cfg := Load()
 
@@ -80,6 +85,16 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "debug")
+	}
+	if cfg.RealtimeMonitorTimeout != 45*time.Second {
+		t.Errorf("RealtimeMonitorTimeout = %s, want 45s", cfg.RealtimeMonitorTimeout)
+	}
+}
+
+func TestValidateRejectsNegativeRealtimeMonitorTimeout(t *testing.T) {
+	cfg := &Config{RealtimeMonitorTimeout: -time.Second}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected negative realtime monitor timeout to be rejected")
 	}
 }
 

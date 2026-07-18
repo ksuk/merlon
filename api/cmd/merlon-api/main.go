@@ -45,6 +45,13 @@ const whitelistExpiryCheckInterval = time.Hour
 // than necessary.
 const webhookRetryCheckInterval = 30 * time.Second
 
+const (
+	httpReadHeaderTimeout = 10 * time.Second
+	httpReadTimeout       = 30 * time.Second
+	httpWriteTimeout      = 5 * time.Minute
+	httpIdleTimeout       = 2 * time.Minute
+)
+
 // eddEscalationCheckInterval governs how often RunEDDEscalationJob runs
 // (the case-management workflow §EDD未実施継続時の段階的措置). Its finest granularity
 // is one calendar day (stage 1 dedup), so hourly is more than sufficient and
@@ -233,6 +240,7 @@ func main() {
 	deps.RateLimit = cfg.RateLimit
 	deps.WhitelistMaxValidDays = cfg.WhitelistMaxValidDays
 	deps.TMBaseCurrency = cfg.TMBaseCurrency
+	deps.RealtimeMonitorTimeout = cfg.RealtimeMonitorTimeout
 	if cfg.RateLimit > 0 {
 		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}
@@ -246,7 +254,6 @@ func main() {
 		deps.Screening = nativeEngine
 		deps.Backtest = nativeEngine
 		deps.Config = nativeEngine
-		deps.EngineHealth = nativeEngine
 		slog.Info("native Go engine loaded", "tm_digest", deps.ConfigDigests["tm_scenarios"])
 	} else {
 		slog.Warn("native Go engine unavailable", "error", nativeErr)
@@ -318,8 +325,8 @@ func main() {
 				"mof_japan":    &screening.MOFAdapter{ListID: "mof_japan", URL: cfg.ScreeningMOFURL, Fetcher: fetcher},
 				"pep_provider": &screening.PEPAdapter{ListID: "pep_provider", URL: cfg.ScreeningPEPURL, Fetcher: fetcher},
 			}
-			var listConsumer interface{ ReplaceScreeningLists([]screening.RawListData) }
-			if consumer, ok := deps.Screening.(interface{ ReplaceScreeningLists([]screening.RawListData) }); ok {
+			var listConsumer screening.ListConsumer
+			if consumer, ok := deps.Screening.(screening.ListConsumer); ok {
 				listConsumer = consumer
 			}
 			go screening.RunImportJobPeriodicallyWithConsumer(jobsCtx, cfg.ScreeningImportInterval, adapters, listStore, failureTracker, listConsumer)
@@ -395,8 +402,12 @@ func main() {
 	}
 
 	httpServer := &http.Server{
-		Addr:    listenAddr,
-		Handler: srv.Handler(),
+		Addr:              listenAddr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
 	}
 
 	go func() {

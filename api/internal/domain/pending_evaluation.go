@@ -38,3 +38,10 @@ type PendingEvaluationRepository interface {
 	UpdateStatus(ctx context.Context, id string, status PendingEvaluationStatus) error
 	IncrementRetry(ctx context.Context, id string) error
 }
+
+// PendingEvaluationBulkLookup is an optional repository capability used by
+// batch fail-alert queueing to avoid one lookup per failed customer while
+// preserving transaction-level deduplication semantics.
+type PendingEvaluationBulkLookup interface {
+	ListPendingByCustomers(ctx context.Context, customerIDs []string, status PendingEvaluationStatus) ([]PendingEvaluation, error)
+}

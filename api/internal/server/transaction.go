@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ksuk/merlon/api/internal/apierr"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
 
 type CreateTransactionRequest struct {
@@ -28,7 +30,10 @@ type CreateTransactionRequest struct {
 	AccountID           *string                     `json:"account_id,omitempty"`
 	Counterparty        *domain.Counterparty        `json:"counterparty,omitempty"`
 	Metadata            map[string]any              `json:"metadata,omitempty"`
-	ExecutedAt          time.Time                   `json:"executed_at"`
+	// Future event times are accepted intentionally for upstream clock skew
+	// and scheduled transactions. Realtime evaluation anchors its upper bound
+	// at max(now, ExecutedAt), so the accepted transaction is never omitted.
+	ExecutedAt time.Time `json:"executed_at"`
 }
 
 func isValidCounterpartyType(t domain.CounterpartyType) bool {
@@ -233,9 +238,11 @@ func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain
 		return
 	}
 
-	txns, err := s.listRealtimeTransactions(ctx, customer.ID, created)
+	monitorCtx, cancel := context.WithTimeout(ctx, s.realtimeMonitorTimeout)
+	defer cancel()
+	txns, err := s.listRealtimeTransactions(monitorCtx, customer.ID, created)
 	if err != nil {
-		_ = s.queuePendingReview(ctx, customer, []domain.Transaction{*created}, err)
+		_ = s.queuePendingReviewDurably(ctx, customer, []domain.Transaction{*created}, err)
 		return
 	}
 	if len(txns) == 0 {
@@ -244,15 +251,15 @@ func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain
 	if s.tmBaseCurrency != "" {
 		for _, txn := range txns {
 			if !strings.EqualFold(txn.Currency, s.tmBaseCurrency) {
-				_ = s.queuePendingReview(ctx, customer, txns, fmt.Errorf("currency %s is not normalized to %s", txn.Currency, s.tmBaseCurrency))
+				_ = s.queuePendingReviewDurably(ctx, customer, txns, fmt.Errorf("currency %s is not normalized to %s", txn.Currency, s.tmBaseCurrency))
 				return
 			}
 		}
 	}
 
-	alerts, err := s.evaluateMonitoring(ctx, customer, txns, engine.EvaluationModeRealtime, nil)
+	alerts, err := s.evaluateMonitoring(monitorCtx, customer, txns, engine.EvaluationModeRealtime, nil)
 	if err != nil {
-		_ = s.queuePendingReview(ctx, customer, txns, err)
+		_ = s.queuePendingReviewDurably(ctx, customer, txns, err)
 		return
 	}
 	for _, alert := range alerts {
@@ -279,35 +286,83 @@ func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain
 	}
 }
 
+func (s *Server) queuePendingReviewDurably(parent context.Context, customer *domain.Customer, txns []domain.Transaction, cause error) bool {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), pendingReviewPersistenceTimeout)
+	defer cancel()
+	return s.queuePendingReview(ctx, customer, txns, cause)
+}
+
 func (s *Server) listRealtimeTransactions(ctx context.Context, customerID string, created *domain.Transaction) ([]domain.Transaction, error) {
-	if history, ok := s.transactions.(domain.TransactionHistoryRepository); ok {
-		var out []domain.Transaction
-		var after *domain.TransactionEventCursor
-		to := time.Now().UTC().Add(time.Nanosecond)
-		for {
-			page, err := history.ListByCustomerEventRange(ctx, customerID, time.Time{}, to, created.CreatedAt, 1000, after)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, page...)
-			if len(page) < 1000 {
-				return out, nil
-			}
-			last := page[len(page)-1]
-			after = &domain.TransactionEventCursor{ExecutedAt: last.ExecutedAt, ID: last.ID}
+	anchor := time.Now().UTC()
+	if created.ExecutedAt.After(anchor) {
+		anchor = created.ExecutedAt
+	}
+	to := anchor.Add(time.Nanosecond)
+	provider, ok := s.monitoring.(engine.RealtimeHistoryWindowProvider)
+	if !ok {
+		return s.listRealtimeTransactionRange(ctx, customerID, time.Time{}, to, created.CreatedAt)
+	}
+	window, bounded := provider.RealtimeHistoryWindow()
+	if !bounded {
+		return s.listRealtimeTransactionRange(ctx, customerID, time.Time{}, to, created.CreatedAt)
+	}
+	if window < 0 {
+		return nil, fmt.Errorf("realtime history window must not be negative")
+	}
+
+	currentFrom := anchor.Add(-window)
+	eventFrom := created.ExecutedAt.Add(-window)
+	eventTo := created.ExecutedAt.Add(window).Add(time.Nanosecond)
+	if eventTo.After(to) {
+		eventTo = to
+	}
+	// The late-arriving event window and current window usually overlap. Use
+	// one query in that case; otherwise fetch the two bounded ranges and merge
+	// them so a backdated event cannot force a scan across the intervening years.
+	if !eventTo.Before(currentFrom) {
+		from := currentFrom
+		if eventFrom.Before(from) {
+			from = eventFrom
+		}
+		return s.listRealtimeTransactionRange(ctx, customerID, from, to, created.CreatedAt)
+	}
+	eventTxns, err := s.listRealtimeTransactionRange(ctx, customerID, eventFrom, eventTo, created.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	currentTxns, err := s.listRealtimeTransactionRange(ctx, customerID, currentFrom, to, created.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return mergeRealtimeTransactions(eventTxns, currentTxns), nil
+}
+
+func (s *Server) listRealtimeTransactionRange(ctx context.Context, customerID string, from, to, createdThrough time.Time) ([]domain.Transaction, error) {
+	return transactionhistory.ListCustomerTransactionsAsOf(ctx, s.transactions, customerID, transactionhistory.Query{
+		From:           from,
+		To:             to,
+		CreatedThrough: createdThrough,
+	})
+}
+
+func mergeRealtimeTransactions(groups ...[]domain.Transaction) []domain.Transaction {
+	byID := make(map[string]domain.Transaction)
+	for _, group := range groups {
+		for _, txn := range group {
+			byID[txn.ID] = txn
 		}
 	}
-	var out []domain.Transaction
-	for offset := 0; ; offset += 1000 {
-		page, err := s.transactions.ListByCustomer(ctx, customerID, 1000, offset)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, page...)
-		if len(page) < 1000 {
-			return out, nil
-		}
+	merged := make([]domain.Transaction, 0, len(byID))
+	for _, txn := range byID {
+		merged = append(merged, txn)
 	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		if merged[i].ExecutedAt.Equal(merged[j].ExecutedAt) {
+			return merged[i].ID < merged[j].ID
+		}
+		return merged[i].ExecutedAt.Before(merged[j].ExecutedAt)
+	})
+	return merged
 }
 
 func isValidDirection(d domain.TransactionDirection) bool {

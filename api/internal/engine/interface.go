@@ -65,6 +65,27 @@ type MonitoringEngineV2 interface {
 	Evaluate(ctx context.Context, req MonitoringRequest) ([]domain.Alert, error)
 }
 
+// RealtimeHistoryWindowProvider lets an engine declare the largest event-time
+// window needed by its realtime scenarios. Servers can then avoid loading a
+// customer's entire history for every newly accepted transaction. Engines
+// without this capability retain the legacy unbounded-history behavior.
+type RealtimeHistoryWindowProvider interface {
+	RealtimeHistoryWindow() (window time.Duration, bounded bool)
+}
+
+// EvaluateCompat uses the canonical V2 request when supported and otherwise
+// adapts it to the legacy realtime/batch methods. Keeping this fallback here
+// prevents serving and recovery call sites from drifting apart.
+func EvaluateCompat(ctx context.Context, monitoring MonitoringEngine, req MonitoringRequest) ([]domain.Alert, error) {
+	if v2, ok := monitoring.(MonitoringEngineV2); ok {
+		return v2.Evaluate(ctx, req)
+	}
+	if req.Mode == EvaluationModeBatch {
+		return monitoring.EvaluateTransactionsBatch(ctx, req.CustomerID, req.RiskTier, req.Transactions, req.ScenarioIDs)
+	}
+	return monitoring.EvaluateTransactions(ctx, req.CustomerID, req.RiskTier, req.Transactions, req.ScenarioIDs)
+}
+
 type ScreeningEngine interface {
 	ScreenCustomer(
 		ctx context.Context,

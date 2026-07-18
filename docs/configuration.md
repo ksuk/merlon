@@ -53,6 +53,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_COUNTRY_RISK_PATH` | unset | Optional native Go country-risk table. |
 | `MERLON_SCREENING_LISTS_PATH` | `screening_lists` | Native Go last-good screening-list snapshot root. |
 | `MERLON_TM_BASE_CURRENCY` | `JPY` | Interim PH9 invariant: mixed/non-base TM aggregation is fail-alerted to `PENDING_REVIEW`; full FX/decimal semantics are PH10. |
+| `MERLON_REALTIME_MONITOR_TIMEOUT` | `30s` | Maximum synchronous history-loading and realtime-monitoring duration before fail-alert queueing. |
 | `MERLON_TM_BATCH_SCHEDULE` | `02:00` | Daily `HH:MM` time for transaction-monitoring batch evaluation. |
 | `MERLON_TM_BATCH_TIMEZONE` | local timezone | Set an IANA timezone explicitly in production. |
 | `MERLON_LOG_LEVEL` | `info` | Keep `info` or stricter; do not use debug logging for sensitive workloads. |
