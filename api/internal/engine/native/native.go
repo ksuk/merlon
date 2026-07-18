@@ -8,14 +8,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/config"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/metrics"
@@ -111,6 +114,9 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 	if err := yaml.Unmarshal(cddYAML, &cdd); err != nil {
 		return nil, fmt.Errorf("parse CDD config: %w", err)
 	}
+	if err := normalizeCDD(&cdd); err != nil {
+		return nil, err
+	}
 	if err := validateCDD(cdd); err != nil {
 		return nil, err
 	}
@@ -149,7 +155,7 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 	if len(e.scenarios) == 0 {
 		return nil, fmt.Errorf("at least one TM scenario must be configured")
 	}
-	e.tmDigest, err = digestPath(tmPath)
+	e.tmDigest, err = config.DigestPath(tmPath)
 	if err != nil {
 		return nil, err
 	}
@@ -203,21 +209,25 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 			}
 			e.lists = append(e.lists, l)
 		}
-		e.screeningDigest, _ = digestPath(screeningPath)
+		e.screeningDigest, _ = config.DigestPath(screeningPath)
 	}
 	return e, nil
 }
 
 func validateCountryRisk(table countryRisk) error {
-	if table.DefaultScore == 1 || table.DefaultScore < 1 || table.DefaultScore > 5 {
-		return fmt.Errorf("country risk default_score must be between 2 and 5")
+	if !validCountryRiskScore(table.DefaultScore) {
+		return fmt.Errorf("country risk default_score must be an integer between 1 and 5")
 	}
 	for code, row := range table.Countries {
-		if row.Score < 1 || row.Score > 5 {
-			return fmt.Errorf("country %q score must be between 1 and 5", code)
+		if !validCountryRiskScore(row.Score) {
+			return fmt.Errorf("country %q score must be an integer between 1 and 5", code)
 		}
 	}
 	return nil
+}
+
+func validCountryRiskScore(score float64) bool {
+	return score >= 1 && score <= 5 && math.Trunc(score) == score
 }
 
 func envOr(key, fallback string) string {
@@ -257,6 +267,32 @@ func validateCDD(c cddConfig) error {
 	return nil
 }
 
+func normalizeCDD(c *cddConfig) error {
+	normalized, err := normalizeRiskTierMap(c.TierThresholds, "tier_thresholds")
+	if err != nil {
+		return err
+	}
+	c.TierThresholds = normalized
+	return nil
+}
+
+func normalizeRiskTierMap[T any](values map[string]T, field string) (map[string]T, error) {
+	normalized := make(map[string]T, len(values))
+	for key, value := range values {
+		canonical := strings.ToUpper(key)
+		switch canonical {
+		case "LOW", "MEDIUM", "HIGH":
+		default:
+			return nil, fmt.Errorf("%s contains unknown risk tier %q", field, key)
+		}
+		if _, duplicate := normalized[canonical]; duplicate {
+			return nil, fmt.Errorf("%s contains case-colliding risk tier %q", field, key)
+		}
+		normalized[canonical] = value
+	}
+	return normalized, nil
+}
+
 func knownScenarioID(id string) bool {
 	id = strings.ToLower(id)
 	for _, prefix := range []string{
@@ -276,39 +312,6 @@ func isYAML(name string) bool {
 	return strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")
 }
 func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
-func digestPath(path string) (string, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	if !info.IsDir() {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return "", err
-		}
-		return digest(b), nil
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return "", err
-	}
-	h := sha256.New()
-	for _, entry := range entries {
-		if entry.IsDir() || !isYAML(entry.Name()) {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(path, entry.Name()))
-		if err != nil {
-			return "", err
-		}
-		h.Write([]byte(entry.Name()))
-		h.Write([]byte{0})
-		h.Write(b)
-		h.Write([]byte{0})
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
 func parseScenario(content []byte) (scenario, error) {
 	var raw map[string]any
 	if err := yaml.Unmarshal(content, &raw); err != nil {
@@ -333,15 +336,22 @@ func parseScenario(content []byte) (scenario, error) {
 		}
 	}
 	if adj, ok := raw["risk_tier_adjustments"].(map[string]any); ok {
-		for tier, values := range adj {
+		normalized, err := normalizeRiskTierMap(adj, "risk_tier_adjustments")
+		if err != nil {
+			return scenario{}, err
+		}
+		for tier, values := range normalized {
 			if m, ok := values.(map[string]any); ok {
 				for k, v := range m {
-					if s.Parameters[k] == nil {
-						s.Parameters[k] = map[string]any{}
+					mm, ok := s.Parameters[k].(map[string]any)
+					if !ok {
+						mm = map[string]any{}
+						if base := s.Parameters[k]; base != nil {
+							mm[""] = base
+						}
+						s.Parameters[k] = mm
 					}
-					if mm, ok := s.Parameters[k].(map[string]any); ok {
-						mm[tier] = v
-					}
+					mm[tier] = v
 				}
 			}
 		}
@@ -360,8 +370,12 @@ func parseScenario(content []byte) (scenario, error) {
 				for ct, v := range byType {
 					if m, ok := v.(map[string]any); ok {
 						if byTier, ok := m["by_risk_tier"].(map[string]any); ok {
+							normalized, err := normalizeRiskTierMap(byTier, fmt.Sprintf("conditions.threshold.by_customer_type.%s.by_risk_tier", ct))
+							if err != nil {
+								return scenario{}, err
+							}
 							s.Thresholds[ct] = map[string]float64{}
-							for tier, n := range byTier {
+							for tier, n := range normalized {
 								s.Thresholds[ct][tier] = number(n)
 							}
 						}
@@ -428,6 +442,9 @@ func (s scenario) paramFor(name, customerType, tier string, fallback float64) fl
 			if n, ok := m[tier]; ok {
 				return number(n)
 			}
+			if n, ok := m[""]; ok {
+				return number(n)
+			}
 		}
 		if n := number(v); n != 0 {
 			return n
@@ -464,12 +481,16 @@ func (s scenario) listParam(name string) []string {
 	return out
 }
 
-func (e *Engine) ScoreCustomer(_ context.Context, customer *domain.Customer, ruleSetID string) (*domain.ScoreRecord, error) {
+func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, ruleSetID string) (*domain.ScoreRecord, error) {
 	started := time.Now()
 	status := "ok"
 	defer func() {
 		metrics.EngineEvalDuration.WithLabelValues("ScoreCustomer", status).Observe(time.Since(started).Seconds())
 	}()
+	if err := ctx.Err(); err != nil {
+		status = "error"
+		return nil, err
+	}
 	if customer == nil {
 		status = "error"
 		return nil, fmt.Errorf("customer is required")
@@ -480,6 +501,10 @@ func (e *Engine) ScoreCustomer(_ context.Context, customer *domain.Customer, rul
 	}
 	factors := make([]pair, 0, len(e.cdd.RiskFactors))
 	for name, f := range e.cdd.RiskFactors {
+		if err := ctx.Err(); err != nil {
+			status = "error"
+			return nil, err
+		}
 		applies := len(f.Applies) == 0
 		for _, ct := range f.Applies {
 			if ct == string(customer.CustomerType) {
@@ -505,6 +530,10 @@ func (e *Engine) ScoreCustomer(_ context.Context, customer *domain.Customer, rul
 	var total float64
 	resultFactors := make([]domain.Factor, 0, len(factors))
 	for _, p := range factors {
+		if err := ctx.Err(); err != nil {
+			status = "error"
+			return nil, err
+		}
 		value, resolved := e.resolveFactor(p.name, p.f, customer, attrs)
 		if !resolved {
 			value = 5
@@ -527,7 +556,6 @@ func (e *Engine) ScoreCustomer(_ context.Context, customer *domain.Customer, rul
 	// The scoring contract treats the request's rule_set_id as a routing
 	// hint and returns the loaded preset identifier. Keep the native path
 	// byte-compatible until versioned rule-set loading is introduced.
-	_ = ruleSetID
 	ruleSetID = e.cdd.PresetID
 	now := time.Now().UTC()
 	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: ruleSetID, RuleSetSHA256: e.cddDigest, RuleSetVersion: fingerprint(e.cddDigest), ScoredAt: now}, nil
@@ -569,8 +597,8 @@ func (e *Engine) resolveFactor(name string, f riskFactor, c *domain.Customer, at
 	return value, ok
 }
 
-func (e *Engine) EvaluateTransactions(_ context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
-	return e.evaluate(customerID, "unspecified", tier, txns, ids, "realtime")
+func (e *Engine) EvaluateTransactions(ctx context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
+	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "realtime")
 }
 
 func (e *Engine) Evaluate(ctx context.Context, req engine.MonitoringRequest) ([]domain.Alert, error) {
@@ -579,30 +607,109 @@ func (e *Engine) Evaluate(ctx context.Context, req engine.MonitoringRequest) ([]
 		customerType = "unspecified"
 	}
 	if req.Mode == engine.EvaluationModeBatch {
-		return e.evaluate(req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "batch")
+		return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "batch")
 	}
-	return e.evaluate(req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "realtime")
+	return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "realtime")
 }
-func (e *Engine) EvaluateTransactionsBatch(_ context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
-	return e.evaluate(customerID, "unspecified", tier, txns, ids, "batch")
+func (e *Engine) EvaluateTransactionsBatch(ctx context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
+	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "batch")
 }
-func (e *Engine) evaluate(customerID, customerType string, tier domain.RiskTier, txns []domain.Transaction, ids []string, mode string) ([]domain.Alert, error) {
+
+// RealtimeHistoryWindow returns the largest window used by any enabled
+// realtime scenario. It deliberately mirrors the evaluator's parameter
+// resolution so the server-side query cannot truncate data the engine needs.
+func (e *Engine) RealtimeHistoryWindow() (time.Duration, bool) {
+	var longest time.Duration
+	for _, s := range e.scenarios {
+		if !runsUnder(s.Mode, "realtime") {
+			continue
+		}
+		var parameter string
+		var fallback int64
+		switch {
+		case strings.Contains(strings.ToLower(s.ID), "structuring"):
+			parameter, fallback = "window_hours", 24
+		case strings.Contains(strings.ToLower(s.ID), "rapid_movement"):
+			parameter, fallback = "window_hours", 48
+		case strings.Contains(strings.ToLower(s.ID), "high_frequency_small_amount"):
+			parameter, fallback = "window_hours", 1
+		case strings.Contains(strings.ToLower(s.ID), "dormant_account_reactivation"):
+			// Dormancy detection needs the immediately preceding transaction
+			// even when it is older than dormant_days, so a finite lookback
+			// cannot preserve the scenario's semantics.
+			return 0, false
+		default:
+			continue
+		}
+		unit := time.Hour
+		if parameter == "dormant_days" {
+			unit = 24 * time.Hour
+		}
+		for _, tier := range []string{"LOW", "MEDIUM", "HIGH"} {
+			window := time.Duration(s.intParam(parameter, tier, fallback)) * unit
+			if window > longest {
+				longest = window
+			}
+		}
+	}
+	return longest, true
+}
+
+func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, tier domain.RiskTier, txns []domain.Transaction, ids []string, mode string) ([]domain.Alert, error) {
 	started := time.Now()
 	defer func() {
 		metrics.EngineEvalDuration.WithLabelValues("EvaluateTransactions", "ok").Observe(time.Since(started).Seconds())
 	}()
+	customerTxns, err := customerTransactions(ctx, customerID, txns)
+	if err != nil {
+		return nil, err
+	}
+	if len(customerTxns) == 0 {
+		return nil, nil
+	}
 	var out []domain.Alert
 	for _, s := range e.scenarios {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !scenarioSelected(s, ids) || !runsUnder(s.Mode, mode) {
 			continue
 		}
-		alerts := evaluateScenario(s, customerID, customerType, string(tier), txns)
+		alerts, err := evaluateScenario(ctx, s, customerType, string(tier), customerTxns)
+		if err != nil {
+			return nil, err
+		}
 		for _, a := range alerts {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			now := time.Now().UTC()
 			out = append(out, domain.Alert{CustomerID: customerID, ScenarioID: s.ID, Severity: a.severity, Status: domain.AlertStatusOpen, Score: a.score, Description: a.description, TransactionIDs: a.ids, DetectedAt: now, CreatedAt: now, UpdatedAt: now})
 		}
 	}
 	return out, nil
+}
+
+func customerTransactions(ctx context.Context, customerID string, txns []domain.Transaction) ([]domain.Transaction, error) {
+	customer := make([]domain.Transaction, 0, len(txns))
+	for _, txn := range txns {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if txn.CustomerID == customerID {
+			customer = append(customer, txn)
+		}
+	}
+	sort.SliceStable(customer, func(i, j int) bool {
+		if customer[i].ExecutedAt.Equal(customer[j].ExecutedAt) {
+			return customer[i].ID < customer[j].ID
+		}
+		return customer[i].ExecutedAt.Before(customer[j].ExecutedAt)
+	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return customer, nil
 }
 func scenarioSelected(s scenario, ids []string) bool {
 	if len(ids) == 0 {
@@ -629,39 +736,27 @@ type scenarioAlert struct {
 	ids         []string
 }
 
-func evaluateScenario(s scenario, customerID, customerType, tier string, txns []domain.Transaction) []scenarioAlert {
-	var customer []domain.Transaction
-	for _, t := range txns {
-		if t.CustomerID == customerID {
-			customer = append(customer, t)
-		}
-	}
-	sort.SliceStable(customer, func(i, j int) bool {
-		if customer[i].ExecutedAt.Equal(customer[j].ExecutedAt) {
-			return customer[i].ID < customer[j].ID
-		}
-		return customer[i].ExecutedAt.Before(customer[j].ExecutedAt)
-	})
-	if len(customer) == 0 {
-		return nil
+func evaluateScenario(ctx context.Context, s scenario, customerType, tier string, customer []domain.Transaction) ([]scenarioAlert, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	id := strings.ToLower(s.ID)
 	switch {
 	case strings.Contains(id, "structuring"):
-		return evalStructuring(s, customerType, tier, customer)
+		return evalStructuring(ctx, s, customerType, tier, customer)
 	case strings.Contains(id, "rapid_movement"):
-		return evalRapid(s, customerType, tier, customer)
+		return evalRapid(ctx, s, customerType, tier, customer)
 	case strings.Contains(id, "high_frequency_small_amount"):
-		return evalHFSA(s, customerType, tier, customer)
+		return evalHFSA(ctx, s, customerType, tier, customer)
 	case strings.Contains(id, "dormant_account_reactivation"):
-		return evalDormant(s, customerType, tier, customer)
+		return evalDormant(ctx, s, customerType, tier, customer)
 	case strings.Contains(id, "high_risk_country_transfer"):
-		return evalHighRisk(s, customerType, tier, customer)
+		return evalHighRisk(ctx, s, customerType, tier, customer)
 	}
-	return nil
+	return nil, nil
 }
 func seconds(t time.Time) int64 { return t.Unix() }
-func evalStructuring(s scenario, customerType, tier string, txns []domain.Transaction) []scenarioAlert {
+func evalStructuring(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	window := s.intParam("window_hours", tier, 24) * 3600
 	threshold := s.paramFor("threshold_amount", customerType, tier, s.paramFor("threshold", customerType, tier, 1000000))
 	min := int(s.intParam("min_transactions", tier, s.intParam("min_transaction_count", tier, 3)))
@@ -669,6 +764,9 @@ func evalStructuring(s scenario, customerType, tier string, txns []domain.Transa
 	absoluteThreshold := s.paramFor("absolute_threshold", customerType, tier, 10000000)
 	var q []domain.Transaction
 	for _, t := range txns {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if t.Amount > 0 && t.Amount < below {
 			q = append(q, t)
 		}
@@ -676,6 +774,9 @@ func evalStructuring(s scenario, customerType, tier string, txns []domain.Transa
 	right := 0
 	total := 0.0
 	for left := range q {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		end := seconds(q[left].ExecutedAt) + window
 		for right < len(q) && seconds(q[right].ExecutedAt) <= end {
 			total += q[right].Amount
@@ -699,12 +800,12 @@ func evalStructuring(s scenario, customerType, tier string, txns []domain.Transa
 			if breachesAbsolute {
 				description = fmt.Sprintf("%d transactions totaling %.0f within %d hours, each below %.0f (absolute_threshold safety valve, threshold=%.0f)", right-left, total, window/3600, below, absoluteThreshold)
 			}
-			return []scenarioAlert{{sev, total / threshold, description, ids}}
+			return []scenarioAlert{{sev, total / threshold, description, ids}}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
-func evalRapid(s scenario, customerType, tier string, txns []domain.Transaction) []scenarioAlert {
+func evalRapid(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	window := s.intParam("window_hours", tier, 48) * 3600
 	inTh := s.paramFor("inbound_threshold", customerType, tier, s.paramFor("threshold", customerType, tier, 5000000))
 	outTh := s.paramFor("outbound_threshold", customerType, tier, 5000000)
@@ -712,6 +813,9 @@ func evalRapid(s scenario, customerType, tier string, txns []domain.Transaction)
 	right, left := 0, 0
 	in, out := 0.0, 0.0
 	for left < len(txns) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		end := seconds(txns[left].ExecutedAt) + window
 		for right < len(txns) && seconds(txns[right].ExecutedAt) <= end {
 			if txns[right].Direction == domain.DirectionInbound {
@@ -733,7 +837,7 @@ func evalRapid(s scenario, customerType, tier string, txns []domain.Transaction)
 			} else if ratio >= .9 {
 				sev = domain.AlertSeverityHigh
 			}
-			return []scenarioAlert{{sev, ratio, fmt.Sprintf("inbound %.0f, outbound %.0f (ratio %.2f) within %d hours", in, out, ratio, window/3600), idsOf(txns[left:right])}}
+			return []scenarioAlert{{sev, ratio, fmt.Sprintf("inbound %.0f, outbound %.0f (ratio %.2f) within %d hours", in, out, ratio, window/3600), idsOf(txns[left:right])}}, nil
 		}
 		if txns[left].Direction == domain.DirectionInbound {
 			in -= txns[left].Amount
@@ -746,14 +850,17 @@ func evalRapid(s scenario, customerType, tier string, txns []domain.Transaction)
 			right = left
 		}
 	}
-	return nil
+	return nil, nil
 }
-func evalHFSA(s scenario, customerType, tier string, txns []domain.Transaction) []scenarioAlert {
+func evalHFSA(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	window := s.intParam("window_hours", tier, 1) * 3600
 	count := int(s.paramFor("count_threshold", customerType, tier, s.paramFor("threshold", customerType, tier, 10)))
 	max := s.param("max_amount_per_txn", tier, 100000)
 	var q []domain.Transaction
 	for _, t := range txns {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if t.Amount > 0 && t.Amount <= max {
 			q = append(q, t)
 		}
@@ -761,6 +868,9 @@ func evalHFSA(s scenario, customerType, tier string, txns []domain.Transaction) 
 	right := 0
 	total := 0.0
 	for left := range q {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		end := seconds(q[left].ExecutedAt) + window
 		for right < len(q) && seconds(q[right].ExecutedAt) <= end {
 			total += q[right].Amount
@@ -775,15 +885,18 @@ func evalHFSA(s scenario, customerType, tier string, txns []domain.Transaction) 
 			if n >= count*2 {
 				sev = domain.AlertSeverityHigh
 			}
-			return []scenarioAlert{{sev, float64(n) / float64(count), fmt.Sprintf("%d transactions (each <= %.0f) totaling %.0f within %d hours", n, max, total, window/3600), idsOf(q[left:right])}}
+			return []scenarioAlert{{sev, float64(n) / float64(count), fmt.Sprintf("%d transactions (each <= %.0f) totaling %.0f within %d hours", n, max, total, window/3600), idsOf(q[left:right])}}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
-func evalDormant(s scenario, customerType, tier string, txns []domain.Transaction) []scenarioAlert {
+func evalDormant(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	days := s.intParam("dormant_days", tier, 180)
 	threshold := s.paramFor("reactivation_threshold", customerType, tier, 1000000)
 	for i := 1; i < len(txns); i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		gap := txns[i].ExecutedAt.Sub(txns[i-1].ExecutedAt)
 		if gap >= time.Duration(days)*24*time.Hour && txns[i].Amount >= threshold {
 			sev := domain.AlertSeverityMedium
@@ -792,16 +905,19 @@ func evalDormant(s scenario, customerType, tier string, txns []domain.Transactio
 			}
 			return []scenarioAlert{{severity: sev, score: txns[i].Amount / threshold,
 				description: fmt.Sprintf("dormant for %d days, reactivated with %.0f (threshold %.0f)", int64(gap/(24*time.Hour)), txns[i].Amount, threshold),
-				ids:         []string{txns[i].ID}}}
+				ids:         []string{txns[i].ID}}}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
-func evalHighRisk(s scenario, customerType, tier string, txns []domain.Transaction) []scenarioAlert {
+func evalHighRisk(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	threshold := s.paramFor("threshold_amount", customerType, tier, 1000000)
 	countries := s.listParam("high_risk_countries")
 	var out []scenarioAlert
 	for _, t := range txns {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		hit := false
 		for _, c := range countries {
 			if strings.EqualFold(c, t.CounterpartyCountry) {
@@ -812,7 +928,7 @@ func evalHighRisk(s scenario, customerType, tier string, txns []domain.Transacti
 			out = append(out, scenarioAlert{domain.AlertSeverityHigh, t.Amount / threshold, fmt.Sprintf("outbound transfer of %.0f to high-risk country %s (threshold %.0f)", t.Amount, t.CounterpartyCountry, threshold), []string{t.ID}})
 		}
 	}
-	return out
+	return out, nil
 }
 func idsOf(txns []domain.Transaction) []string {
 	ids := make([]string, len(txns))
@@ -822,7 +938,10 @@ func idsOf(txns []domain.Transaction) []string {
 	return ids
 }
 
-func (e *Engine) ScreenCustomer(_ context.Context, customer *domain.Customer, listIDs []string) (*domain.ScreenResult, error) {
+func (e *Engine) ScreenCustomer(ctx context.Context, customer *domain.Customer, listIDs []string) (*domain.ScreenResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if customer == nil {
 		return nil, fmt.Errorf("customer is required")
 	}
@@ -841,14 +960,23 @@ func (e *Engine) ScreenCustomer(_ context.Context, customer *domain.Customer, li
 	lists := append([]screeningList(nil), e.lists...)
 	e.listsMu.RUnlock()
 	for _, l := range lists {
-		if len(listIDs) > 0 && !contains(listIDs, l.ID) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if len(listIDs) > 0 && !slices.Contains(listIDs, l.ID) {
 			continue
 		}
 		checked++
 		for _, entry := range l.Entries {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			best, bestName := 0.0, ""
 			for _, q := range queries {
 				for _, n := range entry.Names {
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
 					sim := similarity(q, n)
 					if sim > best {
 						best, bestName = sim, n
@@ -880,14 +1008,6 @@ func (e *Engine) ReplaceScreeningLists(raw []screening.RawListData) {
 	e.listsMu.Lock()
 	e.lists = lists
 	e.listsMu.Unlock()
-}
-func contains(xs []string, x string) bool {
-	for _, v := range xs {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }
 func similarity(a, b string) float64 {
 	a = normalize(a)
@@ -934,23 +1054,16 @@ func normalize(s string) string {
 	}
 	return strings.Join(strings.Fields(b.String()), " ")
 }
-func min(a, b, c int) int {
-	if a < b {
-		if a < c {
-			return a
-		}
-		return c
-	}
-	if b < c {
-		return b
-	}
-	return c
-}
-
 func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, _ string) (*domain.BacktestResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	started := time.Now()
 	result := &domain.BacktestResult{BacktestID: fmt.Sprintf("native-%d", started.UnixNano()), TotalCustomers: len(customers), TotalTransactions: len(txns)}
 	for _, c := range customers {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		tier := func() domain.RiskTier {
 			if c.RiskTier != nil {
 				return *c.RiskTier
@@ -964,7 +1077,7 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 		// Backtests intentionally evaluate every configured scenario,
 		// irrespective of realtime/batch mode; the mode filter is a serving
 		// concern, not a historical replay concern.
-		alerts, err := e.evaluate(c.ID, customerType, tier, txns, ids, "both")
+		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both")
 		if err != nil {
 			return nil, err
 		}
@@ -991,7 +1104,7 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 			if a.Severity == domain.AlertSeverityLow {
 				sr.LowSeverityCount++
 			}
-			if !contains(sr.AffectedCustomerIDs, c.ID) {
+			if !slices.Contains(sr.AffectedCustomerIDs, c.ID) {
 				sr.AffectedCustomerIDs = append(sr.AffectedCustomerIDs, c.ID)
 			}
 		}
@@ -1000,6 +1113,9 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 		return result.ScenarioResults[i].ScenarioID < result.ScenarioResults[j].ScenarioID
 	})
 	for i := range result.ScenarioResults {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		sort.Strings(result.ScenarioResults[i].AffectedCustomerIDs)
 	}
 	result.ExecutionTimeMs = float64(time.Since(started).Microseconds()) / 1000
@@ -1012,6 +1128,9 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 // definition is replaced. This keeps candidate comparisons auditable and
 // prevents a rule-version probe from mutating the live evaluator.
 func (e *Engine) RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(ruleSetID) == "" {
 		return nil, fmt.Errorf("rule set id must not be empty")
 	}
@@ -1038,7 +1157,10 @@ func (e *Engine) RunBacktestWithRuleSet(ctx context.Context, customers []domain.
 	return candidate.RunBacktest(ctx, customers, txns, ids, description)
 }
 
-func (e *Engine) ValidateConfig(_ context.Context, typ, content string) (*engine.ConfigValidationResult, error) {
+func (e *Engine) ValidateConfig(ctx context.Context, typ, content string) (*engine.ConfigValidationResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := &engine.ConfigValidationResult{Valid: true}
 	addError := func(field string, err error) {
 		result.Valid = false
@@ -1053,6 +1175,8 @@ func (e *Engine) ValidateConfig(_ context.Context, typ, content string) (*engine
 		var cdd cddConfig
 		if err := yaml.Unmarshal([]byte(content), &cdd); err != nil {
 			addError("yaml", fmt.Errorf("parse error: %w", err))
+		} else if err := normalizeCDD(&cdd); err != nil {
+			addError("config", err)
 		} else if err := validateCDD(cdd); err != nil {
 			addError("config", err)
 		}
@@ -1104,4 +1228,3 @@ func validateScreeningList(list screeningList) error {
 	}
 	return nil
 }
-func (e *Engine) CheckHealth(_ context.Context) error { return nil }
