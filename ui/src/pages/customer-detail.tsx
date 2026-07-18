@@ -309,6 +309,36 @@ export function CustomerDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {scores && scores.length > 0 && (scores[0].factors?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("customerDetail.scoreFactors.title")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("customerDetail.scoreFactors.table.axis")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.name")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.score")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.description")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(scores[0].factors ?? []).map((factor) => (
+                  <TableRow key={`${factor.axis}-${factor.name}`}>
+                    <TableCell>{factor.axis}</TableCell>
+                    <TableCell>{factor.name}</TableCell>
+                    <TableCell>{factor.score.toFixed(1)}</TableCell>
+                    <TableCell>{factor.description}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

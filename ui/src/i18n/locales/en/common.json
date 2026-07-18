@@ -447,6 +447,15 @@
         "version": "Version",
         "evaluatedAt": "Evaluated at"
       }
+    },
+    "scoreFactors": {
+      "title": "Score factors",
+      "table": {
+        "axis": "Axis",
+        "name": "Name",
+        "score": "Score",
+        "description": "Description"
+      }
     }
   },
   "notFound": {

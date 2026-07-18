@@ -447,6 +447,15 @@
         "version": "バージョン",
         "evaluatedAt": "評価日時"
       }
+    },
+    "scoreFactors": {
+      "title": "スコア要因",
+      "table": {
+        "axis": "軸",
+        "name": "名称",
+        "score": "スコア",
+        "description": "説明"
+      }
     }
   },
   "notFound": {

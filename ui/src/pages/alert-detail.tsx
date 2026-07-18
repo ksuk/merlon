@@ -124,7 +124,9 @@ export function AlertDetailPage() {
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("alertDetail.info.scenario")}</dt>
-                <dd className="font-mono">{alert.scenario_id}</dd>
+                <dd>
+                  <Link to="/rules" className="font-mono text-primary underline-offset-4 hover:underline">{alert.scenario_id}</Link>
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("alertDetail.info.score")}</dt>
@@ -161,9 +163,9 @@ export function AlertDetailPage() {
                 <p className="mb-2 text-xs font-medium text-muted-foreground">{t("alertDetail.description.relatedTransactions")}</p>
                 <div className="flex flex-wrap gap-1">
                   {alert.transaction_ids.map((tid) => (
-                    <Badge key={tid} variant="secondary" className="font-mono text-xs">
-                      {tid}
-                    </Badge>
+                    <Link key={tid} to={`/transactions/${encodeURIComponent(tid)}`}>
+                      <Badge variant="secondary" className="font-mono text-xs hover:bg-accent">{tid}</Badge>
+                    </Link>
                   ))}
                 </div>
               </div>
