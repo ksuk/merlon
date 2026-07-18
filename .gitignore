@@ -33,6 +33,9 @@ docker-compose.override.yml
 # Local release-planning workspace (not part of the product; never publish)
 /.release-tasks/
 
+# Generated demo dataset (merlon-demogen output; regenerate with `make demogen`)
+deploy/seed/demo/*.json
+
 # IDE
 .idea/
 .vscode/

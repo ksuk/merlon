@@ -46,10 +46,14 @@ services:
       # native engine activates; see content/README.md for the schema.
       # NOTE: content/_sample/cdd_basic_weights.yaml uses the legacy `axes:`
       # layout and is rejected by the native engine ("CDD risk_factors must
-      # not be empty"); crypto_exchange.yaml uses the current `risk_factors:`
-      # schema and was confirmed to load (verified by running the API
-      # in-memory with this path set).
-      MERLON_CDD_WEIGHTS_PATH: /app/content/_sample/cdd_weights/crypto_exchange.yaml
+      # not be empty"). funds_transfer.yaml (current `risk_factors:` schema)
+      # is the preset the demo dataset (merlon-demogen) is scored against, so
+      # a live re-score in the UI reproduces the same value recorded at
+      # generation time; crypto_exchange.yaml was an earlier stand-in whose
+      # unresolved product_channel/transaction_pattern factors pinned every
+      # individual/JP customer to medium (score 2.647) regardless of
+      # attributes, which funds_transfer.yaml's factor design fixes.
+      MERLON_CDD_WEIGHTS_PATH: /app/content/_sample/cdd_weights/funds_transfer.yaml
       MERLON_TM_SCENARIOS_PATH: /app/content/_sample/tm_scenarios
       MERLON_COUNTRY_RISK_PATH: /app/content/_sample/country_risk_sample.yaml
       # Synthetic-only screening lists (see deploy/seed/demo/screening_lists/README.md).

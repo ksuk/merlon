@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui verify-go test test-go test-ui test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui verify-go test test-go test-ui test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -67,6 +67,9 @@ minimal-up: ## Start minimal environment (PostgreSQL + API only)
 
 minimal-down: ## Stop minimal environment
 	docker compose -f docker-compose.minimal.yml down
+
+demogen: ## Generate synthetic demo data (deploy/seed/demo/*.json; not committed)
+	@cd api && go run ./cmd/merlon-demogen -out ../deploy/seed/demo
 
 generate-openapi: ## Export the OpenAPI spec to docs/api/openapi.json
 	@cd api && go run ./cmd/openapi-export -o ../docs/api/openapi.json

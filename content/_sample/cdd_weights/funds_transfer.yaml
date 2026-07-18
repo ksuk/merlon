@@ -1,0 +1,99 @@
+# CDD Weight Preset: Funds Transfer Service Provider (資金移動業者向け)
+# Licensed under Apache-2.0 (separate from BSL 1.1)
+#
+# This is a sample starting point. Adjust weights and values
+# to match your risk assessment policy before production use.
+
+schema_version: "1.0"
+preset_id: funds_transfer
+name: 資金移動業者向けCDDウェイト
+
+risk_factors:
+  customer_type:
+    weight: 0.15
+    values:
+      individual: 1
+      corporate_domestic: 2
+      corporate_foreign: 3
+      npo: 2
+      trust: 3
+      partnership: 3
+
+  geography:
+    weight: 0.20
+    values:
+      JP: 1
+      PH: 2
+      VN: 2
+      NP: 2
+      ID: 2
+      BR: 2
+      CN: 2
+      US: 1
+      GB: 1
+      SG: 1
+      KR: 1
+      AU: 1
+      TH: 2
+      AE: 2
+      MM: 5
+
+  product_channel:
+    weight: 0.15
+    values:
+      domestic_wallet: 1
+      international_remittance: 2
+      corporate_trade_settlement: 3
+      agent_cash_remittance: 5
+      # Correspondent/pass-through trade settlement: a corporate customer
+      # whose funds are routed onward through a correspondent structure
+      # rather than settled directly. Elevated per FATF guidance on
+      # correspondent-banking and pass-through payment risk.
+      correspondent_pass_through: 5
+
+  # Occupation risk band (犯収法上のKYC属性: 職業). Bands, not raw occupation
+  # strings, are the risk_factors key so this file stays a stable contract
+  # even as the occupation free-text list grows; the generator/onboarding
+  # process is responsible for mapping a declared occupation to a band.
+  occupation_band:
+    weight: 0.15
+    applies_to: [individual]
+    values:
+      stable: 1
+      retired: 2
+      self_employed: 3
+      cash_intensive: 4
+      unemployed: 5
+
+  # Time since account opening. A brand-new account with no track record is
+  # harder to corroborate against declared activity (a standard KYC/EDD
+  # signal), independent of any transaction monitoring outcome.
+  account_age_band:
+    weight: 0.10
+    values:
+      established: 1
+      maturing: 2
+      recent: 3
+      new: 5
+
+  # Activity the customer declared at onboarding / most recent periodic
+  # review (not a transaction-monitoring detection — no TM vocabulary here).
+  # A customer who declares frequent, high-value, or heavily cross-border
+  # remittance activity warrants more CDD scrutiny up front, before any
+  # transaction is ever evaluated.
+  expected_activity:
+    weight: 0.25
+    values:
+      normal: 1
+      frequent_remittance: 3
+      high_value: 4
+      cross_border_heavy: 5
+
+tier_thresholds:
+  LOW:
+    max: 2.0
+  MEDIUM:
+    min: 2.0
+    max: 3.5
+  HIGH:
+    min: 3.5
