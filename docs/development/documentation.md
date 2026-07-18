@@ -20,18 +20,17 @@ source.
 - `docs/standards/**` (internal audit and review standards) is likewise
   excluded from the built site and written in Japanese; it is not translated
   and the documentation checks skip it.
-- `docs/api/**` is generated reference output (OpenAPI, gRPC proto, and JSON
+- `docs/api/**` is generated reference output (OpenAPI and JSON
   Schema reference pages) and is gitignored. Never edit it directly — it is
-  overwritten by `make generate-openapi`, `make generate-proto-docs`, and the
-  website's schema-doc generator. See [Protocol Buffers
-  Workflow](./proto-workflow.md) for the proto side of this pipeline.
+  overwritten by `make generate-openapi` and the website's schema-doc
+  generator.
 
 ## ja translations
 
 Japanese translations live at
 `website/i18n/ja/docusaurus-plugin-content-docs/current/`, mirroring the
 relative path of each English doc under `docs/`. The reference generators
-(OpenAPI, proto, schema) emit both the `en` and `ja` reference pages directly
+(OpenAPI, schema) emit both the `en` and `ja` reference pages directly
 from their source comments/schemas, so `docs/api/**` and its ja counterpart
 are kept in sync automatically and are out of scope for translation checks.
 
@@ -63,8 +62,8 @@ prints a pass/fail table; it exits non-zero if any check fails. Run it with
 
 ### 1. `check-en-language`
 
-Fails if Japanese characters appear anywhere in a hand-written English doc,
-or in `proto/merlon/v1/*.proto`. Allowed exceptions (e.g. Japanese statute
+Fails if Japanese characters appear anywhere in a hand-written English doc.
+Allowed exceptions (e.g. Japanese statute
 names quoted intentionally in prose) are listed in
 `website/docs-lint/jp-allowlist.json`, an array of exact-substring entries:
 
@@ -83,7 +82,7 @@ exist and, if the doc has an H1, must equal it exactly. Titles, frontmatter
 `sidebar_label`s, and category `label`s must be Title Case (every word
 capitalized except minor words — a, an, the, and, or, nor, but, for, of, in,
 on, to, at, by, with, vs, via — unless first or last). Proper nouns listed in
-`website/docs-lint/proper-nouns.json` (gRPC, OpenAPI, API, CDD, JWT, ...) must
+`website/docs-lint/proper-nouns.json` (OpenAPI, API, CDD, JWT, ...) must
 appear exactly as spelled there.
 
 ### 3. `check-i18n-parity`

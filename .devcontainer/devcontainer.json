@@ -12,9 +12,6 @@
     },
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22"
-    },
-    "ghcr.io/devcontainers/features/rust:1": {
-      "version": "1.87"
     }
   },
   "containerEnv": {
@@ -24,23 +21,18 @@
     "vscode": {
       "extensions": [
         "golang.go",
-        "rust-lang.rust-analyzer",
         "esbenp.prettier-vscode",
         "dbaeumer.vscode-eslint",
         "bradlc.vscode-tailwindcss",
-        "ms-azuretools.vscode-docker",
-        "bufbuild.vscode-buf"
+        "ms-azuretools.vscode-docker"
       ],
       "settings": {
         "go.toolsManagement.checkForUpdates": "local",
-        "editor.formatOnSave": true,
-        "[rust]": {
-          "editor.defaultFormatter": "rust-lang.rust-analyzer"
-        }
+        "editor.formatOnSave": true
       }
     }
   },
-  "forwardPorts": [3000, 5432, 50051, 8080, 9090],
+  "forwardPorts": [3000, 5432, 8080],
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "remoteUser": "vscode"
 }

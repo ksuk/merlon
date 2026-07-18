@@ -57,7 +57,7 @@ const personas: Persona[] = [
     titleDefault: 'Architecture',
     descriptionId: 'homepage.cards.architecture.description',
     descriptionDefault:
-      'Understand how the Go API, Rust engine, and UI fit together.',
+      'Understand how the Go API, native engine, and UI fit together.',
     to: '/docs/architecture',
   },
 ];

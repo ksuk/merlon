@@ -14,12 +14,12 @@ const (
 )
 
 type APIKey struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	KeyHash   string    `json:"-"`
-	Role      Role      `json:"role"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	KeyHash   string     `json:"-"`
+	Role      Role       `json:"role"`
+	Active    bool       `json:"active"`
+	CreatedAt time.Time  `json:"created_at"`
 	LastUsed  *time.Time `json:"last_used,omitempty"`
 }
 

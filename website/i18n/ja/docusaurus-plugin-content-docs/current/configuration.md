@@ -12,12 +12,9 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 
 | 変数 | デフォルト | 本番運用ガイダンス |
 |---|---|---|
-| `MERLON_ENV` | `development` | `production` に設定する。本番環境の Engine 接続には TLS が必須。 |
+| `MERLON_ENV` | `development` | `production` に設定する。 |
 | `MERLON_HTTP_ADDR` | `:8080` | TLS 終端を行うリバースプロキシの背後でバインドする。 |
 | `MERLON_DATABASE_URL` | 未設定 | TLS（`sslmode=require` 以上）と最小権限のアプリケーションロールを使用する。 |
-| `MERLON_ENGINE_ADDR` | 未設定 | gRPC エンドポイントは内部ネットワークに留める。 |
-| `MERLON_ENGINE_TLS_CERT` | 未設定 | `MERLON_ENV=production` かつ `MERLON_ENGINE_ADDR` 設定時に必須。Engine を検証するための CA 証明書。 |
-| `MERLON_ENGINE_TLS_SERVER_NAME` | 未設定 | アドレスのホスト名と異なる場合、期待する Engine の TLS サーバー名を設定する。 |
 | `MERLON_ENCRYPTION_KEY_RING` | 未設定 | 本番環境の PII 保護に必須。`merlon-keyrotate` が受け付ける文書化されたキーリング形式を使用する。参照されているすべての鍵を失うと、過去の暗号化された値は復元不能になる。鍵は保護された KMS またはシークレットマネージャーでバックアップする。 |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | 未設定 | ローカルユーザー認証には RS256 鍵ペアを使用する。 |
 | `MERLON_JWT_SECRET` | 未設定 | 開発用フォールバックのみ。ローカルユーザー認証を使用する場合、本番環境では設定しないこと。 |
@@ -51,7 +48,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_TM_BATCH_TIMEZONE` | ローカルタイムゾーン | 本番環境では IANA タイムゾーンを明示的に設定する。 |
 | `MERLON_LOG_LEVEL` | `info` | `info` 以上を維持する。機密性の高いワークロードに debug ログを使用しないこと。 |
 
-Engine は、運用担当者が指定したパスから CDD ウェイトとスクリーニングコンテンツも読み込む。これらのファイルはデータベースの監査証跡の対象外である。ソース管理、変更承認、アクセス制御、バックアップ、デプロイメント手順によって管理すること。ADR-0012 を参照。
+ネイティブ Go エンジンは、運用担当者が指定したパスから CDD ウェイトとスクリーニングコンテンツも読み込む。これらのファイルはデータベースの監査証跡の対象外である。ソース管理、変更承認、アクセス制御、バックアップ、デプロイメント手順によって管理すること。ADR-0012 を参照。
 
 ## 暗号鍵のローテーション
 

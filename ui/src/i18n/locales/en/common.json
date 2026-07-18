@@ -538,8 +538,34 @@
       "targetCustomers": "Target customers",
       "selectAll": "Select all",
       "deselectAll": "Deselect all",
+      "from": "From (UTC)",
+      "to": "To (UTC, exclusive)",
+      "candidateRuleSet": "Candidate rule set",
+      "candidatePlaceholder": "Active TM rule name",
       "running": "Running...",
       "submit": "Run backtest"
+    },
+    "job": {
+      "summary": "Job {{id}}: {{status}} ({{progress}}%)",
+      "status": {
+        "queued": "queued",
+        "running": "running",
+        "completed": "completed",
+        "failed": "failed",
+        "cancelled": "cancelled"
+      }
+    },
+    "polling": {
+      "error": "Failed to retrieve job status",
+      "startError": "Failed to start the backtest job",
+      "timeout": "The job did not complete within 10 minutes",
+      "failed": "The backtest job failed",
+      "cancelled": "The backtest job was cancelled",
+      "missingResult": "The completed job did not return a result",
+      "candidateRequired": "A candidate rule set is required",
+      "cancelError": "Failed to cancel the backtest job",
+      "cancel": "Cancel job",
+      "resume": "Resume polling"
     },
     "result": {
       "title": "Result",
@@ -671,7 +697,7 @@
     "components": {
       "title": "Components",
       "api": "Go API",
-      "engine": "Rust Engine",
+      "engine": "Go Engine",
       "database": "PostgreSQL"
     },
     "features": {

@@ -11,53 +11,18 @@ on:
 
 jobs:
   go-test:
-    name: Go Test & Build
+    name: Go Verification
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: api
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.12'
-      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
-        with:
-          setup_only: true
-      - name: Generate protobuf code
-        working-directory: .
-        run: make proto
-      - run: go test ./... -coverprofile=coverage.out -covermode=atomic
-      - run: go build ./cmd/merlon-api
+      - run: make verify-go GO_TEST_FLAGS='-coverprofile=coverage.out -covermode=atomic'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: go-coverage
           path: api/coverage.out
-
-  rust-test:
-    name: Rust Test & Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: engine
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-        with:
-          toolchain: 1.87.0
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          workspaces: engine
-      - run: cargo test
-      - run: cargo install cargo-llvm-cov --locked
-      - run: cargo llvm-cov --lcov --output-path coverage.lcov
-      - run: cargo build
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rust-coverage
-          path: engine/coverage.lcov
 
   ui-build:
     name: UI Build & Lint
@@ -69,7 +34,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
+          node-version: '22.23.1'
           cache: 'npm'
           cache-dependency-path: ui/package-lock.json
       - run: npm ci
@@ -81,27 +46,61 @@ jobs:
           name: ui-coverage
           path: ui/coverage
 
-  proto-lint:
-    name: Proto Lint
+  postgres-integration:
+    name: PostgreSQL Migration & Integration
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
+    services:
+      postgres:
+        image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: merlon
+          POSTGRES_USER: merlon
+          POSTGRES_PASSWORD: merlon-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U merlon -d merlon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MERLON_DATABASE_URL: postgres://merlon:merlon-ci@localhost:5432/merlon?sslmode=disable
+      MERLON_MIGRATION_DATABASE_URL: postgres://merlon:merlon-ci@localhost:5432/merlon?sslmode=disable
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          fetch-depth: 0
-      - name: Materialize main ref for Buf comparison
-        run: |
-          # On a push to main the checkout already owns the main worktree;
-          # recreating that branch would fail. PR checkouts are detached and
-          # still need a local main ref for the comparison.
-          if [ "$(git symbolic-ref --short -q HEAD)" != "main" ]; then
-            git branch --force main origin/main
-          fi
-      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1
+          go-version: '1.25.12'
+      - run: make test-integration
+
+  release-dry-run:
+    name: Release Image Dry Run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build release image without publishing
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          setup_only: true
+          context: .
+          file: api/Dockerfile
           push: false
-      - run: buf lint proto
-      - run: buf breaking proto --against '.git#branch=main,subdir=proto'
+          build-args: VERSION=ci-${{ github.sha }}
+
+  required:
+    name: Required
+    if: ${{ always() }}
+    needs: [go-test, ui-build, postgres-integration, release-dry-run]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job
+        env:
+          GO_RESULT: ${{ needs.go-test.result }}
+          UI_RESULT: ${{ needs.ui-build.result }}
+          POSTGRES_RESULT: ${{ needs.postgres-integration.result }}
+          RELEASE_RESULT: ${{ needs.release-dry-run.result }}
+        run: >-
+          test "$GO_RESULT" = success
+          -a "$UI_RESULT" = success
+          -a "$POSTGRES_RESULT" = success
+          -a "$RELEASE_RESULT" = success

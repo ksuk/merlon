@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     environment:
       POSTGRES_DB: merlon
       POSTGRES_USER: merlon
@@ -32,8 +32,6 @@ services:
       MERLON_UI_DIR: /app/ui
       MERLON_SEED: ${MERLON_SEED:-false}
       MERLON_LOG_LEVEL: info
-    # engine is not included in the minimal profile.
-    # Use docker-compose.yml for the full topology.
 
 volumes:
   pgdata:

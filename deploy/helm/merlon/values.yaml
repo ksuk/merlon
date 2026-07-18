@@ -28,24 +28,6 @@ api:
     MERLON_LOG_LEVEL: info
     MERLON_AUTH_ENABLED: "true"
 
-# -- Rust scoring/evaluation engine.
-engine:
-  image:
-    repository: merlon/engine
-    tag: "0.1.0-dev"
-    pullPolicy: IfNotPresent
-  replicaCount: 2
-  service:
-    type: ClusterIP
-    port: 50051
-  resources:
-    requests:
-      cpu: 250m
-      memory: 256Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
-
 # -- React UI.
 ui:
   image:

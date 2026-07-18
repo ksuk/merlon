@@ -13,7 +13,7 @@ A quick-start guide to running Merlon with the least effort.
 - [Docker Compose](https://docs.docker.com/compose/) v2+
 - `git`
 
-You do not need Go, Rust, or Node.js installed locally — the minimal setup
+You do not need Go or Node.js installed locally — the minimal setup
 runs entirely in containers.
 
 ## Steps
@@ -26,8 +26,7 @@ cd merlon
 # 2. Prepare the environment file
 cp .env.example .env
 
-# 3. Start the minimal topology (API + PostgreSQL; the Engine is not part of
-#    this profile — use docker-compose.yml for the full topology)
+# 3. Start the minimal topology (API + PostgreSQL)
 docker compose -f docker-compose.minimal.yml up --build
 
 # 4. Health check (in another terminal)

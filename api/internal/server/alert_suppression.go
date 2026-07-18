@@ -12,7 +12,7 @@ import (
 // applyWhitelistSuppression marks alert as suppressed if customerID holds an
 // active whitelist entry covering alert.ScenarioID (WL-004, whitelist.md
 // §3.1). It is called from every alert-generation path (currently
-// handleBatchMonitor) immediately before the alert is persisted; the Rust
+// handleBatchMonitor) immediately before the alert is persisted; the
 // engine itself keeps evaluating every customer/scenario unchanged
 // (whitelist.md §3.1 evaluation flow), so suppression is applied here in the
 // Go API layer only.

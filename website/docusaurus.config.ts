@@ -141,10 +141,6 @@ const config: Config = {
               to: '/docs/api/openapi',
             },
             {
-              label: 'gRPC',
-              to: '/docs/api/proto',
-            },
-            {
               label: 'Rule Schemas',
               to: '/docs/api/schema',
             },

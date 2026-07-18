@@ -11,6 +11,17 @@ type validateConfigRequest struct {
 	YAMLContent string `json:"yaml_content"`
 }
 
+func (s *Server) handleConfigDigests(w http.ResponseWriter, _ *http.Request) {
+	digests := make(map[string]string, len(s.configDigests))
+	for name, digest := range s.configDigests {
+		digests[name] = digest
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"config_digests": digests,
+		"base_currency":  s.tmBaseCurrency,
+	})
+}
+
 func (s *Server) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 	if s.configEngine == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "config validation not configured")

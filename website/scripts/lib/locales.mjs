@@ -1,5 +1,5 @@
 // Shared bilingual string dictionary for the docs reference generators
-// (generate-schema-docs.mjs, generate-proto-docs.mjs, generate-openapi-page.mjs).
+// (generate-schema-docs.mjs, generate-openapi-page.mjs).
 //
 // Only structural/boilerplate text is localized here (headings, table
 // headers, generated-page intro sentences, category labels). Content that
@@ -35,7 +35,6 @@ export const LOCALES = {
     count: "Count",
     schema: "Schema",
     title: "Title",
-    protoFile: "Proto file",
     package: "Package",
     label: "Label",
     request: "Request",
@@ -45,7 +44,6 @@ export const LOCALES = {
 
     // Category labels
     categoryApiReference: "API Reference",
-    categoryGrpcProtocolReference: "gRPC Protocol Reference",
     categoryRuleSchemas: "Rule Schemas",
     categoryRestApiReference: "REST API Reference",
 
@@ -55,12 +53,6 @@ export const LOCALES = {
       "scenarios are all expressed as JSON documents validated against the schemas " +
       "below (see `content/schema/` in the repository). These pages are generated " +
       "automatically from those JSON Schema files; do not edit them directly.",
-    protoIndexIntro:
-      "Merlon's Go API and Rust Engine communicate over the gRPC contract defined in " +
-      "`proto/merlon/v1/` (managed by [buf](https://buf.build)). These pages are " +
-      "generated automatically from those `.proto` files; do not edit them directly.",
-    protoScalarIntro: "How each protobuf scalar type maps onto common language types.",
-    protoSeeAlso: (link) => `See also the [scalar value type reference](${link}).`,
     openapiIntro:
       "This page describes the Go API's REST surface, exported directly from its " +
       "route definitions as an [OpenAPI 3.0](https://spec.openapis.org/oas/v3.0.3) " +
@@ -73,7 +65,6 @@ export const LOCALES = {
       "explore or exercise the API interactively.",
 
     ruleDefinitionSchemasTitle: "Rule Definition Schemas",
-    grpcProtocolReferenceTitle: "gRPC Protocol Reference",
     restApiReferenceTitle: "REST API Reference",
     ruleSchemasIndexTitle: "Rule Schemas",
 
@@ -114,7 +105,6 @@ export const LOCALES = {
     count: "件数",
     schema: "スキーマ",
     title: "タイトル",
-    protoFile: "Protoファイル",
     package: "パッケージ",
     label: "ラベル",
     request: "リクエスト",
@@ -123,7 +113,6 @@ export const LOCALES = {
     number: "番号",
 
     categoryApiReference: "APIリファレンス",
-    categoryGrpcProtocolReference: "gRPCプロトコルリファレンス",
     categoryRuleSchemas: "ルールスキーマ",
     categoryRestApiReference: "REST APIリファレンス",
 
@@ -132,12 +121,6 @@ export const LOCALES = {
       "モニタリングのシナリオは、いずれもリポジトリの `content/schema/` にある " +
       "JSON Schema で検証される JSON ドキュメントとして表現されています。このページは" +
       "それらの JSON Schema ファイルから自動生成されています。直接編集しないでください。",
-    protoIndexIntro:
-      "Merlon の Go API と Rust Engine は、`proto/merlon/v1/`（[buf](https://buf.build) " +
-      "で管理）に定義された gRPC コントラクトを介して通信します。このページはそれらの " +
-      "`.proto` ファイルから自動生成されています。直接編集しないでください。",
-    protoScalarIntro: "各 protobuf スカラー型が主要な言語の型にどう対応するかを示します。",
-    protoSeeAlso: (link) => `[スカラー値型リファレンス](${link})も参照してください。`,
     openapiIntro:
       "このページは、Go API の REST サーフェスをそのルート定義から直接エクスポートした " +
       "[OpenAPI 3.0](https://spec.openapis.org/oas/v3.0.3) ドキュメントです。" +
@@ -149,7 +132,6 @@ export const LOCALES = {
       "探索・実行できます。",
 
     ruleDefinitionSchemasTitle: "ルール定義スキーマ",
-    grpcProtocolReferenceTitle: "gRPCプロトコルリファレンス",
     restApiReferenceTitle: "REST APIリファレンス",
     ruleSchemasIndexTitle: "ルールスキーマ",
 

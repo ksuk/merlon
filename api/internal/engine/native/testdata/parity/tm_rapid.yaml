@@ -1,0 +1,13 @@
+schema_version: "2.0"
+scenario_id: tm_rapid_movement
+name: Rapid movement parity
+description: parity fixture
+type: aggregation
+conditions:
+  additional:
+    window_hours: 48
+    inbound_threshold: 5000
+    outbound_threshold: 4000
+    outbound_ratio_min: 0.8
+evaluation_mode: both
+severity: HIGH

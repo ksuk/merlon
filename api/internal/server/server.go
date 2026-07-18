@@ -16,6 +16,11 @@ import (
 
 const maxRequestBodyBytes = 1 << 20
 
+const (
+	defaultRealtimeMonitorTimeout   = 30 * time.Second
+	pendingReviewPersistenceTimeout = 5 * time.Second
+)
+
 // DBPinger reports whether the PostgreSQL connection pool is reachable. It
 // is satisfied directly by *pgxpool.Pool, kept as a narrow interface here so
 // /healthz/ready (Task 3, the operational design §4.4) can be tested without a real
@@ -34,6 +39,7 @@ type Server struct {
 	monitoring               engine.MonitoringEngine
 	screening                engine.ScreeningEngine
 	backtest                 engine.BacktestEngine
+	backtestJobs             domain.BacktestJobRepository
 	audit                    domain.AuditRepository
 	cases                    domain.CaseRepository
 	apikeys                  domain.APIKeyRepository
@@ -49,9 +55,15 @@ type Server struct {
 	rules                    domain.RuleRepository
 	whitelist                domain.WhitelistRepository
 	whitelistMaxValidDaysCfg int
-	screeningResults         domain.ScreeningResultRepository
-	retention                domain.RetentionRepository
-	accounts                 domain.AccountRepository
+	// tmBaseCurrency is the interim PH9 invariant: aggregation only combines
+	// normalized amounts in one configured currency. Full FX/asset semantics
+	// remain a PH10 gate.
+	tmBaseCurrency         string
+	realtimeMonitorTimeout time.Duration
+	screeningResults       domain.ScreeningResultRepository
+	retention              domain.RetentionRepository
+	accounts               domain.AccountRepository
+	configDigests          map[string]string
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
 	// dashboard's list-freshness display (the screening workflow; Task 4). Nil until
@@ -80,6 +92,7 @@ type Deps struct {
 	Monitoring     engine.MonitoringEngine
 	Screening      engine.ScreeningEngine
 	Backtest       engine.BacktestEngine
+	BacktestJobs   domain.BacktestJobRepository
 	Audit          domain.AuditRepository
 	Cases          domain.CaseRepository
 	APIKeys        domain.APIKeyRepository
@@ -96,10 +109,13 @@ type Deps struct {
 	Whitelist      domain.WhitelistRepository
 	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
 	// when positive; zero/negative falls back to the default.
-	WhitelistMaxValidDays int
-	ScreeningResults      domain.ScreeningResultRepository
-	Retention             domain.RetentionRepository
-	Accounts              domain.AccountRepository
+	WhitelistMaxValidDays  int
+	TMBaseCurrency         string
+	RealtimeMonitorTimeout time.Duration
+	ScreeningResults       domain.ScreeningResultRepository
+	Retention              domain.RetentionRepository
+	Accounts               domain.AccountRepository
+	ConfigDigests          map[string]string
 
 	ScreeningListStore      screening.ListStore
 	ScreeningFailureTracker screening.FailureTracker
@@ -131,6 +147,7 @@ func New(addr string, deps Deps) *Server {
 		monitoring:               deps.Monitoring,
 		screening:                deps.Screening,
 		backtest:                 deps.Backtest,
+		backtestJobs:             deps.BacktestJobs,
 		audit:                    deps.Audit,
 		cases:                    deps.Cases,
 		apikeys:                  deps.APIKeys,
@@ -145,9 +162,12 @@ func New(addr string, deps Deps) *Server {
 		rules:                    deps.Rules,
 		whitelist:                deps.Whitelist,
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
+		tmBaseCurrency:           deps.TMBaseCurrency,
+		realtimeMonitorTimeout:   deps.RealtimeMonitorTimeout,
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
+		configDigests:            deps.ConfigDigests,
 
 		screeningListStore:      deps.ScreeningListStore,
 		screeningFailureTracker: deps.ScreeningFailureTracker,
@@ -160,6 +180,9 @@ func New(addr string, deps Deps) *Server {
 		notifier:     deps.Notifier,
 		routingRules: deps.RoutingRules,
 		publicURL:    deps.PublicURL,
+	}
+	if s.realtimeMonitorTimeout <= 0 {
+		s.realtimeMonitorTimeout = defaultRealtimeMonitorTimeout
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -210,6 +233,11 @@ func (s *Server) routes() {
 
 	// Backtest
 	s.mux.HandleFunc("POST /api/v1/backtest", s.handleRunBacktest)
+	s.mux.HandleFunc("POST /api/v1/backtests", s.handleCreateBacktestJob)
+	s.mux.HandleFunc("GET /api/v1/backtests", s.handleListBacktestJobs)
+	s.mux.HandleFunc("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
+	s.mux.HandleFunc("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
+	s.mux.HandleFunc("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
 
 	// Reports
 	s.mux.HandleFunc("POST /api/v1/reports/str", s.handleCreateSTR)
@@ -300,6 +328,7 @@ func (s *Server) routes() {
 
 	// System info
 	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)
+	s.mux.HandleFunc("GET /api/v1/system/config-digests", s.handleConfigDigests)
 
 	// OpenAPI
 	s.mux.HandleFunc("GET /api/v1/openapi.json", s.handleOpenAPI)

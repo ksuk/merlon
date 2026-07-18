@@ -1,5 +1,5 @@
-// Package screening implements the Go-side orchestration around the Rust
-// screening engine: external sanctions/PEP list ingestion, CDD-tier-driven
+// Package screening implements screening orchestration around the native
+// evaluation engine: external sanctions/PEP list ingestion, CDD-tier-driven
 // rescreening scheduling, and list freshness monitoring (the screening workflow).
 //
 // All external-source-specific parsing (OFAC SDN XML, EU/MOF CSV, UN XML,
@@ -23,8 +23,8 @@ import (
 )
 
 // RawListEntry is a single sanctions/PEP list entry as parsed from an
-// upstream source, before conversion to the Rust engine's
-// engine.ScreeningListConfig entry shape (config.rs ListEntry).
+// upstream source, before conversion to the native engine's screening-list
+// entry shape.
 type RawListEntry struct {
 	EntryID string
 	Names   []string

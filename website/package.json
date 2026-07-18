@@ -13,6 +13,7 @@
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
     "typecheck": "tsc",
+    "license:check": "license-checker --production --excludePrivatePackages --onlyAllow 'MIT;MIT-0;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;MPL-2.0;MPL-1.1;OFL-1.1;Python-2.0;CC-BY-4.0;BlueOak-1.0.0;WTFPL'",
     "gen:schema": "node scripts/generate-schema-docs.mjs",
     "gen:openapi-page": "node scripts/generate-openapi-page.mjs",
     "sync:i18n": "node scripts/sync-i18n-fallback.mjs",
@@ -36,6 +37,7 @@
     "@docusaurus/tsconfig": "3.10.2",
     "@docusaurus/types": "3.10.2",
     "@types/react": "^19.0.0",
+    "license-checker": "25.0.1",
     "typescript": "~6.0.2",
     "wrangler": "4.110.0"
   },

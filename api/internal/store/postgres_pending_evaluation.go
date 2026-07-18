@@ -30,6 +30,14 @@ func scanPendingEvaluation(row pgx.Row) (*domain.PendingEvaluation, error) {
 	if err != nil {
 		return nil, err
 	}
+	pe.ID = compactUUID(pe.ID)
+	for i := range pe.TransactionIDs {
+		pe.TransactionIDs[i] = compactUUID(pe.TransactionIDs[i])
+	}
+	if pe.BatchRunID != nil {
+		compacted := compactUUID(*pe.BatchRunID)
+		pe.BatchRunID = &compacted
+	}
 	return &pe, nil
 }
 
@@ -37,11 +45,15 @@ func scanPendingEvaluation(row pgx.Row) (*domain.PendingEvaluation, error) {
 // of the caller (server handler) supplying pe.ID via generateID() up front
 // rather than relying on the column's gen_random_uuid() default.
 func (r *PgPendingEvaluationRepo) Create(ctx context.Context, pe *domain.PendingEvaluation) error {
+	transactionIDs := pe.TransactionIDs
+	if transactionIDs == nil {
+		transactionIDs = []string{}
+	}
 	return r.pool.QueryRow(ctx,
 		`INSERT INTO pending_evaluations (id, customer_id, transaction_ids, status, reason, batch_run_id)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING created_at, updated_at`,
-		pe.ID, pe.CustomerID, pe.TransactionIDs, string(pe.Status), pe.Reason, pe.BatchRunID,
+		pe.ID, pe.CustomerID, transactionIDs, string(pe.Status), pe.Reason, pe.BatchRunID,
 	).Scan(&pe.CreatedAt, &pe.UpdatedAt)
 }
 
@@ -69,6 +81,51 @@ func (r *PgPendingEvaluationRepo) ListByStatus(ctx context.Context, status domai
 	}
 	defer rows.Close()
 
+	var out []domain.PendingEvaluation
+	for rows.Next() {
+		pe, err := scanPendingEvaluation(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *pe)
+	}
+	return out, rows.Err()
+}
+
+// ListPendingByCustomer is used to make realtime/batch fail-alert enqueueing
+// idempotent for one customer while an engine outage is active.
+func (r *PgPendingEvaluationRepo) ListPendingByCustomer(ctx context.Context, customerID string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations WHERE customer_id = $1 AND status = $2 ORDER BY created_at ASC`,
+		customerID, string(status),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.PendingEvaluation
+	for rows.Next() {
+		pe, err := scanPendingEvaluation(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *pe)
+	}
+	return out, rows.Err()
+}
+
+func (r *PgPendingEvaluationRepo) ListPendingByCustomers(ctx context.Context, customerIDs []string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	if len(customerIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations WHERE customer_id = ANY($1::text[]::uuid[]) AND status = $2 ORDER BY created_at ASC`,
+		customerIDs, string(status),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	var out []domain.PendingEvaluation
 	for rows.Next() {
 		pe, err := scanPendingEvaluation(rows)

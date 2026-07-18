@@ -83,6 +83,28 @@ func TestMemoryPendingEvaluationRepo_ListByStatus(t *testing.T) {
 	}
 }
 
+func TestMemoryPendingEvaluationRepo_ListPendingByCustomers(t *testing.T) {
+	repo := NewMemoryPendingEvaluationRepo()
+	ctx := context.Background()
+	for _, pe := range []*domain.PendingEvaluation{
+		{ID: "pe1", CustomerID: "c1", Status: domain.PendingEvaluationStatusPendingReview, Reason: "r1"},
+		{ID: "pe2", CustomerID: "c2", Status: domain.PendingEvaluationStatusPendingReview, Reason: "r2"},
+		{ID: "pe3", CustomerID: "c3", Status: domain.PendingEvaluationStatusPendingReview, Reason: "r3"},
+		{ID: "pe4", CustomerID: "c1", Status: domain.PendingEvaluationStatusResolved, Reason: "r4"},
+	} {
+		if err := repo.Create(ctx, pe); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := repo.ListPendingByCustomers(ctx, []string{"c1", "c2"}, domain.PendingEvaluationStatusPendingReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("records = %+v, want pending records for c1 and c2 only", got)
+	}
+}
+
 func TestMemoryPendingEvaluationRepo_UpdateStatus(t *testing.T) {
 	repo := NewMemoryPendingEvaluationRepo()
 	ctx := context.Background()

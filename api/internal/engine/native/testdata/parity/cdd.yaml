@@ -1,0 +1,21 @@
+schema_version: "1.0"
+preset_id: parity-cdd
+name: PH9 parity CDD
+risk_factors:
+  customer_type:
+    weight: 0.5
+    values:
+      individual: 1
+      corporate_domestic: 2
+      corporate_foreign: 4
+  geography:
+    weight: 0.5
+    source: country_risk_table
+tier_thresholds:
+  LOW:
+    max: 2
+  MEDIUM:
+    min: 2
+    max: 4
+  HIGH:
+    min: 4

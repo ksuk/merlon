@@ -1,0 +1,11 @@
+schema_version: "2.0"
+scenario_id: tm_high_risk_country_transfer
+name: High risk country parity
+description: parity fixture
+type: aggregation
+conditions:
+  additional:
+    threshold_amount: 5000
+    high_risk_countries: [KP]
+evaluation_mode: both
+severity: HIGH

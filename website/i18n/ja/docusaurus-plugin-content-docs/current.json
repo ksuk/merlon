@@ -7,10 +7,6 @@
     "message": "API リファレンス",
     "description": "The label for category 'API Reference' in sidebar 'docsSidebar'"
   },
-  "sidebar.docsSidebar.category.gRPC Protocol Reference": {
-    "message": "gRPC プロトコルリファレンス",
-    "description": "The label for category 'gRPC Protocol Reference' in sidebar 'docsSidebar'"
-  },
   "sidebar.docsSidebar.category.Rule Schemas": {
     "message": "ルールスキーマ",
     "description": "The label for category 'Rule Schemas' in sidebar 'docsSidebar'"

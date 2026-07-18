@@ -35,7 +35,6 @@ func TestHandleMetricsReturnsPrometheusFormat(t *testing.T) {
 		"merlon_tx_missing_fiat_equivalent_total",
 		"merlon_screening_list_stale_days",
 		"merlon_api_request_duration_seconds",
-		"merlon_grpc_request_duration_seconds",
 		"merlon_db_pool_active_connections",
 		"merlon_webhook_dlq_depth",
 		"merlon_batch_evaluation_duration_seconds",

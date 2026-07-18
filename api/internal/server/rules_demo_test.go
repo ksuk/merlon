@@ -22,7 +22,7 @@ import (
 // content/_sample/country_risk_sample.yaml, activate it, create a dummy
 // customer, and score them. The real acceptance criterion ("docker compose
 // up → sample import → scoring, within 5 minutes") requires the full stack
-// (Postgres + Rust engine over gRPC) and a manual `docker compose up`, which
+// (Postgres + native evaluation engine) and a manual `docker compose up`, which
 // this sandboxed environment cannot exercise — see the manual demo steps
 // documented alongside the acceptance criteria in
 // docs/fable_check/tasks/ws02-rule-management.md. This test only asserts

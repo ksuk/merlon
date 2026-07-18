@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 )
@@ -34,6 +35,57 @@ type MonitoringEngine interface {
 	) ([]domain.Alert, error)
 }
 
+// MonitoringRequest is the PH9 canonical evaluation contract. The legacy
+// methods above remain source-compatible adapters for existing callers; new
+// callers should provide the customer type, explicit mode, evaluation
+// timestamp, and bounded event window together so history cannot be guessed
+// from an arbitrary row limit.
+type MonitoringRequest struct {
+	CustomerID    string
+	CustomerType  domain.CustomerType
+	RiskTier      domain.RiskTier
+	Transactions  []domain.Transaction
+	ScenarioIDs   []string
+	Mode          EvaluationMode
+	EvaluatedAt   time.Time
+	WindowFrom    *time.Time
+	WindowTo      *time.Time
+	ConfigDigests map[string]string
+}
+
+type EvaluationMode string
+
+const (
+	EvaluationModeRealtime EvaluationMode = "realtime"
+	EvaluationModeBatch    EvaluationMode = "batch"
+	EvaluationModeBoth     EvaluationMode = "both"
+)
+
+type MonitoringEngineV2 interface {
+	Evaluate(ctx context.Context, req MonitoringRequest) ([]domain.Alert, error)
+}
+
+// RealtimeHistoryWindowProvider lets an engine declare the largest event-time
+// window needed by its realtime scenarios. Servers can then avoid loading a
+// customer's entire history for every newly accepted transaction. Engines
+// without this capability retain the legacy unbounded-history behavior.
+type RealtimeHistoryWindowProvider interface {
+	RealtimeHistoryWindow() (window time.Duration, bounded bool)
+}
+
+// EvaluateCompat uses the canonical V2 request when supported and otherwise
+// adapts it to the legacy realtime/batch methods. Keeping this fallback here
+// prevents serving and recovery call sites from drifting apart.
+func EvaluateCompat(ctx context.Context, monitoring MonitoringEngine, req MonitoringRequest) ([]domain.Alert, error) {
+	if v2, ok := monitoring.(MonitoringEngineV2); ok {
+		return v2.Evaluate(ctx, req)
+	}
+	if req.Mode == EvaluationModeBatch {
+		return monitoring.EvaluateTransactionsBatch(ctx, req.CustomerID, req.RiskTier, req.Transactions, req.ScenarioIDs)
+	}
+	return monitoring.EvaluateTransactions(ctx, req.CustomerID, req.RiskTier, req.Transactions, req.ScenarioIDs)
+}
+
 type ScreeningEngine interface {
 	ScreenCustomer(
 		ctx context.Context,
@@ -52,6 +104,14 @@ type BacktestEngine interface {
 	) (*domain.BacktestResult, error)
 }
 
+// VersionedBacktestEngine can construct an isolated replay engine from an
+// auditable rule-definition snapshot. Implementations that do not support
+// database-backed rule loading remain valid BacktestEngine implementations for
+// deployments that use a fixed configuration root.
+type VersionedBacktestEngine interface {
+	RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error)
+}
+
 type ConfigValidationError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
@@ -66,11 +126,9 @@ type ConfigEngine interface {
 	ValidateConfig(ctx context.Context, configType, yamlContent string) (*ConfigValidationResult, error)
 }
 
-// HealthChecker reports whether the Rust engine is reachable and serving,
-// via the standard grpc.health.v1 protocol (OPS-002). This is independent
-// of WS-1's /healthz/ready readiness judgement (which also covers whether
-// this API process itself has completed initial setup); HealthChecker only
-// answers "can we reach the engine".
+// HealthChecker reports whether the configured in-process engine is ready.
+// This is independent of WS-1's /healthz/ready readiness judgement (which
+// also covers whether this API process itself has completed initial setup).
 type HealthChecker interface {
 	CheckHealth(ctx context.Context) error
 }

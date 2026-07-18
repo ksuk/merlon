@@ -1,36 +1,42 @@
 package config
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	Env                  string
-	HTTPAddr             string
-	EngineAddr           string
-	DatabaseURL          string
-	MigrationDatabaseURL string
-	MigrationBaseline    string
-	EncryptionKeyRing    string
-	Seed                 bool
-	JWTSecret            string
-	JWTPrivateKeyFile    string
-	JWTPublicKeyFile     string
-	ConfigPath           string
-	CacheBackend         string
-	EventBus             string
-	LogLevel             string
-	AdapterConfigPath    string
-	UIDir                string
-	RateLimit            int
-	AuthEnabled          bool
-	BootstrapToken       string
-	EngineTLSCert        string
-	EngineTLSServerName  string
+	Env string
+	// Mode controls process ownership: api, worker, or all.
+	Mode                   string
+	HTTPAddr               string
+	WorkerHTTPAddr         string
+	WorkerConcurrency      int
+	DatabaseURL            string
+	MigrationDatabaseURL   string
+	MigrationBaseline      string
+	EncryptionKeyRing      string
+	Seed                   bool
+	JWTSecret              string
+	JWTPrivateKeyFile      string
+	JWTPublicKeyFile       string
+	ConfigPath             string
+	CacheBackend           string
+	EventBus               string
+	LogLevel               string
+	AdapterConfigPath      string
+	UIDir                  string
+	RateLimit              int
+	AuthEnabled            bool
+	BootstrapToken         string
+	CountryRiskPath        string
+	TMBaseCurrency         string
+	RealtimeMonitorTimeout time.Duration
 	// WhitelistMaxValidDays is the maximum whitelist validity period (WL-002,
 	// whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）").
 	// TODO(WS-2): move to the rule management API once it supports
@@ -84,7 +90,71 @@ type Config struct {
 	EDDStage3Days int
 }
 
+// DigestPath returns a stable SHA-256 for a config file or directory. Directory
+// entries are sorted and include their relative names, so operators can pin
+// the exact rule/list snapshot used by an evaluation without trusting mtime.
+func DigestPath(path string) (string, error) {
+	h := sha256.New()
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return "", err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || (filepath.Ext(entry.Name()) != ".yaml" && filepath.Ext(entry.Name()) != ".yml") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join(path, entry.Name()))
+			if err != nil {
+				return "", err
+			}
+			h.Write([]byte(entry.Name()))
+			h.Write([]byte{0})
+			h.Write(content)
+			h.Write([]byte{0})
+		}
+	} else {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return "", err
+		}
+		h.Write(content)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
 func (c *Config) Validate() error {
+	mode := c.Mode
+	if mode == "" {
+		mode = "all" // zero-value Config remains useful in focused unit tests
+	}
+	if mode != "api" && mode != "worker" && mode != "all" {
+		return fmt.Errorf("MERLON_MODE must be one of api, worker, all (got %q)", mode)
+	}
+	if c.WorkerConcurrency < 0 {
+		return fmt.Errorf("MERLON_WORKER_CONCURRENCY must be at least 1")
+	}
+	if c.WorkerConcurrency > 256 {
+		return fmt.Errorf("MERLON_WORKER_CONCURRENCY must not exceed 256")
+	}
+	if c.WorkerConcurrency == 0 {
+		// A zero value is interpreted as the Load default. This also keeps
+		// hand-built Config values backwards compatible.
+		c.WorkerConcurrency = 4
+	}
+	if strings.TrimSpace(c.TMBaseCurrency) == "" {
+		c.TMBaseCurrency = "JPY"
+	}
+	if c.RealtimeMonitorTimeout < 0 {
+		return fmt.Errorf("MERLON_REALTIME_MONITOR_TIMEOUT must be positive")
+	}
+	if c.RealtimeMonitorTimeout == 0 {
+		c.RealtimeMonitorTimeout = 30 * time.Second
+	}
 	if c.Env == "production" {
 		if !c.AuthEnabled {
 			return fmt.Errorf("MERLON_AUTH_ENABLED must be true in production")
@@ -104,29 +174,32 @@ func (c *Config) Validate() error {
 
 func Load() *Config {
 	return &Config{
-		Env:                   getEnv("MERLON_ENV", "development"),
-		HTTPAddr:              getEnv("MERLON_HTTP_ADDR", ":8080"),
-		EngineAddr:            getEnv("MERLON_ENGINE_ADDR", ""),
-		DatabaseURL:           getEnv("MERLON_DATABASE_URL", ""),
-		MigrationDatabaseURL:  getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
-		MigrationBaseline:     getEnv("MERLON_MIGRATION_BASELINE", ""),
-		EncryptionKeyRing:     getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
-		Seed:                  getEnv("MERLON_SEED", "") == "true",
-		JWTSecret:             getEnv("MERLON_JWT_SECRET", ""),
-		JWTPrivateKeyFile:     getEnv("MERLON_JWT_PRIVATE_KEY_FILE", ""),
-		JWTPublicKeyFile:      getEnv("MERLON_JWT_PUBLIC_KEY_FILE", ""),
-		ConfigPath:            getEnv("MERLON_CONFIG_PATH", "config.yaml"),
-		CacheBackend:          getEnv("MERLON_CACHE_BACKEND", "memory"),
-		EventBus:              getEnv("MERLON_EVENT_BUS", "pg_notify"),
-		LogLevel:              getEnv("MERLON_LOG_LEVEL", "info"),
-		AdapterConfigPath:     getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
-		UIDir:                 getEnv("MERLON_UI_DIR", ""),
-		RateLimit:             getEnvInt("MERLON_RATE_LIMIT", 0),
-		AuthEnabled:           getEnv("MERLON_AUTH_ENABLED", "") == "true",
-		BootstrapToken:        getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
-		EngineTLSCert:         getEnv("MERLON_ENGINE_TLS_CERT", ""),
-		EngineTLSServerName:   getEnv("MERLON_ENGINE_TLS_SERVER_NAME", ""),
-		WhitelistMaxValidDays: getEnvInt("MERLON_WHITELIST_MAX_VALID_DAYS", 365),
+		Env:                    getEnv("MERLON_ENV", "development"),
+		Mode:                   getEnv("MERLON_MODE", "all"),
+		HTTPAddr:               getEnv("MERLON_HTTP_ADDR", ":8080"),
+		WorkerHTTPAddr:         getEnv("MERLON_WORKER_HTTP_ADDR", ":8081"),
+		WorkerConcurrency:      getEnvInt("MERLON_WORKER_CONCURRENCY", 4),
+		DatabaseURL:            getEnv("MERLON_DATABASE_URL", ""),
+		MigrationDatabaseURL:   getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
+		MigrationBaseline:      getEnv("MERLON_MIGRATION_BASELINE", ""),
+		EncryptionKeyRing:      getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
+		Seed:                   getEnv("MERLON_SEED", "") == "true",
+		JWTSecret:              getEnv("MERLON_JWT_SECRET", ""),
+		JWTPrivateKeyFile:      getEnv("MERLON_JWT_PRIVATE_KEY_FILE", ""),
+		JWTPublicKeyFile:       getEnv("MERLON_JWT_PUBLIC_KEY_FILE", ""),
+		ConfigPath:             getEnv("MERLON_CONFIG_PATH", "config.yaml"),
+		CacheBackend:           getEnv("MERLON_CACHE_BACKEND", "memory"),
+		EventBus:               getEnv("MERLON_EVENT_BUS", "pg_notify"),
+		LogLevel:               getEnv("MERLON_LOG_LEVEL", "info"),
+		AdapterConfigPath:      getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
+		UIDir:                  getEnv("MERLON_UI_DIR", ""),
+		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 0),
+		AuthEnabled:            getEnv("MERLON_AUTH_ENABLED", "") == "true",
+		BootstrapToken:         getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
+		CountryRiskPath:        getEnv("MERLON_COUNTRY_RISK_PATH", ""),
+		TMBaseCurrency:         strings.ToUpper(getEnv("MERLON_TM_BASE_CURRENCY", "JPY")),
+		RealtimeMonitorTimeout: getEnvDuration("MERLON_REALTIME_MONITOR_TIMEOUT", 30*time.Second),
+		WhitelistMaxValidDays:  getEnvInt("MERLON_WHITELIST_MAX_VALID_DAYS", 365),
 
 		ScreeningImportEnabled:   getEnv("MERLON_SCREENING_IMPORT_ENABLED", "") == "true",
 		ScreeningRescreenEnabled: getEnv("MERLON_SCREENING_RESCREEN_ENABLED", "") == "true",

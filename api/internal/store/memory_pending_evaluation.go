@@ -59,6 +59,36 @@ func (r *MemoryPendingEvaluationRepo) ListByStatus(_ context.Context, status dom
 	return pageByOffset(all, limit, offset), nil
 }
 
+// ListPendingByCustomer supports idempotent fail-alert queueing when realtime
+// and batch passes observe the same engine outage concurrently.
+func (r *MemoryPendingEvaluationRepo) ListPendingByCustomer(_ context.Context, customerID string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var out []domain.PendingEvaluation
+	for _, pe := range r.data {
+		if pe.CustomerID == customerID && pe.Status == status {
+			out = append(out, *pe)
+		}
+	}
+	return out, nil
+}
+
+func (r *MemoryPendingEvaluationRepo) ListPendingByCustomers(_ context.Context, customerIDs []string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	wanted := make(map[string]struct{}, len(customerIDs))
+	for _, id := range customerIDs {
+		wanted[id] = struct{}{}
+	}
+	var out []domain.PendingEvaluation
+	for _, pe := range r.data {
+		if _, ok := wanted[pe.CustomerID]; ok && pe.Status == status {
+			out = append(out, *pe)
+		}
+	}
+	return out, nil
+}
+
 func (r *MemoryPendingEvaluationRepo) UpdateStatus(_ context.Context, id string, status domain.PendingEvaluationStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

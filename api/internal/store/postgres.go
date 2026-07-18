@@ -135,7 +135,9 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 	if after == nil {
 		rows, err = r.pool.Query(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
 	} else {
-		rows, err = r.pool.Query(ctx, baseQuery+` WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
+		// baseQuery already contains the soft-delete predicate. Appending a
+		// second WHERE made every cursor page fail in PostgreSQL.
+		rows, err = r.pool.Query(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 			after.CreatedAt, after.ID, limit)
 	}
 	if err != nil {
@@ -186,11 +188,15 @@ func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 	if status == "" {
 		status = domain.CustomerStatusActive
 	}
+	productTypes := c.ProductTypes
+	if productTypes == nil {
+		productTypes = []string{}
+	}
 	_, err = r.pool.Exec(ctx,
 		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
-		c.ProductTypes, attrs,
+		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
@@ -204,11 +210,15 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 		return err
 	}
 	attrs, _ := json.Marshal(encryptedAttrs)
+	productTypes := c.ProductTypes
+	if productTypes == nil {
+		productTypes = []string{}
+	}
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, anonymized_at=$16 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
-		c.ProductTypes, attrs,
+		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
@@ -393,6 +403,30 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 	return txns, rows.Err()
 }
 
+func (r *PgTransactionRepo) ListByCustomerEventRange(ctx context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *domain.TransactionEventCursor) ([]domain.Transaction, error) {
+	query := `SELECT ` + transactionColumns + ` FROM transactions WHERE customer_id=$1 AND purge_marked_at IS NULL AND executed_at >= $2 AND executed_at < $3 AND created_at <= $4`
+	args := []any{customerID, from, to, createdBefore, limit}
+	if after != nil {
+		query += ` AND (executed_at,id) > ($5,$6)`
+		args = []any{customerID, from, to, createdBefore, after.ExecutedAt, after.ID, limit}
+	}
+	query += ` ORDER BY executed_at ASC, id ASC LIMIT $` + strconv.Itoa(len(args))
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Transaction
+	for rows.Next() {
+		t, err := scanTransaction(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) error {
 	var counterpartyJSON, metadataJSON []byte
 	if t.Counterparty != nil {
@@ -450,11 +484,12 @@ func scanAlertRow(row interface {
 }, a *domain.Alert) error {
 	var suppressionReason *string
 	var batchRunID *string
+	var resolvedBy *string
 	if err := row.Scan(
 		&a.ID, &a.CustomerID, &a.ScenarioID,
 		&a.Severity, &a.Status, &a.Score, &a.Description,
 		&a.TransactionIDs,
-		&a.DetectedAt, &a.ResolvedAt, &a.ResolvedBy,
+		&a.DetectedAt, &a.ResolvedAt, &resolvedBy,
 		&a.CreatedAt, &a.UpdatedAt,
 		&a.Suppressed, &suppressionReason,
 		&a.AggregationWindowStart, &batchRunID, &a.BatchReviewedAt,
@@ -464,8 +499,15 @@ func scanAlertRow(row interface {
 	if suppressionReason != nil {
 		a.SuppressionReason = *suppressionReason
 	}
+	if resolvedBy != nil {
+		a.ResolvedBy = *resolvedBy
+	}
 	if batchRunID != nil {
 		a.BatchRunID = *batchRunID
+	}
+	a.ID = compactUUID(a.ID)
+	for i := range a.TransactionIDs {
+		a.TransactionIDs[i] = compactUUID(a.TransactionIDs[i])
 	}
 	return nil
 }

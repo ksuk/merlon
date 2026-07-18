@@ -20,6 +20,12 @@ type ListStore interface {
 	GetList(ctx context.Context, listID string) (*RawListData, error)
 }
 
+// ListConsumer atomically replaces the screening lists used for matching.
+// Implementations must treat the supplied lists as a complete snapshot.
+type ListConsumer interface {
+	ReplaceScreeningLists([]RawListData)
+}
+
 // FailureTracker counts consecutive fetch failures per list so RunImportJob
 // can flag a list for an operational alert once the failure streak reaches
 // staleFailureThreshold (the screening workflow, default 3 consecutive days).
@@ -144,9 +150,19 @@ func importOne(ctx context.Context, listID string, adapter ListAdapter, store Li
 // future enhancement, so this exposes a tunable interval instead (wired
 // from MERLON_SCREENING_IMPORT_INTERVAL in main.go).
 func RunImportJobPeriodically(ctx context.Context, interval time.Duration, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker) {
+	RunImportJobPeriodicallyWithConsumer(ctx, interval, adapters, store, failureTracker, nil)
+}
+
+// RunImportJobPeriodicallyWithConsumer is the durable import loop plus an
+// optional atomic consumer update (the native engine uses this to swap a
+// last-good list snapshot without restarting the API process).
+func RunImportJobPeriodicallyWithConsumer(ctx context.Context, interval time.Duration, adapters map[string]ListAdapter, store ListStore, failureTracker FailureTracker, consumer ListConsumer) {
 	runOnce := func() {
-		if _, err := RunImportJob(ctx, adapters, store, failureTracker); err != nil {
+		result, err := RunImportJob(ctx, adapters, store, failureTracker)
+		if err != nil {
 			slog.Error("screening list import job failed", "error", err)
+		} else if consumer != nil {
+			replaceConsumerSnapshot(ctx, adapters, store, result, consumer)
 		}
 	}
 	runOnce()
@@ -161,6 +177,43 @@ func RunImportJobPeriodically(ctx context.Context, interval time.Duration, adapt
 			runOnce()
 		}
 	}
+}
+
+// replaceConsumerSnapshot reconstructs and atomically swaps the complete
+// last-good snapshot. A partial snapshot must never be installed: an
+// unexpected store read error retains the consumer's previous snapshot.
+// The sole allowed absence is a PEP adapter intentionally skipped because it
+// has never been configured; if a previous PEP snapshot exists it is retained.
+func replaceConsumerSnapshot(ctx context.Context, adapters map[string]ListAdapter, store ListStore, result ImportResult, consumer ListConsumer) {
+	intentionallyMissing := make(map[string]bool)
+	for _, outcome := range result.Outcomes {
+		if outcome.Skipped && outcome.SkipReason == "pep_not_configured" {
+			intentionallyMissing[outcome.ListID] = true
+		}
+	}
+
+	ids := make([]string, 0, len(adapters))
+	for id := range adapters {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	lists := make([]RawListData, 0, len(ids))
+	for _, id := range ids {
+		data, err := store.GetList(ctx, id)
+		if err != nil {
+			if intentionallyMissing[id] && errors.Is(err, errListNotFound) {
+				continue
+			}
+			slog.Error("screening list consumer snapshot rebuild failed; retaining previous snapshot",
+				"list_id", id,
+				"error", err,
+				"needs_operational_alert", true)
+			return
+		}
+		lists = append(lists, *data)
+	}
+	consumer.ReplaceScreeningLists(lists)
 }
 
 // MemoryListStore is the dev/test-only ListStore, mirroring the store

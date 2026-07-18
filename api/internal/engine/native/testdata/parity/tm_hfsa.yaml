@@ -1,0 +1,12 @@
+schema_version: "2.0"
+scenario_id: tm_high_frequency_small_amount
+name: HFSA parity
+description: parity fixture
+type: aggregation
+conditions:
+  additional:
+    window_hours: 1
+    count_threshold: 3
+    max_amount_per_txn: 1000
+evaluation_mode: both
+severity: MEDIUM

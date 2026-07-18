@@ -17,7 +17,7 @@ Merlon's Go API does not embed system-specific integration code. Instead, the
 requires that all external-system differences — field names, authentication
 schemes, pagination — are absorbed in a dedicated adapter layer
 (`api/internal/adapter/` in the repository) rather than leaking into domain
-logic, HTTP handlers, or the Engine client.
+logic, HTTP handlers, or the native evaluation engine.
 
 An adapter is configured, not coded: you describe an external REST API in a
 YAML file, and the adapter layer uses that description to fetch customer and
@@ -164,15 +164,15 @@ Merlon follows the architecture described in [Architecture](./architecture.md):
 2. Normalized records are submitted to the Go API's REST endpoints (customer
    and transaction creation/update), which persist them and enforce domain
    validation.
-3. The Go API calls the Rust Engine over gRPC to compute or update the CDD
-   score and evaluate transaction-monitoring scenarios against the
+3. The Go API invokes its in-process evaluation engine to compute or update the
+   CDD score and evaluate transaction-monitoring scenarios against the
    newly-ingested data, following the score-driven relationship between CDD
    score and TM thresholds described in ADR-0004 (Score-Driven Architecture;
    see [Architecture](./architecture.md)).
 
 See [API Reference](./api/openapi.md) for the REST schema of customer and
-transaction records, and the [gRPC Protocol Reference](./api/proto/index.md) for
-the Engine-facing contract.
+transaction records. The engine-facing contract is internal to the Go process;
+the public REST contract is documented in the OpenAPI reference.
 
 ## Validating and testing an adapter
 

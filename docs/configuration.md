@@ -12,14 +12,14 @@ for local development; do not use its credentials or secrets in production.
 
 | Variable | Default | Production guidance |
 |---|---|---|
-| `MERLON_ENV` | `development` | Set to `production`. Production Engine connections require TLS. |
+| `MERLON_ENV` | `development` | Set to `production`. |
+| `MERLON_MODE` | `all` | `api` owns HTTP/realtime work, `worker` owns recovery/TM batch/backtests, `all` runs both. |
 | `MERLON_HTTP_ADDR` | `:8080` | Bind behind a TLS-terminating reverse proxy. |
+| `MERLON_WORKER_HTTP_ADDR` | `:8081` | Control/health listener used when `MERLON_MODE=worker`. |
+| `MERLON_WORKER_CONCURRENCY` | `4` | Worker evaluation concurrency; keep bounded to the database/CPU budget. |
 | `MERLON_DATABASE_URL` | unset | Use TLS (`sslmode=require` or stronger) and a least-privilege application role. |
 | `MERLON_MIGRATION_DATABASE_URL` | unset | Migration command only; use a separate schema-owner connection. Required by `make migrate` in production. |
 | `MERLON_MIGRATION_BASELINE` | unset | Explicit last-applied migration filename for a pre-ledger database; never inferred automatically. |
-| `MERLON_ENGINE_ADDR` | unset | Keep the gRPC endpoint on an internal network. |
-| `MERLON_ENGINE_TLS_CERT` | unset | Required when `MERLON_ENV=production` and `MERLON_ENGINE_ADDR` is set. It is the CA certificate used to verify the Engine. |
-| `MERLON_ENGINE_TLS_SERVER_NAME` | unset | Set the expected Engine TLS server name when it differs from the address host. |
 | `MERLON_ENCRYPTION_KEY_RING` | unset | Required for production PII protection. Use the documented key-ring format accepted by `merlon-keyrotate`; loss of every referenced key makes historical encrypted values unrecoverable. Back up keys through a protected KMS or secret manager. |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | unset | Use an RS256 key pair for local-user authentication. |
 | `MERLON_JWT_SECRET` | unset | Development fallback only. Do not set in production when using local-user authentication. |
@@ -49,11 +49,16 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_WHITELIST_MAX_VALID_DAYS` | `365` | Maximum whitelist validity period. |
 | `MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS` | `60` / `90` | EDD escalation thresholds. |
 | `MERLON_TM_SCENARIOS_PATH` | `tm_scenarios` | Store the directory in controlled source management. Runtime digests identify loaded content but do not authorize changes. |
+| `MERLON_CDD_WEIGHTS_PATH` | `cdd_weights.yaml` | Native Go CDD rule root; pin and review content changes. |
+| `MERLON_COUNTRY_RISK_PATH` | unset | Optional native Go country-risk table. |
+| `MERLON_SCREENING_LISTS_PATH` | `screening_lists` | Native Go last-good screening-list snapshot root. |
+| `MERLON_TM_BASE_CURRENCY` | `JPY` | Interim PH9 invariant: mixed/non-base TM aggregation is fail-alerted to `PENDING_REVIEW`; full FX/decimal semantics are PH10. |
+| `MERLON_REALTIME_MONITOR_TIMEOUT` | `30s` | Maximum synchronous history-loading and realtime-monitoring duration before fail-alert queueing. |
 | `MERLON_TM_BATCH_SCHEDULE` | `02:00` | Daily `HH:MM` time for transaction-monitoring batch evaluation. |
 | `MERLON_TM_BATCH_TIMEZONE` | local timezone | Set an IANA timezone explicitly in production. |
 | `MERLON_LOG_LEVEL` | `info` | Keep `info` or stricter; do not use debug logging for sensitive workloads. |
 
-The Engine also loads CDD weights and screening content from operator-supplied
+The native Go engine also loads CDD weights and screening content from operator-supplied
 paths. Those files are outside the database audit trail. Control them through
 source control, change approval, access control, backup, and deployment
 procedures. See ADR-0012.

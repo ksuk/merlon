@@ -43,8 +43,8 @@ type Alert struct {
 	// Suppressed and SuppressionReason record whitelist-driven suppression
 	// (WL-004, whitelist.md §3.1/§7.3). SuppressionReason is "whitelist:{entry_id}"
 	// when Suppressed is true.
-	Suppressed        bool      `json:"suppressed"`
-	SuppressionReason string    `json:"suppression_reason,omitempty"`
+	Suppressed        bool   `json:"suppressed"`
+	SuppressionReason string `json:"suppression_reason,omitempty"`
 	// AggregationWindowStart, BatchRunID, and BatchReviewedAt support alert
 	// deduplication across the realtime/batch evaluation paths
 	// (the transaction-monitoring design「アラート統合ロジック」/「バッチ/リアルタイム

@@ -5,7 +5,7 @@
 | Area | Primary | Backup / escalation |
 |---|---|---|
 | Go API and data stores | `@ksuk` | Assign a second reviewer before the first production release |
-| Rust engine and protobuf | `@ksuk` | Assign a second reviewer before the first production release |
+| Native Go evaluation engine | `@ksuk` | Assign a second reviewer before the first production release |
 | UI and documentation | `@ksuk` | Assign a second reviewer before the first production release |
 | Security, releases, and migrations | `@ksuk` | Assign a second reviewer before the first production release |
 
@@ -25,7 +25,15 @@ checklist below.
 
 ## Backup Onboarding
 
-1. Read `CONTRIBUTING.md`, the security model, and the migration runbook.
-2. Run `make lint`, `make test`, and `make docs-check` locally.
-3. Review one API, engine, and migration pull request with the current owner.
-4. Be added to this file and `.github/CODEOWNERS` in a separate pull request.
+1. Read `CONTRIBUTING.md`, the security model, repository governance, the rule
+   activation ADR, and the migration and backup/restore runbooks.
+2. Run `make lint`, `make test`, `make docs-check`, and the PostgreSQL
+   integration gate locally.
+3. Review one API, engine, and migration pull request with the current owner,
+   including an atomic rule-approval and audit-privilege review.
+4. Participate in a sanitized restore drill and vulnerability-response
+   tabletop, and review the resulting evidence against the release checklist.
+5. Verify one image provenance attestation and match its digest to a release
+   manifest in a non-production exercise.
+6. Be added to this file and `.github/CODEOWNERS` in a separate pull request
+   approved by someone other than the new backup maintainer.

@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
@@ -166,7 +168,7 @@ func TestBatchMonitorAll(t *testing.T) {
 // customer whose transactions keep triggering the same scenario must not
 // create a second alert for the same (customer_id, scenario_id,
 // aggregation_window_start) tuple (the transaction-monitoring design「バッチ/リアルタイム
-//評価の重複アラート防止」).
+// 評価の重複アラート防止」).
 func TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow(t *testing.T) {
 	s := testServerWithAllEngines()
 	s.monitoring = &engine.MockMonitoringEngine{
@@ -304,5 +306,83 @@ func TestBatchMonitor_NoPendingRepo_TreatsEngineFailureAsHardFailure(t *testing.
 	}
 	if resp.QueuedForReview != 0 {
 		t.Errorf("queued_for_review = %d, want 0", resp.QueuedForReview)
+	}
+}
+
+type countingPendingEvaluationRepo struct {
+	*store.MemoryPendingEvaluationRepo
+	bulkCalls        int
+	perCustomerCalls int
+	bulkErr          error
+}
+
+func (r *countingPendingEvaluationRepo) ListPendingByCustomers(ctx context.Context, customerIDs []string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	r.bulkCalls++
+	if r.bulkErr != nil {
+		return nil, r.bulkErr
+	}
+	return r.MemoryPendingEvaluationRepo.ListPendingByCustomers(ctx, customerIDs, status)
+}
+
+func TestBatchMonitor_BulkPendingFailureDoesNotFallBackToPerCustomerReads(t *testing.T) {
+	pending := &countingPendingEvaluationRepo{MemoryPendingEvaluationRepo: store.NewMemoryPendingEvaluationRepo(), bulkErr: errors.New("database read unavailable")}
+	customers := store.NewMemoryCustomerRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	now := time.Now().UTC()
+	for i := 1; i <= 2; i++ {
+		id := fmt.Sprintf("c%d", i)
+		if err := customers.Create(context.Background(), &domain.Customer{ID: id, ExternalID: id, CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+		if err := transactions.Create(context.Background(), &domain.Transaction{ID: fmt.Sprintf("t%d", i), CustomerID: id, Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: now, CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(":0", Deps{Customers: customers, Transactions: transactions, Alerts: store.NewMemoryAlertRepo(), Monitoring: &engine.MockMonitoringEngine{Err: errors.New("engine outage")}, PendingEvaluations: pending})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if pending.bulkCalls != 1 || pending.perCustomerCalls != 0 {
+		t.Fatalf("bulk calls = %d, per-customer calls = %d; want 1 and 0", pending.bulkCalls, pending.perCustomerCalls)
+	}
+}
+
+func (r *countingPendingEvaluationRepo) ListPendingByCustomer(ctx context.Context, customerID string, status domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error) {
+	r.perCustomerCalls++
+	return r.MemoryPendingEvaluationRepo.ListPendingByCustomer(ctx, customerID, status)
+}
+
+func TestBatchMonitor_EngineOutageBulkLoadsPendingRecordsOnce(t *testing.T) {
+	pending := &countingPendingEvaluationRepo{MemoryPendingEvaluationRepo: store.NewMemoryPendingEvaluationRepo()}
+	customers := store.NewMemoryCustomerRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	now := time.Now().UTC()
+	for i := 1; i <= 2; i++ {
+		id := fmt.Sprintf("c%d", i)
+		customer := &domain.Customer{ID: id, ExternalID: id, CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", CreatedAt: now, UpdatedAt: now}
+		if err := customers.Create(context.Background(), customer); err != nil {
+			t.Fatal(err)
+		}
+		txn := &domain.Transaction{ID: fmt.Sprintf("t%d", i), CustomerID: id, ExternalID: fmt.Sprintf("t%d", i), Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: now, CreatedAt: now}
+		if err := transactions.Create(context.Background(), txn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(":0", Deps{
+		Customers: customers, Transactions: transactions, Alerts: store.NewMemoryAlertRepo(),
+		Monitoring:         &engine.MockMonitoringEngine{Err: errors.New("engine outage")},
+		PendingEvaluations: pending,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if pending.bulkCalls != 1 || pending.perCustomerCalls != 0 {
+		t.Fatalf("bulk calls = %d, per-customer calls = %d; want 1 and 0", pending.bulkCalls, pending.perCustomerCalls)
 	}
 }

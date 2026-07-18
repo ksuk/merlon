@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"github.com/ksuk/merlon/api/internal/apierr"
+	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
 const maxBatchCustomers = 1000
@@ -119,10 +121,37 @@ func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txn
 	for i, t := range txns {
 		txIDs[i] = t.ID
 	}
+	if finder, ok := s.pendingEvals.(interface {
+		ListPendingByCustomer(context.Context, string, domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error)
+	}); ok {
+		if existing, err := finder.ListPendingByCustomer(ctx, c.ID, domain.PendingEvaluationStatusPendingReview); err == nil {
+			if pendingTransactionsOverlap(existing, txIDs) {
+				return true // already queued; concurrent/replayed pass
+			}
+		}
+	}
+	return s.createPendingReview(ctx, c.ID, txIDs, cause)
+}
 
+func pendingTransactionsOverlap(existing []domain.PendingEvaluation, transactionIDs []string) bool {
+	pendingIDs := make(map[string]struct{}, len(transactionIDs))
+	for _, id := range transactionIDs {
+		pendingIDs[id] = struct{}{}
+	}
+	for _, pe := range existing {
+		for _, id := range pe.TransactionIDs {
+			if _, found := pendingIDs[id]; found {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *Server) createPendingReview(ctx context.Context, customerID string, txIDs []string, cause error) bool {
 	pe := &domain.PendingEvaluation{
 		ID:             generateID(),
-		CustomerID:     c.ID,
+		CustomerID:     customerID,
 		TransactionIDs: txIDs,
 		Status:         domain.PendingEvaluationStatusPendingReview,
 		Reason:         "engine unavailable: " + cause.Error(),
@@ -132,6 +161,52 @@ func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txn
 		return false
 	}
 	return true
+}
+
+func loadPendingReviewIndex(ctx context.Context, repo domain.PendingEvaluationRepository, customers []domain.Customer) (map[string][]domain.PendingEvaluation, bool, error) {
+	finder, ok := repo.(domain.PendingEvaluationBulkLookup)
+	if !ok {
+		return nil, false, nil
+	}
+	ids := make([]string, 0, len(customers))
+	for _, customer := range customers {
+		ids = append(ids, customer.ID)
+	}
+	records, err := finder.ListPendingByCustomers(ctx, ids, domain.PendingEvaluationStatusPendingReview)
+	if err != nil {
+		// The capability exists, so callers must not fall back to one SELECT
+		// per failed customer. Return an empty index and keep fail-alert writes
+		// enabled even when the preload itself is temporarily unavailable.
+		return make(map[string][]domain.PendingEvaluation), true, err
+	}
+	index := make(map[string][]domain.PendingEvaluation, len(records))
+	for _, pe := range records {
+		index[pe.CustomerID] = append(index[pe.CustomerID], pe)
+	}
+	return index, true, nil
+}
+
+func (s *Server) queuePendingReviewFromIndex(ctx context.Context, c *domain.Customer, txns []domain.Transaction, cause error, index map[string][]domain.PendingEvaluation) bool {
+	txIDs := make([]string, len(txns))
+	for i, txn := range txns {
+		txIDs[i] = txn.ID
+	}
+	if pendingTransactionsOverlap(index[c.ID], txIDs) {
+		return true
+	}
+	if !s.createPendingReview(ctx, c.ID, txIDs, cause) {
+		return false
+	}
+	index[c.ID] = append(index[c.ID], domain.PendingEvaluation{CustomerID: c.ID, TransactionIDs: txIDs, Status: domain.PendingEvaluationStatusPendingReview})
+	return true
+}
+
+func (s *Server) evaluateMonitoring(ctx context.Context, c *domain.Customer, txns []domain.Transaction, mode engine.EvaluationMode, scenarioIDs []string) ([]domain.Alert, error) {
+	tier := domain.RiskTierLow
+	if c.RiskTier != nil {
+		tier = *c.RiskTier
+	}
+	return engine.EvaluateCompat(ctx, s.monitoring, engine.MonitoringRequest{CustomerID: c.ID, CustomerType: c.CustomerType, RiskTier: tier, Transactions: txns, ScenarioIDs: scenarioIDs, Mode: mode, EvaluatedAt: time.Now().UTC(), ConfigDigests: copyStringMap(s.configDigests)})
 }
 
 type batchMonitorRequest struct {
@@ -203,6 +278,9 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	// batch_runs since this HTTP-triggered pass isn't tracked there (unlike
 	// the scheduled batch.RunTMBatchEvaluation job).
 	reviewRunID := generateID()
+	var pendingIndex map[string][]domain.PendingEvaluation
+	bulkPendingLoaded := false
+	bulkPendingAvailable := false
 
 	for _, c := range customers {
 		// the data model §1.1.2: a closed customer's TM evaluation stops
@@ -238,13 +316,23 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		riskTier := domain.RiskTierLow
-		if c.RiskTier != nil {
-			riskTier = *c.RiskTier
-		}
-		alerts, err := s.monitoring.EvaluateTransactions(ctx, c.ID, riskTier, txns, nil)
+		alerts, err := s.evaluateMonitoring(ctx, &c, txns, engine.EvaluationModeRealtime, nil)
 		if err != nil {
-			if s.queuePendingReview(ctx, &c, txns, err) {
+			if !bulkPendingLoaded {
+				var preloadErr error
+				pendingIndex, bulkPendingAvailable, preloadErr = loadPendingReviewIndex(ctx, s.pendingEvals, customers)
+				if preloadErr != nil {
+					slog.WarnContext(ctx, "bulk pending-review preload failed; continuing without per-customer reads", "error", preloadErr)
+				}
+				bulkPendingLoaded = true
+			}
+			queued := false
+			if bulkPendingAvailable {
+				queued = s.queuePendingReviewFromIndex(ctx, &c, txns, err, pendingIndex)
+			} else {
+				queued = s.queuePendingReview(ctx, &c, txns, err)
+			}
+			if queued {
 				resp.QueuedForReview++
 				resp.Results = append(resp.Results, batchMonitorResult{
 					CustomerID:    c.ID,

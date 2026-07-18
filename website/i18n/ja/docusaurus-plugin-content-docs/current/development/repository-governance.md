@@ -4,8 +4,36 @@ title: リポジトリガバナンス
 
 # リポジトリガバナンス
 
-変更は `main` 以外のブランチから GitHub プルリクエストで提案する。必須ゲートは `make lint`、`make test`、`make docs-check` である。
+本文書は、所有、レビュー、リリース、監査上の判断に関する公開記録である。非公開の計画資料は転載しない。
 
-ルールの有効化・無効化は、作成者本人ではない別の Admin が実行する。データベースマイグレーションは専用の migration role を使用し、API role は `audit_logs` を更新・削除できないことを起動前に検証する。
+## 変更統制
 
-GitHub Free の非公開リポジトリでは required reviewer のブランチ保護を設定できない場合がある。その間は CODEOWNERS、CI、プルリクエスト手順、二人の Admin による運用で補完し、本番リリース前に再確認する。
+- 変更は `main` 以外のブランチから GitHub プルリクエストで提案する。
+- ローカル必須ゲートは `make lint`、`make test`、`make docs-check` である。Go CI は同じ `make verify-go` を呼び出し、PostgreSQL ジョブは全マイグレーションを2回適用してから統合テストを実行する。
+- [変更のトレーサビリティ](./change-traceability.md)に従い、全 PR と人が作成した全コミットを公開 Issue に関連付ける。Traceability ワークフローは要求、設計、コミット参照の不足を拒否する。
+- 作成者は自分の変更を承認できない。DB マイグレーションと監査ロール変更には独立した Admin のレビューが必要である。
+- ルール API の新しい版は無効状態で作成される。別の認証済み Admin が有効状態を変更し、ADR-0014 に従って正確な対象版の判定と承認イベントを原子的にコミットする。
+- 本番マイグレーションは `MERLON_MIGRATION_DATABASE_URL` を使用する。API role は `audit_logs` と `rule_activation_events` を `UPDATE`／`DELETE` できず、本番起動時に危険な所有権または権限を拒否する。
+
+## main の保護設定
+
+`main` の Ruleset では次を必須にする。
+
+- 1件の承認、CODEOWNERS レビュー、最終 push 者以外による承認、push 後の古いレビューの破棄、全レビュー会話の解決。
+- 最新コミット上の `CI / Required`、`Security / Required`、`DCO / check-signoffs`、`Traceability / Required`。
+- PR 経由、squash merge のみ、線形履歴、ブランチ削除と force push の禁止。
+
+リリースタグ Ruleset は `v*.*.*` を対象に更新と削除を禁止する。リリースワークフローも独立して、軽量タグ、SemVer でない名前、`main` から到達できないコミットを拒否する。
+
+`scripts/configure-github-ruleset.sh` は既定では GitHub を変更せず、設定内容を表示する。独立したメンテナが出力をレビューした後、権限を持つ運用者が `--apply` を指定し、有効な Ruleset API 応答をリリース証跡として保存する。リポジトリプランがこれらを提供しない場合、本番リリースは停止したままとする。テンプレートと CODEOWNERS はサーバー側のマージブロックを代替しない。
+
+## リリース統制
+
+`main` から到達可能な注釈付きセマンティックバージョンタグだけがリリースワークフローを開始する。固定済みコンテナイメージをビルドし、不変ダイジェストを公開し、SBOM とリリースマニフェストを生成し、GitHub の artifact provenance attestation を要求する。リリース承認、タグ保護、復元証跡、脆弱性対応訓練、バックアップメンテナ、各必須ワークフロー3回の成功は、[リリースチェックリスト](./release-checklist.md)の事前条件である。
+
+## 受容済みの履歴上の扱い
+
+- 既存履歴は書き換えず、force push による是正は行わない。
+- 過去の大規模実装コミットは来歴として保持する。
+- 初回リリース基準を満たす前にリリースタグを作成しない。
+- Issue 参照がない過去の変更は履歴証跡として保持し、新しい PR とコミットに追跡性ゲートを適用する。

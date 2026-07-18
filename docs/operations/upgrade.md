@@ -8,7 +8,7 @@ title: Upgrade Runbook
 
 1. Read the release notes and back up the PostgreSQL database and encryption-key material.
 2. Test the upgrade in an environment containing a representative copy of production configuration and data.
-3. Record the current application version and Engine configuration digests.
+3. Record the current application version and native engine configuration digests.
 
 ## Apply migrations
 

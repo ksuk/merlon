@@ -10,7 +10,7 @@ var Version = "dev"
 
 const healthzReadyDBPingTimeout = 2 * time.Second
 
-// handleHealth is the original combined health endpoint (engine reachability
+// handleHealth is the original combined health endpoint (engine availability
 // as a best-effort signal). Kept unchanged for Contract Stability; new
 // deployments should use the /healthz/live and /healthz/ready split below
 // (the operational design §4.4).
@@ -39,8 +39,8 @@ func (s *Server) handleHealthLive(w http.ResponseWriter, r *http.Request) {
 
 // handleHealthReady is the readiness probe (the operational design §4.4 "ヘルスチェッ
 // クの粒度"): unhealthy until initial setup (the operational design §4.5) completes,
-// and while PostgreSQL or the Rust engine's grpc.health.v1 check is
-// unreachable. Each dependency's outcome is reported under "checks" so
+// and while PostgreSQL or the configured engine check reports an error. Each
+// dependency's outcome is reported under "checks" so
 // operators can tell which one is failing; a dependency not configured
 // (e.g. no DB pool in in-memory dev mode) is simply omitted rather than
 // reported as failing.

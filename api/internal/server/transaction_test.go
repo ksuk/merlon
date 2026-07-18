@@ -1,14 +1,18 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 func createTestCustomer(t *testing.T, s *Server) domain.Customer {
@@ -46,6 +50,134 @@ func TestCreateTransaction(t *testing.T) {
 	}
 	if tx.Amount != 100000 {
 		t.Errorf("amount = %f, want 100000", tx.Amount)
+	}
+}
+
+func TestCreateFutureDatedTransactionIncludesItselfInRealtimeEvaluation(t *testing.T) {
+	var evaluated []domain.Transaction
+	monitoring := &engine.MockMonitoringEngine{EvaluateFunc: func(_ context.Context, _ string, _ domain.RiskTier, transactions []domain.Transaction, _ []string) ([]domain.Alert, error) {
+		evaluated = append([]domain.Transaction(nil), transactions...)
+		return nil, nil
+	}}
+	s := testServerWithEngine(&engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium}, monitoring)
+	cust := createTestCustomer(t, s)
+	future := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-FUTURE","amount":100,"currency":"JPY","direction":"inbound","executed_at":"` + future.Format(time.RFC3339) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if len(evaluated) != 1 || evaluated[0].ExternalID != "TX-FUTURE" {
+		t.Fatalf("evaluated transactions = %+v, want the newly created future-dated transaction", evaluated)
+	}
+}
+
+type boundedHistoryMonitoring struct {
+	*engine.MockMonitoringEngine
+	window time.Duration
+}
+
+func (m *boundedHistoryMonitoring) RealtimeHistoryWindow() (time.Duration, bool) {
+	return m.window, true
+}
+
+func TestRealtimeEvaluationLoadsOnlyDeclaredScenarioWindow(t *testing.T) {
+	var evaluated []domain.Transaction
+	monitoring := &boundedHistoryMonitoring{
+		MockMonitoringEngine: &engine.MockMonitoringEngine{EvaluateFunc: func(_ context.Context, _ string, _ domain.RiskTier, transactions []domain.Transaction, _ []string) ([]domain.Alert, error) {
+			evaluated = append([]domain.Transaction(nil), transactions...)
+			return nil, nil
+		}},
+		window: 24 * time.Hour,
+	}
+	s := testServerWithEngine(&engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium}, monitoring)
+	cust := createTestCustomer(t, s)
+	now := time.Now().UTC()
+	old := &domain.Transaction{ID: "old", CustomerID: cust.ID, ExternalID: "OLD", Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: now.Add(-25 * time.Hour), CreatedAt: now.Add(-25 * time.Hour)}
+	inside := &domain.Transaction{ID: "inside", CustomerID: cust.ID, ExternalID: "INSIDE", Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: now.Add(-23 * time.Hour), CreatedAt: now.Add(-23 * time.Hour)}
+	for _, txn := range []*domain.Transaction{old, inside} {
+		if err := s.transactions.Create(context.Background(), txn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := `{"customer_id":"` + cust.ID + `","external_id":"CURRENT","amount":100,"currency":"JPY","direction":"inbound","executed_at":"` + now.Format(time.RFC3339Nano) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	if len(evaluated) != 2 || evaluated[0].ID != "inside" || evaluated[1].ExternalID != "CURRENT" {
+		t.Fatalf("evaluated transactions = %+v, want only inside-window and current", evaluated)
+	}
+}
+
+func TestRealtimeEvaluationUsesTwoBoundedRangesForBackdatedTransaction(t *testing.T) {
+	var evaluated []domain.Transaction
+	monitoring := &boundedHistoryMonitoring{
+		MockMonitoringEngine: &engine.MockMonitoringEngine{EvaluateFunc: func(_ context.Context, _ string, _ domain.RiskTier, transactions []domain.Transaction, _ []string) ([]domain.Alert, error) {
+			evaluated = append([]domain.Transaction(nil), transactions...)
+			return nil, nil
+		}},
+		window: 24 * time.Hour,
+	}
+	s := testServerWithEngine(&engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium}, monitoring)
+	cust := createTestCustomer(t, s)
+	now := time.Now().UTC()
+	backdated := now.Add(-30 * 24 * time.Hour)
+	for _, txn := range []*domain.Transaction{
+		{ID: "event-before", CustomerID: cust.ID, Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: backdated.Add(-time.Hour), CreatedAt: now.Add(-time.Hour)},
+		{ID: "event-after", CustomerID: cust.ID, Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: backdated.Add(time.Hour), CreatedAt: now.Add(-time.Hour)},
+		{ID: "middle", CustomerID: cust.ID, Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: now.Add(-15 * 24 * time.Hour), CreatedAt: now.Add(-time.Hour)},
+		{ID: "current", CustomerID: cust.ID, Amount: 100, Currency: "JPY", Direction: domain.DirectionInbound, ExecutedAt: now.Add(-time.Hour), CreatedAt: now.Add(-time.Hour)},
+	} {
+		if err := s.transactions.Create(context.Background(), txn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := `{"customer_id":"` + cust.ID + `","external_id":"BACKDATED","amount":100,"currency":"JPY","direction":"inbound","executed_at":"` + backdated.Format(time.RFC3339Nano) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	var ids []string
+	for _, txn := range evaluated {
+		ids = append(ids, txn.ID)
+	}
+	if len(ids) != 4 || ids[0] != "event-before" || evaluated[1].ExternalID != "BACKDATED" || ids[2] != "event-after" || ids[3] != "current" {
+		t.Fatalf("evaluated IDs = %v, want event-before, BACKDATED, event-after, current (without middle)", ids)
+	}
+}
+
+func TestRealtimeMonitoringTimeoutQueuesPendingReview(t *testing.T) {
+	pending := store.NewMemoryPendingEvaluationRepo()
+	monitoring := &engine.MockMonitoringEngine{EvaluateFunc: func(ctx context.Context, _ string, _ domain.RiskTier, _ []domain.Transaction, _ []string) ([]domain.Alert, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(), Transactions: store.NewMemoryTransactionRepo(), Alerts: store.NewMemoryAlertRepo(),
+		Scoring: &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium}, Monitoring: monitoring,
+		PendingEvaluations: pending, RealtimeMonitorTimeout: 5 * time.Millisecond,
+	})
+	cust := createTestCustomer(t, s)
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-TIMEOUT","amount":100,"currency":"JPY","direction":"inbound"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	queued, err := pending.ListByStatus(context.Background(), domain.PendingEvaluationStatusPendingReview, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 1 || !strings.Contains(queued[0].Reason, context.DeadlineExceeded.Error()) {
+		t.Fatalf("queued = %+v, want one timeout-backed pending review", queued)
 	}
 }
 

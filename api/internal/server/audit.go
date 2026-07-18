@@ -93,6 +93,15 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 
 		action := resolveAction(r.Method, r.URL.Path)
 		resourceType, resourceID := resolveResource(r.URL.Path)
+		sink.set("http_status", strconv.Itoa(aw.statusCode))
+		switch {
+		case aw.statusCode >= http.StatusInternalServerError:
+			sink.set("outcome", "failed")
+		case aw.statusCode >= http.StatusBadRequest:
+			sink.set("outcome", "denied")
+		default:
+			sink.set("outcome", "success")
+		}
 
 		entry := &domain.AuditEntry{
 			UserID:       resolveAuditUserID(r),

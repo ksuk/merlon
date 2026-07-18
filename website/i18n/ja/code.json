@@ -40,7 +40,7 @@
     "message": "アーキテクチャ"
   },
   "homepage.cards.architecture.description": {
-    "message": "Go API、Rust エンジン、UI がどのように連携するかを理解します。"
+    "message": "Go API、ネイティブエンジン、UI がどのように連携するかを理解します。"
   },
   "homepage.features.scoreDriven.title": {
     "message": "スコア駆動アーキテクチャ"

@@ -5,10 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -24,27 +26,53 @@ type migration struct {
 	sha256  string
 }
 
+type options struct {
+	databaseURL   string
+	migrationsDir string
+	baseline      string
+}
+
 func main() {
-	if err := run(context.Background()); err != nil {
+	opts, err := optionsFromEnv(os.Args[1:], os.Getenv)
+	if err == nil {
+		err = runWithOptions(context.Background(), opts)
+	}
+	if err != nil {
 		slog.Error("migration failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context) error {
-	url := os.Getenv("MERLON_MIGRATION_DATABASE_URL")
+func optionsFromEnv(args []string, getenv func(string) string) (options, error) {
+	url := getenv("MERLON_MIGRATION_DATABASE_URL")
 	if url == "" {
-		url = os.Getenv("MERLON_DATABASE_URL")
-		if os.Getenv("MERLON_ENV") == "production" {
-			return errors.New("MERLON_MIGRATION_DATABASE_URL is required in production")
+		url = getenv("MERLON_DATABASE_URL")
+		if getenv("MERLON_ENV") == "production" {
+			return options{}, errors.New("MERLON_MIGRATION_DATABASE_URL is required in production")
 		}
 		if url == "" {
-			return errors.New("MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required")
+			return options{}, errors.New("MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required")
 		}
 		slog.Warn("using MERLON_DATABASE_URL as migration role; production must use a separate role")
 	}
+	dir := getenv("MERLON_MIGRATIONS_DIR")
+	if dir == "" {
+		dir = "migrations"
+	}
+	fs := flag.NewFlagSet("merlon-migrate", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.StringVar(&dir, "migrations-dir", dir, "directory containing versioned SQL migrations")
+	if err := fs.Parse(args); err != nil {
+		return options{}, err
+	}
+	if fs.NArg() != 0 {
+		return options{}, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	return options{databaseURL: url, migrationsDir: dir, baseline: getenv("MERLON_MIGRATION_BASELINE")}, nil
+}
 
-	pool, err := pgxpool.New(ctx, url)
+func runWithOptions(ctx context.Context, opts options) error {
+	pool, err := pgxpool.New(ctx, opts.databaseURL)
 	if err != nil {
 		return err
 	}
@@ -63,11 +91,11 @@ func run(ctx context.Context) error {
 	}
 	defer pool.Exec(context.Background(), `SELECT pg_advisory_unlock(hashtext('merlon.schema_migrations'))`)
 
-	migrations, err := loadMigrations("migrations")
+	migrations, err := loadMigrations(opts.migrationsDir)
 	if err != nil {
 		return err
 	}
-	if err := applyBaselineIfRequested(ctx, pool, migrations); err != nil {
+	if err := applyBaselineIfRequested(ctx, pool, migrations, opts.baseline); err != nil {
 		return err
 	}
 	for _, m := range migrations {
@@ -111,6 +139,8 @@ func loadMigrations(dir string) ([]migration, error) {
 		return nil, err
 	}
 	var out []migration
+	versions := make(map[string]string)
+	filenamePattern := regexp.MustCompile(`^([0-9]{3})_.+\.sql$`)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
@@ -120,19 +150,23 @@ func loadMigrations(dir string) ([]migration, error) {
 		if err != nil {
 			return nil, err
 		}
-		parts := strings.SplitN(entry.Name(), "_", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("migration filename must start with numeric version: %s", entry.Name())
+		match := filenamePattern.FindStringSubmatch(entry.Name())
+		if match == nil {
+			return nil, fmt.Errorf("migration filename must match NNN_name.sql: %s", entry.Name())
 		}
+		version := match[1]
+		if previous, ok := versions[version]; ok {
+			return nil, fmt.Errorf("duplicate migration version %s: %s and %s", version, previous, entry.Name())
+		}
+		versions[version] = entry.Name()
 		h := sha256.Sum256(data)
-		out = append(out, migration{version: parts[0], name: entry.Name(), path: path, sha256: hex.EncodeToString(h[:])})
+		out = append(out, migration{version: version, name: entry.Name(), path: path, sha256: hex.EncodeToString(h[:])})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].version < out[j].version })
 	return out, nil
 }
 
-func applyBaselineIfRequested(ctx context.Context, pool *pgxpool.Pool, migrations []migration) error {
-	baseline := os.Getenv("MERLON_MIGRATION_BASELINE")
+func applyBaselineIfRequested(ctx context.Context, pool *pgxpool.Pool, migrations []migration, baseline string) error {
 	if baseline == "" {
 		return nil
 	}

@@ -28,13 +28,7 @@ See [docs/decisions/0003-bsl-license-choice.md](docs/decisions/0003-bsl-license-
 ┌───────────────────────▼─────────────────────────┐
 │  api/ (Go)                                      │
 │  Customer, Transaction, Case, Report Services   │
-│  REST API + gRPC client                         │
-└───────────────────────┬─────────────────────────┘
-                        │ gRPC
-┌───────────────────────▼─────────────────────────┐
-│  engine/ (Rust)                                 │
-│  CDD Scoring, TM Evaluation, Screening,        │
-│  Backtest engines                               │
+│  REST API + native scoring/TM/screening engine  │
 └───────────────────────┬─────────────────────────┘
                         │
 ┌───────────────────────▼─────────────────────────┐
@@ -72,7 +66,7 @@ See [docs/getting-started.md](docs/getting-started.md) for the full guide.
 
 ## Development
 
-Requirements: Go 1.25+, Rust 1.87.0 (with `rustfmt` and `clippy`), Node.js 20+, [buf](https://buf.build/)
+Requirements: Go 1.25+, Node.js 20+
 
 ```bash
 # Run all tests
@@ -100,7 +94,7 @@ See [docs/development/setup.md](docs/development/setup.md) for detailed setup in
 
 ## Status
 
-This project is in active development (M18). Core backend services (Go API, Rust Engine), operator dashboard UI with full API coverage, code splitting, error boundaries, and development mock data seeder are implemented.
+This project is in active development (M18). Core backend services (Go API with native rule evaluation), operator dashboard UI with full API coverage, code splitting, error boundaries, and development mock data seeder are implemented.
 
 ## Production Warning
 

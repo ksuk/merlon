@@ -10,8 +10,9 @@ Principles:
 - Read-only only. Never mutate repository or environment state.
 - Redirect large output to a file; put aggregate counts plus the reference path
   in the report, not the raw dump.
-- This repository's (Merlon's) layout: Go = `api/`, Rust = `engine/`,
-  Node = `ui/` / `website/`, proto = `proto/`, CI = `.github/workflows/`.
+- This repository's (Merlon's) layout: Go = `api/`, native evaluation engine =
+  `api/internal/engine/native/`, Node = `ui/` / `website/`, CI =
+  `.github/workflows/`.
   When reusing this skill in another repository, remap the ecosystem-specific
   commands below.
 
@@ -53,18 +54,17 @@ git log --format=%B -100 | grep -c '^Signed-off-by:'  # DCO sign-off rate
 ```bash
 ls docs/architecture.md docs/decisions/ 2>/dev/null && ls docs/decisions/ | tail -5   # ADR presence and recency
 git log -1 --format=%ci -- docs/architecture.md       # structural-doc freshness
-git log --since=6.months --oneline -- proto/ | head   # external contract (proto) change history (D3-4)
+git log --since=6.months --oneline -- api/internal/engine/ | head   # evaluation contract change history (D3-4)
 grep -rn "import" api/internal/ --include="*.go" -l | head   # entry point for checking dependency direction (details need judgment-based review)
 ```
 
 ## D4 Implementation Quality
 
 ```bash
-ls .golangci.yml api/.golangci.yml engine/rustfmt.toml engine/clippy.toml ui/eslint.config.* 2>/dev/null
+ls .golangci.yml api/.golangci.yml ui/eslint.config.* 2>/dev/null
 grep -rn "nolint" api/ --include="*.go" | wc -l        # Go suppression-comment count
-grep -rEn "#\[allow\(" engine/ --include="*.rs" | grep -v target | wc -l   # Rust suppression-attribute count
 grep -rEn "eslint-disable|@ts-ignore|@ts-expect-error" ui/src website/src 2>/dev/null | wc -l
-grep -rEn "TODO|FIXME|HACK" api/ engine/ ui/src --include="*.go" --include="*.rs" --include="*.ts" --include="*.tsx" 2>/dev/null | wc -l
+grep -rEn "TODO|FIXME|HACK" api/ ui/src --include="*.go" --include="*.ts" --include="*.tsx" 2>/dev/null | wc -l
 # Empty catch / swallowed-error candidates (hits need context review before classifying):
 grep -rEn "catch \{|catch \(.*\) \{ *\}" ui/src website/src 2>/dev/null | head
 grep -rn "_ = " api/internal/ --include="*.go" | head   # Go discarded-return-value candidates
@@ -74,12 +74,11 @@ grep -rn "_ = " api/internal/ --include="*.go" | head   # Go discarded-return-va
 
 ```bash
 find api -name "*_test.go" | wc -l && find api -name "*.go" ! -name "*_test.go" | wc -l
-grep -rn "#\[test\]" engine/crates --include="*.rs" | wc -l
 find ui/src -name "*.test.*" -o -name "*.spec.*" | wc -l
 grep -n "test" .github/workflows/ci.yml               # CI gate strength (is it a required step)
 git log --no-merges --format=%H:%s -100 | grep -Ei ':fix' | head -20   # fix-type commits -> numerator for test-accompaniment rate
 # For each fix commit above: git show --stat <hash> to check whether a test file changed
-grep -rEn "\.skip|#\[ignore\]|t\.Skip" api engine/crates ui/src 2>/dev/null | head   # disabled tests
+grep -rEn "\.skip|t\.Skip" api ui/src 2>/dev/null | head   # disabled tests
 ```
 
 ## D6 Security
@@ -91,16 +90,16 @@ grep -n "gitleaks\|govulncheck\|audit" .github/workflows/security.yml   # CI sec
 grep -rn "InsecureSkipVerify" api/ --include="*.go"
 grep -rEn "exec\.Command|os/exec" api/internal --include="*.go" | head
 grep -rEn "dangerouslySetInnerHTML" ui/src | head
-grep -rEn "md5|sha1" api/internal engine/crates --include="*.go" --include="*.rs" | grep -iv "sha256\|test" | head
+grep -rEn "md5|sha1" api/internal --include="*.go" | grep -iv "sha256\|test" | head
 ```
 
 ## D7 Dependencies and Supply Chain
 
 ```bash
-ls api/go.sum engine/Cargo.lock ui/package-lock.json website/package-lock.json   # lockfile presence
+ls api/go.sum ui/package-lock.json website/package-lock.json   # lockfile presence
 ls .github/dependabot.yml .github/renovate.json 2>/dev/null                      # automated update bot config
-git log -5 --format=%ci -- api/go.sum engine/Cargo.lock ui/package-lock.json     # lockfile update frequency
-grep -n "go 1\." api/go.mod && grep -n "edition" engine/Cargo.toml && grep -n '"node"' ui/package.json website/package.json 2>/dev/null   # runtime versions (only cross-check EOL if outbound lookup is available)
+git log -5 --format=%ci -- api/go.sum ui/package-lock.json     # lockfile update frequency
+grep -n "go 1\." api/go.mod && grep -n '"node"' ui/package.json website/package.json 2>/dev/null   # runtime versions (only cross-check EOL if outbound lookup is available)
 find . -path ./node_modules -prune -o \( -name "*.jar" -o -name "*.so" -o -name "*.dll" \) -print   # vendored/unvetted binaries
 ```
 
@@ -109,7 +108,7 @@ find . -path ./node_modules -prune -o \( -name "*.jar" -o -name "*.so" -o -name 
 ```bash
 ls .github/workflows/
 grep -n "uses:" .github/workflows/*.yml | grep -v "#"   # classify pinning method per reference (@vN tag vs @<sha> digest)
-grep -n "go-version\|node-version\|rust-toolchain" .github/workflows/*.yml   # toolchain pinning
+grep -n "go-version\|node-version" .github/workflows/*.yml   # toolchain pinning
 grep -n "^[a-z-]*:" Makefile                          # local single entry point vs. CI correspondence (D8-6)
 ```
 
@@ -119,7 +118,7 @@ grep -n "^[a-z-]*:" Makefile                          # local single entry point
 grep -rn "/health\|/ready\|healthz" api/internal --include="*.go" | head   # health-check implementation
 ls docs/operations/ && ls config.example.yaml .env.example 2>/dev/null     # operations docs / config examples
 grep -rn "MERLON_" api/internal --include="*.go" -l | head                 # entry point for checking env-injected config
-grep -rEn "fmt\.Print|println!|console\.log" api/internal engine/crates ui/src 2>/dev/null | grep -v test | wc -l   # debug-residue density
+grep -rEn "fmt\.Print|console\.log" api/internal ui/src 2>/dev/null | grep -v test | wc -l   # debug-residue density
 # Runbook validity: extract commands/paths from docs/operations/*.md and cross-check they still exist (per D9's AI judgment criteria)
 ```
 
@@ -135,9 +134,9 @@ git log -1 --format=%ci -- docs/getting-started.md docs/architecture.md   # fres
 ## D11 Maintainability and Evolvability
 
 ```bash
-git shortlog -sn --no-merges --since=24.months -- api/ | head -5    # per-area concentration (repeat for engine/ and ui/)
+git shortlog -sn --no-merges --since=24.months -- api/ | head -5    # per-area concentration (repeat for ui/)
 git log --format=%s -300 | grep -c '^refactor'         # refactoring continuity
-grep -rn "Deprecated\|deprecated" api/internal engine/crates --include="*.go" --include="*.rs" | head   # deprecation lingering (check age via blame)
+grep -rn "Deprecated\|deprecated" api/internal --include="*.go" | head   # deprecation lingering (check age via blame)
 ```
 
 ## D12 Compliance and Audit Readiness (regulated profile only)
