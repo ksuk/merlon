@@ -77,6 +77,6 @@ make seed
 | `make minimal-up` / `make minimal-down` | 最小トポロジー（PostgreSQL + API のみ）を起動／停止 |
 | `make generate-openapi` | OpenAPI 仕様を `docs/api/openapi.json` にエクスポート |
 
-すでに起動中の PostgreSQL インスタンスに、compose トポロジー全体を起動せずにデモデータを投入するには、`scripts/seed-demo.sh` を実行する。このスクリプトは `psql` 経由で `deploy/seed/seed.sql` を読み込む。
+すでに起動中の PostgreSQL インスタンスに、compose トポロジー全体を起動せずにデモデータを投入するには、`scripts/seed-demo.sh` を実行する。このスクリプトは `psql` 経由で `deploy/seed/legacy/seed.sql` を読み込む。このファイルは現行スキーマと不一致（`deploy/seed/legacy/README.md` 参照）のため、動作するデモデータには `make seed`（`MERLON_SEED=true`）を推奨する。
 
 詳細は [テストガイド](testing.md) を参照。

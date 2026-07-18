@@ -89,6 +89,8 @@ make seed
 
 To seed demo data into an already-running PostgreSQL instance instead of
 starting the whole compose topology, run `scripts/seed-demo.sh`, which loads
-`deploy/seed/seed.sql` via `psql`.
+`deploy/seed/legacy/seed.sql` via `psql`. That file predates the current
+schema (see `deploy/seed/legacy/README.md`); prefer `MERLON_SEED=true` with
+`make seed` for a working demo dataset.
 
 See [testing.md](testing.md) for more detail.

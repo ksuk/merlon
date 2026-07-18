@@ -57,28 +57,51 @@ func Run(ctx context.Context, repos Repos) {
 		},
 	}
 
-	lowTier := domain.RiskTierLow
-	medTier := domain.RiskTierMedium
-	highTier := domain.RiskTierHigh
-	lowScore := 25.0
-	medScore := 55.0
-	highScore := 82.0
+	// Scores and tiers below are the native CDD engine's actual computed
+	// values (1-5 scale) for these customers' attributes, wired against
+	// content/_sample/cdd_weights/crypto_exchange.yaml (measured via
+	// POST /customers/{id}/score against a shell-run API with
+	// MERLON_CDD_WEIGHTS_PATH pointed at that preset; rounded to 2
+	// decimals). Using the real computed value (rather than an arbitrary
+	// value that merely satisfies the tier thresholds) keeps a demo
+	// re-score from flipping the tier shown at seed time. If these
+	// customers' attributes change, re-measure and update the values here.
+	tier001 := domain.RiskTierMedium
+	tier002 := domain.RiskTierMedium
+	tier003 := domain.RiskTierHigh
+	tier004 := domain.RiskTierMedium
+	tier005 := domain.RiskTierMedium
+	score001 := 2.65
+	score002 := 2.65
+	score003 := 4.6
+	score004 := 2.65
+	score005 := 3.2
 
 	scored1 := now.Add(-2 * 24 * time.Hour)
 	scored2 := now.Add(-1 * 24 * time.Hour)
 	scored3 := now.Add(-5 * 24 * time.Hour)
+	scored4 := now.Add(-3 * 24 * time.Hour)
+	scored5 := now.Add(-10 * 24 * time.Hour)
 
-	customers[0].RiskScore = &lowScore
-	customers[0].RiskTier = &lowTier
+	customers[0].RiskScore = &score001
+	customers[0].RiskTier = &tier001
 	customers[0].LastScoredAt = &scored1
 
-	customers[1].RiskScore = &medScore
-	customers[1].RiskTier = &medTier
+	customers[1].RiskScore = &score002
+	customers[1].RiskTier = &tier002
 	customers[1].LastScoredAt = &scored2
 
-	customers[2].RiskScore = &highScore
-	customers[2].RiskTier = &highTier
+	customers[2].RiskScore = &score003
+	customers[2].RiskTier = &tier003
 	customers[2].LastScoredAt = &scored3
+
+	customers[3].RiskScore = &score004
+	customers[3].RiskTier = &tier004
+	customers[3].LastScoredAt = &scored4
+
+	customers[4].RiskScore = &score005
+	customers[4].RiskTier = &tier005
+	customers[4].LastScoredAt = &scored5
 
 	for _, c := range customers {
 		if err := repos.Customers.Create(ctx, c); err != nil {

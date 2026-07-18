@@ -1,5 +1,5 @@
 {
-  "schema_note": "Demo customer data for import via the Merlon API. Mirrors deploy/seed/seed.sql. Names are fictitious.",
+  "schema_note": "Demo customer data for import via the Merlon API. Mirrors deploy/seed/legacy/seed.sql. Names are fictitious.",
   "customers": [
     {
       "id": "11111111-1111-1111-1111-111111111111",

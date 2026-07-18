@@ -74,3 +74,74 @@ func TestSeedPopulatesAllStores(t *testing.T) {
 		t.Errorf("expected at least 5 audit entries, got %d", len(logs))
 	}
 }
+
+// TestSeedScoresUseNativeEngineScale pins the seeded customer risk scores and
+// tiers to the native engine's 1-5 CDD scale (see
+// content/_sample/cdd_weights/crypto_exchange.yaml tier_thresholds: low<2.0,
+// medium 2.0-3.5, high>=3.5). The expected values are the engine's actual
+// computed scores for these customers (measured via POST /customers/{id}/score
+// against that preset), not arbitrary values that merely satisfy the
+// thresholds, so a demo re-score never contradicts the displayed seed data.
+func TestSeedScoresUseNativeEngineScale(t *testing.T) {
+	const (
+		lowMax    = 2.0
+		mediumMax = 3.5
+	)
+	tierFor := func(score float64) domain.RiskTier {
+		switch {
+		case score < lowMax:
+			return domain.RiskTierLow
+		case score < mediumMax:
+			return domain.RiskTierMedium
+		default:
+			return domain.RiskTierHigh
+		}
+	}
+
+	customers := store.NewMemoryCustomerRepo()
+	Run(context.Background(), Repos{
+		Customers:    customers,
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Cases:        store.NewMemoryCaseRepo(),
+		Audit:        store.NewMemoryAuditRepo(),
+	})
+
+	cases := []struct {
+		id        string
+		wantScore float64
+		wantTier  domain.RiskTier
+	}{
+		{"cust-001", 2.65, domain.RiskTierMedium},
+		{"cust-002", 2.65, domain.RiskTierMedium},
+		{"cust-003", 4.6, domain.RiskTierHigh},
+		{"cust-004", 2.65, domain.RiskTierMedium},
+		{"cust-005", 3.2, domain.RiskTierMedium},
+	}
+
+	for _, tc := range cases {
+		c, err := customers.Get(context.Background(), tc.id)
+		if err != nil {
+			t.Fatalf("get customer %s: %v", tc.id, err)
+		}
+		if c.RiskScore == nil {
+			t.Fatalf("expected risk score for %s", tc.id)
+		}
+		if *c.RiskScore != tc.wantScore {
+			t.Errorf("%s: expected score %v, got %v", tc.id, tc.wantScore, *c.RiskScore)
+		}
+		if *c.RiskScore < 0 || *c.RiskScore > 5 {
+			t.Errorf("%s: score %v out of native engine's 1-5 scale", tc.id, *c.RiskScore)
+		}
+		if c.RiskTier == nil {
+			t.Fatalf("expected risk tier for %s", tc.id)
+		}
+		if *c.RiskTier != tc.wantTier {
+			t.Errorf("%s: expected tier %v, got %v", tc.id, tc.wantTier, *c.RiskTier)
+		}
+		if derived := tierFor(*c.RiskScore); derived != *c.RiskTier {
+			t.Errorf("%s: tier %v is inconsistent with score %v (threshold-derived tier: %v)",
+				tc.id, *c.RiskTier, *c.RiskScore, derived)
+		}
+	}
+}
