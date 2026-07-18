@@ -110,7 +110,10 @@ func TestMemoryBacktestJobRepoTerminalStateGuards(t *testing.T) {
 func TestPostgresBacktestJobRepoTerminalStateGuards(t *testing.T) {
 	pool := newTestPgPool(t)
 	repo := NewPgBacktestJobRepo(pool)
-	testBacktestTerminalStateGuards(t, repo, newTestUUID, func(id string) {
+	testBacktestTerminalStateGuards(t, repo, func() string {
+		raw := newTestUUID()
+		return raw[:8] + "-" + raw[8:12] + "-" + raw[12:16] + "-" + raw[16:20] + "-" + raw[20:]
+	}, func(id string) {
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), `DELETE FROM backtest_jobs WHERE id=$1`, id)
 		})
