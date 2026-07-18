@@ -22,10 +22,14 @@ const backtestJobColumns = `id,status,from_at,to_at,customer_ids,customer_filter
 func scanBacktestJob(row pgx.Row) (*domain.BacktestJob, error) {
 	var j domain.BacktestJob
 	var status string
+	var jobError *string
 	var baselineVersion, candidateVersion *int
 	var ids, filter, scenarios, baselineDefinition, candidateDefinition, digests, baseline, candidate, delta []byte
-	if err := row.Scan(&j.ID, &status, &j.From, &j.To, &ids, &filter, &scenarios, &j.BaselineRuleSetID, &j.CandidateRuleSetID, &baselineVersion, &candidateVersion, &baselineDefinition, &candidateDefinition, &digests, &j.SnapshotAt, &j.TotalCustomers, &j.ProcessedCustomers, &j.Progress, &j.ETASeconds, &baseline, &candidate, &delta, &j.Error, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.UpdatedAt); err != nil {
+	if err := row.Scan(&j.ID, &status, &j.From, &j.To, &ids, &filter, &scenarios, &j.BaselineRuleSetID, &j.CandidateRuleSetID, &baselineVersion, &candidateVersion, &baselineDefinition, &candidateDefinition, &digests, &j.SnapshotAt, &j.TotalCustomers, &j.ProcessedCustomers, &j.Progress, &j.ETASeconds, &baseline, &candidate, &delta, &jobError, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.UpdatedAt); err != nil {
 		return nil, err
+	}
+	if jobError != nil {
+		j.Error = *jobError
 	}
 	if baselineVersion != nil {
 		j.BaselineRuleVersion = *baselineVersion
@@ -139,7 +143,7 @@ func (r *PgBacktestJobRepo) ClaimNext(ctx context.Context) (*domain.BacktestJob,
 	return r.Get(ctx, id)
 }
 func (r *PgBacktestJobRepo) UpdateProgress(ctx context.Context, id string, processed, total int, eta *int64) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET processed_customers=$2,total_customers=$3,progress=CASE WHEN $3=0 THEN 0 ELSE $2::double precision/$3 END,eta_seconds=$4,lease_expires_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND status='running'`, id, processed, total, eta)
+	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET processed_customers=$2::integer,total_customers=$3::integer,progress=CASE WHEN $3::integer=0 THEN 0 ELSE $2::double precision/$3::double precision END,eta_seconds=$4,lease_expires_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND status='running'`, id, processed, total, eta)
 	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
 }
 func (r *PgBacktestJobRepo) Complete(ctx context.Context, id string, b, c, d *domain.BacktestResult) error {
