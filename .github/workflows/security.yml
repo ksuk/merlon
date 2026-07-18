@@ -11,6 +11,10 @@ on:
   schedule:
     - cron: '0 9 * * 1'  # Weekly on Monday at 9:00 UTC
 
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gitleaks:
     name: Secret Scan
@@ -103,6 +107,7 @@ jobs:
 
   sbom:
     name: CycloneDX SBOM
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -145,11 +150,11 @@ jobs:
           WEBSITE_LICENSE_RESULT: ${{ needs.npm-licenses-website.result }}
           NPM_AUDIT_RESULT: ${{ needs.npm-audit.result }}
           SBOM_RESULT: ${{ needs.sbom.result }}
-        run: >-
-          test "$GITLEAKS_RESULT" = success
-          -a "$GOVULN_RESULT" = success
-          -a "$GO_LICENSE_RESULT" = success
-          -a "$UI_LICENSE_RESULT" = success
-          -a "$WEBSITE_LICENSE_RESULT" = success
-          -a "$NPM_AUDIT_RESULT" = success
-          -a "$SBOM_RESULT" = success
+        run: |
+          for result in "$GITLEAKS_RESULT" "$GOVULN_RESULT" "$GO_LICENSE_RESULT" "$UI_LICENSE_RESULT" "$WEBSITE_LICENSE_RESULT" "$NPM_AUDIT_RESULT"; do
+            test "$result" = success
+          done
+          case "$SBOM_RESULT" in
+            success|skipped) ;;
+            *) echo "sbom job failed or cancelled: $SBOM_RESULT" >&2; exit 1 ;;
+          esac
