@@ -1,72 +1,203 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
-import { FlaskConical, Play } from "lucide-react"
-import { useRef, useState } from "react"
+import { FlaskConical, Play, RotateCcw, X } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+
+const pollingBackoffMs = [1000, 2000, 4000, 8000, 15000] as const
+const maxPollingDurationMs = 10 * 60 * 1000
+
+interface PollMessage {
+  key: string
+  detail?: string
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError"
+}
 
 export function BacktestPage() {
   const { t } = useTranslation()
   const { data: customers, loading, error } = useApi(api.customers.list)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [job, setJob] = useState<BacktestJob | null>(null)
+  const [pollMessage, setPollMessage] = useState<PollMessage | null>(null)
   const [from, setFrom] = useState(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
   const descRef = useRef<HTMLInputElement>(null)
   const candidateRef = useRef<HTMLInputElement>(null)
+  const pollAbortRef = useRef<AbortController | null>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(false)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      pollAbortRef.current?.abort()
+      if (pollTimerRef.current !== null) clearTimeout(pollTimerRef.current)
+    }
+  }, [])
 
   function toggleCustomer(id: string) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id],
-    )
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]))
   }
 
   function selectAll() {
     if (!customers) return
-    setSelectedIds(
-      selectedIds.length === customers.length ? [] : customers.map((c) => c.id),
-    )
+    setSelectedIds(selectedIds.length === customers.length ? [] : customers.map((c) => c.id))
+  }
+
+  function beginPollingSession() {
+    pollAbortRef.current?.abort()
+    if (pollTimerRef.current !== null) clearTimeout(pollTimerRef.current)
+    const controller = new AbortController()
+    pollAbortRef.current = controller
+    setRunning(true)
+    setPollMessage(null)
+    return controller
+  }
+
+  function waitForNextPoll(delay: number, signal: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        if (pollTimerRef.current !== null) clearTimeout(pollTimerRef.current)
+        pollTimerRef.current = null
+        reject(new DOMException("Polling aborted", "AbortError"))
+      }
+      pollTimerRef.current = setTimeout(() => {
+        pollTimerRef.current = null
+        signal.removeEventListener("abort", onAbort)
+        resolve()
+      }, delay)
+      signal.addEventListener("abort", onAbort, { once: true })
+    })
+  }
+
+  async function pollUntilTerminal(initial: BacktestJob, controller: AbortController) {
+    let current = initial
+    let attempt = 0
+    const startedAt = Date.now()
+    while (current.status === "queued" || current.status === "running") {
+      const remaining = maxPollingDurationMs - (Date.now() - startedAt)
+      if (remaining <= 0) throw new Error("POLLING_TIMEOUT")
+      const delay = Math.min(pollingBackoffMs[Math.min(attempt, pollingBackoffMs.length - 1)], remaining)
+      await waitForNextPoll(delay, controller.signal)
+      if (Date.now() - startedAt >= maxPollingDurationMs) throw new Error("POLLING_TIMEOUT")
+      current = await api.backtest.get(current.id, controller.signal)
+      if (mountedRef.current && pollAbortRef.current === controller) setJob(current)
+      attempt++
+    }
+    return current
+  }
+
+  async function runPolling(initial: BacktestJob, controller: AbortController) {
+    try {
+      const current = await pollUntilTerminal(initial, controller)
+      if (!mountedRef.current || pollAbortRef.current !== controller) return
+      if (current.status === "completed" && current.candidate) {
+        setResult(current.candidate)
+      } else if (current.status === "completed") {
+        setPollMessage({ key: "backtest.polling.missingResult" })
+      } else if (current.status === "failed") {
+        setPollMessage({
+          key: "backtest.polling.failed",
+          detail: current.error,
+        })
+      } else if (current.status === "cancelled") {
+        setPollMessage({ key: "backtest.polling.cancelled" })
+      }
+    } catch (error) {
+      if (isAbortError(error) || !mountedRef.current || pollAbortRef.current !== controller) return
+      if (error instanceof Error && error.message === "POLLING_TIMEOUT") {
+        setPollMessage({ key: "backtest.polling.timeout" })
+      } else {
+        setPollMessage({
+          key: "backtest.polling.error",
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    } finally {
+      if (mountedRef.current && pollAbortRef.current === controller) {
+        pollAbortRef.current = null
+        setRunning(false)
+      }
+    }
   }
 
   async function handleRun() {
     if (selectedIds.length === 0) return
-    setRunning(true)
+    const candidate = candidateRef.current?.value.trim() || ""
+    if (!candidate) {
+      setPollMessage({ key: "backtest.polling.candidateRequired" })
+      return
+    }
     setResult(null)
+    setJob(null)
+    const controller = beginPollingSession()
     try {
-      const candidate = candidateRef.current?.value.trim() || ""
-      if (!candidate) return
-      const created = await api.backtest.create({
-        from: `${from}T00:00:00Z`,
-        to: `${to}T00:00:00Z`,
-        customer_ids: selectedIds,
-        scenario_ids: [],
-        baseline_rule_set_id: "active",
-        candidate_rule_set_id: candidate,
-      })
+      const created = await api.backtest.create(
+        {
+          from: `${from}T00:00:00Z`,
+          to: `${to}T00:00:00Z`,
+          customer_ids: selectedIds,
+          scenario_ids: [],
+          baseline_rule_set_id: "active",
+          candidate_rule_set_id: candidate,
+        },
+        controller.signal,
+      )
+      if (!mountedRef.current || pollAbortRef.current !== controller) return
       setJob(created)
-      let current = created
-      while (current.status === "queued" || current.status === "running") {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        current = await api.backtest.get(current.id)
-        setJob(current)
-      }
-      if (current.status === "completed" && current.candidate) setResult(current.candidate)
-    } finally {
+      await runPolling(created, controller)
+    } catch (error) {
+      if (isAbortError(error) || !mountedRef.current || pollAbortRef.current !== controller) return
+      setPollMessage({
+        key: "backtest.polling.startError",
+        detail: error instanceof Error ? error.message : String(error),
+      })
+      pollAbortRef.current = null
       setRunning(false)
     }
   }
+
+  function handleResume() {
+    if (!job || (job.status !== "queued" && job.status !== "running")) return
+    void runPolling(job, beginPollingSession())
+  }
+
+  async function handleCancel() {
+    if (!job || (job.status !== "queued" && job.status !== "running")) return
+    pollAbortRef.current?.abort()
+    pollAbortRef.current = null
+    if (pollTimerRef.current !== null) clearTimeout(pollTimerRef.current)
+    pollTimerRef.current = null
+    setRunning(false)
+    setCancelling(true)
+    try {
+      const cancelled = await api.backtest.cancel(job.id)
+      if (!mountedRef.current) return
+      setJob(cancelled)
+      setPollMessage({ key: "backtest.polling.cancelled" })
+    } catch (error) {
+      if (!mountedRef.current) return
+      setPollMessage({
+        key: "backtest.polling.cancelError",
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      if (mountedRef.current) setCancelling(false)
+    }
+  }
+
+  const hasActiveJob = job?.status === "queued" || job?.status === "running"
 
   if (loading) {
     return (
@@ -102,16 +233,20 @@ export function BacktestPage() {
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-sm font-medium">From (UTC)
+            <label className="text-sm font-medium">
+              {t("backtest.form.from")}
               <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
             </label>
-            <label className="text-sm font-medium">To (UTC, exclusive)
+            <label className="text-sm font-medium">
+              {t("backtest.form.to")}
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm" />
             </label>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Candidate rule set</label>
-            <input ref={candidateRef} placeholder="active TM rule name" required className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            <label htmlFor="backtest-candidate" className="mb-1 block text-sm font-medium">
+              {t("backtest.form.candidateRuleSet")}
+            </label>
+            <input id="backtest-candidate" ref={candidateRef} placeholder={t("backtest.form.candidatePlaceholder")} required className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
           </div>
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -126,11 +261,7 @@ export function BacktestPage() {
                   key={c.id}
                   type="button"
                   onClick={() => toggleCustomer(c.id)}
-                  className={`flex w-full items-center gap-3 rounded-md border p-2 text-left text-sm transition-colors ${
-                    selectedIds.includes(c.id)
-                      ? "border-primary bg-primary/5"
-                      : "hover:bg-accent"
-                  }`}
+                  className={`flex w-full items-center gap-3 rounded-md border p-2 text-left text-sm transition-colors ${selectedIds.includes(c.id) ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
                 >
                   <div className={`h-3 w-3 rounded-sm border ${selectedIds.includes(c.id) ? "border-primary bg-primary" : "border-input"}`} />
                   <span className="font-mono text-xs">{c.external_id}</span>
@@ -139,11 +270,39 @@ export function BacktestPage() {
               ))}
             </div>
           </div>
-          <Button size="sm" disabled={running || selectedIds.length === 0} onClick={handleRun}>
-            <Play className="h-4 w-4" />
-            {running ? t("backtest.form.running") : t("backtest.form.submit")}
-          </Button>
-          {job && <p className="text-xs text-muted-foreground">Job {job.id}: {job.status} ({Math.round(job.progress * 100)}%)</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={running || cancelling || hasActiveJob || selectedIds.length === 0} onClick={handleRun}>
+              <Play className="h-4 w-4" />
+              {running ? t("backtest.form.running") : t("backtest.form.submit")}
+            </Button>
+            {hasActiveJob && (
+              <Button size="sm" variant="outline" disabled={cancelling} onClick={handleCancel}>
+                <X className="h-4 w-4" />
+                {t("backtest.polling.cancel")}
+              </Button>
+            )}
+            {!running && pollMessage && hasActiveJob && (
+              <Button size="sm" variant="outline" onClick={handleResume}>
+                <RotateCcw className="h-4 w-4" />
+                {t("backtest.polling.resume")}
+              </Button>
+            )}
+          </div>
+          {job && (
+            <p className="text-xs text-muted-foreground">
+              {t("backtest.job.summary", {
+                id: job.id,
+                status: t(`backtest.job.status.${job.status}`),
+                progress: Math.round(job.progress * 100),
+              })}
+            </p>
+          )}
+          {pollMessage && (
+            <p role="alert" className="text-sm text-destructive">
+              {t(pollMessage.key)}
+              {pollMessage.detail ? `: ${pollMessage.detail}` : ""}
+            </p>
+          )}
         </CardContent>
       </Card>
 

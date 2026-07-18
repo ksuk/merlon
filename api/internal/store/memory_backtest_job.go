@@ -143,6 +143,9 @@ func (r *MemoryBacktestJobRepo) UpdateProgress(_ context.Context, id string, pro
 	if !ok {
 		return &domain.ErrNotFound{Entity: "backtest_job", ID: id}
 	}
+	if j.Status != domain.BacktestJobRunning {
+		return nil
+	}
 	j.ProcessedCustomers = processed
 	j.TotalCustomers = total
 	j.ETASeconds = eta
@@ -159,7 +162,7 @@ func (r *MemoryBacktestJobRepo) Complete(_ context.Context, id string, baseline,
 	if !ok {
 		return &domain.ErrNotFound{Entity: "backtest_job", ID: id}
 	}
-	if j.Status == domain.BacktestJobCancelled {
+	if j.Status != domain.BacktestJobRunning {
 		return nil
 	}
 	now := time.Now().UTC()
@@ -176,6 +179,9 @@ func (r *MemoryBacktestJobRepo) Fail(_ context.Context, id, reason string) error
 	j, ok := r.data[id]
 	if !ok {
 		return &domain.ErrNotFound{Entity: "backtest_job", ID: id}
+	}
+	if j.Status != domain.BacktestJobRunning {
+		return nil
 	}
 	j.Status = domain.BacktestJobFailed
 	j.Error = reason

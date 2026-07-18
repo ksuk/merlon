@@ -139,15 +139,25 @@ func (r *PgBacktestJobRepo) ClaimNext(ctx context.Context) (*domain.BacktestJob,
 	return r.Get(ctx, id)
 }
 func (r *PgBacktestJobRepo) UpdateProgress(ctx context.Context, id string, processed, total int, eta *int64) error {
-	_, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET processed_customers=$2,total_customers=$3,progress=CASE WHEN $3=0 THEN 0 ELSE $2::double precision/$3 END,eta_seconds=$4,lease_expires_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND status='running'`, id, processed, total, eta)
-	return err
+	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET processed_customers=$2,total_customers=$3,progress=CASE WHEN $3=0 THEN 0 ELSE $2::double precision/$3 END,eta_seconds=$4,lease_expires_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND status='running'`, id, processed, total, eta)
+	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
 }
 func (r *PgBacktestJobRepo) Complete(ctx context.Context, id string, b, c, d *domain.BacktestResult) error {
-	_, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='completed',progress=1,baseline=$2,candidate=$3,delta=$4,completed_at=now(),updated_at=now() WHERE id=$1 AND status='running'`, id, nullableJSON(b), nullableJSON(c), nullableJSON(d))
-	return err
+	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='completed',progress=1,baseline=$2,candidate=$3,delta=$4,completed_at=now(),updated_at=now() WHERE id=$1 AND status='running'`, id, nullableJSON(b), nullableJSON(c), nullableJSON(d))
+	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
 }
 func (r *PgBacktestJobRepo) Fail(ctx context.Context, id, reason string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='failed',error=$2,updated_at=now() WHERE id=$1`, id, reason)
+	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='failed',error=$2,updated_at=now() WHERE id=$1 AND status='running'`, id, reason)
+	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
+}
+
+// backtestMutationResult preserves terminal jobs as no-ops while retaining
+// the repository contract's typed not-found error for unknown IDs.
+func (r *PgBacktestJobRepo) backtestMutationResult(ctx context.Context, id string, rowsAffected int64, err error) error {
+	if err != nil || rowsAffected > 0 {
+		return err
+	}
+	_, err = r.Get(ctx, id)
 	return err
 }
 

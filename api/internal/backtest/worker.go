@@ -7,6 +7,7 @@ import (
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
 
 type Worker struct {
@@ -38,13 +39,39 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	if err != nil || job == nil {
 		return err
 	}
-	if err := w.execute(ctx, job); err != nil {
+	jobCtx, cancel := context.WithCancel(ctx)
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		w.monitorCancellation(jobCtx, job.ID, cancel)
+	}()
+	err = w.execute(jobCtx, job)
+	cancel()
+	<-monitorDone
+	if err != nil {
 		if ctx.Err() == nil {
 			_ = w.Jobs.Fail(ctx, job.ID, err.Error())
 		}
 		return err
 	}
 	return nil
+}
+
+func (w *Worker) monitorCancellation(ctx context.Context, jobID string, cancel context.CancelFunc) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		job, err := w.Jobs.Get(ctx, jobID)
+		if err == nil && job.Status == domain.BacktestJobCancelled {
+			cancel()
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (w *Worker) execute(ctx context.Context, job *domain.BacktestJob) error {
@@ -121,46 +148,18 @@ func (w *Worker) runBacktest(ctx context.Context, customers []domain.Customer, t
 	return versioned.RunBacktestWithRuleSet(ctx, customers, transactions, scenarioIDs, description, ruleSetID, definition)
 }
 
-// snapshotTransactions uses the event-time keyset capability when the backing
-// store provides it. The offset-based fallback is retained for adapters that
-// predate PH9, but still applies the exact half-open window and snapshot
-// cutoff before handing data to the engine.
+// snapshotTransactions pins the same half-open event-time and inclusive
+// ingestion-time snapshot semantics used by realtime and batch evaluation.
 func (w *Worker) snapshotTransactions(ctx context.Context, customerID string, job *domain.BacktestJob) ([]domain.Transaction, error) {
 	createdBefore := job.SnapshotAt
 	if createdBefore.IsZero() {
 		createdBefore = time.Now().UTC()
 	}
-	if history, ok := w.Transactions.(domain.TransactionHistoryRepository); ok {
-		var out []domain.Transaction
-		var after *domain.TransactionEventCursor
-		for {
-			page, err := history.ListByCustomerEventRange(ctx, customerID, job.From, job.To, createdBefore, 1000, after)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, page...)
-			if len(page) < 1000 {
-				return out, nil
-			}
-			last := page[len(page)-1]
-			after = &domain.TransactionEventCursor{ExecutedAt: last.ExecutedAt, ID: last.ID}
-		}
-	}
-	var out []domain.Transaction
-	for offset := 0; ; offset += 1000 {
-		page, err := w.Transactions.ListByCustomer(ctx, customerID, 1000, offset)
-		if err != nil {
-			return nil, err
-		}
-		for _, t := range page {
-			if !t.ExecutedAt.Before(job.From) && t.ExecutedAt.Before(job.To) && !t.CreatedAt.After(createdBefore) {
-				out = append(out, t)
-			}
-		}
-		if len(page) < 1000 {
-			return out, nil
-		}
-	}
+	return transactionhistory.ListCustomerTransactionsAsOf(ctx, w.Transactions, customerID, transactionhistory.Query{
+		From:           job.From,
+		To:             job.To,
+		CreatedThrough: createdBefore,
+	})
 }
 
 func (w *Worker) snapshotCustomers(ctx context.Context, job *domain.BacktestJob) ([]domain.Customer, error) {
@@ -174,9 +173,12 @@ func (w *Worker) snapshotCustomers(ctx context.Context, job *domain.BacktestJob)
 		}
 	}
 	var ids []string
+	var scannedCustomers []domain.Customer
+	scannedFilter := false
 	if len(job.CustomerIDs) > 0 {
 		ids = append(ids, job.CustomerIDs...)
 	} else {
+		scannedFilter = true
 		var after *domain.Cursor
 		for {
 			page, err := w.Customers.ListByCursor(ctx, 500, after)
@@ -192,6 +194,7 @@ func (w *Worker) snapshotCustomers(ctx context.Context, job *domain.BacktestJob)
 				}
 				if job.CustomerFilter == nil || matchesFilter(c, job.CustomerFilter) {
 					ids = append(ids, c.ID)
+					scannedCustomers = append(scannedCustomers, c)
 				}
 			}
 			if len(page) < 500 {
@@ -205,6 +208,9 @@ func (w *Worker) snapshotCustomers(ctx context.Context, job *domain.BacktestJob)
 		if err := snapshots.SaveCustomerSnapshot(ctx, job.ID, ids); err != nil {
 			return nil, err
 		}
+	}
+	if scannedFilter {
+		return scannedCustomers, nil
 	}
 	return w.loadCustomersByID(ctx, ids)
 }

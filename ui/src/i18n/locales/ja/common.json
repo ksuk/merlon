@@ -538,8 +538,34 @@
       "targetCustomers": "対象顧客",
       "selectAll": "全選択",
       "deselectAll": "全解除",
+      "from": "開始日時（UTC）",
+      "to": "終了日時（UTC、この日時を含まない）",
+      "candidateRuleSet": "候補ルールセット",
+      "candidatePlaceholder": "有効なTMルール名",
       "running": "実行中...",
       "submit": "バックテスト実行"
+    },
+    "job": {
+      "summary": "ジョブ {{id}}: {{status}}（{{progress}}%）",
+      "status": {
+        "queued": "待機中",
+        "running": "実行中",
+        "completed": "完了",
+        "failed": "失敗",
+        "cancelled": "キャンセル済み"
+      }
+    },
+    "polling": {
+      "error": "ジョブ状況の取得に失敗しました",
+      "startError": "バックテストジョブを開始できませんでした",
+      "timeout": "ジョブが10分以内に完了しませんでした",
+      "failed": "バックテストジョブが失敗しました",
+      "cancelled": "バックテストジョブがキャンセルされました",
+      "missingResult": "完了したジョブから結果を取得できませんでした",
+      "candidateRequired": "候補ルールセットを入力してください",
+      "cancelError": "バックテストジョブをキャンセルできませんでした",
+      "cancel": "ジョブをキャンセル",
+      "resume": "ポーリングを再開"
     },
     "result": {
       "title": "実行結果",

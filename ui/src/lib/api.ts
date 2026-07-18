@@ -595,9 +595,9 @@ export const api = {
       `${BASE}/reports/str/export?alert_id=${encodeURIComponent(alertId)}&format=${format}`,
   },
   backtest: {
-    create: (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string }) =>
-      request<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(input) }),
-    get: (id: string) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}`),
+    create: (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string }, signal?: AbortSignal) =>
+      request<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(input), signal }),
+    get: (id: string, signal?: AbortSignal) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}`, { signal }),
     cancel: (id: string) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>
       request<BacktestResult>("/backtest", {

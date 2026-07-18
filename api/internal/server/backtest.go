@@ -170,7 +170,7 @@ func (s *Server) handleGetBacktestJob(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := s.backtestJobs.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+		writeBacktestRepositoryError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
@@ -181,12 +181,12 @@ func (s *Server) handleCancelBacktestJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.backtestJobs.Cancel(r.Context(), r.PathValue("id")); err != nil {
-		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, err.Error())
+		writeBacktestRepositoryError(w, err)
 		return
 	}
 	job, err := s.backtestJobs.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		writeBacktestRepositoryError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
@@ -198,7 +198,7 @@ func (s *Server) handleBacktestAffectedCustomers(w http.ResponseWriter, r *http.
 	}
 	job, err := s.backtestJobs.Get(r.Context(), r.PathValue("id"))
 	if err != nil {
-		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+		writeBacktestRepositoryError(w, err)
 		return
 	}
 	var ids []string
@@ -226,6 +226,21 @@ func (s *Server) handleBacktestAffectedCustomers(w http.ResponseWriter, r *http.
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": ids[offset:end], "pagination": map[string]any{"limit": limit, "offset": offset, "total": len(ids)}})
 }
+
+func writeBacktestRepositoryError(w http.ResponseWriter, err error) {
+	var notFound *domain.ErrNotFound
+	if errors.As(err, &notFound) {
+		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+		return
+	}
+	var conflict *domain.ErrConflict
+	if errors.As(err, &conflict) {
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, err.Error())
+		return
+	}
+	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+}
+
 func uniqueStrings(in []string) []string {
 	out := []string{}
 	for _, v := range in {

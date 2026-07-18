@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,20 @@ import (
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/store"
 )
+
+type errorBacktestJobRepository struct {
+	domain.BacktestJobRepository
+	getErr    error
+	cancelErr error
+}
+
+func (r *errorBacktestJobRepository) Get(context.Context, string) (*domain.BacktestJob, error) {
+	return nil, r.getErr
+}
+
+func (r *errorBacktestJobRepository) Cancel(context.Context, string) error {
+	return r.cancelErr
+}
 
 func TestCreateBacktestJobRequiresUTCWindowAndSelector(t *testing.T) {
 	jobs := store.NewMemoryBacktestJobRepo()
@@ -43,5 +58,57 @@ func TestCreateBacktestJobRequiresUTCWindowAndSelector(t *testing.T) {
 	stored, err := jobs.Get(context.Background(), job.ID)
 	if err != nil || stored.CandidateRuleVersion != 1 || len(stored.CandidateRuleDefinition) == 0 {
 		t.Fatalf("stored rule snapshot=%+v err=%v", stored, err)
+	}
+}
+
+func TestBacktestJobHandlersMapOnlyNotFoundErrorsTo404(t *testing.T) {
+	for _, endpoint := range []string{
+		"/api/v1/backtests/job-1",
+		"/api/v1/backtests/job-1/affected-customers",
+	} {
+		endpoint := endpoint
+		t.Run(endpoint, func(t *testing.T) {
+			for _, tc := range []struct {
+				name string
+				err  error
+				want int
+			}{
+				{name: "not found", err: &domain.ErrNotFound{Entity: "backtest_job", ID: "job-1"}, want: http.StatusNotFound},
+				{name: "repository failure", err: errors.New("database unavailable"), want: http.StatusInternalServerError},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					repo := &errorBacktestJobRepository{BacktestJobRepository: store.NewMemoryBacktestJobRepo(), getErr: tc.err}
+					s := New(":0", Deps{BacktestJobs: repo})
+					req := httptest.NewRequest(http.MethodGet, endpoint, nil)
+					rec := httptest.NewRecorder()
+					s.Handler().ServeHTTP(rec, req)
+					if rec.Code != tc.want {
+						t.Fatalf("status=%d, want=%d body=%s", rec.Code, tc.want, rec.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCancelBacktestJobMapsRepositoryErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "not found", err: &domain.ErrNotFound{Entity: "backtest_job", ID: "job-1"}, want: http.StatusNotFound},
+		{name: "repository failure", err: errors.New("database unavailable"), want: http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &errorBacktestJobRepository{BacktestJobRepository: store.NewMemoryBacktestJobRepo(), cancelErr: tc.err}
+			s := New(":0", Deps{BacktestJobs: repo})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/backtests/job-1/cancel", nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status=%d, want=%d body=%s", rec.Code, tc.want, rec.Body.String())
+			}
+		})
 	}
 }
