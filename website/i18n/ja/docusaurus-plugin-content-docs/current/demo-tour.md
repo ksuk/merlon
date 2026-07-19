@@ -34,8 +34,8 @@ docker compose -f docker-compose.demo.yml up --build
 3. **アラート詳細** — `scenario_id`（`tm_rapid_movement`。Rules画面へのリンクあり）と説明文を確認し、関連取引バッジ3件のうち1件を開く。例えばパススルーの起点となったinbound取引: [`/transactions/b3dbf56d-8e2a-5f1c-86d2-ddf35ce38bfd`](http://127.0.0.1:8080/transactions/b3dbf56d-8e2a-5f1c-86d2-ddf35ce38bfd) — 香港からの320万円のinbound送金で、6時間以内にシンガポール・マレーシア宛のoutboundが続き、rapid-movementウィンドウでまとめて検知されている。
 4. **顧客詳細**（[`/customers/61a626c6-ced4-536d-be74-41d6ca874e4d`](http://127.0.0.1:8080/customers/61a626c6-ced4-536d-be74-41d6ca874e4d)）— CDDスコアのファクター内訳を確認し、「Score」ボタン（UI言語設定がjaの場合の表示は「スコアリング」）をクリックしてnative engineによるライブ再スコアリングを実演する。スコア履歴に同じルールセット・同じtierの新しい行が追加されることを確認する（Auditability First: 同一入力から同一出力が再現される）。
 5. **ケース** — アラートに紐づく既存ケースを開き（[`/cases/3a55610e-d00f-5a34-8bfa-cc9753cbfa06`](http://127.0.0.1:8080/cases/3a55610e-d00f-5a34-8bfa-cc9753cbfa06)）、短いメモを追加し、ステータスを遷移させる。ここが書き込み体験のステップである — メモとステータス変更は事前に仕込まれたものではなく、自分の操作である。
-6. **Reports**（[`/reports`](http://127.0.0.1:8080/reports)）— 一覧から `demo-story-04` のアラートを選び（severity=criticalのため対象に含まれる）、STR下書きを作成し、CSVまたはJSONでエクスポートする。
-7. **Audit**（[`/audit`](http://127.0.0.1:8080/audit)）— 直前に行った再スコアリング・ケースメモ・ステータス変更・STR作成のすべてが、実行者とタイムスタンプ付きで記録されていることを確認する。Auditability First原則の締めくくりであり、あらかじめ仕込まれた履歴だけでなく、いま自分が行った操作も記録される。
+6. **Reports**（[`/reports`](http://127.0.0.1:8080/reports)）— 一覧から `demo-story-04` のアラートを選び（severity=criticalのため対象に含まれる）、STR下書きを生成し、CSVまたはJSONでエクスポートする。この下書きはこのワークフローのために生成されるものであり、監査証跡に記録されるのは書き込みリクエストそのものである。
+7. **Audit**（[`/audit`](http://127.0.0.1:8080/audit)）— 直前に行った再スコアリング・ケースメモ追加リクエスト・ステータス変更・STR下書き作成リクエストのすべてが、実行者とタイムスタンプ付きで記録されていることを確認する。Auditability First原則の締めくくりであり、あらかじめ仕込まれた履歴だけでなく、すべての書き込み操作がAPI共通の監査ミドルウェアによって記録される。
 
 ## 動線B — 技術評価者（5〜7分）
 
