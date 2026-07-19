@@ -13,6 +13,7 @@ import (
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine/native"
+	"gopkg.in/yaml.v3"
 )
 
 // testOptions points the generator at the real repository content, using
@@ -27,6 +28,7 @@ func testOptions() Options {
 		CDDWeightsPath:     "../../../content/_sample/cdd_weights/funds_transfer.yaml",
 		TMScenariosPath:    "../../../content/_sample/tm_scenarios",
 		ScreeningListsPath: "../../../deploy/seed/demo/screening_lists",
+		CountryRiskPath:    "../../../content/_sample/country_risk_sample.yaml",
 	}
 }
 
@@ -50,13 +52,18 @@ func generateOnce(t *testing.T) *Result {
 	return cachedResult
 }
 
+// screeningCustomerCount is len(buildScreeningCustomers()): additive to the
+// 1000-customer A2 population (A8's screening-hit narrative customers).
+const screeningCustomerCount = 15
+
 func TestGenerateProducesExpectedCounts(t *testing.T) {
 	r := generateOnce(t)
-	if len(r.Customers) != DefaultCustomers {
-		t.Fatalf("expected %d customers, got %d", DefaultCustomers, len(r.Customers))
+	wantCustomers := DefaultCustomers + screeningCustomerCount
+	if len(r.Customers) != wantCustomers {
+		t.Fatalf("expected %d customers (%d main + %d screening), got %d", wantCustomers, DefaultCustomers, screeningCustomerCount, len(r.Customers))
 	}
-	if len(r.ScoreHistory) != DefaultCustomers {
-		t.Fatalf("expected %d score_history entries, got %d", DefaultCustomers, len(r.ScoreHistory))
+	if len(r.ScoreHistory) != wantCustomers {
+		t.Fatalf("expected %d score_history entries, got %d", wantCustomers, len(r.ScoreHistory))
 	}
 	if len(r.Accounts) != 10 {
 		t.Fatalf("expected 10 accounts, got %d", len(r.Accounts))
@@ -179,6 +186,33 @@ func TestGenerateIsByteIdenticalAcrossRuns(t *testing.T) {
 	if d1, d2 := digest(r1.AccountCustomers), digest(r2.AccountCustomers); d1 != d2 {
 		t.Errorf("account_customers digest differs across runs: %s != %s", d1, d2)
 	}
+	if d1, d2 := digest(r1.Transactions), digest(r2.Transactions); d1 != d2 {
+		t.Errorf("transactions.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if d1, d2 := digest(r1.Alerts), digest(r2.Alerts); d1 != d2 {
+		t.Errorf("alerts.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if d1, d2 := digest(r1.Cases), digest(r2.Cases); d1 != d2 {
+		t.Errorf("cases.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if d1, d2 := digest(r1.CaseNotes), digest(r2.CaseNotes); d1 != d2 {
+		t.Errorf("case_notes.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if d1, d2 := digest(r1.ScreeningResults), digest(r2.ScreeningResults); d1 != d2 {
+		t.Errorf("screening_results.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if d1, d2 := digest(r1.AuditLogs), digest(r2.AuditLogs); d1 != d2 {
+		t.Errorf("audit_logs.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if d1, d2 := digest(r1.RuleDefinitions), digest(r2.RuleDefinitions); d1 != d2 {
+		t.Errorf("rule_definitions.json digest differs across runs: %s != %s", d1, d2)
+	}
+	if r1.StoryIDsMarkdown != r2.StoryIDsMarkdown {
+		t.Errorf("STORY_IDS.md content differs across runs")
+	}
+	if d1, d2 := digest(r1.ScreeningLists), digest(r2.ScreeningLists); d1 != d2 {
+		t.Errorf("screening_lists digest differs across runs: %s != %s", d1, d2)
+	}
 }
 
 // TestWriteFilesIsByteIdentical exercises the actual file-writing path
@@ -288,6 +322,223 @@ func TestStoryCustomersScoreNearNarrativeTargets(t *testing.T) {
 				got = string(*c.RiskTier)
 			}
 			t.Errorf("story customer %s: expected tier %s, got %s (score=%v)", tc.id, tc.tier, got, c.RiskScore)
+		}
+	}
+}
+
+// withinTolerance reports whether got is within tolerancePct percent of
+// want (A2's "推奨値±10%以内" acceptance criterion).
+func withinTolerance(got, want int, tolerancePct float64) bool {
+	lo := float64(want) * (1 - tolerancePct/100)
+	hi := float64(want) * (1 + tolerancePct/100)
+	return float64(got) >= lo && float64(got) <= hi
+}
+
+// TestGenerateCountsWithinA2Tolerance checks T1-W2's generated volumes
+// against Appendix A2's recommended counts, all within ±10%.
+func TestGenerateCountsWithinA2Tolerance(t *testing.T) {
+	r := generateOnce(t)
+	if !withinTolerance(len(r.Transactions), 48000, 10) {
+		t.Errorf("transactions: got %d, want ~48000 (±10%%)", len(r.Transactions))
+	}
+	if !withinTolerance(len(r.Alerts), 95, 10) {
+		t.Errorf("alerts: got %d, want ~95 (±10%%)", len(r.Alerts))
+	}
+	if len(r.Cases) != 24 {
+		t.Errorf("cases: got %d, want 24", len(r.Cases))
+	}
+	if !withinTolerance(len(r.ScreeningResults), 15, 34) { // 5 primary + ~10 low-score FP is itself an approximate target
+		t.Errorf("screening_results: got %d, want ~15", len(r.ScreeningResults))
+	}
+	if len(r.AuditLogs) < 200 {
+		t.Errorf("audit_logs: got %d, want >= 200 (A9: \"200件強\")", len(r.AuditLogs))
+	}
+}
+
+// TestAlertRateBelowOnePercent is self-check (b): alerts / transactions
+// must stay under 1%.
+func TestAlertRateBelowOnePercent(t *testing.T) {
+	r := generateOnce(t)
+	rate := float64(len(r.Alerts)) / float64(len(r.Transactions))
+	if rate >= 0.01 {
+		t.Errorf("alert rate %.4f%% (%d/%d) is not below 1%%", rate*100, len(r.Alerts), len(r.Transactions))
+	}
+}
+
+// TestAlertUniqueness is self-check (c): (customer_id, scenario_id,
+// aggregation_window_start) must be unique across every alert.
+func TestAlertUniqueness(t *testing.T) {
+	r := generateOnce(t)
+	seen := map[string]bool{}
+	for _, a := range r.Alerts {
+		window := ""
+		if a.AggregationWindowStart != nil {
+			window = a.AggregationWindowStart.Format("2006-01-02T15:04:05Z07:00")
+		}
+		key := a.CustomerID + "|" + a.ScenarioID + "|" + window
+		if seen[key] {
+			t.Errorf("duplicate (customer_id, scenario_id, aggregation_window_start): %s", key)
+		}
+		seen[key] = true
+	}
+}
+
+// TestScreeningListsAreSynthetic is self-check (f): every screening list
+// entry name must pass the same real-name blocklist check as customer
+// names (DD3).
+func TestScreeningListsAreSynthetic(t *testing.T) {
+	r := generateOnce(t)
+	guard := newRealNameGuard()
+	for _, l := range r.ScreeningLists {
+		for _, e := range l.Entries {
+			for _, name := range e.Names {
+				if guard.collides(map[string]any{"name": name}) {
+					t.Errorf("screening list %s entry %s name %q collides with the real-name blocklist", l.ListID, e.EntryID, name)
+				}
+			}
+		}
+	}
+}
+
+// TestStoryAlertsAndCasesLinkage checks the A6/A7 story-specific
+// requirements that aren't already covered by tier assertions: story 4's
+// severity is force-upgraded to critical, story 6's 3 alerts roll into
+// exactly one case, and every story customer has at least one alert.
+func TestStoryAlertsAndCasesLinkage(t *testing.T) {
+	r := generateOnce(t)
+	alertsByCustomer := map[string][]domain.Alert{}
+	for _, a := range r.Alerts {
+		alertsByCustomer[a.CustomerID] = append(alertsByCustomer[a.CustomerID], a)
+	}
+	for _, id := range r.StoryCustomerIDs {
+		if len(alertsByCustomer[id]) == 0 {
+			t.Errorf("story customer %s has no alerts", id)
+		}
+	}
+	for _, a := range alertsByCustomer["demo-story-04"] {
+		if a.Severity != domain.AlertSeverityCritical {
+			t.Errorf("demo-story-04 alert %s: severity=%s, want critical (A6/A7 override)", a.ID, a.Severity)
+		}
+	}
+	if got := len(alertsByCustomer["demo-story-06"]); got != 3 {
+		t.Errorf("demo-story-06: got %d alerts, want 3 (2 structuring windows + 1 rapid_movement)", got)
+	}
+	story6AlertIDs := map[string]bool{}
+	for _, a := range alertsByCustomer["demo-story-06"] {
+		story6AlertIDs[a.ID] = true
+	}
+	var story6Case *domain.Case
+	for i, c := range r.Cases {
+		if c.CustomerID == "demo-story-06" {
+			story6Case = &r.Cases[i]
+		}
+	}
+	if story6Case == nil {
+		t.Fatal("no case found for demo-story-06")
+	}
+	if len(story6Case.AlertIDs) != 3 {
+		t.Errorf("demo-story-06 case %s: got %d linked alerts, want 3", story6Case.ID, len(story6Case.AlertIDs))
+	}
+	for _, id := range story6Case.AlertIDs {
+		if !story6AlertIDs[id] {
+			t.Errorf("demo-story-06 case %s references alert %s not in its own alert set", story6Case.ID, id)
+		}
+	}
+}
+
+// TestCasePriorityDistribution checks A9's low4/medium12/high6/critical2
+// case priority distribution.
+func TestCasePriorityDistribution(t *testing.T) {
+	r := generateOnce(t)
+	counts := map[domain.CasePriority]int{}
+	for _, c := range r.Cases {
+		counts[c.Priority]++
+	}
+	want := map[domain.CasePriority]int{
+		domain.CasePriorityLow: 4, domain.CasePriorityMedium: 12,
+		domain.CasePriorityHigh: 6, domain.CasePriorityCritical: 2,
+	}
+	for priority, wantCount := range want {
+		if counts[priority] != wantCount {
+			t.Errorf("case priority %s: got %d, want %d", priority, counts[priority], wantCount)
+		}
+	}
+}
+
+// TestNoTransactionsBeforeAccountOpened checks that no customer has a
+// transaction dated before their own attributes.account_opened_at — the
+// transaction-level counterpart to T1-W1's attribute-level checks.
+func TestNoTransactionsBeforeAccountOpened(t *testing.T) {
+	r := generateOnce(t)
+	byID := make(map[string]domain.Customer, len(r.Customers))
+	for _, c := range r.Customers {
+		byID[c.ID] = c
+	}
+	anchor := DefaultAnchor()
+	for _, tx := range r.Transactions {
+		c, ok := byID[tx.CustomerID]
+		if !ok {
+			continue
+		}
+		opened := parseAttrDate(c.Attributes, "account_opened_at", anchor.AddDate(-10, 0, 0))
+		if tx.ExecutedAt.Before(opened) {
+			t.Errorf("transaction %s for %s executed at %s, before account_opened_at %s", tx.ID, tx.CustomerID, tx.ExecutedAt, opened)
+		}
+	}
+}
+
+// TestDormantCustomersHaveNoRecentTransactions is the transaction-level
+// counterpart to SelfCheck's attribute-level dormant check: a customer
+// whose *final* status is still dormant must have zero transactions in the
+// 180 days before anchor.
+func TestDormantCustomersHaveNoRecentTransactions(t *testing.T) {
+	r := generateOnce(t)
+	dormant := map[string]bool{}
+	for _, c := range r.Customers {
+		if c.EffectiveStatus() == domain.CustomerStatusDormant {
+			dormant[c.ID] = true
+		}
+	}
+	anchor := DefaultAnchor()
+	cutoff := anchor.AddDate(0, 0, -180)
+	for _, tx := range r.Transactions {
+		if dormant[tx.CustomerID] && tx.ExecutedAt.After(cutoff) {
+			t.Errorf("dormant customer %s has transaction %s at %s, within 180 days of anchor", tx.CustomerID, tx.ID, tx.ExecutedAt)
+		}
+	}
+}
+
+// TestStoryIDsMarkdownMatchesCommittedFile is a golden test (T1-W2
+// instructions: "STORY_IDS.mdとscreening_listsはゴールデンテストで固定"):
+// regenerating must reproduce exactly what's committed at
+// deploy/seed/demo/STORY_IDS.md, or the test fails.
+func TestStoryIDsMarkdownMatchesCommittedFile(t *testing.T) {
+	r := generateOnce(t)
+	committed, err := os.ReadFile("../../../deploy/seed/demo/STORY_IDS.md")
+	if err != nil {
+		t.Fatalf("read committed STORY_IDS.md: %v", err)
+	}
+	if r.StoryIDsMarkdown != string(committed) {
+		t.Errorf("generated STORY_IDS.md does not match the committed copy at deploy/seed/demo/STORY_IDS.md; regenerate with `make demogen` and commit the result")
+	}
+}
+
+// TestScreeningListsMatchCommittedFiles is the screening_lists half of the
+// same golden test: every generated list must byte-match its committed YAML
+// file at deploy/seed/demo/screening_lists/<list_id>.yaml.
+func TestScreeningListsMatchCommittedFiles(t *testing.T) {
+	r := generateOnce(t)
+	for _, l := range r.ScreeningLists {
+		generated, err := yaml.Marshal(l)
+		if err != nil {
+			t.Fatalf("marshal screening list %s: %v", l.ListID, err)
+		}
+		committed, err := os.ReadFile("../../../deploy/seed/demo/screening_lists/" + l.ListID + ".yaml")
+		if err != nil {
+			t.Fatalf("read committed screening list %s: %v", l.ListID, err)
+		}
+		if string(generated) != string(committed) {
+			t.Errorf("generated screening list %s does not match the committed copy at deploy/seed/demo/screening_lists/%s.yaml; regenerate with `make demogen` and commit the result", l.ListID, l.ListID)
 		}
 	}
 }

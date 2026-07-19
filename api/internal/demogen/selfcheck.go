@@ -194,3 +194,66 @@ func checkExact(errs *[]string, label string, count, target int) {
 		*errs = append(*errs, fmt.Sprintf("%s: count=%d (expected exactly %d)", label, count, target))
 	}
 }
+
+// checkTolerance appends an error if count is outside want's ±tolerancePct
+// band (A2's "推奨値±10%以内" acceptance criterion).
+func checkTolerance(errs *[]string, label string, count, want int, tolerancePct float64) {
+	lo := float64(want) * (1 - tolerancePct/100)
+	hi := float64(want) * (1 + tolerancePct/100)
+	if float64(count) < lo || float64(count) > hi {
+		*errs = append(*errs, fmt.Sprintf("%s: count=%d (want ~%d ±%.0f%%)", label, count, want, tolerancePct))
+	}
+}
+
+// SelfCheckW2 runs T1-W2's acceptance checks: self-check (a) (engine-fire
+// verification) is already enforced as a hard error inside Generate itself
+// (a design mistake there should fail generation, not just be reported by a
+// separate check), so this covers (b) alert rate, (c) alert-key uniqueness
+// (a redundant safety net over alertBuildContext's own dedup), (f)
+// screening-list synthetic names, and A2's ±10% count tolerances.
+func SelfCheckW2(r *Result) error {
+	var errs []string
+
+	if len(r.Transactions) > 0 {
+		rate := float64(len(r.Alerts)) / float64(len(r.Transactions))
+		if rate >= 0.01 {
+			errs = append(errs, fmt.Sprintf("alert rate %.4f%% (%d alerts / %d transactions) is not below 1%%", rate*100, len(r.Alerts), len(r.Transactions)))
+		}
+	}
+
+	seen := map[string]bool{}
+	for _, a := range r.Alerts {
+		window := ""
+		if a.AggregationWindowStart != nil {
+			window = a.AggregationWindowStart.Format(time.RFC3339)
+		}
+		key := a.CustomerID + "|" + a.ScenarioID + "|" + window
+		if seen[key] {
+			errs = append(errs, fmt.Sprintf("duplicate (customer_id, scenario_id, aggregation_window_start): %s", key))
+		}
+		seen[key] = true
+	}
+
+	guard := newRealNameGuard()
+	for _, l := range r.ScreeningLists {
+		for _, e := range l.Entries {
+			for _, name := range e.Names {
+				if guard.collides(map[string]any{"name": name}) {
+					errs = append(errs, fmt.Sprintf("screening list %s entry %s name %q collides with the real-name blocklist", l.ListID, e.EntryID, name))
+				}
+			}
+		}
+	}
+
+	checkTolerance(&errs, "transactions", len(r.Transactions), 48000, 10)
+	checkTolerance(&errs, "alerts", len(r.Alerts), 95, 10)
+	checkExact(&errs, "cases", len(r.Cases), 24)
+	if len(r.AuditLogs) < 200 {
+		errs = append(errs, fmt.Sprintf("audit_logs: count=%d (want >= 200, A9 \"200件強\")", len(r.AuditLogs)))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("self-check (W2) failed (%d issue(s)):\n  - %s", len(errs), strings.Join(errs, "\n  - "))
+	}
+	return nil
+}

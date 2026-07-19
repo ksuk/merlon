@@ -5,9 +5,13 @@
 // generated customer during a demo reproduces the exact score/tier recorded
 // at generation time (Auditability First, ADR-0004).
 //
-// This first wave (T1-W1) produces customers, accounts, and score history
-// only. Transactions, alerts, cases, and screening results are a later wave;
-// see .release-tasks/PH7-demo-publication.md Appendix A.
+// T1-W1 built customers, accounts, and score history. T1-W2 (this file's
+// Generate) extends the same deterministic pipeline with transactions,
+// alerts, cases, screening, audit logs, and rule definitions — all scored
+// and evaluated through the same single native.Engine instance, and every
+// alert produced by actually calling the engine's realtime/batch evaluation
+// on the seeded transactions (never a hand-computed "should fire" guess).
+// See .release-tasks/PH7-demo-publication.md Appendix A5-A9.
 package demogen
 
 import (
@@ -58,6 +62,12 @@ type Options struct {
 	// the engine loads standalone in tests and the CLI alike.
 	TMScenariosPath    string
 	ScreeningListsPath string
+	// CountryRiskPath is read only for rule_definitions.json (T1-W2's
+	// registered COUNTRY_RISK rule); the engine itself is loaded without a
+	// country risk table (funds_transfer.yaml's geography factor uses its
+	// own values map, not country_risk_table — see native.go's
+	// resolveFactor), so this path does not affect scoring.
+	CountryRiskPath string
 }
 
 func (o Options) withDefaults() Options {
@@ -83,6 +93,9 @@ func (o Options) withDefaults() Options {
 	if o.ScreeningListsPath == "" {
 		o.ScreeningListsPath = "../deploy/seed/demo/screening_lists"
 	}
+	if o.CountryRiskPath == "" {
+		o.CountryRiskPath = "../content/_sample/country_risk_sample.yaml"
+	}
 	return o
 }
 
@@ -93,8 +106,9 @@ func DefaultAnchor() time.Time {
 	return time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 }
 
-// Result is the full T1-W1 output: everything the seed loader (T2) will read
-// from deploy/seed/demo/*.json.
+// Result is the full T1-W1+W2 output: everything the seed loader (T2) will
+// read from deploy/seed/demo/*.json, plus the two committed artifacts
+// (STORY_IDS.md, screening_lists/*.yaml).
 type Result struct {
 	Customers        []domain.Customer
 	Accounts         []domain.Account
@@ -104,6 +118,22 @@ type Result struct {
 	// StoryCustomerIDs lists the 6 fixed IDs in A6 narrative order, for the
 	// next wave (transactions/alerts) and STORY_IDS.md to key off.
 	StoryCustomerIDs []string
+
+	// T1-W2 additions.
+	Transactions     []domain.Transaction
+	Alerts           []domain.Alert
+	Cases            []domain.Case
+	CaseNotes        []caseNoteRecord
+	ScreeningResults []domain.ScreeningResultRecord
+	AuditLogs        []domain.AuditEntry
+	RuleDefinitions  []domain.RuleDefinition
+
+	// ScreeningLists and StoryIDsMarkdown are the two small, committed
+	// (non-gitignored) artifacts: deploy/seed/demo/screening_lists/*.yaml
+	// and deploy/seed/demo/STORY_IDS.md. Both are golden-tested (generator_
+	// test.go) against the copies actually committed to the repo.
+	ScreeningLists   []screeningListSeed
+	StoryIDsMarkdown string
 }
 
 // Generate runs the full deterministic pipeline: load the native engine
@@ -194,13 +224,226 @@ func Generate(opts Options) (*Result, error) {
 
 	accounts, accountCustomers := buildAccounts(all, o.Anchor)
 
+	// --- T1-W2: A8 screening-narrative customers, additive to the 1000-
+	// customer population and scored through the same engine, but excluded
+	// from T1-W1's population-distribution quotas (they are not part of the
+	// "1,000 realistic customers" target — A8 is a separate narrative axis).
+	screeningSeeds := buildScreeningCustomers()
+	screeningCustomers := buildScreeningCustomerRecords(o.Anchor, screeningSeeds)
+	for i := range screeningCustomers {
+		if blocked.collides(screeningCustomers[i].Attributes) {
+			return nil, fmt.Errorf("screening customer %s collides with real-name blocklist", screeningCustomers[i].ID)
+		}
+	}
+	mainPopulationCount := len(all)
+	for i := range screeningCustomers {
+		rec, err := eng.ScoreCustomer(ctx, &screeningCustomers[i], FundsTransferPresetID)
+		if err != nil {
+			return nil, fmt.Errorf("score screening customer %s: %w", screeningCustomers[i].ID, err)
+		}
+		idx := mainPopulationCount + i
+		scoredAt := deterministicScoredAt(o.Anchor, idx)
+		rec.ID = fmt.Sprintf("demo-score-%06d", idx+1)
+		rec.ScoredAt = scoredAt
+		score, tier := rec.Score, rec.Tier
+		screeningCustomers[i].RiskScore = &score
+		screeningCustomers[i].RiskTier = &tier
+		screeningCustomers[i].LastScoredAt = &scoredAt
+		scoreHistory = append(scoreHistory, *rec)
+	}
+	all = append(all, screeningCustomers...)
+	// Idempotent for the unchanged prefix (assignExternalIDs is a pure
+	// function of slice order): re-running it just extends the sequence for
+	// the newly-appended screening customers.
+	assignExternalIDs(all)
+
+	// --- T1-W2: transactions, alerts, cases, screening results, audit
+	// logs, rule definitions (A5-A9).
+	cfgs, err := loadScenarioConfigs(o.TMScenariosPath)
+	if err != nil {
+		return nil, fmt.Errorf("load scenario configs: %w", err)
+	}
+	txIDs := &idSeq{}
+	mainAndStory := all[:mainPopulationCount]
+
+	tierByCustomer := make(map[string]domain.RiskTier, len(all))
+	for _, c := range all {
+		if c.RiskTier != nil {
+			tierByCustomer[c.ID] = *c.RiskTier
+		} else {
+			tierByCustomer[c.ID] = domain.RiskTierMedium
+		}
+	}
+
+	// Ordinary background transaction history (A5) for every main-
+	// population + story customer. Screening customers get none (A8 is a
+	// screening narrative, not a transaction narrative).
+	backgroundByCustomer := make(map[string][]domain.Transaction, len(mainAndStory))
+	var allTxns []domain.Transaction
+	for _, c := range mainAndStory {
+		txns := generateBackgroundTransactions(rng, o.Anchor, c, txIDs)
+		backgroundByCustomer[c.ID] = txns
+		allTxns = append(allTxns, txns...)
+	}
+
+	storyIncidents := buildStoryIncidents(o.Anchor, cfgs, txIDs)
+	for _, inc := range storyIncidents {
+		allTxns = append(allTxns, inc.Transactions...)
+	}
+
+	// buildFPIncidents mutates a handful of dormant background customers in
+	// place (Status -> Active, attributes.last_activity_at -> reactivation
+	// date) via mainAndStory, which shares all's backing array.
+	fpIncidents := buildFPIncidents(o.Anchor, mainAndStory, storyIDs, cfgs, txIDs)
+	for _, inc := range fpIncidents {
+		allTxns = append(allTxns, inc.Transactions...)
+	}
+
+	alertCtx := newAlertBuildContext(o.Anchor, cfgs, allTxns)
+
+	// Background "organic noise" alerts: rare (a handful out of ~1000
+	// customers empirically), but real customer/transaction combinations can
+	// still cross a threshold by chance. Treated the same as FP alerts for
+	// status assignment since they carry no story of their own.
+	for _, c := range mainAndStory {
+		raw, err := evaluateAlerts(ctx, eng, c.ID, tierByCustomer[c.ID], backgroundByCustomer[c.ID])
+		if err != nil {
+			return nil, err
+		}
+		s, e := alertCtx.add(c.ID, raw)
+		for i := s; i < e; i++ {
+			alertCtx.alerts[i].Status = fpStatusWeights(rng)
+		}
+	}
+
+	// A6 story TP incidents (8 of A7's ~9), evaluated one incident at a time
+	// in isolation: evalStructuring/evalRapid/evalHFSA/evalHighRisk all
+	// return on the first breach found within the transactions they are
+	// given, so story 6's 3 separate incidents (2 structuring windows +
+	// 1 rapid_movement, at different points in time) would only ever
+	// surface as 1 alert if evaluated together against the customer's full
+	// history — see evaluateAlerts' doc comment.
+	storyAlertStatus := map[string]domain.AlertStatus{
+		"demo-story-01": domain.AlertStatusClosedTruePositive,
+		"demo-story-02": domain.AlertStatusClosedTruePositive,
+		"demo-story-03": domain.AlertStatusClosedTruePositive,
+		"demo-story-04": domain.AlertStatusOpen, // A7: "直近ストーリーはopen系に"
+		"demo-story-05": domain.AlertStatusClosedTruePositive,
+		"demo-story-06": domain.AlertStatusInvestigating, // A7: "直近ストーリーはopen系に"
+	}
+	// storyAlertIdx/fpAlertIdx record *indices* into alertCtx.alerts rather
+	// than copying alert values now: finalizeAlerts (below) assigns each
+	// alert's ID after every incident has been processed, so a value copy
+	// taken here would carry an empty ID forever. Indices are resolved into
+	// real domain.Alert values only after finalizeAlerts runs.
+	storyAlertIdx := map[string][]int{}
+	for _, inc := range storyIncidents {
+		raw, err := evaluateAlerts(ctx, eng, inc.CustomerID, tierByCustomer[inc.CustomerID], inc.Transactions)
+		if err != nil {
+			return nil, err
+		}
+		fired := scenarioFired(raw, inc.ExpectedScenario)
+		if inc.ExpectedScenario != "" && !fired {
+			return nil, fmt.Errorf("self-check (a) failed: story incident %s [%s] expected %s to fire but it did not", inc.CustomerID, inc.Label, inc.ExpectedScenario)
+		}
+		if inc.ExpectedScenario == "" && fired {
+			return nil, fmt.Errorf("self-check (a) failed: story incident %s [%s] expected no alert but one fired", inc.CustomerID, inc.Label)
+		}
+		if inc.ExpectedScenario == "" {
+			continue // story 1's non-firing backtest precedent
+		}
+		s, e := alertCtx.add(inc.CustomerID, raw)
+		for i := s; i < e; i++ {
+			alertCtx.alerts[i].Status = storyAlertStatus[inc.CustomerID]
+			if inc.CustomerID == "demo-story-04" {
+				alertCtx.alerts[i].Severity = domain.AlertSeverityCritical // A6/A7: "④のみcritical格上げ"
+			}
+			storyAlertIdx[inc.CustomerID] = append(storyAlertIdx[inc.CustomerID], i)
+		}
+	}
+
+	// A7 background FP incidents (~86), also evaluated in isolation.
+	fpAlertIdx := map[string][]int{}
+	var fpOrder []string
+	for _, inc := range fpIncidents {
+		raw, err := evaluateAlerts(ctx, eng, inc.CustomerID, tierByCustomer[inc.CustomerID], inc.Transactions)
+		if err != nil {
+			return nil, err
+		}
+		if !scenarioFired(raw, inc.ExpectedScenario) {
+			return nil, fmt.Errorf("self-check (a) failed: FP incident %s [%s/%s] expected %s to fire but it did not", inc.CustomerID, inc.Category, inc.Narrative, inc.ExpectedScenario)
+		}
+		s, e := alertCtx.add(inc.CustomerID, raw)
+		for i := s; i < e; i++ {
+			alertCtx.alerts[i].Status = fpStatusWeights(rng)
+		}
+		if e > s {
+			if len(fpAlertIdx[inc.CustomerID]) == 0 {
+				fpOrder = append(fpOrder, inc.CustomerID)
+			}
+			for i := s; i < e; i++ {
+				fpAlertIdx[inc.CustomerID] = append(fpAlertIdx[inc.CustomerID], i)
+			}
+		}
+	}
+
+	alerts := finalizeAlerts(alertCtx)
+
+	storyAlertsByCustomer := make(map[string][]domain.Alert, len(storyAlertIdx))
+	for custID, idxs := range storyAlertIdx {
+		for _, i := range idxs {
+			storyAlertsByCustomer[custID] = append(storyAlertsByCustomer[custID], alerts[i])
+		}
+	}
+	fpAlertsByCustomer := make(map[string][]domain.Alert, len(fpAlertIdx))
+	for custID, idxs := range fpAlertIdx {
+		for _, i := range idxs {
+			fpAlertsByCustomer[custID] = append(fpAlertsByCustomer[custID], alerts[i])
+		}
+	}
+
+	caseSeeds := append(storyCaseSeeds(storyAlertsByCustomer), backgroundCaseSeeds(fpAlertsByCustomer, fpOrder)...)
+	cases, caseNotes := finalizeCases(o.Anchor, caseSeeds)
+
+	screeningResultIDs := &idSeq{}
+	screeningResults := buildScreeningResults(o.Anchor, screeningResultIDs)
+	screeningLists := buildScreeningLists()
+
+	ruleDefinitions, err := buildRuleDefinitions(o.Anchor, o.TMScenariosPath, o.CDDWeightsPath, o.CountryRiskPath)
+	if err != nil {
+		return nil, err
+	}
+
+	auditLogs := buildAuditLogs(o.Anchor, ruleDefinitions, sampleAuditCustomers(all), cases, caseNotes, screeningResults)
+
+	storyIDsMarkdown := buildStoryIDsMarkdown(assembleStoryIDsInput(o.Seed, o.Anchor.Format("2006-01-02"), all, storyIDs, allTxns, storyAlertsByCustomer, cases, screeningResults, screeningLists))
+
 	return &Result{
 		Customers:        all,
 		Accounts:         accounts,
 		AccountCustomers: accountCustomers,
 		ScoreHistory:     scoreHistory,
 		StoryCustomerIDs: storyIDs,
+		Transactions:     allTxns,
+		Alerts:           alerts,
+		Cases:            cases,
+		CaseNotes:        caseNotes,
+		ScreeningResults: screeningResults,
+		AuditLogs:        auditLogs,
+		RuleDefinitions:  ruleDefinitions,
+		ScreeningLists:   screeningLists,
+		StoryIDsMarkdown: storyIDsMarkdown,
 	}, nil
+}
+
+// scenarioFired reports whether any alert in raw has the given scenario ID.
+func scenarioFired(raw []domain.Alert, scenarioID string) bool {
+	for _, a := range raw {
+		if a.ScenarioID == scenarioID {
+			return true
+		}
+	}
+	return false
 }
 
 // deterministicScoredAt spreads score timestamps over the 30 days before the

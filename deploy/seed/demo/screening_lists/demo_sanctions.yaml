@@ -1,0 +1,21 @@
+schema_version: "1.0"
+list_id: demo_sanctions
+list_type: sanctions
+name: Merlon Demo Synthetic Sanctions List
+source: synthetic-only
+entries:
+    - entry_id: DEMO-SANCTIONS-001
+      names:
+        - Demo Subject Alpha
+      country: ZZ
+      type: individual
+    - entry_id: DEMO-SANCTIONS-002
+      names:
+        - Demo Mining Development Corporation
+      country: ZZ
+      type: entity
+    - entry_id: DEMO-SANCTIONS-003
+      names:
+        - Demo Asia Logistics Group
+      country: ZZ
+      type: entity

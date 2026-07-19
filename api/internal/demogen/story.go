@@ -135,13 +135,21 @@ func buildStoryCustomers(anchor time.Time) ([]domain.Customer, []string) {
 		},
 		// Story 5: "休眠口座再活性化" — Hirao Yasuko, JP, 74, pensioner
 		// (occupation_band=retired), long-standing account, dormant for 420
-		// days, ordinary declared activity. Targets low (~1.6).
+		// days, ordinary declared activity. Targets low (~1.6). Status is
+		// Frozen (not Dormant): T1-W2 seeds her reactivation transactions at
+		// last_activity_at (420 days before anchor — her account had been
+		// silent since ~650 days before anchor) and, per A6, the account is
+		// frozen immediately after the alert fires, which is why anchor-date
+		// status is frozen rather than still dormant (T1-W1's self-check for
+		// dormant-status last_activity_at consistency therefore does not
+		// apply to her; W1's dormant/frozen population quotas absorb this
+		// since they read EffectiveStatus() dynamically off this struct).
 		{
 			ID:           "demo-story-05",
 			CustomerType: domain.CustomerTypeIndividual,
 			CountryCode:  "JP",
 			ProductTypes: []string{"domestic_wallet"},
-			Status:       domain.CustomerStatusDormant,
+			Status:       domain.CustomerStatusFrozen,
 			CreatedAt:    day(15 * 365),
 			UpdatedAt:    anchor,
 			Attributes: map[string]any{

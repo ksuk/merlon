@@ -1,0 +1,11 @@
+schema_version: "1.0"
+list_id: demo_pep
+list_type: pep
+name: Merlon Demo Synthetic PEP List
+source: synthetic-only
+entries:
+    - entry_id: DEMO-PEP-001
+      names:
+        - Demo Person Beta
+      country: ZZ
+      type: individual
