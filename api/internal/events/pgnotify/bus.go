@@ -63,6 +63,7 @@ type Bus struct {
 }
 
 var _ events.Bus = (*Bus)(nil)
+var _ events.ReadyBus = (*Bus)(nil)
 
 // New builds a Bus around pool. pool may be nil for unit tests that only
 // exercise the gap-detection/catchup logic directly (Publish/Subscribe
@@ -93,6 +94,10 @@ func (b *Bus) Publish(ctx context.Context, e events.Event) error {
 // sequence-gap detection and reconnect catchup via Requery. It blocks until
 // ctx is canceled or the underlying connection is lost.
 func (b *Bus) Subscribe(ctx context.Context, topic string, h func(events.Event)) error {
+	return b.SubscribeReady(ctx, topic, h, nil)
+}
+
+func (b *Bus) SubscribeReady(ctx context.Context, topic string, h func(events.Event), onReady func()) error {
 	conn, err := b.pool.Acquire(ctx)
 	if err != nil {
 		return err
@@ -101,6 +106,9 @@ func (b *Bus) Subscribe(ctx context.Context, topic string, h func(events.Event))
 
 	if _, err := conn.Exec(ctx, "LISTEN "+pgx.Identifier{topic}.Sanitize()); err != nil {
 		return err
+	}
+	if onReady != nil {
+		onReady()
 	}
 
 	for {

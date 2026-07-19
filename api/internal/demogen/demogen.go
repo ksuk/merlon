@@ -142,6 +142,9 @@ type Result struct {
 // sampling, scoring every customer through the engine exactly once.
 func Generate(opts Options) (*Result, error) {
 	o := opts.withDefaults()
+	if o.Customers > DefaultCustomers {
+		return nil, fmt.Errorf("customers option %d exceeds the fixed quota maximum of %d", o.Customers, DefaultCustomers)
+	}
 
 	eng, err := native.New(o.CDDWeightsPath, o.TMScenariosPath, o.ScreeningListsPath, "")
 	if err != nil {

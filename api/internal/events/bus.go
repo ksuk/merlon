@@ -10,3 +10,11 @@ type Bus interface {
 	Publish(ctx context.Context, e Event) error
 	Subscribe(ctx context.Context, topic string, h func(Event)) error
 }
+
+// ReadyBus is implemented by transports that can report the point at which
+// their initial subscription handshake has completed. It is separate from
+// Bus so existing producers and test doubles using Subscribe remain source
+// compatible.
+type ReadyBus interface {
+	SubscribeReady(ctx context.Context, topic string, h func(Event), onReady func()) error
+}

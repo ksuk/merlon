@@ -61,8 +61,15 @@ dev runs without `make demogen` still get. A directory that exists but has a
 seed fails loudly instead of silently falling back, so a broken dataset is
 never mistaken for a clean 5-customer start.
 
-Re-running with existing data present (e.g. `docker compose restart` without
-`down -v`) skips seeding entirely rather than re-inserting rows.
+PostgreSQL demo loading is transactional: a corrupt file or insert/constraint
+failure rolls back the dataset and its `seed_state` completion marker, so the
+next startup can retry safely. A successful load records the dataset
+provenance; subsequent restarts reuse it for the synthetic-data indicator
+without re-inserting rows. An existing database without a completion marker
+is treated as operator-owned and is never deleted automatically. If it is a
+volume left partially seeded by an older release, stop the demo stack and
+recreate only that demo volume (`docker compose -f docker-compose.demo.yml
+down -v`) before starting it again.
 
 `docker-compose.demo.yml` builds the `api` service from `api/Dockerfile`'s
 `demo` target, which layers the generated dataset into the image at

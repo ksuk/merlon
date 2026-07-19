@@ -13,6 +13,8 @@ import (
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
+const demoDataDirEnv = "MERLON_DEMO_DATA_DIR"
+
 // demoDataDir returns the (trimmed) value of MERLON_DEMO_DATA_DIR, or "" if
 // unset/blank.
 func demoDataDir() string {
@@ -114,6 +116,65 @@ func readJSONObject(path string, v any) error {
 	return nil
 }
 
+type demoDataset struct {
+	Customers        []domain.Customer
+	Accounts         demoAccountsFile
+	Scores           []domain.ScoreRecord
+	Transactions     []domain.Transaction
+	Alerts           []domain.Alert
+	Cases            []domain.Case
+	Notes            []demoCaseNote
+	ScreeningResults []domain.ScreeningResultRecord
+	Rules            []domain.RuleDefinition
+	AuditEntries     []domain.AuditEntry
+}
+
+// readDemoDataset fully decodes the dataset before any repository write. This
+// makes a corrupt later file harmless to in-memory callers and lets the
+// PostgreSQL caller wrap the subsequent writes in one transaction.
+func readDemoDataset(dir string) (*demoDataset, error) {
+	path := func(name string) string { return filepath.Join(dir, name) }
+	d := &demoDataset{}
+
+	var err error
+	if d.Customers, err = readJSONArray[domain.Customer](path("customers.json")); err != nil {
+		return nil, fmt.Errorf("customers.json: %w", err)
+	}
+	if err := readJSONObject(path("accounts.json"), &d.Accounts); err != nil {
+		return nil, fmt.Errorf("accounts.json: %w", err)
+	}
+	if d.Scores, err = readJSONArray[domain.ScoreRecord](path("score_history.json")); err != nil {
+		return nil, fmt.Errorf("score_history.json: %w", err)
+	}
+	if d.Transactions, err = readJSONArray[domain.Transaction](path("transactions.json")); err != nil {
+		return nil, fmt.Errorf("transactions.json: %w", err)
+	}
+	for i := range d.Transactions {
+		if d.Transactions[i].ExternalID == "" {
+			d.Transactions[i].ExternalID = d.Transactions[i].ID
+		}
+	}
+	if d.Alerts, err = readJSONArray[domain.Alert](path("alerts.json")); err != nil {
+		return nil, fmt.Errorf("alerts.json: %w", err)
+	}
+	if d.Cases, err = readJSONArray[domain.Case](path("cases.json")); err != nil {
+		return nil, fmt.Errorf("cases.json: %w", err)
+	}
+	if d.Notes, err = readJSONArray[demoCaseNote](path("case_notes.json")); err != nil {
+		return nil, fmt.Errorf("case_notes.json: %w", err)
+	}
+	if d.ScreeningResults, err = readJSONArray[domain.ScreeningResultRecord](path("screening_results.json")); err != nil {
+		return nil, fmt.Errorf("screening_results.json: %w", err)
+	}
+	if d.Rules, err = readJSONArray[domain.RuleDefinition](path("rule_definitions.json")); err != nil {
+		return nil, fmt.Errorf("rule_definitions.json: %w", err)
+	}
+	if d.AuditEntries, err = readJSONArray[domain.AuditEntry](path("audit_logs.json")); err != nil {
+		return nil, fmt.Errorf("audit_logs.json: %w", err)
+	}
+	return d, nil
+}
+
 // loadDemoDataset loads the full demogen dataset from dir into repos, in FK
 // dependency order. Every domain type here round-trips its JSON tags
 // directly (the demogen output was written to match api/internal/domain's
@@ -140,144 +201,82 @@ func readJSONObject(path string, v any) error {
 // row, so a blank external_id is defaulted to the transaction's own
 // (unique) id before Create.
 func loadDemoDataset(ctx context.Context, repos Repos, dir string) error {
-	path := func(name string) string { return filepath.Join(dir, name) }
-
-	customers, err := readJSONArray[domain.Customer](path("customers.json"))
+	d, err := readDemoDataset(dir)
 	if err != nil {
-		return fmt.Errorf("customers.json: %w", err)
+		return err
 	}
-	for i := range customers {
-		c := &customers[i]
+	if repos.Customers == nil || repos.Transactions == nil || repos.Alerts == nil || repos.Cases == nil || repos.Audit == nil || repos.Accounts == nil || repos.ScreeningResults == nil || repos.Rules == nil {
+		return fmt.Errorf("complete demo dataset requires all seed repositories")
+	}
+
+	for i := range d.Customers {
+		c := &d.Customers[i]
 		if err := repos.Customers.Create(ctx, c); err != nil {
 			return fmt.Errorf("create customer %s (customers.json[%d]): %w", c.ID, i, err)
 		}
 	}
-
-	var accountsFile demoAccountsFile
-	if err := readJSONObject(path("accounts.json"), &accountsFile); err != nil {
-		return fmt.Errorf("accounts.json: %w", err)
-	}
-	if repos.Accounts == nil {
-		return fmt.Errorf("accounts.json present but no Accounts repository is configured")
-	}
-	for i := range accountsFile.Accounts {
-		a := &accountsFile.Accounts[i]
+	for i := range d.Accounts.Accounts {
+		a := &d.Accounts.Accounts[i]
 		if err := repos.Accounts.Create(ctx, a); err != nil {
 			return fmt.Errorf("create account %s (accounts.json.accounts[%d]): %w", a.ID, i, err)
 		}
 	}
-	for i, ac := range accountsFile.AccountCustomers {
+	for i, ac := range d.Accounts.AccountCustomers {
 		if err := repos.Accounts.AddCustomer(ctx, ac.AccountID, ac.CustomerID, ac.Role); err != nil {
 			return fmt.Errorf("link account_customer %s/%s (accounts.json.account_customers[%d]): %w", ac.AccountID, ac.CustomerID, i, err)
 		}
 	}
-
-	scores, err := readJSONArray[domain.ScoreRecord](path("score_history.json"))
-	if err != nil {
-		return fmt.Errorf("score_history.json: %w", err)
-	}
-	for i := range scores {
-		s := &scores[i]
+	for i := range d.Scores {
+		s := &d.Scores[i]
 		if err := repos.Customers.SaveScoreRecord(ctx, s); err != nil {
 			return fmt.Errorf("save score record %s (score_history.json[%d]): %w", s.ID, i, err)
 		}
 	}
-
-	transactions, err := readJSONArray[domain.Transaction](path("transactions.json"))
-	if err != nil {
-		return fmt.Errorf("transactions.json: %w", err)
-	}
-	for i := range transactions {
-		t := &transactions[i]
-		if t.ExternalID == "" {
-			// See the func doc: transactions_external_id_unique (UNIQUE NOT
-			// NULL) rejects the blank external_id every demogen transaction
-			// carries. The transaction's own id is already guaranteed
-			// unique, so it's a safe, deterministic stand-in.
-			t.ExternalID = t.ID
-		}
+	for i := range d.Transactions {
+		t := &d.Transactions[i]
 		if err := repos.Transactions.Create(ctx, t); err != nil {
 			return fmt.Errorf("create transaction %s (transactions.json[%d]): %w", t.ID, i, err)
 		}
 	}
-
-	alerts, err := readJSONArray[domain.Alert](path("alerts.json"))
-	if err != nil {
-		return fmt.Errorf("alerts.json: %w", err)
-	}
-	for i := range alerts {
-		a := &alerts[i]
+	for i := range d.Alerts {
+		a := &d.Alerts[i]
 		if err := repos.Alerts.Create(ctx, a); err != nil {
 			return fmt.Errorf("create alert %s (alerts.json[%d]): %w", a.ID, i, err)
 		}
 	}
-
-	cases, err := readJSONArray[domain.Case](path("cases.json"))
-	if err != nil {
-		return fmt.Errorf("cases.json: %w", err)
-	}
-	for i := range cases {
-		c := &cases[i]
+	for i := range d.Cases {
+		c := &d.Cases[i]
 		if err := repos.Cases.Create(ctx, c); err != nil {
 			return fmt.Errorf("create case %s (cases.json[%d]): %w", c.ID, i, err)
 		}
 	}
-
-	notes, err := readJSONArray[demoCaseNote](path("case_notes.json"))
-	if err != nil {
-		return fmt.Errorf("case_notes.json: %w", err)
-	}
-	for i, n := range notes {
+	for i, n := range d.Notes {
 		note := domain.CaseNote{ID: n.ID, Author: n.Author, Content: n.Content, CreatedAt: n.CreatedAt}
 		if err := repos.Cases.AddNote(ctx, n.CaseID, &note); err != nil {
 			return fmt.Errorf("add case note %s to case %s (case_notes.json[%d]): %w", n.ID, n.CaseID, i, err)
 		}
 	}
-
-	screeningResults, err := readJSONArray[domain.ScreeningResultRecord](path("screening_results.json"))
-	if err != nil {
-		return fmt.Errorf("screening_results.json: %w", err)
-	}
-	if repos.ScreeningResults == nil {
-		return fmt.Errorf("screening_results.json present but no ScreeningResults repository is configured")
-	}
-	for i := range screeningResults {
-		sr := &screeningResults[i]
+	for i := range d.ScreeningResults {
+		sr := &d.ScreeningResults[i]
 		if err := repos.ScreeningResults.Create(ctx, sr); err != nil {
 			return fmt.Errorf("create screening result %s (screening_results.json[%d]): %w", sr.ID, i, err)
 		}
 	}
-
-	rules, err := readJSONArray[domain.RuleDefinition](path("rule_definitions.json"))
-	if err != nil {
-		return fmt.Errorf("rule_definitions.json: %w", err)
-	}
-	if repos.Rules == nil {
-		return fmt.Errorf("rule_definitions.json present but no Rules repository is configured")
-	}
-	for i := range rules {
-		rd := &rules[i]
+	for i := range d.Rules {
+		rd := &d.Rules[i]
 		if err := repos.Rules.Create(ctx, rd); err != nil {
 			return fmt.Errorf("create rule definition %s (rule_definitions.json[%d]): %w", rd.ID, i, err)
 		}
 	}
-
-	auditEntries, err := readJSONArray[domain.AuditEntry](path("audit_logs.json"))
-	if err != nil {
-		return fmt.Errorf("audit_logs.json: %w", err)
-	}
-	if repos.Audit == nil {
-		return fmt.Errorf("audit_logs.json present but no Audit repository is configured")
-	}
-	for i := range auditEntries {
-		e := &auditEntries[i]
+	for i := range d.AuditEntries {
+		e := &d.AuditEntries[i]
 		if err := repos.Audit.Create(ctx, e); err != nil {
 			return fmt.Errorf("create audit entry id=%d (audit_logs.json[%d]): %w", e.ID, i, err)
 		}
 	}
 
 	log.Printf("seed: loaded demo dataset from %s: %d customers, %d accounts (%d links), %d score records, %d transactions, %d alerts, %d cases (%d notes), %d screening results, %d rule definitions, %d audit entries",
-		dir, len(customers), len(accountsFile.Accounts), len(accountsFile.AccountCustomers), len(scores),
-		len(transactions), len(alerts), len(cases), len(notes), len(screeningResults), len(rules), len(auditEntries))
+		dir, len(d.Customers), len(d.Accounts.Accounts), len(d.Accounts.AccountCustomers), len(d.Scores),
+		len(d.Transactions), len(d.Alerts), len(d.Cases), len(d.Notes), len(d.ScreeningResults), len(d.Rules), len(d.AuditEntries))
 	return nil
 }

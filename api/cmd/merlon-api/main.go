@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -68,6 +70,82 @@ const retentionPurgeSchedule = "03:00"
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (the screening workflow §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
+
+// startEventSubscription waits until the transport has completed its initial
+// subscription handshake. Subscribe remains blocking after that point, so
+// callers receive the returned channel to observe a later disconnect.
+func startEventSubscription(ctx context.Context, bus events.Bus, topic string, handler func(events.Event)) (<-chan error, error) {
+	readyBus, ok := bus.(events.ReadyBus)
+	if !ok {
+		return nil, errors.New("event bus does not support subscription readiness")
+	}
+	ready := make(chan struct{})
+	errs := make(chan error, 1)
+	var readyOnce sync.Once
+
+	go func() {
+		errs <- readyBus.SubscribeReady(ctx, topic, handler, func() {
+			readyOnce.Do(func() { close(ready) })
+		})
+	}()
+
+	select {
+	case <-ready:
+		return errs, nil
+	case err := <-errs:
+		if err == nil {
+			return nil, errors.New("event subscription exited before initialization completed")
+		}
+		return nil, err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func seedReposFromDeps(deps server.Deps, state domain.SeedStateRepository) seed.Repos {
+	return seed.Repos{
+		Customers:        deps.Customers,
+		Transactions:     deps.Transactions,
+		Alerts:           deps.Alerts,
+		Cases:            deps.Cases,
+		Audit:            deps.Audit,
+		Accounts:         deps.Accounts,
+		ScreeningResults: deps.ScreeningResults,
+		Rules:            deps.Rules,
+		State:            state,
+	}
+}
+
+func runSeed(ctx context.Context, pool *pgxpool.Pool, encryptor *crypto.Encryptor, deps server.Deps) (seed.Result, error) {
+	if pool == nil {
+		return seed.Run(ctx, seedReposFromDeps(deps, store.NewMemorySeedStateRepo()))
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return seed.Result{}, fmt.Errorf("seed: begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	result, err := seed.Run(ctx, seed.Repos{
+		Customers:        store.NewPgCustomerRepo(tx, encryptor),
+		Transactions:     store.NewPgTransactionRepo(tx),
+		Alerts:           store.NewPgAlertRepo(tx),
+		Cases:            store.NewPgCaseRepo(tx),
+		Audit:            store.NewPgAuditRepo(tx),
+		Accounts:         store.NewPgAccountRepo(tx),
+		ScreeningResults: store.NewPgScreeningResultRepo(tx),
+		Rules:            store.NewPostgresRuleRepo(tx),
+		State:            store.NewPgSeedStateRepo(tx),
+	})
+	if err != nil {
+		return seed.Result{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return seed.Result{}, fmt.Errorf("seed: commit transaction: %w", err)
+	}
+	return result, nil
+}
 
 func main() {
 	server.Version = version
@@ -241,7 +319,6 @@ func main() {
 	deps.WhitelistMaxValidDays = cfg.WhitelistMaxValidDays
 	deps.TMBaseCurrency = cfg.TMBaseCurrency
 	deps.RealtimeMonitorTimeout = cfg.RealtimeMonitorTimeout
-	deps.DemoDataEnabled = cfg.Seed && cfg.DemoDataDir != ""
 	if cfg.RateLimit > 0 {
 		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}
@@ -261,22 +338,12 @@ func main() {
 	}
 
 	if cfg.Seed {
-		if err := seed.Run(context.Background(), seed.Repos{
-			Customers:        deps.Customers,
-			Transactions:     deps.Transactions,
-			Alerts:           deps.Alerts,
-			Cases:            deps.Cases,
-			Audit:            deps.Audit,
-			Accounts:         deps.Accounts,
-			ScreeningResults: deps.ScreeningResults,
-			Rules:            deps.Rules,
-		}); err != nil {
-			// Matches the pre-existing seed error posture (individual
-			// hardcoded-sample Create() failures were already only logged):
-			// a seeding problem is surfaced but does not stop the API from
-			// serving.
-			slog.Error("seed", "error", err)
+		seedResult, err := runSeed(context.Background(), pool, encryptor, deps)
+		if err != nil {
+			slog.Error("seed failed", "error", err)
+			os.Exit(1)
 		}
+		deps.DemoDataEnabled = seedResult.DemoDataEnabled()
 	}
 
 	jobsCtx, cancelJobs := context.WithCancel(context.Background())
@@ -295,18 +362,13 @@ func main() {
 		}
 		deps.Events = bus
 		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases)
-		// pgnotify.Bus.Subscribe blocks for the life of the subscription (it
-		// loops on WaitForNotification until jobsCtx is canceled or the
-		// connection drops, by design - see its doc comment on reconnect/
-		// catch-up), so it must run in its own goroutine: calling it inline
-		// here previously left the HTTP server below never reached, i.e. the
-		// process never bound its HTTP port under the default
-		// MERLON_MODE=all with a real MERLON_DATABASE_URL (found while
-		// validating PH7 T2's PostgreSQL-backed seed path end-to-end). A
-		// dropped subscription is logged rather than fatal to the whole
-		// process; full automatic re-subscribe is a follow-up.
+		subscriptionErrors, err := startEventSubscription(jobsCtx, bus, "cdd.tier_changed", tierChangeHandler)
+		if err != nil {
+			slog.Error("event bus subscription initialization failed", "topic", "cdd.tier_changed", "error", err)
+			os.Exit(1)
+		}
 		go func() {
-			if err := bus.Subscribe(jobsCtx, "cdd.tier_changed", tierChangeHandler); err != nil && jobsCtx.Err() == nil {
+			if err := <-subscriptionErrors; err != nil && jobsCtx.Err() == nil {
 				slog.Error("event bus subscribe ended", "topic", "cdd.tier_changed", "error", err)
 			}
 		}()

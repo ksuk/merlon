@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,15 +23,16 @@ import (
 // published event, so tests can assert on what handleScoreCustomer (Task 8)
 // publishes without a real transport.
 type fakeBus struct {
-	mu        sync.Mutex
-	published []events.Event
+	mu         sync.Mutex
+	published  []events.Event
+	publishErr error
 }
 
 func (b *fakeBus) Publish(_ context.Context, e events.Event) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.published = append(b.published, e)
-	return nil
+	return b.publishErr
 }
 
 func (b *fakeBus) Subscribe(context.Context, string, func(events.Event)) error {
@@ -383,6 +385,15 @@ func TestScoreCustomer_PublishesTierChangeEvent(t *testing.T) {
 	}
 	if bus.published[0].ChainID == "" {
 		t.Error("expected non-empty ChainID")
+	}
+}
+
+func TestPublishTierChangeReturnsPublishError(t *testing.T) {
+	want := errors.New("event transport unavailable")
+	s := New(":0", Deps{Events: &fakeBus{publishErr: want}})
+	got := s.publishTierChange(context.Background(), "cust-1", nil, domain.RiskTierHigh, time.Now())
+	if !errors.Is(got, want) {
+		t.Fatalf("publishTierChange error = %v, want %v", got, want)
 	}
 }
 

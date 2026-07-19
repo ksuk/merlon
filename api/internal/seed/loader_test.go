@@ -93,6 +93,7 @@ func newFullMemoryRepos() (Repos, *store.MemoryCustomerRepo) {
 		Accounts:         store.NewMemoryAccountRepo(customers),
 		ScreeningResults: store.NewMemoryScreeningResultRepo(),
 		Rules:            store.NewMemoryRuleRepo(),
+		State:            store.NewMemorySeedStateRepo(),
 	}, customers
 }
 
@@ -103,8 +104,12 @@ func TestRunLoadsDemoDatasetWhenEnvPointsAtCompleteDataset(t *testing.T) {
 	repos, _ := newFullMemoryRepos()
 	ctx := context.Background()
 
-	if err := Run(ctx, repos); err != nil {
+	result, err := Run(ctx, repos)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if result.DatasetKind != domain.SeedDatasetDemo || !result.Applied || !result.DemoDataEnabled() {
+		t.Fatalf("result = %+v, want newly applied demo dataset", result)
 	}
 
 	custs, err := repos.Customers.List(ctx, 100, 0)
@@ -185,12 +190,38 @@ func TestRunLoadsDemoDatasetWhenEnvPointsAtCompleteDataset(t *testing.T) {
 	}
 }
 
+func TestRunRetainsDemoProvenanceOnRestart(t *testing.T) {
+	dir := writeDemoDatasetFixture(t, demoDatasetFixture)
+	t.Setenv(demoDataDirEnv, dir)
+	repos, customers := newFullMemoryRepos()
+	ctx := context.Background()
+
+	if _, err := Run(ctx, repos); err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	result, err := Run(ctx, repos)
+	if err != nil {
+		t.Fatalf("second Run: %v", err)
+	}
+	if result.DatasetKind != domain.SeedDatasetDemo || result.Applied || !result.DemoDataEnabled() {
+		t.Fatalf("restart result = %+v, want skipped demo dataset", result)
+	}
+	custs, err := customers.List(ctx, 100, 0)
+	if err != nil || len(custs) != 2 {
+		t.Fatalf("restart changed customer count to %d (err=%v)", len(custs), err)
+	}
+}
+
 func TestRunFallsBackToHardcodedSampleWhenEnvUnset(t *testing.T) {
 	repos, _ := newFullMemoryRepos()
 	ctx := context.Background()
 
-	if err := Run(ctx, repos); err != nil {
+	result, err := Run(ctx, repos)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if result.DatasetKind != domain.SeedDatasetHardcoded || !result.Applied || result.DemoDataEnabled() {
+		t.Fatalf("result = %+v, want newly applied hardcoded dataset", result)
 	}
 
 	custs, err := repos.Customers.List(ctx, 100, 0)
@@ -215,8 +246,12 @@ func TestRunFallsBackWhenDatasetDirHasMissingRequiredFile(t *testing.T) {
 	repos, _ := newFullMemoryRepos()
 	ctx := context.Background()
 
-	if err := Run(ctx, repos); err != nil {
+	result, err := Run(ctx, repos)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if result.DatasetKind != domain.SeedDatasetHardcoded || !result.Applied || result.DemoDataEnabled() {
+		t.Fatalf("result = %+v, want hardcoded fallback", result)
 	}
 
 	custs, err := repos.Customers.List(ctx, 100, 0)
@@ -233,11 +268,9 @@ func TestRunFailsExplicitlyOnCorruptDatasetWithoutFallback(t *testing.T) {
 	for name, content := range demoDatasetFixture {
 		corrupt[name] = content
 	}
-	// customers.json is well-formed and loads; alerts.json (later in the
-	// dependency order) is not, so the load must stop and report an error
-	// rather than silently falling back to the hardcoded sample (Fail-Alert:
-	// a broken dataset must not masquerade as either a full load or a clean
-	// non-demo start).
+	// customers.json is well-formed but alerts.json (later in the dependency
+	// order) is not. The loader must report an error without writing the
+	// already-decoded customers or falling back to the hardcoded sample.
 	corrupt["alerts.json"] = `{not valid json`
 
 	dir := writeDemoDatasetFixture(t, corrupt)
@@ -246,7 +279,7 @@ func TestRunFailsExplicitlyOnCorruptDatasetWithoutFallback(t *testing.T) {
 	repos, _ := newFullMemoryRepos()
 	ctx := context.Background()
 
-	if err := Run(ctx, repos); err == nil {
+	if _, err := Run(ctx, repos); err == nil {
 		t.Fatal("expected Run to return an error for a corrupt dataset")
 	}
 
@@ -254,8 +287,8 @@ func TestRunFailsExplicitlyOnCorruptDatasetWithoutFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list customers: %v", err)
 	}
-	if len(custs) != 2 {
-		t.Fatalf("expected the 2 dataset customers loaded before the failure to remain (no fallback), got %d", len(custs))
+	if len(custs) != 0 {
+		t.Fatalf("expected no customers after pre-write validation failure, got %d", len(custs))
 	}
 	if _, err := repos.Customers.Get(ctx, "cust-001"); err == nil {
 		t.Fatal("hardcoded fallback customer cust-001 must not appear after a failed dataset load")
@@ -274,8 +307,12 @@ func TestRunSkipsSeedingWhenDataAlreadyExists(t *testing.T) {
 		t.Fatalf("seed pre-existing customer: %v", err)
 	}
 
-	if err := Run(ctx, repos); err != nil {
+	result, err := Run(ctx, repos)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	if result.DatasetKind != "" || result.Applied || result.DemoDataEnabled() {
+		t.Fatalf("result = %+v, want unmarked existing database", result)
 	}
 
 	custs, err := repos.Customers.List(ctx, 100, 0)

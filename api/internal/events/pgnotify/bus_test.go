@@ -44,13 +44,13 @@ func TestPgNotifyBus_PublishSubscribe(t *testing.T) {
 	received := make(chan events.Event, 1)
 	subscribed := make(chan struct{})
 	go func() {
-		close(subscribed)
-		_ = bus.Subscribe(ctx, "ws4_test_topic", func(e events.Event) {
+		_ = bus.SubscribeReady(ctx, "ws4_test_topic", func(e events.Event) {
 			received <- e
+		}, func() {
+			close(subscribed)
 		})
 	}()
 	<-subscribed
-	time.Sleep(200 * time.Millisecond) // allow LISTEN to register before publishing
 
 	if err := bus.Publish(context.Background(), events.Event{ID: "e1", Topic: "ws4_test_topic", SequenceNum: 1}); err != nil {
 		t.Fatalf("Publish: %v", err)

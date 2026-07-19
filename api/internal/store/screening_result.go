@@ -5,17 +5,16 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // PgScreeningResultRepo implements domain.ScreeningResultRepository against
 // screening_results (migrations/011_screening_results.sql).
 type PgScreeningResultRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
-func NewPgScreeningResultRepo(pool *pgxpool.Pool) *PgScreeningResultRepo {
+func NewPgScreeningResultRepo(pool DBTX) *PgScreeningResultRepo {
 	return &PgScreeningResultRepo{pool: pool}
 }
 

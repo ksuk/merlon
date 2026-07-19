@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
@@ -19,11 +18,11 @@ import (
 // to keep resolving GET /api/v1/rules/{id}?version=N after a PUT creates a
 // new row.
 type PgRuleRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
 // NewPostgresRuleRepo constructs the Postgres-backed domain.RuleRepository.
-func NewPostgresRuleRepo(pool *pgxpool.Pool) *PgRuleRepo {
+func NewPostgresRuleRepo(pool DBTX) *PgRuleRepo {
 	return &PgRuleRepo{pool: pool}
 }
 

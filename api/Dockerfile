@@ -31,7 +31,7 @@ RUN CGO_ENABLED=0 go build -o merlon-demogen ./cmd/merlon-demogen && \
     mkdir -p /build/demo-data && \
     ./merlon-demogen -out /build/demo-data
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runtime
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runtime-base
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=api-builder /build/merlon-api .
@@ -46,5 +46,9 @@ ENTRYPOINT ["./merlon-api"]
 # it (api/internal/seed's JSON loader, PH7 T2). No extra env vars or
 # binaries are added here — the standard `runtime` target's size and
 # contents are unaffected by this stage's existence.
-FROM runtime AS demo
+FROM runtime-base AS demo
 COPY --from=api-builder /build/demo-data /app/demo-data
+
+# Keep the standard runtime as the final/default stage so plain docker build
+# and docker-compose.yml do not include the demo dataset.
+FROM runtime-base AS runtime

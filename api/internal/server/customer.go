@@ -296,7 +296,9 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	// events/handlers.TierChangeHandler can trigger the transaction-monitoring design's
 	// 24h retroactive TM re-evaluation on upgrades. Independent of the
 	// screening rescreen above (different downstream consumer).
-	s.publishTierChange(r.Context(), c.ID, oldTier, record.Tier, record.ScoredAt)
+	if err := s.publishTierChange(r.Context(), c.ID, oldTier, record.Tier, record.ScoredAt); err != nil {
+		slog.ErrorContext(r.Context(), "tier-change event publish failed", "customer_id", c.ID, "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, record)
 }
@@ -329,12 +331,12 @@ func tierRank(t domain.RiskTier) int {
 // events/handlers.TierChangeHandler can trigger the transaction-monitoring design's
 // retroactive re-evaluation on upgrades. It is a no-op if no event bus is
 // configured or the tier did not change.
-func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTier *domain.RiskTier, newTier domain.RiskTier, scoredAt time.Time) {
+func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTier *domain.RiskTier, newTier domain.RiskTier, scoredAt time.Time) error {
 	if s.events == nil {
-		return
+		return nil
 	}
 	if oldTier != nil && *oldTier == newTier {
-		return
+		return nil
 	}
 
 	tc := handlers.TierChangeEvent{
@@ -346,10 +348,10 @@ func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTi
 	}
 	payload, err := json.Marshal(tc)
 	if err != nil {
-		return
+		return err
 	}
 
-	_ = s.events.Publish(ctx, events.Event{
+	return s.events.Publish(ctx, events.Event{
 		ID:        generateID(),
 		Topic:     "cdd.tier_changed",
 		Payload:   payload,

@@ -26,6 +26,7 @@ type Bus struct {
 }
 
 var _ events.Bus = (*Bus)(nil)
+var _ events.ReadyBus = (*Bus)(nil)
 
 // New records url for the eventual JetStream connection. It does not dial
 // out yet, so it cannot fail merely because no NATS server is reachable.
@@ -40,5 +41,9 @@ func (b *Bus) Publish(_ context.Context, _ events.Event) error {
 }
 
 func (b *Bus) Subscribe(_ context.Context, _ string, _ func(events.Event)) error {
+	return errNotImplemented
+}
+
+func (b *Bus) SubscribeReady(_ context.Context, _ string, _ func(events.Event), _ func()) error {
 	return errNotImplemented
 }

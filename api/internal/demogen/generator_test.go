@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -15,6 +16,13 @@ import (
 	"github.com/ksuk/merlon/api/internal/engine/native"
 	"gopkg.in/yaml.v3"
 )
+
+func TestGenerateRejectsCustomerCountAboveQuota(t *testing.T) {
+	_, err := Generate(Options{Customers: DefaultCustomers + 1})
+	if err == nil || !strings.Contains(err.Error(), "exceeds the fixed quota maximum") {
+		t.Fatalf("Generate(1001) error = %v, want fixed-quota validation error", err)
+	}
+}
 
 // testOptions points the generator at the real repository content, using
 // paths relative to this test file's package directory

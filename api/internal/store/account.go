@@ -5,17 +5,16 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
 // PgAccountRepo implements domain.AccountRepository against accounts /
 // account_customers (migrations/020_accounts.sql, WS-11 Task 4).
 type PgAccountRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
-func NewPgAccountRepo(pool *pgxpool.Pool) *PgAccountRepo {
+func NewPgAccountRepo(pool DBTX) *PgAccountRepo {
 	return &PgAccountRepo{pool: pool}
 }
 

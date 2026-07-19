@@ -17,14 +17,14 @@ import (
 )
 
 type PgCustomerRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 	// encryptor transparently encrypts/decrypts customers.attributes' direct
 	// PII fields (the data model §3.1, WS-11 Task 7). Nil disables encryption
 	// entirely (encryption not configured), leaving attributes untouched.
 	encryptor *crypto.Encryptor
 }
 
-func NewPgCustomerRepo(pool *pgxpool.Pool, encryptor *crypto.Encryptor) *PgCustomerRepo {
+func NewPgCustomerRepo(pool DBTX, encryptor *crypto.Encryptor) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool, encryptor: encryptor}
 }
 
@@ -303,10 +303,10 @@ func riskTierToNullable(t *domain.RiskTier) *string {
 // PgTransactionRepo
 
 type PgTransactionRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
-func NewPgTransactionRepo(pool *pgxpool.Pool) *PgTransactionRepo {
+func NewPgTransactionRepo(pool DBTX) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
@@ -467,10 +467,10 @@ func isIdempotencyKeyViolation(err error) bool {
 // PgAlertRepo
 
 type PgAlertRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
-func NewPgAlertRepo(pool *pgxpool.Pool) *PgAlertRepo {
+func NewPgAlertRepo(pool DBTX) *PgAlertRepo {
 	return &PgAlertRepo{pool: pool}
 }
 
@@ -747,10 +747,10 @@ func (r *PgAlertRepo) EscalateSeverity(ctx context.Context, id string, severity 
 // PgAuditRepo
 
 type PgAuditRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
-func NewPgAuditRepo(pool *pgxpool.Pool) *PgAuditRepo {
+func NewPgAuditRepo(pool DBTX) *PgAuditRepo {
 	return &PgAuditRepo{pool: pool}
 }
 
@@ -889,10 +889,10 @@ func nonNilStrings(s []string) []string {
 // PgCaseRepo
 
 type PgCaseRepo struct {
-	pool *pgxpool.Pool
+	pool DBTX
 }
 
-func NewPgCaseRepo(pool *pgxpool.Pool) *PgCaseRepo {
+func NewPgCaseRepo(pool DBTX) *PgCaseRepo {
 	return &PgCaseRepo{pool: pool}
 }
 

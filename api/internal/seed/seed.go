@@ -29,8 +29,8 @@ import (
 
 // Repos bundles the repository interfaces the seeder writes to. Fields left
 // nil are simply skipped by the hardcoded fallback (as before); the demogen
-// dataset loader requires Accounts, ScreeningResults, and Rules in addition
-// to the original five, since the demogen dataset covers those entities too.
+// dataset loader requires every field, since the recorded dataset covers all
+// entities. State records the successful dataset provenance when configured.
 type Repos struct {
 	Customers        domain.CustomerRepository
 	Transactions     domain.TransactionRepository
@@ -40,52 +40,78 @@ type Repos struct {
 	Accounts         domain.AccountRepository
 	ScreeningResults domain.ScreeningResultRepository
 	Rules            domain.RuleRepository
+	State            domain.SeedStateRepository
 }
 
-// demoDataDirEnv is checked directly (rather than threaded through
-// api/internal/config) to keep this wave's change footprint limited to the
-// seed package: config.go / main.go are otherwise untouched by PH7 T2 aside
-// from wiring the extra repos below.
-const demoDataDirEnv = "MERLON_DEMO_DATA_DIR"
+type Result struct {
+	DatasetKind domain.SeedDatasetKind
+	Applied     bool
+}
+
+func (r Result) DemoDataEnabled() bool { return r.DatasetKind == domain.SeedDatasetDemo }
 
 // Run seeds repos, choosing between the demogen JSON dataset and the
-// built-in hardcoded sample. It is a no-op (skips seeding entirely) if repos
-// already contains data, so restarting a compose stack without wiping its
-// volume does not attempt to re-insert the same rows (the wave-T2
-// instructions' "二重投入防止").
+// built-in hardcoded sample. A recorded completion state takes precedence;
+// otherwise it is a no-op if repos already contains data, so restarting a
+// compose stack without wiping its volume does not attempt to re-insert the
+// same rows (the wave-T2 instructions' "二重投入防止").
 //
-// Errors are returned for the caller to log, matching the project's
-// existing seed error-handling posture: a seeding problem is surfaced, not
-// fatal to the API process starting up.
-func Run(ctx context.Context, repos Repos) error {
+// Errors are returned for the caller to handle. The API treats configured
+// seed failures as startup-fatal so it never serves an incomplete dataset.
+func Run(ctx context.Context, repos Repos) (Result, error) {
+	if repos.State != nil {
+		state, err := repos.State.Get(ctx)
+		if err != nil {
+			return Result{}, fmt.Errorf("seed: checking completion state: %w", err)
+		}
+		if state != nil {
+			if state.DatasetKind != domain.SeedDatasetDemo && state.DatasetKind != domain.SeedDatasetHardcoded {
+				return Result{}, fmt.Errorf("seed: invalid completion dataset kind %q", state.DatasetKind)
+			}
+			return Result{DatasetKind: state.DatasetKind}, nil
+		}
+	}
+
 	seeded, err := alreadySeeded(ctx, repos)
 	if err != nil {
-		return fmt.Errorf("seed: checking for existing data: %w", err)
+		return Result{}, fmt.Errorf("seed: checking for existing data: %w", err)
 	}
 	if seeded {
 		log.Printf("seed: existing customer data found, skipping seed (compose restart without volume reset)")
-		return nil
+		return Result{}, nil
 	}
 
 	if dir := demoDataDir(); dir != "" {
 		ok, err := hasDemoDataset(dir)
 		if err != nil {
-			return fmt.Errorf("seed: inspecting %s=%s: %w", demoDataDirEnv, dir, err)
+			return Result{}, fmt.Errorf("seed: inspecting MERLON_DEMO_DATA_DIR=%s: %w", dir, err)
 		}
 		if ok {
 			if err := loadDemoDataset(ctx, repos, dir); err != nil {
 				// Fail-Alert: a partially-generated/corrupt dataset must not
 				// fall back to the hardcoded sample (which would silently
 				// mask the problem behind 5 plausible-looking customers).
-				return fmt.Errorf("seed: loading demo dataset from %s failed, seed aborted (no fallback): %w", dir, err)
+				return Result{}, fmt.Errorf("seed: loading demo dataset from %s failed, seed aborted (no fallback): %w", dir, err)
 			}
-			return nil
+			if repos.State != nil {
+				if err := repos.State.MarkCompleted(ctx, domain.SeedDatasetDemo); err != nil {
+					return Result{}, fmt.Errorf("seed: recording demo completion: %w", err)
+				}
+			}
+			return Result{DatasetKind: domain.SeedDatasetDemo, Applied: true}, nil
 		}
-		log.Printf("seed: %s=%s does not contain a full demogen dataset (missing/unreadable required file); falling back to the built-in sample", demoDataDirEnv, dir)
+		log.Printf("seed: MERLON_DEMO_DATA_DIR=%s does not contain a full demogen dataset (missing/unreadable required file); falling back to the built-in sample", dir)
 	}
 
-	runHardcoded(ctx, repos)
-	return nil
+	if err := runHardcoded(ctx, repos); err != nil {
+		return Result{}, err
+	}
+	if repos.State != nil {
+		if err := repos.State.MarkCompleted(ctx, domain.SeedDatasetHardcoded); err != nil {
+			return Result{}, fmt.Errorf("seed: recording hardcoded completion: %w", err)
+		}
+	}
+	return Result{DatasetKind: domain.SeedDatasetHardcoded, Applied: true}, nil
 }
 
 // alreadySeeded reports whether repos.Customers already has at least one
@@ -107,7 +133,7 @@ func alreadySeeded(ctx context.Context, repos Repos) (bool, error) {
 // runHardcoded is the pre-PH7 fixed 5-customer sample, unchanged, used
 // whenever no demogen dataset is configured/available (backward
 // compatibility).
-func runHardcoded(ctx context.Context, repos Repos) {
+func runHardcoded(ctx context.Context, repos Repos) error {
 	now := time.Now()
 
 	customers := []*domain.Customer{
@@ -196,7 +222,7 @@ func runHardcoded(ctx context.Context, repos Repos) {
 
 	for _, c := range customers {
 		if err := repos.Customers.Create(ctx, c); err != nil {
-			log.Printf("seed: customer %s: %v", c.ID, err)
+			return fmt.Errorf("seed: customer %s: %w", c.ID, err)
 		}
 	}
 
@@ -215,7 +241,7 @@ func runHardcoded(ctx context.Context, repos Repos) {
 
 	for _, t := range transactions {
 		if err := repos.Transactions.Create(ctx, t); err != nil {
-			log.Printf("seed: transaction %s: %v", t.ID, err)
+			return fmt.Errorf("seed: transaction %s: %w", t.ID, err)
 		}
 	}
 
@@ -252,7 +278,7 @@ func runHardcoded(ctx context.Context, repos Repos) {
 
 	for _, a := range alerts {
 		if err := repos.Alerts.Create(ctx, a); err != nil {
-			log.Printf("seed: alert %s: %v", a.ID, err)
+			return fmt.Errorf("seed: alert %s: %w", a.ID, err)
 		}
 	}
 
@@ -282,7 +308,7 @@ func runHardcoded(ctx context.Context, repos Repos) {
 
 	for _, c := range cases {
 		if err := repos.Cases.Create(ctx, c); err != nil {
-			log.Printf("seed: case %s: %v", c.ID, err)
+			return fmt.Errorf("seed: case %s: %w", c.ID, err)
 		}
 	}
 
@@ -296,11 +322,12 @@ func runHardcoded(ctx context.Context, repos Repos) {
 		}
 		for i, e := range auditEntries {
 			if err := repos.Audit.Create(ctx, e); err != nil {
-				log.Printf("seed: audit entry %d: %v", i, err)
+				return fmt.Errorf("seed: audit entry %d: %w", i, err)
 			}
 		}
 	}
 
 	log.Printf("seed: loaded built-in sample: %d customers, %d transactions, %d alerts, %d cases",
 		len(customers), len(transactions), len(alerts), len(cases))
+	return nil
 }

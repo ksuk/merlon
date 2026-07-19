@@ -30,7 +30,7 @@ func run() error {
 	out := flag.String("out", "../deploy/seed/demo", "output directory for customers.json/accounts.json/score_history.json")
 	seed := flag.Int64("seed", demogen.DefaultSeed, "deterministic PRNG seed")
 	anchorStr := flag.String("anchor", demogen.DefaultAnchorStr, "anchor date (YYYY-MM-DD) every generated date is relative to")
-	customers := flag.Int("customers", demogen.DefaultCustomers, "number of customers to generate")
+	customers := flag.Int("customers", demogen.DefaultCustomers, "number of customers to generate (maximum 1000)")
 	flag.Parse()
 
 	anchor, err := time.ParseInLocation("2006-01-02", *anchorStr, time.UTC)

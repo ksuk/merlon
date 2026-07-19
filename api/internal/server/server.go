@@ -122,9 +122,8 @@ type Deps struct {
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
 	ConfigDigests          map[string]string
-	// DemoDataEnabled mirrors config.Config: true when Seed is on and
-	// DemoDataDir is non-empty, i.e. the seed package loaded the demogen
-	// dataset rather than the hardcoded sample (PH7 DD3).
+	// DemoDataEnabled is derived from seed provenance, and is true only when
+	// the completed seed state identifies the demogen dataset (PH7 DD3).
 	DemoDataEnabled bool
 
 	ScreeningListStore      screening.ListStore

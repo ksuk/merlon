@@ -22,12 +22,9 @@ type Config struct {
 	MigrationBaseline    string
 	EncryptionKeyRing    string
 	Seed                 bool
-	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed: the directory the seed
-	// package (api/internal/seed) loads the demogen dataset from when Seed is
-	// true. Threaded through here (rather than seed reading it directly, as
-	// it does today) only so /api/v1/system can report whether this instance
-	// is running on the synthetic demo dataset (features.demo_data, PH7 DD3),
-	// without server importing the seed package.
+	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed. The seed package reads the
+	// same environment value; final synthetic-data provenance comes from the
+	// seed completion state rather than this configuration hint.
 	DemoDataDir            string
 	JWTSecret              string
 	JWTPrivateKeyFile      string

@@ -72,12 +72,14 @@ deterministic synthetic dataset from scratch.
    pre-seeded.
 6. **Reports** ([`/reports`](http://127.0.0.1:8080/reports)) — pick the
    `demo-story-04` alert from the list (its critical severity qualifies it)
-   and create an STR draft, then download the CSV or JSON export.
+   and generate an STR draft, then download the CSV or JSON export. The draft
+   is generated for this workflow; the write request itself is what is
+   recorded in the audit trail.
 7. **Audit** ([`/audit`](http://127.0.0.1:8080/audit)) — confirm that the
-   score, case note, status change, and STR creation you just performed are
-   all there, attributed and timestamped. This is the Auditability First
-   principle closing the loop: every action you took is recorded, not just
-   the seeded history.
+   score, case-note request, status change, and STR-draft request you just
+   performed are present, attributed, and timestamped. This is the
+   Auditability First principle closing the loop: every write action is
+   recorded by the API's common audit middleware, not just the seeded history.
 
 ## Path B — technical evaluator (5–7 minutes)
 
