@@ -64,6 +64,29 @@ curl http://localhost:8080/healthz
 
 See [docs/getting-started.md](docs/getting-started.md) for the full guide.
 
+## Demo
+
+Want to try Merlon without your own data? A local demo stack ships with a
+synthetic dataset (about 1,015 customers, 98 alerts) and authentication
+disabled, so you can click through scoring, alerts, cases, and reports
+immediately.
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080). Follow
+[docs/demo-tour.md](docs/demo-tour.md) for a guided walkthrough of both a
+compliance-reviewer path and a technical-evaluator path.
+
+This dataset is entirely synthetic — never load real customer or transaction
+data into it, and never run this compose file on a publicly reachable host;
+it has no authentication.
+
+Prefer not to use Docker? See "Running without Docker" in
+[docs/demo-tour.md](docs/demo-tour.md#running-without-docker) for the
+in-memory equivalent.
+
 ## Development
 
 Requirements: Go 1.25+, Node.js 20+
