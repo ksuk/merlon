@@ -871,6 +871,21 @@ func nullableString(s string) *string {
 	return &s
 }
 
+// nonNilStrings coalesces a nil slice to an empty (non-nil) one. pgx encodes
+// a nil []string as SQL NULL, which violates the alert_ids/related_case_ids
+// NOT NULL DEFAULT '{}' columns on cases (migrations/004, 014) whenever a
+// caller builds a domain.Case without explicitly initializing those fields
+// (e.g. handleCreateCase never sets RelatedCaseIDs, and demogen's generated
+// cases never set it either — a DEFAULT only applies when the column is
+// omitted from the INSERT, not when NULL is bound explicitly). A non-nil
+// empty slice round-trips through pgx as an empty Postgres array instead.
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // PgCaseRepo
 
 type PgCaseRepo struct {
@@ -947,7 +962,7 @@ func (r *PgCaseRepo) Create(ctx context.Context, c *domain.Case) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-		c.ID, c.CustomerID, c.AlertIDs, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, c.CreatedAt, c.UpdatedAt)
+		c.ID, c.CustomerID, nonNilStrings(c.AlertIDs), string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, nonNilStrings(c.RelatedCaseIDs), c.CreatedAt, c.UpdatedAt)
 	return err
 }
 
@@ -955,7 +970,7 @@ func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9 WHERE id=$1`,
-		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, c.UpdatedAt, c.ClosedAt)
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, nonNilStrings(c.RelatedCaseIDs), c.UpdatedAt, c.ClosedAt)
 	if err != nil {
 		return err
 	}
@@ -975,7 +990,7 @@ func (r *PgCaseRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Case, exp
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9
 		WHERE id=$1 AND updated_at=$10`,
-		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, c.RelatedCaseIDs, newUpdatedAt, c.ClosedAt, expectedUpdatedAt)
+		c.ID, string(c.Status), string(c.Priority), c.AssignedTo, c.Summary, c.ReopenReason, nonNilStrings(c.RelatedCaseIDs), newUpdatedAt, c.ClosedAt, expectedUpdatedAt)
 	if err != nil {
 		return err
 	}
