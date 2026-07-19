@@ -312,7 +312,10 @@ func TestStoryCustomersScoreNearNarrativeTargets(t *testing.T) {
 		{"demo-story-06", domain.RiskTierMedium},
 	}
 	for _, tc := range cases {
-		c, ok := byID[tc.id]
+		// r.Customers' IDs are remapped to UUIDs (uuidFor(label)) by the time
+		// Generate returns; tc.id is the generation-time label, so look it up
+		// via the same deterministic derivation.
+		c, ok := byID[uuidFor(tc.id)]
 		if !ok {
 			t.Fatalf("story customer %s not found in generated population", tc.id)
 		}
@@ -415,21 +418,23 @@ func TestStoryAlertsAndCasesLinkage(t *testing.T) {
 			t.Errorf("story customer %s has no alerts", id)
 		}
 	}
-	for _, a := range alertsByCustomer["demo-story-04"] {
+	// r.Alerts/r.Cases' CustomerID fields are remapped to UUIDs by the time
+	// Generate returns; uuidFor(label) recovers the same lookup key.
+	for _, a := range alertsByCustomer[uuidFor("demo-story-04")] {
 		if a.Severity != domain.AlertSeverityCritical {
 			t.Errorf("demo-story-04 alert %s: severity=%s, want critical (A6/A7 override)", a.ID, a.Severity)
 		}
 	}
-	if got := len(alertsByCustomer["demo-story-06"]); got != 3 {
+	if got := len(alertsByCustomer[uuidFor("demo-story-06")]); got != 3 {
 		t.Errorf("demo-story-06: got %d alerts, want 3 (2 structuring windows + 1 rapid_movement)", got)
 	}
 	story6AlertIDs := map[string]bool{}
-	for _, a := range alertsByCustomer["demo-story-06"] {
+	for _, a := range alertsByCustomer[uuidFor("demo-story-06")] {
 		story6AlertIDs[a.ID] = true
 	}
 	var story6Case *domain.Case
 	for i, c := range r.Cases {
-		if c.CustomerID == "demo-story-06" {
+		if c.CustomerID == uuidFor("demo-story-06") {
 			story6Case = &r.Cases[i]
 		}
 	}

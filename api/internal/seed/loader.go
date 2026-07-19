@@ -122,20 +122,15 @@ func readJSONObject(path string, v any) error {
 //
 // IDs are preserved exactly as given in the JSON (not re-generated) so the
 // fixed IDs in deploy/seed/demo/STORY_IDS.md resolve directly via the HTTP
-// API. This is honored end-to-end against the in-memory store. Against
-// PostgreSQL it is only honored for the entities whose primary key column is
-// TEXT (cases, case_notes, screening_results); customers, transactions,
-// alerts, accounts, rule_definitions, and customer_score_history have UUID
-// primary key columns (migrations/001, 002, 004, 011, 020) that reject
-// demogen's human-readable IDs ("demo-story-01" etc. are not valid UUID
-// literals — confirmed against a real postgres:16.14-alpine server during
-// T2 implementation). Fixing that requires either a migration changing
-// those columns to TEXT (matching the pattern already used for
-// cases/case_notes/screening_results) or demogen emitting UUID-format
-// primary IDs with the human-readable label carried in a separate field;
-// both are out of T2's scope (migrations/demogen are not touched by this
-// wave). See the T2 report for the full writeup; this is a known limitation
-// for the PostgreSQL-backed compose demo, not the in-memory path.
+// API — including against PostgreSQL: customers, transactions, alerts,
+// accounts, rule_definitions, and customer_score_history have UUID primary
+// key columns (migrations/001, 002, 004, 011, 020), which reject arbitrary
+// strings, so demogen itself now emits deterministic UUIDv5 IDs
+// (api/internal/demogen/ids.go's uuidFor, derived from each entity's
+// human-readable generation-time label) rather than the raw labels;
+// cases/case_notes/screening_results have TEXT primary key columns and get
+// UUIDs too, purely for a uniform ID scheme across the dataset. See
+// deploy/seed/demo/STORY_IDS.md for the label/UUID mapping.
 //
 // A second, narrower incompatibility that *is* fixed here: every
 // transactions.json row has external_id="" (T1-W2's synthetic transactions

@@ -24,7 +24,12 @@ which runs `api/cmd/merlon-demogen` with its default deterministic seed
   customers (structuring, high-frequency/mule, high-risk-country transfer,
   rapid movement/pass-through, dormant reactivation, and the compound case)
   and the screening-hit customers, for the demo tour (T5'/T6') to link to
-  directly. Regenerating the dataset reproduces these same IDs.
+  directly. Each row shows both a human-readable **label** (this generator's
+  internal name, e.g. `demo-story-04`) and the **UUID** that is the entity's
+  actual primary key (`api/internal/demogen/ids.go`'s `uuidFor(label)`, a
+  deterministic RFC 4122 v5 UUID) — use the UUID to build a working URL.
+  Regenerating the dataset reproduces the same label and therefore the same
+  UUID every time.
 - `screening_lists/*.yaml` — **committed**. Small, fully synthetic
   sanctions/PEP lists (`DEMO-SANCTIONS-*`, `DEMO-PEP-*`); see
   `screening_lists/README.md`.
@@ -44,8 +49,9 @@ byte-identical data.
 Loading goes through the same repository interfaces
 (`api/internal/domain`) regardless of backend — PostgreSQL or the
 in-memory store behave identically. IDs from the JSON files are preserved
-as-is wherever the destination column allows it, so the direct links in
-`STORY_IDS.md` resolve via the HTTP API (e.g. `GET /api/v1/customers/demo-story-04`).
+as-is (they're already the deterministic UUIDs demogen derived from each
+entity's label), so the UUID column in `STORY_IDS.md` resolves directly via
+the HTTP API (e.g. `GET /api/v1/customers/{uuid}`) against either backend.
 
 If `MERLON_DEMO_DATA_DIR` is unset, or the directory is missing/incomplete,
 the API falls back to the small 5-customer hardcoded sample
@@ -63,17 +69,23 @@ Re-running with existing data present (e.g. `docker compose restart` without
 `/app/demo-data` (on top of the standard runtime image, with no other
 change), and sets `MERLON_DEMO_DATA_DIR=/app/demo-data` accordingly.
 
-## Known limitation (PostgreSQL)
+## Why the dataset's IDs are UUIDs, not the labels you see in the source
 
 `customers`, `transactions`, `alerts`, `accounts`, `rule_definitions`, and
-`customer_score_history` have `UUID` primary key columns. The dataset's
-human-readable IDs (`demo-story-01`, `demo-alert-00008`, ...) are not valid
-UUID literals, so loading this dataset against PostgreSQL currently fails on
-the first `customers.json` row. The in-memory store has no such constraint
-and loads the full dataset correctly (that's how `api/internal/seed`'s
-loader is tested today). Fixing this for the PostgreSQL-backed
-`docker-compose.demo.yml` topology needs either a migration moving those
-columns to `TEXT` (matching `cases`/`case_notes`/`screening_results`, which
-already are) or `demogen` emitting UUID-format primary IDs with the
-human-readable label carried in a separate field — both out of scope for
-the change that introduced this loader.
+`customer_score_history` have `UUID` primary key columns
+(migrations/001, 002, 004, 011, 020), which reject arbitrary strings —
+`cases`, `case_notes`, and `screening_results` are `TEXT` and have no such
+constraint, but get UUIDs too for a uniform ID scheme across the dataset.
+`api/internal/demogen`'s own source and self-checks work with
+human-readable labels throughout generation (e.g. `demo-story-01`,
+`demo-txn-0000001` — see `cases.go`, `story.go`, `storyids.go`); the very
+last step of `Generate` (`remap.go`'s `remapIDsToUUIDs`) rewrites every
+entity's ID and cross-reference to `uuidFor(label)`, a deterministic
+RFC 4122 v5 UUID (`ids.go`). The same label always yields the same UUID, so
+regenerating the dataset reproduces byte-identical output, and
+`STORY_IDS.md` documents the label/UUID mapping for every fixed demo-tour ID.
+
+Confirmed end-to-end against a real PostgreSQL 16 instance (not just the
+in-memory store): all ten JSON files load through the same
+`api/internal/seed` loader, and the fixed story-04 customer/alert/case UUIDs
+in `STORY_IDS.md` resolve via the HTTP API.

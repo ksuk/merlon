@@ -416,9 +416,14 @@ func Generate(opts Options) (*Result, error) {
 
 	auditLogs := buildAuditLogs(o.Anchor, ruleDefinitions, sampleAuditCustomers(all), cases, caseNotes, screeningResults)
 
+	// STORY_IDS.md is authored from the plain human-readable labels (all,
+	// allTxns, cases, etc. still carry "demo-story-01"-style IDs at this
+	// point) — assembleStoryIDsInput computes each row's UUID itself (via
+	// uuidFor) for display, so the markdown can show "label / UUID" without
+	// needing the entities themselves remapped yet.
 	storyIDsMarkdown := buildStoryIDsMarkdown(assembleStoryIDsInput(o.Seed, o.Anchor.Format("2006-01-02"), all, storyIDs, allTxns, storyAlertsByCustomer, cases, screeningResults, screeningLists))
 
-	return &Result{
+	result := &Result{
 		Customers:        all,
 		Accounts:         accounts,
 		AccountCustomers: accountCustomers,
@@ -433,7 +438,16 @@ func Generate(opts Options) (*Result, error) {
 		RuleDefinitions:  ruleDefinitions,
 		ScreeningLists:   screeningLists,
 		StoryIDsMarkdown: storyIDsMarkdown,
-	}, nil
+	}
+
+	// Every entity above still carries its human-readable generation-time
+	// label as its ID; this is the one place that rewrites them to the
+	// deterministic UUIDs PostgreSQL's UUID-typed columns require (see
+	// remap.go's doc comment). Everything upstream of this call (self-
+	// checks, story wiring, STORY_IDS.md) intentionally still sees labels.
+	remapIDsToUUIDs(result)
+
+	return result, nil
 }
 
 // scenarioFired reports whether any alert in raw has the given scenario ID.

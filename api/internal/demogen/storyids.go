@@ -19,23 +19,30 @@ type storyIDsInput struct {
 	Screens []screeningIDRow
 }
 
+// storyIDRow carries both the human-readable generation-time label (for
+// narrative reference within this document) and the deterministic UUID
+// (uuidFor(label)) that is the entity's *actual* primary key once
+// remapIDsToUUIDs runs — the ID T5'/T6' must use to build a working demo-
+// tour URL (e.g. GET /api/v1/customers/{CustomerID}).
 type storyIDRow struct {
-	Story      int
-	CustomerID string
-	Name       string
-	Purpose    string
-	AlertIDs   []string
-	CaseID     string
-	FirstTxnID string
-	LastTxnID  string
-	TxnCount   int
+	Story         int
+	CustomerLabel string
+	CustomerID    string
+	Name          string
+	Purpose       string
+	AlertIDs      []string // UUIDs
+	CaseID        string   // UUID
+	FirstTxnID    string   // UUID
+	LastTxnID     string   // UUID
+	TxnCount      int
 }
 
 type screeningIDRow struct {
-	CustomerID string
-	Name       string
-	EntryID    string
-	Status     string
+	CustomerLabel string
+	CustomerID    string
+	Name          string
+	EntryID       string
+	Status        string
 }
 
 // buildStoryIDsMarkdown renders deploy/seed/demo/STORY_IDS.md: T1-W2
@@ -49,28 +56,34 @@ func buildStoryIDsMarkdown(in storyIDsInput) string {
 	b.WriteString("Fixed IDs for the PH7 demo tour (T5'/T6'). Every name, company, and\n")
 	b.WriteString("transaction below is synthetic (DD3) — regenerate with `make demogen`\n")
 	b.WriteString(fmt.Sprintf("(seed=%d, anchor=%s).\n\n", in.Seed, in.Anchor))
+	b.WriteString("Each row's **Label** is this generator's internal, human-readable name for\n")
+	b.WriteString("the entity (used only in this document and in the generator's own source);\n")
+	b.WriteString("the actual primary key the HTTP API expects (e.g.\n")
+	b.WriteString("`GET /api/v1/customers/{id}`) is the UUID column, derived deterministically\n")
+	b.WriteString("as `uuidFor(label)` — an RFC 4122 v5 (SHA-1, fixed namespace + label) UUID.\n")
+	b.WriteString("Regenerating reproduces the same UUID for the same label every time.\n\n")
 
 	b.WriteString("## A6 stories\n\n")
-	b.WriteString("| # | Customer ID | Name | Purpose | Alert ID(s) | Case ID | Transactions |\n")
-	b.WriteString("|---|---|---|---|---|---|---|\n")
+	b.WriteString("| # | Label | Customer ID | Name | Purpose | Alert ID(s) | Case ID | Transactions |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|\n")
 	for _, s := range in.Stories {
 		txnRange := "-"
 		if s.TxnCount > 0 {
 			txnRange = fmt.Sprintf("%s..%s (%d)", s.FirstTxnID, s.LastTxnID, s.TxnCount)
 		}
-		b.WriteString(fmt.Sprintf("| %d | `%s` | %s | %s | %s | `%s` | %s |\n",
-			s.Story, s.CustomerID, s.Name, s.Purpose, formatIDList(s.AlertIDs), s.CaseID, txnRange))
+		b.WriteString(fmt.Sprintf("| %d | %s | `%s` | %s | %s | %s | `%s` | %s |\n",
+			s.Story, s.CustomerLabel, s.CustomerID, s.Name, s.Purpose, formatIDList(s.AlertIDs), s.CaseID, txnRange))
 	}
 
 	b.WriteString("\n## A8 screening hits\n\n")
-	b.WriteString("| Customer ID | Name | List entry | Status |\n")
-	b.WriteString("|---|---|---|---|\n")
+	b.WriteString("| Label | Customer ID | Name | List entry | Status |\n")
+	b.WriteString("|---|---|---|---|---|\n")
 	for _, s := range in.Screens {
-		b.WriteString(fmt.Sprintf("| `%s` | %s | `%s` | %s |\n", s.CustomerID, s.Name, s.EntryID, s.Status))
+		b.WriteString(fmt.Sprintf("| %s | `%s` | %s | `%s` | %s |\n", s.CustomerLabel, s.CustomerID, s.Name, s.EntryID, s.Status))
 	}
 
-	b.WriteString("\nThe generator is deterministic (fixed seed/anchor) and keeps these IDs\n")
-	b.WriteString("unchanged across regenerations.\n")
+	b.WriteString("\nThe generator is deterministic (fixed seed/anchor) and keeps these labels\n")
+	b.WriteString("(and therefore these UUIDs) unchanged across regenerations.\n")
 	return b.String()
 }
 
@@ -116,24 +129,29 @@ func assembleStoryIDsInput(seed int64, anchorStr string, customers []domain.Cust
 
 	var rows []storyIDRow
 	for i, custID := range storyIDs {
+		// ids holds the transaction *labels* (e.g. "demo-txn-0000001"),
+		// sorted lexicographically — meaningful since they're zero-padded
+		// sequential numbers; the UUIDs derived from them below are not in
+		// any particular order, so the label sort must happen first.
 		ids := txnsByCustomer[custID]
 		sort.Strings(ids)
 		row := storyIDRow{
-			Story:      i + 1,
-			CustomerID: custID,
-			Name:       customerDisplayName(byID[custID]),
-			Purpose:    storyPurposes[i],
-			TxnCount:   len(ids),
+			Story:         i + 1,
+			CustomerLabel: custID,
+			CustomerID:    uuidFor(custID),
+			Name:          customerDisplayName(byID[custID]),
+			Purpose:       storyPurposes[i],
+			TxnCount:      len(ids),
 		}
 		if len(ids) > 0 {
-			row.FirstTxnID = ids[0]
-			row.LastTxnID = ids[len(ids)-1]
+			row.FirstTxnID = uuidFor(ids[0])
+			row.LastTxnID = uuidFor(ids[len(ids)-1])
 		}
 		for _, a := range storyAlertsByCustomer[custID] {
-			row.AlertIDs = append(row.AlertIDs, a.ID)
+			row.AlertIDs = append(row.AlertIDs, uuidFor(a.ID))
 		}
 		if i < len(cases) {
-			row.CaseID = cases[i].ID
+			row.CaseID = uuidFor(cases[i].ID)
 		}
 		rows = append(rows, row)
 	}
@@ -141,10 +159,11 @@ func assembleStoryIDsInput(seed int64, anchorStr string, customers []domain.Cust
 	var screens []screeningIDRow
 	for _, r := range screeningResults {
 		screens = append(screens, screeningIDRow{
-			CustomerID: r.CustomerID,
-			Name:       customerDisplayName(byID[r.CustomerID]),
-			EntryID:    r.EntryID,
-			Status:     string(r.Status),
+			CustomerLabel: r.CustomerID,
+			CustomerID:    uuidFor(r.CustomerID),
+			Name:          customerDisplayName(byID[r.CustomerID]),
+			EntryID:       r.EntryID,
+			Status:        string(r.Status),
 		})
 	}
 
