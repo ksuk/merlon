@@ -64,6 +64,12 @@ type Server struct {
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
 	configDigests          map[string]string
+	// demoDataEnabled reports whether this instance is seeded from the
+	// synthetic demogen dataset (PH7 DD3): surfaced via
+	// GET /api/v1/system features.demo_data so the UI can show a small
+	// "synthetic demo data" indicator. Display-only; it does not gate any
+	// functionality.
+	demoDataEnabled bool
 
 	// screeningListStore/screeningFailureTracker/screeningListIDs back the
 	// dashboard's list-freshness display (the screening workflow; Task 4). Nil until
@@ -116,6 +122,10 @@ type Deps struct {
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
 	ConfigDigests          map[string]string
+	// DemoDataEnabled mirrors config.Config: true when Seed is on and
+	// DemoDataDir is non-empty, i.e. the seed package loaded the demogen
+	// dataset rather than the hardcoded sample (PH7 DD3).
+	DemoDataEnabled bool
 
 	ScreeningListStore      screening.ListStore
 	ScreeningFailureTracker screening.FailureTracker
@@ -168,6 +178,7 @@ func New(addr string, deps Deps) *Server {
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
 		configDigests:            deps.ConfigDigests,
+		demoDataEnabled:          deps.DemoDataEnabled,
 
 		screeningListStore:      deps.ScreeningListStore,
 		screeningFailureTracker: deps.ScreeningFailureTracker,

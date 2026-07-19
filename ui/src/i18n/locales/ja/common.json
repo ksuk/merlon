@@ -4,6 +4,9 @@
     "ja": "日本語",
     "switcherLabel": "言語"
   },
+  "layout": {
+    "demoDataBadge": "合成デモデータ"
+  },
   "nav": {
     "dashboard": "ダッシュボード",
     "customers": "顧客",

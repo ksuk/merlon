@@ -106,6 +106,21 @@ func TestLoadAdapterConfigFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadDemoDataDirDefault(t *testing.T) {
+	cfg := Load()
+	if cfg.DemoDataDir != "" {
+		t.Errorf("DemoDataDir = %q, want empty", cfg.DemoDataDir)
+	}
+}
+
+func TestLoadDemoDataDirFromEnv(t *testing.T) {
+	t.Setenv("MERLON_DEMO_DATA_DIR", "  /var/demo  ")
+	cfg := Load()
+	if cfg.DemoDataDir != "/var/demo" {
+		t.Errorf("DemoDataDir = %q, want %q (trimmed)", cfg.DemoDataDir, "/var/demo")
+	}
+}
+
 func TestLoadBootstrapToken(t *testing.T) {
 	t.Setenv("MERLON_BOOTSTRAP_TOKEN", "my-secret-token")
 	cfg := Load()

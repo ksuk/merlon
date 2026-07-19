@@ -22,6 +22,13 @@ type Config struct {
 	MigrationBaseline      string
 	EncryptionKeyRing      string
 	Seed                   bool
+	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed: the directory the seed
+	// package (api/internal/seed) loads the demogen dataset from when Seed is
+	// true. Threaded through here (rather than seed reading it directly, as
+	// it does today) only so /api/v1/system can report whether this instance
+	// is running on the synthetic demo dataset (features.demo_data, PH7 DD3),
+	// without server importing the seed package.
+	DemoDataDir            string
 	JWTSecret              string
 	JWTPrivateKeyFile      string
 	JWTPublicKeyFile       string
@@ -184,6 +191,7 @@ func Load() *Config {
 		MigrationBaseline:      getEnv("MERLON_MIGRATION_BASELINE", ""),
 		EncryptionKeyRing:      getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
 		Seed:                   getEnv("MERLON_SEED", "") == "true",
+		DemoDataDir:            strings.TrimSpace(getEnv("MERLON_DEMO_DATA_DIR", "")),
 		JWTSecret:              getEnv("MERLON_JWT_SECRET", ""),
 		JWTPrivateKeyFile:      getEnv("MERLON_JWT_PRIVATE_KEY_FILE", ""),
 		JWTPublicKeyFile:       getEnv("MERLON_JWT_PUBLIC_KEY_FILE", ""),

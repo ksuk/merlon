@@ -72,6 +72,7 @@ func (s *Server) handleSystemInfo(w http.ResponseWriter, _ *http.Request) {
 			"screening":  s.screening != nil,
 			"backtest":   s.backtest != nil,
 			"config":     s.configEngine != nil,
+			"demo_data":  s.demoDataEnabled,
 		},
 	}
 

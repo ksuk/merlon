@@ -241,6 +241,7 @@ func main() {
 	deps.WhitelistMaxValidDays = cfg.WhitelistMaxValidDays
 	deps.TMBaseCurrency = cfg.TMBaseCurrency
 	deps.RealtimeMonitorTimeout = cfg.RealtimeMonitorTimeout
+	deps.DemoDataEnabled = cfg.Seed && cfg.DemoDataDir != ""
 	if cfg.RateLimit > 0 {
 		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}
@@ -294,10 +295,21 @@ func main() {
 		}
 		deps.Events = bus
 		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases)
-		if err := bus.Subscribe(jobsCtx, "cdd.tier_changed", tierChangeHandler); err != nil {
-			slog.Error("event bus subscribe", "topic", "cdd.tier_changed", "error", err)
-			os.Exit(1)
-		}
+		// pgnotify.Bus.Subscribe blocks for the life of the subscription (it
+		// loops on WaitForNotification until jobsCtx is canceled or the
+		// connection drops, by design - see its doc comment on reconnect/
+		// catch-up), so it must run in its own goroutine: calling it inline
+		// here previously left the HTTP server below never reached, i.e. the
+		// process never bound its HTTP port under the default
+		// MERLON_MODE=all with a real MERLON_DATABASE_URL (found while
+		// validating PH7 T2's PostgreSQL-backed seed path end-to-end). A
+		// dropped subscription is logged rather than fatal to the whole
+		// process; full automatic re-subscribe is a follow-up.
+		go func() {
+			if err := bus.Subscribe(jobsCtx, "cdd.tier_changed", tierChangeHandler); err != nil && jobsCtx.Err() == nil {
+				slog.Error("event bus subscribe ended", "topic", "cdd.tier_changed", "error", err)
+			}
+		}()
 		slog.Info("event bus configured", "driver", cfg.EventBus)
 	} else {
 		slog.Warn("no PostgreSQL connection, event bus disabled (CDD tier-change propagation, Task 8, will not run)")

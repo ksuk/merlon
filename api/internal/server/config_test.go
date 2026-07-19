@@ -141,4 +141,31 @@ func TestSystemInfo(t *testing.T) {
 	if features["config"] != true {
 		t.Error("expected config = true")
 	}
+	if features["demo_data"] != false {
+		t.Error("expected demo_data = false when DemoDataEnabled is unset")
+	}
+}
+
+func TestSystemInfoDemoDataEnabled(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:       store.NewMemoryCustomerRepo(),
+		Transactions:    store.NewMemoryTransactionRepo(),
+		Alerts:          store.NewMemoryAlertRepo(),
+		DemoDataEnabled: true,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/info", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	var info map[string]any
+	json.NewDecoder(rec.Body).Decode(&info)
+
+	features, ok := info["features"].(map[string]any)
+	if !ok {
+		t.Fatal("missing features")
+	}
+	if features["demo_data"] != true {
+		t.Error("expected demo_data = true when DemoDataEnabled is set")
+	}
 }
