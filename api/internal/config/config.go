@@ -13,15 +13,15 @@ import (
 type Config struct {
 	Env string
 	// Mode controls process ownership: api, worker, or all.
-	Mode                   string
-	HTTPAddr               string
-	WorkerHTTPAddr         string
-	WorkerConcurrency      int
-	DatabaseURL            string
-	MigrationDatabaseURL   string
-	MigrationBaseline      string
-	EncryptionKeyRing      string
-	Seed                   bool
+	Mode                 string
+	HTTPAddr             string
+	WorkerHTTPAddr       string
+	WorkerConcurrency    int
+	DatabaseURL          string
+	MigrationDatabaseURL string
+	MigrationBaseline    string
+	EncryptionKeyRing    string
+	Seed                 bool
 	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed: the directory the seed
 	// package (api/internal/seed) loads the demogen dataset from when Seed is
 	// true. Threaded through here (rather than seed reading it directly, as
