@@ -1,22 +1,113 @@
+// Package seed loads development/demo data into a freshly started API
+// process (MERLON_SEED=true).
+//
+// Two datasets are supported:
+//
+//   - The demogen dataset (deploy/seed/demo/*.json, produced by `make
+//     demogen` / api/cmd/merlon-demogen): ~1,000 synthetic customers plus
+//     transactions, alerts, cases, screening hits, rule definitions, and
+//     audit log entries (PH7 "recorded demo"). Loaded when
+//     MERLON_DEMO_DATA_DIR points at a directory containing the full
+//     dataset (see loader.go).
+//   - The built-in hardcoded sample (5 customers), used whenever the demogen
+//     dataset isn't available, preserving the pre-PH7 behavior.
+//
+// Both paths write through the same Repos (store) interfaces — the loader
+// makes no assumption about whether it's talking to the in-memory store or
+// PostgreSQL (Configuration as the Product / D-b in
+// .release-tasks/PH7-demo-publication.md).
 package seed
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
+// Repos bundles the repository interfaces the seeder writes to. Fields left
+// nil are simply skipped by the hardcoded fallback (as before); the demogen
+// dataset loader requires Accounts, ScreeningResults, and Rules in addition
+// to the original five, since the demogen dataset covers those entities too.
 type Repos struct {
-	Customers    domain.CustomerRepository
-	Transactions domain.TransactionRepository
-	Alerts       domain.AlertRepository
-	Cases        domain.CaseRepository
-	Audit        domain.AuditRepository
+	Customers        domain.CustomerRepository
+	Transactions     domain.TransactionRepository
+	Alerts           domain.AlertRepository
+	Cases            domain.CaseRepository
+	Audit            domain.AuditRepository
+	Accounts         domain.AccountRepository
+	ScreeningResults domain.ScreeningResultRepository
+	Rules            domain.RuleRepository
 }
 
-func Run(ctx context.Context, repos Repos) {
+// demoDataDirEnv is checked directly (rather than threaded through
+// api/internal/config) to keep this wave's change footprint limited to the
+// seed package: config.go / main.go are otherwise untouched by PH7 T2 aside
+// from wiring the extra repos below.
+const demoDataDirEnv = "MERLON_DEMO_DATA_DIR"
+
+// Run seeds repos, choosing between the demogen JSON dataset and the
+// built-in hardcoded sample. It is a no-op (skips seeding entirely) if repos
+// already contains data, so restarting a compose stack without wiping its
+// volume does not attempt to re-insert the same rows (the wave-T2
+// instructions' "二重投入防止").
+//
+// Errors are returned for the caller to log, matching the project's
+// existing seed error-handling posture: a seeding problem is surfaced, not
+// fatal to the API process starting up.
+func Run(ctx context.Context, repos Repos) error {
+	seeded, err := alreadySeeded(ctx, repos)
+	if err != nil {
+		return fmt.Errorf("seed: checking for existing data: %w", err)
+	}
+	if seeded {
+		log.Printf("seed: existing customer data found, skipping seed (compose restart without volume reset)")
+		return nil
+	}
+
+	if dir := demoDataDir(); dir != "" {
+		ok, err := hasDemoDataset(dir)
+		if err != nil {
+			return fmt.Errorf("seed: inspecting %s=%s: %w", demoDataDirEnv, dir, err)
+		}
+		if ok {
+			if err := loadDemoDataset(ctx, repos, dir); err != nil {
+				// Fail-Alert: a partially-generated/corrupt dataset must not
+				// fall back to the hardcoded sample (which would silently
+				// mask the problem behind 5 plausible-looking customers).
+				return fmt.Errorf("seed: loading demo dataset from %s failed, seed aborted (no fallback): %w", dir, err)
+			}
+			return nil
+		}
+		log.Printf("seed: %s=%s does not contain a full demogen dataset (missing/unreadable required file); falling back to the built-in sample", demoDataDirEnv, dir)
+	}
+
+	runHardcoded(ctx, repos)
+	return nil
+}
+
+// alreadySeeded reports whether repos.Customers already has at least one
+// row. It's the lightweight duplicate-insert guard requested for T2: cheap
+// (LIMIT 1), and customers is always the first table populated by either
+// seeding path, so an empty customers table implies the rest are empty too
+// (short of a hand-edited store, which is not a supported starting state).
+func alreadySeeded(ctx context.Context, repos Repos) (bool, error) {
+	if repos.Customers == nil {
+		return false, nil
+	}
+	existing, err := repos.Customers.List(ctx, 1, 0)
+	if err != nil {
+		return false, err
+	}
+	return len(existing) > 0, nil
+}
+
+// runHardcoded is the pre-PH7 fixed 5-customer sample, unchanged, used
+// whenever no demogen dataset is configured/available (backward
+// compatibility).
+func runHardcoded(ctx context.Context, repos Repos) {
 	now := time.Now()
 
 	customers := []*domain.Customer{
@@ -210,6 +301,6 @@ func Run(ctx context.Context, repos Repos) {
 		}
 	}
 
-	log.Printf("seed: loaded %d customers, %d transactions, %d alerts, %d cases",
+	log.Printf("seed: loaded built-in sample: %d customers, %d transactions, %d alerts, %d cases",
 		len(customers), len(transactions), len(alerts), len(cases))
 }

@@ -28,6 +28,12 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
+      # The "demo" target is the standard runtime image plus a generated
+      # deploy/seed/demo/*.json-equivalent dataset baked in at
+      # /app/demo-data (api/Dockerfile); it adds no env vars or binaries
+      # beyond that. See api/internal/seed's JSON loader (PH7 T2) for how
+      # MERLON_DEMO_DATA_DIR below is consumed.
+      target: demo
     restart: unless-stopped
     depends_on:
       db:
@@ -40,6 +46,22 @@ services:
       MERLON_DATABASE_URL: postgres://merlon:${MERLON_POSTGRES_PASSWORD:-merlon-demo-local}@db:5432/merlon?sslmode=disable
       MERLON_AUTH_ENABLED: "false"
       MERLON_SEED: "true"
+      # KNOWN ISSUE (PH7 T2, not yet fixed): the demogen dataset's
+      # human-readable primary IDs (e.g. "demo-story-01",
+      # "demo-alert-00008" — see deploy/seed/demo/STORY_IDS.md) are not
+      # valid UUID literals, but customers/transactions/alerts/accounts/
+      # rule_definitions/customer_score_history all have UUID primary key
+      # columns (migrations/001, 002, 004, 011, 020). Loading this dataset
+      # against PostgreSQL (this service) will fail on the first
+      # customers.json insert until either those columns move to TEXT
+      # (matching cases/case_notes/screening_results, which already are) or
+      # demogen's primary IDs become UUID-format with the human-readable
+      # label carried in a separate field. The in-memory store (no
+      # MERLON_DATABASE_URL) has no such constraint and loads the full
+      # dataset correctly; that's how api/internal/seed/loader.go is
+      # verified today. Fix this before relying on `docker compose -f
+      # docker-compose.demo.yml up` for T3'/T5'/T7'.
+      MERLON_DEMO_DATA_DIR: /app/demo-data
       MERLON_UI_DIR: /app/ui
       MERLON_LOG_LEVEL: info
       # Sample rule content (CDD weights, TM scenarios, country risk) so the

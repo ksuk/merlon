@@ -260,13 +260,22 @@ func main() {
 	}
 
 	if cfg.Seed {
-		seed.Run(context.Background(), seed.Repos{
-			Customers:    deps.Customers,
-			Transactions: deps.Transactions,
-			Alerts:       deps.Alerts,
-			Cases:        deps.Cases,
-			Audit:        deps.Audit,
-		})
+		if err := seed.Run(context.Background(), seed.Repos{
+			Customers:        deps.Customers,
+			Transactions:     deps.Transactions,
+			Alerts:           deps.Alerts,
+			Cases:            deps.Cases,
+			Audit:            deps.Audit,
+			Accounts:         deps.Accounts,
+			ScreeningResults: deps.ScreeningResults,
+			Rules:            deps.Rules,
+		}); err != nil {
+			// Matches the pre-existing seed error posture (individual
+			// hardcoded-sample Create() failures were already only logged):
+			// a seeding problem is surfaced but does not stop the API from
+			// serving.
+			slog.Error("seed", "error", err)
+		}
 	}
 
 	jobsCtx, cancelJobs := context.WithCancel(context.Background())
