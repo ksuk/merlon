@@ -1,0 +1,52 @@
+# Dependabot version-update configuration.
+# Security updates are enabled separately via the repository security settings;
+# this file drives scheduled version bumps so dependencies do not silently rot.
+version: 2
+updates:
+  # Go API module
+  - package-ecosystem: gomod
+    directory: /api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+
+  # React UI
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Documentation website (Docusaurus)
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+
+  # GitHub Actions — keep SHA-pinned actions current
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Container images (api, ui, devcontainer Dockerfiles)
+  - package-ecosystem: docker
+    directories:
+      - /api
+      - /ui
+      - /.devcontainer
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
