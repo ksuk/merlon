@@ -8,7 +8,7 @@ If you discover a security vulnerability in Merlon, please report it responsibly
 
 ### How to Report
 
-Use [GitHub Private Vulnerability Reporting](../../security/advisories/new) to submit a report. This reporting channel must be enabled before the repository is made public.
+Use [GitHub Private Vulnerability Reporting](../../security/advisories/new) to submit a report. This private channel is enabled on the repository, so reports stay confidential until a fix is released.
 
 Please include:
 
