@@ -30,7 +30,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_CONFIG_PATH` | `config.yaml` | Path to application configuration. |
 | `MERLON_CACHE_BACKEND` | `memory` | Select the configured cache backend. |
 | `MERLON_EVENT_BUS` | `pg_notify` | Event bus driver used with PostgreSQL. |
-| `MERLON_RATE_LIMIT` | `0` | Requests per window; `0` disables the limiter. |
+| `MERLON_RATE_LIMIT` | `120` | Requests per minute per client IP; `0` disables the limiter. Keep it non-zero in production to blunt brute-force/credential-stuffing. Raise it when many users share one egress IP (NAT/proxy). |
 | `MERLON_ADAPTER_CONFIG_PATH` | unset | Path to an operator-managed adapter configuration. |
 | `MERLON_UI_DIR` | unset | Optional directory containing the built UI. |
 | `MERLON_SCREENING_IMPORT_ENABLED` | `false` | Enable external sanctions-list imports only with approved endpoints. |

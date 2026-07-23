@@ -25,7 +25,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_CONFIG_PATH` | `config.yaml` | アプリケーション設定へのパス。 |
 | `MERLON_CACHE_BACKEND` | `memory` | 使用するキャッシュバックエンドを選択する。 |
 | `MERLON_EVENT_BUS` | `pg_notify` | PostgreSQL と併用するイベントバスドライバ。 |
-| `MERLON_RATE_LIMIT` | `0` | ウィンドウあたりのリクエスト数。`0` でレートリミッターを無効化する。 |
+| `MERLON_RATE_LIMIT` | `120` | クライアント IP ごとの1分あたりリクエスト数。`0` でレートリミッターを無効化する。ブルートフォース／クレデンシャルスタッフィング対策として本番では非ゼロを維持する。NAT／プロキシで多数のユーザーが同一 IP に見える環境では値を引き上げる。 |
 | `MERLON_ADAPTER_CONFIG_PATH` | 未設定 | 運用担当者が管理するアダプタ設定へのパス。 |
 | `MERLON_UI_DIR` | 未設定 | ビルド済み UI を含むディレクトリ（任意）。 |
 | `MERLON_SCREENING_IMPORT_ENABLED` | `false` | 承認済みエンドポイントの場合のみ、外部制裁リストのインポートを有効化する。 |

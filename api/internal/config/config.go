@@ -198,7 +198,7 @@ func Load() *Config {
 		LogLevel:               getEnv("MERLON_LOG_LEVEL", "info"),
 		AdapterConfigPath:      getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
 		UIDir:                  getEnv("MERLON_UI_DIR", ""),
-		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 0),
+		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 120),
 		AuthEnabled:            getEnv("MERLON_AUTH_ENABLED", "") == "true",
 		BootstrapToken:         getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
 		CountryRiskPath:        getEnv("MERLON_COUNTRY_RISK_PATH", ""),
