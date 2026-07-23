@@ -11,7 +11,12 @@ The repository Docker Compose files are development/demo topologies. They are no
 ## Required production controls
 
 - Set `MERLON_ENV=production` and enable authentication.
-- Terminate external TLS at a trusted ingress or reverse proxy.
+- Terminate external TLS at a trusted ingress or reverse proxy. Enforce
+  deployment-wide rate limits there; the API's in-memory limiter is only a
+  per-process defense-in-depth control.
+- Have the ingress overwrite or safely append `X-Forwarded-For`, and set
+  `MERLON_TRUSTED_PROXY_CIDRS` to only its narrow egress ranges so audit
+  records and any application-level limiter use the observed client address.
 - Store database passwords, bootstrap tokens, JWT material, and encryption keys in a secret manager; do not commit them or place production values in `.env` files.
 - Keep `MERLON_SEED=false` outside local development.
 - Restrict PostgreSQL and API `/metrics` to private networks or authenticated monitoring infrastructure.

@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui verify-go test test-go test-ui test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui verify-go verify-container-pins test test-go test-ui test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,9 @@ test-integration: ## Apply migrations twice and run all Go tests against Postgre
 	@cd api && go test -count=1 ./...
 
 verify-go: fmt-check lint-go test-go build-go ## Run the complete Go verification gate
+
+verify-container-pins: ## Verify repeated container image references stay synchronized
+	@bash scripts/check-container-pins.sh
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 

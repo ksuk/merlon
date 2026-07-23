@@ -316,9 +316,15 @@ func main() {
 	}
 
 	deps.RateLimit = cfg.RateLimit
+	deps.TrustedProxyCIDRs = cfg.TrustedProxyCIDRs
 	deps.WhitelistMaxValidDays = cfg.WhitelistMaxValidDays
 	deps.TMBaseCurrency = cfg.TMBaseCurrency
 	deps.RealtimeMonitorTimeout = cfg.RealtimeMonitorTimeout
+	if len(cfg.TrustedProxyCIDRs) > 0 {
+		slog.Info("trusted reverse proxies configured", "cidr_count", len(cfg.TrustedProxyCIDRs))
+	} else if cfg.Env == "production" {
+		slog.Warn("no trusted reverse proxies configured; forwarded client IPs will be ignored")
+	}
 	if cfg.RateLimit > 0 {
 		slog.Info("rate limit configured", "requests_per_minute", cfg.RateLimit)
 	}

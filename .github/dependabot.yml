@@ -1,52 +1,106 @@
-# Dependabot version-update configuration.
-# Security updates are enabled separately via the repository security settings;
-# this file drives scheduled version bumps so dependencies do not silently rot.
+# Dependabot version-update policy.
+#
+# Routine updates are deliberately consolidated into three monthly review
+# lanes. Dependabot security updates remain enabled separately in repository
+# settings and are not delayed by these schedules or cooldowns.
 version: 2
+
+multi-ecosystem-groups:
+  application:
+    schedule:
+      interval: cron
+      cronjob: "0 9 1 * *"
+      timezone: "Asia/Tokyo"
+
+  infrastructure:
+    schedule:
+      interval: cron
+      cronjob: "0 9 15 * *"
+      timezone: "Asia/Tokyo"
+
 updates:
-  # Go API module
+  # Application lane: Go API and operator UI, one consolidated PR per month.
   - package-ecosystem: gomod
     directory: /api
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore(deps)"
+    patterns: ["*"]
+    multi-ecosystem-group: application
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
 
-  # React UI
   - package-ecosystem: npm
     directory: /ui
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore(deps)"
+    patterns: ["*"]
+    multi-ecosystem-group: application
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
 
-  # Documentation website (Docusaurus)
+  # Documentation lane: kept separate so docs-only breakage does not block
+  # application dependency maintenance.
   - package-ecosystem: npm
     directory: /website
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore(deps)"
+      interval: cron
+      cronjob: "0 9 8 * *"
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      documentation:
+        applies-to: version-updates
+        patterns: ["*"]
 
-  # GitHub Actions — keep SHA-pinned actions current
+  # Infrastructure lane: workflow actions, build/runtime images, Compose
+  # services, and development-container features move together.
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore(ci)"
+    patterns: ["*"]
+    multi-ecosystem-group: infrastructure
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
 
-  # Container images (api, ui, devcontainer Dockerfiles)
   - package-ecosystem: docker
     directories:
       - /api
       - /ui
       - /.devcontainer
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore(deps)"
+      - /.github/workflows
+    patterns: ["*"]
+    multi-ecosystem-group: infrastructure
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
+
+  - package-ecosystem: docker-compose
+    directory: /
+    patterns: ["*"]
+    multi-ecosystem-group: infrastructure
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
+
+  - package-ecosystem: devcontainers
+    directory: /.devcontainer
+    patterns: ["*"]
+    multi-ecosystem-group: infrastructure
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
