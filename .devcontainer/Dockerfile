@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/base:bookworm@sha256:dd41e7f1a0b95eb3bc54857a3b8ffbe288e1012084de227343ef543eea8fdbff
+FROM mcr.microsoft.com/devcontainers/base:bookworm@sha256:bb7b81b6e5be17b5267f92f4ffda534fea37dab1df97b5e86c1f9b91da5c0b5d
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
