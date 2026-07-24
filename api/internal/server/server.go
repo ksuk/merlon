@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
+	"net/netip"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/auth"
@@ -47,6 +48,7 @@ type Server struct {
 	configEngine             engine.ConfigEngine
 	engineHealth             engine.HealthChecker
 	limiter                  *rateLimiter
+	clientIPs                clientIPResolver
 	bootstrapToken           string
 	tokenIssuer              *auth.TokenIssuer
 	denylist                 auth.Denylist
@@ -91,28 +93,29 @@ type Server struct {
 }
 
 type Deps struct {
-	Customers      domain.CustomerRepository
-	Transactions   domain.TransactionRepository
-	Alerts         domain.AlertRepository
-	Scoring        engine.ScoringEngine
-	Monitoring     engine.MonitoringEngine
-	Screening      engine.ScreeningEngine
-	Backtest       engine.BacktestEngine
-	BacktestJobs   domain.BacktestJobRepository
-	Audit          domain.AuditRepository
-	Cases          domain.CaseRepository
-	APIKeys        domain.APIKeyRepository
-	Webhooks       domain.WebhookRepository
-	Config         engine.ConfigEngine
-	EngineHealth   engine.HealthChecker
-	RateLimit      int
-	BootstrapToken string
-	TokenIssuer    *auth.TokenIssuer
-	Denylist       auth.Denylist
-	Users          domain.UserRepository
-	RefreshTokens  domain.RefreshTokenRepository
-	Rules          domain.RuleRepository
-	Whitelist      domain.WhitelistRepository
+	Customers         domain.CustomerRepository
+	Transactions      domain.TransactionRepository
+	Alerts            domain.AlertRepository
+	Scoring           engine.ScoringEngine
+	Monitoring        engine.MonitoringEngine
+	Screening         engine.ScreeningEngine
+	Backtest          engine.BacktestEngine
+	BacktestJobs      domain.BacktestJobRepository
+	Audit             domain.AuditRepository
+	Cases             domain.CaseRepository
+	APIKeys           domain.APIKeyRepository
+	Webhooks          domain.WebhookRepository
+	Config            engine.ConfigEngine
+	EngineHealth      engine.HealthChecker
+	RateLimit         int
+	TrustedProxyCIDRs []netip.Prefix
+	BootstrapToken    string
+	TokenIssuer       *auth.TokenIssuer
+	Denylist          auth.Denylist
+	Users             domain.UserRepository
+	RefreshTokens     domain.RefreshTokenRepository
+	Rules             domain.RuleRepository
+	Whitelist         domain.WhitelistRepository
 	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
 	// when positive; zero/negative falls back to the default.
 	WhitelistMaxValidDays  int
@@ -163,6 +166,7 @@ func New(addr string, deps Deps) *Server {
 		webhooks:                 deps.Webhooks,
 		configEngine:             deps.Config,
 		engineHealth:             deps.EngineHealth,
+		clientIPs:                newClientIPResolver(deps.TrustedProxyCIDRs),
 		bootstrapToken:           deps.BootstrapToken,
 		tokenIssuer:              deps.TokenIssuer,
 		denylist:                 deps.Denylist,
@@ -349,6 +353,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.auditMiddleware(h)
 	h = s.authMiddleware(h)
 	h = s.rateLimitMiddleware(h)
+	h = s.clientIPMiddleware(h)
 	h = requestBodyLimitMiddleware(h)
 	h = s.metricsMiddleware(h)
 	h = requestIDMiddleware(h)

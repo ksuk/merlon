@@ -9,10 +9,11 @@ import (
 )
 
 type rateLimiter struct {
-	mu       sync.Mutex
-	requests map[string][]time.Time
-	limit    int
-	window   time.Duration
+	mu        sync.Mutex
+	requests  map[string][]time.Time
+	limit     int
+	window    time.Duration
+	lastSweep time.Time
 }
 
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {
@@ -24,13 +25,24 @@ func newRateLimiter(limit int, window time.Duration) *rateLimiter {
 }
 
 func (rl *rateLimiter) allow(key string) (bool, int) {
+	return rl.allowAt(key, time.Now())
+}
+
+func (rl *rateLimiter) allowAt(key string, now time.Time) (bool, int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	now := time.Now()
 	cutoff := now.Add(-rl.window)
+	if rl.lastSweep.IsZero() || !now.Before(rl.lastSweep.Add(rl.window)) {
+		for requestKey, timestamps := range rl.requests {
+			if len(timestamps) == 0 || !timestamps[len(timestamps)-1].After(cutoff) {
+				delete(rl.requests, requestKey)
+			}
+		}
+		rl.lastSweep = now
+	}
 
-	var valid []time.Time
+	valid := rl.requests[key][:0]
 	for _, t := range rl.requests[key] {
 		if t.After(cutoff) {
 			valid = append(valid, t)

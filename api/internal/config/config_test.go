@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,6 +34,12 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.AdapterConfigPath != "" {
 		t.Errorf("AdapterConfigPath = %q, want %q", cfg.AdapterConfigPath, "")
+	}
+	if cfg.RateLimit != 0 {
+		t.Errorf("RateLimit = %d, want disabled by default", cfg.RateLimit)
+	}
+	if len(cfg.TrustedProxyCIDRs) != 0 {
+		t.Errorf("TrustedProxyCIDRs = %v, want empty", cfg.TrustedProxyCIDRs)
 	}
 }
 
@@ -95,6 +102,59 @@ func TestValidateRejectsNegativeRealtimeMonitorTimeout(t *testing.T) {
 	cfg := &Config{RealtimeMonitorTimeout: -time.Second}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected negative realtime monitor timeout to be rejected")
+	}
+}
+
+func TestLoadTrustedProxyCIDRs(t *testing.T) {
+	t.Setenv("MERLON_TRUSTED_PROXY_CIDRS", "10.0.0.0/8, 2001:db8::/32,10.0.0.0/8")
+
+	cfg := Load()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() unexpected error: %v", err)
+	}
+
+	want := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("2001:db8::/32"),
+	}
+	if len(cfg.TrustedProxyCIDRs) != len(want) {
+		t.Fatalf("TrustedProxyCIDRs = %v, want %v", cfg.TrustedProxyCIDRs, want)
+	}
+	for i := range want {
+		if cfg.TrustedProxyCIDRs[i] != want[i] {
+			t.Errorf("TrustedProxyCIDRs[%d] = %s, want %s", i, cfg.TrustedProxyCIDRs[i], want[i])
+		}
+	}
+}
+
+func TestValidateRejectsInvalidTrustedProxyCIDR(t *testing.T) {
+	t.Setenv("MERLON_TRUSTED_PROXY_CIDRS", "not-a-cidr")
+
+	if err := Load().Validate(); err == nil {
+		t.Fatal("expected invalid trusted proxy CIDR to be rejected")
+	}
+}
+
+func TestValidateRejectsTrustingEntireAddressFamily(t *testing.T) {
+	t.Setenv("MERLON_TRUSTED_PROXY_CIDRS", "0.0.0.0/0")
+
+	if err := Load().Validate(); err == nil {
+		t.Fatal("expected all-address trusted proxy CIDR to be rejected")
+	}
+}
+
+func TestValidateRejectsNegativeRateLimit(t *testing.T) {
+	cfg := &Config{RateLimit: -1}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected negative rate limit to be rejected")
+	}
+}
+
+func TestLoadRateLimitFromEnv(t *testing.T) {
+	t.Setenv("MERLON_RATE_LIMIT", "240")
+
+	if got := Load().RateLimit; got != 240 {
+		t.Errorf("RateLimit = %d, want 240", got)
 	}
 }
 
@@ -249,6 +309,33 @@ func TestValidateProductionWithAuth(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() unexpected error: %v", err)
+	}
+}
+
+func TestValidateProductionRateLimitRequiresTrustedProxy(t *testing.T) {
+	cfg := &Config{
+		Env:               "production",
+		AuthEnabled:       true,
+		DatabaseURL:       "postgres://example.invalid/merlon",
+		EncryptionKeyRing: "configured",
+		RateLimit:         120,
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate() should reject a production rate limit without trusted proxies")
+	}
+}
+
+func TestValidateProductionRateLimitWithTrustedProxy(t *testing.T) {
+	cfg := &Config{
+		Env:               "production",
+		AuthEnabled:       true,
+		DatabaseURL:       "postgres://example.invalid/merlon",
+		EncryptionKeyRing: "configured",
+		RateLimit:         120,
+		TrustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/24")},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() unexpected error: %v", err)
 	}
 }
 

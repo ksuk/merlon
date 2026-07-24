@@ -16,7 +16,7 @@ Merlon is **source-available** software licensed under the [Business Source Lice
 
 Production use is permitted under the Additional Use Grant; offering Merlon to third parties as a hosted, managed, or embedded service is not. See [LICENSE](LICENSE) for the exact terms.
 
-See [docs/decisions/0003-bsl-license-choice.md](docs/decisions/0003-bsl-license-choice.md) for the rationale.
+GitHub labels this repository's license as "Other" because BSL 1.1 is not in its OSI-approved set — this is expected, not a misconfiguration. See [docs/decisions/0003-bsl-license-choice.md](docs/decisions/0003-bsl-license-choice.md) for the rationale.
 
 ## Architecture
 

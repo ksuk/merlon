@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/sha256"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -36,11 +37,13 @@ type Config struct {
 	AdapterConfigPath      string
 	UIDir                  string
 	RateLimit              int
+	TrustedProxyCIDRs      []netip.Prefix
 	AuthEnabled            bool
 	BootstrapToken         string
 	CountryRiskPath        string
 	TMBaseCurrency         string
 	RealtimeMonitorTimeout time.Duration
+	trustedProxyCIDRsErr   error
 	// WhitelistMaxValidDays is the maximum whitelist validity period (WL-002,
 	// whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）").
 	// TODO(WS-2): move to the rule management API once it supports
@@ -159,6 +162,20 @@ func (c *Config) Validate() error {
 	if c.RealtimeMonitorTimeout == 0 {
 		c.RealtimeMonitorTimeout = 30 * time.Second
 	}
+	if c.RateLimit < 0 {
+		return fmt.Errorf("MERLON_RATE_LIMIT must not be negative")
+	}
+	if c.trustedProxyCIDRsErr != nil {
+		return c.trustedProxyCIDRsErr
+	}
+	for _, prefix := range c.TrustedProxyCIDRs {
+		if !prefix.IsValid() {
+			return fmt.Errorf("MERLON_TRUSTED_PROXY_CIDRS contains an invalid prefix")
+		}
+		if prefix.Bits() == 0 {
+			return fmt.Errorf("MERLON_TRUSTED_PROXY_CIDRS must not trust an entire address family")
+		}
+	}
 	if c.Env == "production" {
 		if !c.AuthEnabled {
 			return fmt.Errorf("MERLON_AUTH_ENABLED must be true in production")
@@ -172,11 +189,16 @@ func (c *Config) Validate() error {
 		if c.Seed {
 			return fmt.Errorf("MERLON_SEED must not be true in production")
 		}
+		if c.RateLimit > 0 && len(c.TrustedProxyCIDRs) == 0 {
+			return fmt.Errorf("MERLON_TRUSTED_PROXY_CIDRS must be set when MERLON_RATE_LIMIT is enabled in production")
+		}
 	}
 	return nil
 }
 
 func Load() *Config {
+	trustedProxyCIDRs, trustedProxyCIDRsErr := parseCIDRs(getEnvList("MERLON_TRUSTED_PROXY_CIDRS"))
+
 	return &Config{
 		Env:                    getEnv("MERLON_ENV", "development"),
 		Mode:                   getEnv("MERLON_MODE", "all"),
@@ -199,6 +221,7 @@ func Load() *Config {
 		AdapterConfigPath:      getEnv("MERLON_ADAPTER_CONFIG_PATH", ""),
 		UIDir:                  getEnv("MERLON_UI_DIR", ""),
 		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 0),
+		TrustedProxyCIDRs:      trustedProxyCIDRs,
 		AuthEnabled:            getEnv("MERLON_AUTH_ENABLED", "") == "true",
 		BootstrapToken:         getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
 		CountryRiskPath:        getEnv("MERLON_COUNTRY_RISK_PATH", ""),
@@ -232,7 +255,43 @@ func Load() *Config {
 
 		EDDStage2Days: getEnvInt("MERLON_EDD_STAGE2_DAYS", 60),
 		EDDStage3Days: getEnvInt("MERLON_EDD_STAGE3_DAYS", 90),
+
+		trustedProxyCIDRsErr: trustedProxyCIDRsErr,
 	}
+}
+
+func parseCIDRs(values []string) ([]netip.Prefix, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	prefixes := make([]netip.Prefix, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return nil, fmt.Errorf("MERLON_TRUSTED_PROXY_CIDRS contains invalid CIDR %q: %w", value, err)
+		}
+		prefix = canonicalPrefix(prefix)
+		if prefix.Bits() == 0 {
+			return nil, fmt.Errorf("MERLON_TRUSTED_PROXY_CIDRS must not trust an entire address family (%q)", value)
+		}
+		key := prefix.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
+}
+
+func canonicalPrefix(prefix netip.Prefix) netip.Prefix {
+	addr := prefix.Addr()
+	if addr.Is4In6() && prefix.Bits() >= 96 {
+		return netip.PrefixFrom(addr.Unmap(), prefix.Bits()-96).Masked()
+	}
+	return prefix.Masked()
 }
 
 func getEnvDuration(key string, fallback time.Duration) time.Duration {

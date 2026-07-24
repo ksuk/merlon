@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -373,12 +372,4 @@ func resolveAuditUserID(r *http.Request) string {
 		return "apikey:" + key.ID
 	}
 	return "anonymous"
-}
-
-func extractIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

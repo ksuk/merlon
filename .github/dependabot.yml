@@ -1,0 +1,116 @@
+# Dependabot version-update policy.
+#
+# Routine updates are organized into three monthly review lanes. Dependabot
+# security updates remain enabled separately in repository settings and are
+# not delayed by these schedules or cooldowns.
+version: 2
+
+updates:
+  # Application lane: Go API and operator UI.
+  - package-ecosystem: gomod
+    directory: /api
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      application:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      application:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  # Documentation lane: kept separate so docs-only breakage does not block
+  # application dependency maintenance.
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+      semver-major-days: 60
+      semver-minor-days: 14
+      semver-patch-days: 7
+    groups:
+      documentation:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  # Infrastructure lane: workflow actions, build/runtime images, Compose
+  # services, and development-container features.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+    groups:
+      infrastructure:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /api
+      - /ui
+      - /.devcontainer
+      - /.github/workflows
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+    groups:
+      infrastructure:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+    groups:
+      infrastructure:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  - package-ecosystem: devcontainers
+    directory: /.devcontainer
+    schedule:
+      interval: monthly
+      timezone: "Asia/Tokyo"
+    open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
+    groups:
+      infrastructure:
+        applies-to: version-updates
+        patterns: ["*"]

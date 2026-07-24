@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -197,6 +198,36 @@ func TestAuditIPValidation(t *testing.T) {
 	ip := entries[0].IPAddress
 	if ip == "not-an-ip" {
 		t.Errorf("invalid IP should be rejected, got %q", ip)
+	}
+}
+
+func TestAuditUsesResolvedClientIPFromTrustedProxy(t *testing.T) {
+	s := testServerFull()
+	s.clientIPs = newClientIPResolver([]netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/24"),
+	})
+
+	body := `{"external_id":"AUD_PROXY_IP","customer_type":"individual","country_code":"JP"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+	req.RemoteAddr = "10.0.0.2:443"
+	req.Header.Set("X-Forwarded-For", "198.51.100.42")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/audit?resource_type=customers", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	entries, _ := decodeListResponse[domain.AuditEntry](t, rec.Body)
+	if len(entries) < 1 {
+		t.Fatalf("expected at least 1 audit entry, got %d", len(entries))
+	}
+	if got := entries[0].IPAddress; got != "198.51.100.42" {
+		t.Errorf("audit IP = %q, want resolved client IP", got)
 	}
 }
 
