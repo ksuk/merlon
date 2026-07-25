@@ -107,7 +107,11 @@ jobs:
         with:
           node-version: '22.23.1'
       - run: npm ci
-      - run: npm audit --audit-level=high
+      # Wraps `npm audit` so an advisory with no forward fix can be accepted with
+      # a recorded rationale and an expiry instead of leaving the gate red or
+      # dropping it. See scripts/npm-audit-exceptions.json.
+      - run: node scripts/check-npm-audit.mjs ui
+        working-directory: .
 
   sbom:
     name: CycloneDX SBOM
