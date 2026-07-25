@@ -55,13 +55,15 @@ const LIST_TYPE_LABEL_KEYS: Record<string, string> = {
 export function DashboardPage() {
   const { t } = useTranslation()
   const { data: stats, loading, error } = useApi(api.dashboard)
-  const { data: activeWhitelist } = useApi(() => api.whitelist.list("active"))
-
-  const expiringSoonCount = (() => {
-    if (!activeWhitelist || !Array.isArray(activeWhitelist.data)) return 0
+  // The expiry threshold is computed where the data is fetched rather than
+  // during render: Date.now() in a render body makes the render impure, and the
+  // count would silently change between renders that received no new data.
+  const { data: expiringSoonCount } = useApi(async () => {
+    const active = await api.whitelist.list("active")
+    if (!Array.isArray(active.data)) return 0
     const threshold = Date.now() + WHITELIST_EXPIRING_SOON_DAYS * 24 * 60 * 60 * 1000
-    return activeWhitelist.data.filter((e) => new Date(e.valid_until).getTime() < threshold).length
-  })()
+    return active.data.filter((e) => new Date(e.valid_until).getTime() < threshold).length
+  })
 
   if (loading) {
     return <DashboardSkeleton />
@@ -119,7 +121,7 @@ export function DashboardPage() {
         />
         <StatCard
           title={t("dashboard.stats.whitelistExpiringSoon")}
-          value={expiringSoonCount}
+          value={expiringSoonCount ?? 0}
           icon={ShieldCheck}
           description={t("dashboard.stats.whitelistExpiringSoonDescription", { days: WHITELIST_EXPIRING_SOON_DAYS })}
         />

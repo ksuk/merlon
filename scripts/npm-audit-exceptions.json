@@ -1,0 +1,31 @@
+{
+  "$comment": [
+    "High and critical npm advisories that are knowingly accepted, checked by scripts/check-npm-audit.mjs.",
+    "An entry is only legitimate when no forward fix exists: if npm offers a non-breaking upgrade, take the upgrade.",
+    "Every entry needs a reason that says why the advisory is not reachable in this product, and an expiry.",
+    "The gate fails once expires passes, once the advisory reaches a dependent outside dependents,",
+    "and once the advisory stops being reported at all -- so entries cannot quietly outlive their justification."
+  ],
+  "exceptions": [
+    {
+      "workspace": "ui",
+      "advisory": "GHSA-qwww-vcr4-c8h2",
+      "package": "react-router",
+      "dependents": ["react-router-dom"],
+      "severity": "high",
+      "reason": "RSC-mode CSRF bypass. The UI mounts a plain BrowserRouter SPA in src/App.tsx with no RSC or framework mode, so the vulnerable request path is not built. No forward fix exists: the advisory covers 7.12.0-8.2.0 and npm's only offer is a downgrade to 7.11.0.",
+      "expires": "2026-10-31",
+      "review": "Re-check whether react-router has shipped a fixed release above 8.2.0; take it if so."
+    },
+    {
+      "workspace": "ui",
+      "advisory": "GHSA-mh99-v99m-4gvg",
+      "package": "brace-expansion",
+      "dependents": ["minimatch"],
+      "severity": "high",
+      "reason": "Unbounded-expansion DoS, reached only through license-checker (brace-expansion -> minimatch -> glob -> read-package-json -> read-installed -> license-checker). license-checker is a devDependency that runs in CI against this repository's own dependency tree, so the input is not attacker-controlled and a crash fails the build rather than affecting a deployment. No forward fix exists: the advisory covers all of license-checker >=5.1.2 and npm's only offer is a downgrade to 5.1.1.",
+      "expires": "2026-10-31",
+      "review": "Re-check for a license-checker release on a current glob, or replace the tool."
+    }
+  ]
+}

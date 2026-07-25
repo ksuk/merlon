@@ -64,8 +64,11 @@ export function WebhooksPage() {
   }
 
   useEffect(() => {
+    // Start the load outside the effect's synchronous phase: the setState at the
+    // head of loadDlq() would otherwise run synchronously inside the effect, which
+    // cascades an extra render.
     if (tab === "dlq") {
-      loadDlq()
+      void Promise.resolve().then(loadDlq)
     }
   }, [tab])
 

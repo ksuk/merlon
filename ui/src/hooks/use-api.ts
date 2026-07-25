@@ -13,7 +13,6 @@ export function useApi<T>(fetcher: () => Promise<T>): UseApiResult<T> {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     fetcher()
       .then((result) => {
         if (!cancelled) {
