@@ -3,24 +3,32 @@
     "message": "次期バージョン",
     "description": "The label for version current"
   },
-  "sidebar.docsSidebar.category.API Reference": {
-    "message": "API リファレンス",
-    "description": "The label for category 'API Reference' in sidebar 'docsSidebar'"
+  "sidebar.docsSidebar.category.Understand Merlon": {
+    "message": "Merlon を理解する",
+    "description": "The label for category 'Understand Merlon' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Compliance and Controls": {
+    "message": "コンプライアンスと統制",
+    "description": "The label for category 'Compliance and Controls' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Configure and Tune": {
+    "message": "設定とチューニング",
+    "description": "The label for category 'Configure and Tune' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Deploy and Operate": {
+    "message": "デプロイと運用",
+    "description": "The label for category 'Deploy and Operate' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Integrate and Extend": {
+    "message": "連携と拡張",
+    "description": "The label for category 'Integrate and Extend' in sidebar 'docsSidebar'"
+  },
+  "sidebar.docsSidebar.category.Contribute": {
+    "message": "開発に参加する",
+    "description": "The label for category 'Contribute' in sidebar 'docsSidebar'"
   },
   "sidebar.docsSidebar.category.Rule Schemas": {
     "message": "ルールスキーマ",
     "description": "The label for category 'Rule Schemas' in sidebar 'docsSidebar'"
-  },
-  "sidebar.docsSidebar.category.Compliance": {
-    "message": "コンプライアンス",
-    "description": "The label for category 'Compliance' in sidebar 'docsSidebar'"
-  },
-  "sidebar.docsSidebar.category.Operations": {
-    "message": "運用",
-    "description": "The label for category 'Operations' in sidebar 'docsSidebar'"
-  },
-  "sidebar.docsSidebar.category.Development": {
-    "message": "開発",
-    "description": "The label for category 'Development' in sidebar 'docsSidebar'"
   }
 }

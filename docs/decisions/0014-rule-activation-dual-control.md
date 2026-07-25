@@ -1,65 +1,35 @@
-# ADR-0014: Atomic Dual Control for Rule Activation
+# [ADR-0014] ルール活性化のアトミックな二者統制
 
-| Field | Value |
+| 項目 | 内容 |
 |---|---|
-| Status | Accepted |
-| Date | 2026-07-16 |
-| Related ADRs | ADR-0004, ADR-0012 |
+| ステータス | 承認 |
+| 決定日 | 2026-07-16 |
+| 関連ADR | ADR-0004, ADR-0012 |
 
-## Context
+## コンテキスト
 
-Database-backed rule definitions are immutable versions. A rule author can
-create a new inactive version, and an Admin can later activate it. The prior
-HTTP-layer check compared the approver with the creator of the currently
-active version, while the store activated the latest version. That split
-allowed the latest version's author to approve their own change and also
-created a check-then-act race.
+データベース管理下のルール定義はイミュータブルなバージョンである。ルール作成者は新しい非活性バージョンを作成でき、その後 Admin がそれを活性化できる。従来の HTTP 層のチェックは、承認者を「現在活性なバージョン」の作成者と比較していた一方、ストア側は「最新バージョン」を活性化していた。この不整合により、最新バージョンの作成者が自身の変更を自己承認でき、かつチェックと実行の間に競合（check-then-act レース）が生じていた。
 
-The control must identify the exact version being changed, fail closed when
-identity evidence is incomplete, remain correct under concurrent requests,
-and leave append-only evidence without changing the existing REST response
-shape.
+この統制は、変更対象のバージョンを厳密に特定し、身元の証跡が不完全な場合はフェイルクローズし、並行リクエスト下でも正しく動作し、既存の REST レスポンス形状を変えずに追記専用の証跡を残さなければならない。
 
-## Decision
+## 決定
 
-Rule state changes are enforced inside the repository transaction:
+ルールの状態変更は、リポジトリのトランザクション内部で強制する。
 
-1. Acquire a transaction-scoped advisory lock derived from the rule name.
-2. Select and lock the exact target: the latest version for activation, or the
-   currently active version for deactivation.
-3. Reject the request when the approver identity or creator identity is
-   missing, or when they are equal.
-4. Change active state and insert a `rule_activation_events` row in the same
-   transaction. The row records the target version, creator, approver,
-   requested state, and timestamp.
-5. Grant the serving role only `SELECT` and `INSERT` on the approval ledger;
-   reject unsafe ownership or `UPDATE`/`DELETE` privileges during the
-   production audit preflight.
+1. ルール名から導出したトランザクションスコープの advisory lock を取得する。
+2. 対象を厳密に選択してロックする。活性化では最新バージョン、非活性化では現在活性なバージョンを対象とする。
+3. 承認者の身元または作成者の身元が欠落している場合、あるいは両者が同一である場合はリクエストを拒否する。
+4. 活性状態の変更と `rule_activation_events` 行の挿入を同一トランザクションで行う。この行には対象バージョン・作成者・承認者・要求された状態・タイムスタンプを記録する。
+5. サービング用ロールには承認台帳に対して `SELECT` と `INSERT` のみを付与する。所有権が安全でない場合や `UPDATE`/`DELETE` 権限がある場合は、本番監査プリフライトで拒否する。
 
-New rules and new versions created through the HTTP API are always inactive.
-The memory repository implements the same target selection and fail-closed
-decision so local and PostgreSQL behavior remain aligned. HTTP mutation audit
-records include the target version, author, approver, requested state,
-decision, outcome, and status code.
+HTTP API を通じて作成される新規ルールおよび新規バージョンは、常に非活性である。メモリリポジトリも同一の対象選択とフェイルクローズ判断を実装し、ローカルと PostgreSQL の挙動を揃える。HTTP の変更操作の監査記録には、対象バージョン・作成者・承認者・要求された状態・判定・結果・ステータスコードを含める。
 
-## Consequences
+## 影響
 
-Activation and deactivation require two attributable Admin identities. A
-legacy row whose `created_by` value is absent cannot change active state until
-the deployment performs a reviewed data-remediation procedure; guessing or
-backfilling an author automatically would weaken the evidence.
+活性化・非活性化には、帰属可能な 2 名の Admin 身元が必要になる。`created_by` の値が欠落しているレガシー行は、レビュー済みのデータ是正手順をデプロイ側で実施するまで活性状態を変更できない。作成者を推測したり自動的にバックフィルしたりすれば、証跡の価値を弱めてしまう。
 
-The approval event is written only when state actually changes. A successful
-no-op request remains visible in the HTTP audit log with `changed=false`.
-Rule versions remain immutable and the REST rule representation remains
-backward compatible.
+承認イベントは、状態が実際に変化したときにのみ書き込まれる。成功した no-op リクエストは、HTTP 監査ログに `changed=false` として残る。ルールバージョンはイミュータブルのままであり、REST のルール表現も後方互換のまま維持される。
 
-ADR-0012 still governs operator-supplied files loaded directly by the native
-engine. Those files are not silently brought into this database-backed
-control; independent author/deployer IAM and deployment evidence remain an
-operator responsibility.
+ネイティブエンジンが直接読み込む、運用者提供のファイルについては引き続き ADR-0012 が統べる。それらのファイルが本データベース統制の下に暗黙的に取り込まれることはない。作成者とデプロイ実行者を分離する IAM とデプロイ証跡は、引き続き運用者の責務である。
 
-Rollback of application code must not drop migration 034 or its evidence.
-Older binaries may ignore the table, but production release rollback must
-retain its append-only privileges and restore the dual-control implementation
-before any subsequent rule state change.
+アプリケーションコードをロールバックする場合も、マイグレーション 034 とその証跡を削除してはならない。旧バイナリはこのテーブルを無視しうるが、本番リリースのロールバックにおいては、追記専用の権限を維持し、以降のルール状態変更を行う前に二者統制の実装を復旧しなければならない。

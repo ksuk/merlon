@@ -1,232 +1,92 @@
-# ADR-0013: Backend Consolidation to Go (Supersedes ADR-0002)
+# [ADR-0013] バックエンドの Go 統合（ADR-0002 を置換）
 
-| Field | Value |
+| 項目 | 内容 |
 |---|---|
-| Status | Accepted |
-| Date | 2026-07-13 |
-| Related ADRs | ADR-0002 (superseded), ADR-0004, ADR-0008, ADR-0012 |
+| ステータス | 承認 |
+| 決定日 | 2026-07-13 |
+| 関連ADR | ADR-0002（置換）, ADR-0004, ADR-0008, ADR-0012 |
 
-## Context
+## コンテキスト
 
-ADR-0002 split the backend into a Go API and a Rust rule-evaluation engine
-connected by gRPC, on the rationale that rule evaluation and backtesting are
-compute-heavy and GC pauses could destabilize latency. Three developments
-change that assessment.
+ADR-0002 は、ルール評価とバックテストが計算負荷の高い処理であり、GC による停止がレイテンシを不安定にしうるという根拠のもと、バックエンドを Go API と Rust ルール評価エンジンに分割し、両者を gRPC で接続する構成を採用した。しかし以下の3つの変化により、この評価は成り立たなくなった。
 
-**1. The target scale has been decided.** Merlon now explicitly targets the
-largest operator tier (tier C below), while remaining deployable by the
-smallest. AML/CFT transaction monitoring evaluates boundary-crossing events
-(fiat and crypto-asset deposits, withdrawals, transfers) — not on-venue trade
-executions, which belong to market surveillance and are out of scope. Even so,
-tier C is demanding: a single arbitrage-bot customer at a crypto-asset
-exchange can generate thousands of monitored transfers per day.
+**1. 目標スケールが確定した。** Merlon は最小規模の事業者でも導入可能であることを維持しつつ、最大規模の事業者層（下表のティア C）を明示的にターゲットとする。AML/CFT の取引モニタリングが評価するのは、境界をまたぐイベント（法定通貨・暗号資産の入金・出金・送金）であり、場内の約定執行は市場監視の領域でスコープ外である。それでもなおティア C の要求は厳しい。暗号資産交換業者においては、アービトラージボットの顧客1件だけで1日あたり数千件の監視対象送金が発生しうる。
 
-| Tier | Typical operator | Monitored events | Design implication |
+| ティア | 典型的な事業者 | 監視対象イベント | 設計上の含意 |
 |---|---|---|---|
-| A | Small moneylenders, small funds-transfer providers | up to ~100k/day | Current design is sufficient |
-| B | Mid-size funds-transfer / crypto-asset exchange | ~1M–10M/day | Needs streaming reads and SQL aggregation pushdown |
-| C | Top-tier payment providers and crypto-asset exchanges; bot customers with thousands of transfers/day each | tens of millions/day | Needs partitioned parallel batch; per-customer windows of 10k+ events |
+| A | 小規模の貸金業者・小規模の資金移動業者 | 〜10万件/日 | 現行設計で十分 |
+| B | 中規模の資金移動業者・暗号資産交換業者 | 約100万〜1,000万件/日 | ストリーミング読み出しと SQL への集約プッシュダウンが必要 |
+| C | 最上位の決済事業者・暗号資産交換業者。1顧客あたり数千件/日の送金を行うボット顧客を含む | 数千万件/日 | パーティション分割による並列バッチが必要。顧客単位のウィンドウが1万件超 |
 
-**2. An architecture review (2026-07-13) found that the binding constraints
-are transport and algorithms, not implementation language.** Four defects
-dominate any Go-versus-Rust performance delta:
+**2. アーキテクチャレビュー（2026-07-13）により、律速となっている制約は実装言語ではなくトランスポートとアルゴリズムであると判明した。** 以下の4つの欠陥は、Go と Rust の性能差を上回って支配的である。
 
-- Backtest capacity is capped three times over: the HTTP layer hardcodes
-  `maxBacktestCustomers = 100` (`api/internal/server/backtest.go`), the
-  engine rejects requests above 1,000 customers / 100,000 transactions
-  (`grpc/backtest_service.rs`), and behind both, `RunBacktest` ships the
-  entire dataset in one unary gRPC message with no message-size overrides
-  configured on either side (default ~4 MB decode cap). All three ceilings
-  are artifacts of the ship-everything-per-request design.
-- The nightly TM batch issues one unary RPC per customer
-  (`api/internal/batch/scheduler.go`), so serialization and round-trip
-  overhead scale with customer count.
-- The per-customer evaluation window is capped at 1,000 rows (the
-  `maxTMBatchCustomers` constant is reused as the transaction `limit`). For a
-  bot customer at 5,000 transfers/day the lookback collapses to under five
-  hours, making multi-day scenarios such as structuring undetectable — a
-  correctness defect against the Fail-Alert principle, unreachable by any
-  engine-side speedup.
-- The `high_frequency_small_amount` scenario scans forward from every
-  transaction, i.e. O(n²) in window size. At 10k-event windows this dwarfs
-  the 2–5× language delta; the fix (two-pointer sliding window, O(n)) is
-  language-independent.
+- バックテストの処理能力が三重に上限を課されている。HTTP 層が `maxBacktestCustomers = 100` をハードコードし（`api/internal/server/backtest.go`）、エンジンは1,000顧客／10万取引を超えるリクエストを拒否し（`grpc/backtest_service.rs`）、その背後で `RunBacktest` はデータセット全体を単一の unary gRPC メッセージで送っている（メッセージサイズ上限の上書き設定がどちら側にも無く、既定の約4MBデコード上限が掛かる）。これら3つの天井はいずれも「リクエストごとに全部送る」設計に起因する副産物である。
+- 夜間の TM バッチは顧客ごとに1回の unary RPC を発行しており（`api/internal/batch/scheduler.go`）、シリアライズとラウンドトリップのオーバーヘッドが顧客数に比例して増える。
+- 顧客単位の評価ウィンドウが1,000行に制限されている（`maxTMBatchCustomers` 定数が取引の `limit` として再利用されている）。1日5,000件の送金を行うボット顧客では、遡及期間が5時間未満まで縮退し、ストラクチャリングのような複数日にまたがるシナリオが検知不能になる。これは Fail-Alert 原則に反する正しさの欠陥であり、エンジン側の高速化では到達できない。
+- `high_frequency_small_amount` シナリオは各取引から前方走査しており、ウィンドウサイズに対して O(n²) である。1万件規模のウィンドウでは、これが2〜5倍という言語差を圧倒する。修正（two-pointer によるスライディングウィンドウ、O(n)）は言語に依存しない。
 
-The gRPC boundary also denies the engine database access, which forecloses
-the two techniques tier B/C actually need: streaming evaluation and pushing
-window aggregation down to PostgreSQL.
+さらに gRPC 境界はエンジンからデータベースへのアクセスを断っており、ティア B/C が実際に必要とする2つの技法——ストリーミング評価と、ウィンドウ集約の PostgreSQL へのプッシュダウン——を封じている。
 
-**3. The cost model changed.** LLM-assisted implementation sharply lowers the
-one-time porting cost (~6,300 lines of Rust in total; ~1,900 lines of core
-evaluation logic once gRPC wiring and dedicated test files are excluded),
-while the recurring cost of two toolchains (triple type definitions across
-proto/Go/Rust, dual CI, dual dependency hygiene) is unchanged. Additionally,
-pre-publication is the only window in which the proto contract can be retired
-without the 12-month backward-compatibility obligation of the Contract
-Stability principle.
+**3. コストモデルが変化した。** LLM 支援の実装により、一度きりの移植コストが大幅に下がった（Rust 全体で約6,300行、gRPC 配線と専用テストファイルを除いた中核の評価ロジックは約1,900行）。一方、2つのツールチェーンを維持する継続的コスト（proto/Go/Rust にまたがる三重の型定義、二重の CI、二重の依存関係管理）は変わらない。加えて、公開前は proto 契約を Contract Stability 原則の12ヶ月後方互換義務なしに廃止できる唯一の期間である。
 
-## Decision
+## 決定
 
-1. **Consolidate the backend to a single Go codebase.** The Rust engine's
-   scoring, monitoring, screening, backtest, and config-validation logic is
-   ported to Go packages placed behind the existing
-   `api/internal/engine/interface.go` interfaces. HTTP handlers and batch
-   code do not change their call sites.
-2. **Remove the gRPC/proto boundary.** The `proto/` contract, the Rust
-   crates, and the Rust toolchain are deleted — but only after a golden-file
-   parity gate proves the Go engine reproduces the Rust engine's outputs
-   (see Consequences).
-3. **Single binary, optional worker split.** One deployable binary runs in
-   `api`, `worker`, or combined mode. Operators who want resource isolation
-   between interactive API traffic and batch/backtest workloads may run two
-   containers of the same image; a single container remains the default and
-   the minimum supported footprint.
-4. **Scale-down constraint.** Tier-C capability must not raise the minimum
-   footprint for tier-A operators: one container plus PostgreSQL, with no
-   additional mandatory infrastructure (no queue, no cache, no coordinator).
-5. **Data-flow principles for tier C.** Aggregation is pushed down to
-   PostgreSQL where scenario semantics allow; evaluation reads stream with
-   bounded memory; scenario lookback windows are defined per scenario in
-   configuration as time ranges and loaded from the database — never
-   accumulated as resident process state.
-6. **Determinism rules (Auditability First).** The Go engine must not depend
-   on map iteration order; all grouping and output ordering is canonically
-   sorted; floating-point evaluation order from the Rust implementation is
-   preserved during the port. Identical input must produce identical output
-   across runs and across the migration.
-7. **Backtest runtime expectations.** Backtests are allowed to run for hours;
-   they are scheduled off-peak, and the API returns a simple data-volume-based
-   duration estimate that the UI surfaces on the dashboard. Backtest is not a
-   latency-bound feature.
+1. **バックエンドを単一の Go コードベースへ統合する。** Rust エンジンのスコアリング・モニタリング・スクリーニング・バックテスト・設定検証のロジックを、既存の `api/internal/engine/interface.go` のインターフェース背後に置いた Go パッケージへ移植する。HTTP ハンドラおよびバッチコードの呼び出し箇所は変更しない。
+2. **gRPC/proto 境界を撤去する。** `proto/` 契約・Rust クレート・Rust ツールチェーンを削除する。ただし、Go エンジンが Rust エンジンの出力を再現することをゴールデンファイルによるパリティゲートで証明した後に限る（「影響」節を参照）。
+3. **単一バイナリ、ワーカー分離はオプション。** 1つのデプロイ可能なバイナリが `api`・`worker`・結合モードで動作する。対話的な API トラフィックとバッチ／バックテスト負荷をリソース分離したい運用者は、同一イメージのコンテナを2つ動かしてよい。単一コンテナが既定であり、サポートされる最小構成である。
+4. **スケールダウン制約。** ティア C 対応が、ティア A 事業者の最小構成を引き上げてはならない。コンテナ1つと PostgreSQL のみで動作し、追加の必須インフラ（キュー・キャッシュ・コーディネータ）を要求しない。
+5. **ティア C のためのデータフロー原則。** シナリオの意味論が許す限り、集約は PostgreSQL へプッシュダウンする。評価の読み出しは有界メモリでストリーミングする。シナリオの遡及ウィンドウはシナリオごとに時間範囲として設定で定義し、データベースから読み込む。プロセス常駐の状態として蓄積することは決してしない。
+6. **決定性のルール（Auditability First）。** Go エンジンはマップの反復順に依存してはならない。すべてのグルーピングと出力順序は正規の順序でソートする。浮動小数点演算の評価順序は Rust 実装のものを移植時に保持する。同一入力に対しては、実行間でも移行前後でも同一の出力が得られなければならない。
+7. **バックテストの実行時間に関する前提。** バックテストは数時間かかってよい。オフピークにスケジュールし、API はデータ量ベースの単純な所要時間見積もりを返して UI がダッシュボードに表示する。バックテストはレイテンシ律速の機能ではない。
 
-## Rationale
+## 根拠
 
-- Every defect found in the review is either created by the process boundary
-  (message cap, per-customer RPC) or unaffected by language (row-cap
-  correctness bug, O(n²) algorithm). Consolidation removes the first class
-  outright and gives the engine the database access required to fix the rest.
-- ADR-0002's GC concern, quantified, does not hold at the decided targets:
-  Go's GC pauses are sub-millisecond, and tier B/C throughput is dominated by
-  database I/O and algorithmic complexity, not evaluation-loop speed.
-- The recurring cost of the hybrid falls entirely away: one type system
-  instead of three, one CI toolchain instead of two, one failure domain
-  (engine-unreachable ceases to exist as a failure class, along with its
-  health checks, mTLS between internal services, reconnect logic, and gRPC
-  metrics surface).
-- The one workload where Rust holds a real advantage — a stateful streaming
-  engine keeping multi-gigabyte sliding-window state resident in memory,
-  where large-heap GC scanning hurts Go — is explicitly excluded by decision
-  5 (window state lives in the database). A revisit trigger is defined below
-  instead of paying for that future now.
-- Marketing value ("technology appeal") is acknowledged as a secondary
-  motive for tier-C capability and is recorded as such; the NFRs above are
-  justified by the target customers, not by the appeal.
+- レビューで発見された欠陥はいずれも、プロセス境界が生み出したもの（メッセージ上限、顧客ごとの RPC）か、言語に影響されないもの（行数上限による正しさのバグ、O(n²) アルゴリズム）である。統合は前者を丸ごと取り除き、後者を修正するために必要なデータベースアクセスをエンジンに与える。
+- ADR-0002 の GC への懸念は、定量化すれば確定した目標値では成立しない。Go の GC 停止はサブミリ秒であり、ティア B/C のスループットは評価ループの速度ではなくデータベース I/O とアルゴリズム計算量に支配される。
+- ハイブリッド構成の継続的コストは完全に消える。型システムは3つから1つへ、CI ツールチェーンは2つから1つへ、障害ドメインは1つへ（「エンジンに到達不能」という障害クラス自体が、そのヘルスチェック・内部サービス間 mTLS・再接続ロジック・gRPC メトリクス面もろとも消滅する）。
+- Rust が実際に優位を持つ唯一のワークロード——数ギガバイト規模のスライディングウィンドウ状態をメモリに常駐させるステートフルなストリーミングエンジンで、大きなヒープの GC スキャンが Go にとって不利になるケース——は、決定5（ウィンドウ状態はデータベースに置く）によって明示的に除外している。その将来分を今支払う代わりに、後述の再検討トリガーを定義する。
+- マーケティング上の価値（「技術的訴求」）は、ティア C 対応の副次的な動機として認識し、そのように記録する。上記の非機能要件はターゲット顧客によって正当化されるものであり、訴求によってではない。
 
-## Alternatives Considered
+## 棄却した代替案
 
-- **Keep the hybrid and fix the transport in place** (streaming RPCs,
-  message-size limits, batched calls): rejected. It repairs the two transport
-  defects but retains triple type definitions, dual toolchains, and an engine
-  without database access — so streaming evaluation and SQL pushdown would
-  require giving the Rust engine its own database integration surface,
-  coupling two languages to one schema.
-- **Consolidate to Rust**: rejected. It would rewrite ~41k lines of Go API
-  (including tests) for no offsetting benefit; ADR-0002's own productivity argument against
-  all-Rust still holds.
-- **Build the tier-C stateful streaming engine now** (Flink-like, where Rust
-  is genuinely advantaged): rejected as premature. Batch and near-line
-  evaluation meet the stated requirements; the `interface.go` seam preserves
-  the option.
+- **ハイブリッドを維持し、トランスポートをその場で修正する**（ストリーミング RPC、メッセージサイズ上限の設定、呼び出しのバッチ化）— 却下。トランスポート由来の2つの欠陥は直るが、三重の型定義・二重のツールチェーン・データベースアクセスのないエンジンが残る。結果としてストリーミング評価と SQL プッシュダウンのためには Rust エンジンに独自のデータベース統合面を与えることになり、2つの言語が1つのスキーマに結合してしまう。
+- **Rust へ統合する** — 却下。約41,000行の Go API（テストを含む）を、見合う利益なしに書き直すことになる。全 Rust に対する ADR-0002 自身の生産性の議論は今も有効である。
+- **ティア C 向けのステートフルなストリーミングエンジンを今作る**（Flink 的な構成で、Rust が真に優位となる領域）— 時期尚早として却下。バッチ評価とニアライン評価で要件は満たせる。`interface.go` の継ぎ目がこの選択肢を保持する。
 
-## Consequences
+## 影響
 
-**Positive**
+**プラスの影響**
 
-- The 4 MB backtest cap and the per-customer RPC pattern cease to exist
-  structurally; in-process calls replace network hops on the interactive
-  scoring/screening paths.
-- Direct database access enables time-window loading, keyset pagination over
-  customers, streaming backtest reads, and SQL aggregation pushdown — the
-  actual tier-B/C work.
-- CI drops the Rust job (protobuf-compiler, cargo-llvm-cov, cache) and the
-  proto lint/breaking job; Dependabot drops the cargo ecosystem; `make`
-  targets simplify.
-- Operational surface shrinks: no engine health protocol, no API↔engine TLS
-  material, no gRPC dashboards. Engine call duration remains observable via
-  a new in-process histogram replacing `merlon_grpc_request_duration_seconds`.
-- ADR-0012's runtime config digests are computed and exposed by the Go
-  binary itself; centralizing engine configuration in the database — deferred
-  in ADR-0012 — becomes a feasible follow-up since the engine now shares the
-  API's store layer.
+- 4MB のバックテスト上限と顧客ごとの RPC パターンが構造的に消滅する。対話的なスコアリング／スクリーニング経路では、ネットワークホップがインプロセス呼び出しに置き換わる。
+- 直接のデータベースアクセスにより、時間ウィンドウ単位の読み込み・顧客に対するキーセットページネーション・バックテストのストリーミング読み出し・SQL への集約プッシュダウンが可能になる。これがティア B/C 対応の実体である。
+- CI から Rust ジョブ（protobuf-compiler、cargo-llvm-cov、キャッシュ）と proto の lint／破壊的変更検査ジョブが消える。Dependabot から cargo エコシステムが外れ、`make` ターゲットが単純になる。
+- 運用面が縮小する。エンジンのヘルスプロトコル、API↔エンジン間の TLS 資材、gRPC ダッシュボードが不要になる。エンジン呼び出しの所要時間は、`merlon_grpc_request_duration_seconds` を置き換える新しいインプロセスのヒストグラムで引き続き観測できる。
+- ADR-0012 のランタイム設定ダイジェストは Go バイナリ自身が算出・公開する。ADR-0012 で先送りにした「エンジン設定のデータベースへの集約」は、エンジンが API のストア層を共有するようになるため、実現可能なフォローアップとなる。
 
-**Negative / risks and their mitigations**
+**マイナスの影響・リスクと緩和策**
 
-- *Loss of process isolation*: a batch or backtest burst competes with
-  interactive traffic in one process. Mitigated by the worker mode (decision
-  3) and off-peak scheduling (decision 7); the split is an operator choice,
-  not a mandatory topology.
-- *Migration parity risk*: behavioral drift during the port would silently
-  violate Auditability First. Mitigated by a committed golden corpus
-  generated from the Rust engine before the port, a CI parity gate, and a
-  hard sequencing rule: the Rust crates are deleted only after the gate
-  passes. Nondeterministic output fields (time-based alert IDs such as
-  `ALT-<millis>-<i>`, `execution_time_ms`, response timestamps) are
-  normalized out of comparison, and alert ordering is canonicalized.
-- *Go map iteration order is randomized*: a naive port of the engine's
-  HashMap grouping would produce run-to-run output reordering. The
-  determinism rules (decision 6) make sorted iteration mandatory and the
-  parity gate enforces it.
-- *Performance ceiling*: Go's evaluation loops are 2–5× slower than Rust's.
-  Accepted: at the decided data-flow design the ceiling is I/O-bound, and
-  the O(n²)→O(n) scenario fix recovers orders of magnitude more than the
-  language delta concedes.
-- *Documentation debt*: architecture docs, the adapter guide's gRPC
-  references, the published gRPC protocol reference, component CLAUDE.md
-  files, compose files, and the PH7 demo composition (which currently
-  specifies an Engine container) must all be updated in the same effort.
-- *Contract surface*: retiring the proto contract narrows Merlon's external
-  contract to the REST API. This is only acceptable pre-publication, which
-  constrains migration timing: the consolidation must complete before the
-  repository is made public.
+- *プロセス分離の喪失*：バッチやバックテストのバーストが1プロセス内で対話的トラフィックと競合する。ワーカーモード（決定3）とオフピークのスケジューリング（決定7）で緩和する。分離は運用者の選択であり、必須トポロジではない。
+- *移行時のパリティリスク*：移植中の挙動の乖離は、Auditability First を静かに侵害する。移植前に Rust エンジンから生成してコミットするゴールデンコーパス、CI のパリティゲート、および「パリティゲートが通過した後にのみ Rust クレートを削除する」という厳格な順序ルールで緩和する。非決定的な出力フィールド（`ALT-<millis>-<i>` のような時刻ベースのアラート ID、`execution_time_ms`、レスポンスのタイムスタンプ）は比較対象から正規化して除外し、アラートの順序は正規化する。
+- *Go のマップ反復順はランダム化される*：エンジンの HashMap によるグルーピングを素朴に移植すると、実行ごとに出力順が変わる。決定性のルール（決定6）がソート済み反復を必須とし、パリティゲートがそれを強制する。
+- *性能の天井*：Go の評価ループは Rust より2〜5倍遅い。これは受容する。確定したデータフロー設計では天井は I/O 律速であり、O(n²)→O(n) のシナリオ修正は、言語差が譲る分より桁違いに大きな効果を回収する。
+- *ドキュメント負債*：アーキテクチャドキュメント、アダプタガイドの gRPC 記述、公開済みの gRPC プロトコルリファレンス、各コンポーネントの CLAUDE.md、compose ファイル、および PH7 のデモ構成（現状 Engine コンテナを指定している）を、すべて同じ作業の中で更新しなければならない。
+- *契約面*：proto 契約の廃止により、Merlon の外部契約は REST API のみに狭まる。これが許容できるのは公開前に限られ、そのため移行時期に制約が掛かる。統合はリポジトリを公開する前に完了しなければならない。
 
-**Assumptions recorded**
+**記録しておく前提**
 
-- Tier-C operators staff alert triage commensurate with their volume; alert
-  volume management is addressed by backtesting-driven threshold tuning and
-  operator-side rule modeling, not by engine constraints.
-- Rule modeling choices (scenario selection, thresholds, windows) are the
-  deploying organization's responsibility (Configuration as the Product).
+- ティア C の事業者は、その取引量に見合ったアラートトリアージの人員を配置する。アラート件数の管理は、バックテスト駆動の閾値チューニングと事業者側のルールモデリングによって対処するものであり、エンジン側の制約によってではない。
+- ルールモデリングの選択（シナリオの選定、閾値、ウィンドウ）は導入組織の責任である（Configuration as the Product）。
 
-**Revisit trigger**
+**再検討トリガー**
 
-If a requirement emerges for sustained sub-second, always-on evaluation at
-the order of 10⁴+ events/second with resident window state, re-separate a
-dedicated streaming engine behind `api/internal/engine/interface.go` and
-re-evaluate the implementation language at that time (Rust being a strong
-candidate). Until then, the interface seam keeps this decision reversible.
+常時稼働で、10⁴件/秒オーダーのイベントを常駐ウィンドウ状態のもとサブ秒で継続評価する要件が生じた場合は、専用のストリーミングエンジンを `api/internal/engine/interface.go` の背後に再分離し、その時点で実装言語を再評価する（Rust は有力な候補である）。それまでは、このインターフェースの継ぎ目が本決定を可逆に保つ。
 
-## PH9 implementation notes (2026-07-13)
+## PH9 実装メモ（2026-07-13）
 
-The first consolidation slice is now present in the repository:
+統合の第1スライスがリポジトリに入っている。
 
-- `api/internal/engine/native` is the in-process implementation of scoring,
-  the five TM scenarios, screening, backtest, and config validation. It loads
-  the same YAML roots and publishes stable SHA-256 digests.
-- `MERLON_MODE=api|worker|all` controls ownership. API mode keeps HTTP,
-  realtime/import/notification/retention work; worker mode runs recovery, TM
-  batch, and durable backtest jobs; `all` is the one-container default.
-- `POST /api/v1/backtests` creates a durable asynchronous job with required UTC
-  `[from,to)` bounds, an IDs-or-filter selector, baseline/candidate rule-set
-  references, immutable config digests, progress, cancellation, and affected
-  customer pagination. Backtests never create alert/case rows. The worker
-  resolves non-`active` references through the versioned rule repository and
-  runs them in an isolated candidate engine; unresolved or unsupported
-  definitions fail closed instead of producing a misleading zero delta. The
-  selected customer population is also snapshotted durably at job start.
-- The legacy gRPC process was retained only long enough to produce the frozen
-  parity corpus. Rust output ordering and all three aggregation windows were
-  made deterministic before the golden gate; the transport and crates are now
-  removed, leaving native Go as the sole runtime.
-- Monetary semantics are intentionally an interim invariant: TM aggregation
-  rejects mixed or non-base currencies into `PENDING_REVIEW`; full FX/decimal
-  and crypto-asset semantics are a separate PH10 public-release gate.
+- `api/internal/engine/native` が、スコアリング・5つの TM シナリオ・スクリーニング・バックテスト・設定検証のインプロセス実装である。従来と同じ YAML ルートを読み込み、安定した SHA-256 ダイジェストを公開する。
+- `MERLON_MODE=api|worker|all` が担当範囲を制御する。api モードは HTTP、リアルタイム／インポート／通知／保持の処理を担う。worker モードはリカバリ、TM バッチ、永続的なバックテストジョブを実行する。`all` が単一コンテナ既定である。
+- `POST /api/v1/backtests` は永続的な非同期ジョブを作成する。UTC の `[from,to)` 境界を必須とし、ID 指定またはフィルタによる対象選択、ベースライン／候補ルールセットの参照、イミュータブルな設定ダイジェスト、進捗、キャンセル、対象顧客のページネーションを持つ。バックテストがアラート行やケース行を作成することはない。ワーカーは `active` 以外の参照をバージョン管理されたルールリポジトリ経由で解決し、隔離された候補エンジンで実行する。解決できない定義や未対応の定義は、誤解を招くゼロ差分を出す代わりにフェイルクローズする。選択された顧客母集団もジョブ開始時に永続的にスナップショットされる。
+- レガシーの gRPC プロセスは、凍結されたパリティコーパスを生成するために必要な期間だけ残した。ゴールデンゲートの前に Rust 側の出力順序と3つの集約ウィンドウすべてを決定的にしたうえで、トランスポートとクレートは現在削除済みであり、ネイティブ Go が唯一のランタイムとなっている。
+- 通貨の意味論は意図的に暫定的な不変条件としている。TM 集約は通貨が混在する入力や基準通貨でない入力を `PENDING_REVIEW` へ落とす。完全な FX／10進数の扱いと暗号資産の意味論は、PH10 の公開リリースゲートとして別途扱う。

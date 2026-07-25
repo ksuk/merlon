@@ -37,6 +37,27 @@ const OUT_DIR_JA = path.join(
 );
 const OUT_DIRS = { en: OUT_DIR_EN, ja: OUT_DIR_JA };
 
+// Schemas that are superseded but still accepted by the engine. Their pages
+// are still generated — docs/rule-authoring.md and content/README.md link to
+// them, and onBrokenMarkdownLinks is 'throw' — but they are marked `unlisted`
+// so they stay out of the sidebar, the sitemap, and the search index, and
+// they are omitted from the index table. ADR-0006 keeps tm_scenario_v1.json
+// itself in the repository until 2027-07-04.
+const LEGACY_SCHEMAS = new Set(["tm_scenario_v1"]);
+
+/**
+ * Presentation title for a schema page. Locale overrides win over the
+ * schema's own `title`, so the JSON Schema documents stay untouched.
+ */
+function displayTitle(schema, fileName, L) {
+  return L.schemaDisplayTitles?.[fileName] || schema.title || fileName;
+}
+
+/** Presentation description, allowing a localized override. */
+function displayDescription(schema, fileName, L) {
+  return L.schemaDescriptions?.[fileName] || schema.description || "";
+}
+
 // ---------------------------------------------------------------------------
 // Markdown / MDX safety helpers
 // ---------------------------------------------------------------------------
@@ -227,17 +248,24 @@ function renderMembers(schema, breadcrumb, level, out, L) {
 
 function renderSchemaPage(schema, fileName, L) {
   const out = [];
-  const title = schema.title || fileName;
+  const title = displayTitle(schema, fileName, L);
+  const legacy = LEGACY_SCHEMAS.has(fileName);
 
   out.push("---");
   out.push(`title: ${title}`);
   out.push(`sidebar_label: ${title}`);
+  if (legacy) out.push("unlisted: true");
   out.push("---");
   out.push("");
   out.push(heading(1, title));
   out.push("");
-  if (schema.description) {
-    out.push(escapeText(schema.description));
+  if (legacy) {
+    out.push(L.schemaLegacyBanner);
+    out.push("");
+  }
+  const description = displayDescription(schema, fileName, L);
+  if (description) {
+    out.push(escapeText(description));
     out.push("");
   }
 
@@ -277,17 +305,36 @@ function renderIndexPage(entries, L) {
   out.push("");
   out.push(L.schemaIndexIntro);
   out.push("");
+  out.push(L.schemaNotApiVersion);
+  out.push("");
+
+  const current = entries.filter((e) => !LEGACY_SCHEMAS.has(e.fileName));
+  const legacy = entries.filter((e) => LEGACY_SCHEMAS.has(e.fileName));
+
   out.push(
     renderTable(
       [L.schemaColumn, L.titleColumn, L.descriptionColumn],
-      entries.map((e) => [
+      current.map((e) => [
         `[${e.fileName}](./${e.fileName}.md)`,
-        e.schema.title || e.fileName,
-        escapeText(e.schema.description),
+        displayTitle(e.schema, e.fileName, L),
+        escapeText(displayDescription(e.schema, e.fileName, L)),
       ])
     )
   );
   out.push("");
+
+  // Legacy schemas are unlisted, so the index carries the only in-site
+  // pointer to them. The link keeps working because the pages are still
+  // generated.
+  for (const e of legacy) {
+    out.push(
+      L.schemaLegacyNote(
+        `./${e.fileName}.md`,
+        displayTitle(e.schema, e.fileName, L)
+      )
+    );
+    out.push("");
+  }
   return out.join("\n");
 }
 

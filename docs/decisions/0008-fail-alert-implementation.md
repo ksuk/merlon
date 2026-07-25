@@ -42,13 +42,9 @@ ScoreCustomer / EvaluateTransactions / ScreenCustomer は単一の評価エン�
 
 ## 影響
 
-### PH9 amendment
+### PH9 での改訂
 
-Go consolidation removes the Rust/gRPC transport and the circuit-breaker client.
-The Fail-Alert contract remains unchanged: realtime, batch, and recovery
-evaluation errors (including non-normalized currency input) are written to
-`pending_evaluations` and retried by the worker. Native evaluation is bounded by
-the request context and does not require a remote-process breaker.
+Go 統合により、Rust/gRPC トランスポートとサーキットブレーカークライアントは撤去された。Fail-Alert の契約自体は変わらない。リアルタイム・バッチ・リカバリの各評価で発生したエラー（正規化されていない通貨入力を含む）は `pending_evaluations` に書き込まれ、ワーカーによって再試行される。ネイティブ評価はリクエストコンテキストによって時間的に制限されるため、リモートプロセス向けのブレーカーを必要としない。
 
 - `api/internal/engineclient/circuitbreaker.go`・`client.go` がブレーカー本体とラッパーを提供し、`server.Deps.Scoring`/`Monitoring`/`Screening` に既存インターフェースのまま差し込める
 - `api/internal/batch/recovery.go` の `RecoveryJob` が `pending_evaluations` を定期ポーリングして自動再評価する。ポーリング間隔は運用設定可能とする

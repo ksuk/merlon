@@ -24,6 +24,20 @@ source.
   Schema reference pages) and is gitignored. Never edit it directly — it is
   overwritten by `make generate-openapi` and the website's schema-doc
   generator.
+- `docs/release-notes.md` is generated from the repository-root `CHANGELOG.md`
+  by `website/scripts/generate-changelog-page.mjs` and is likewise gitignored.
+  Edit `CHANGELOG.md` instead; it is also the source of every GitHub release's
+  notes.
+
+## Adding a page to the sidebar
+
+The sidebar is defined explicitly in `website/sidebars.ts`, grouped by
+audience rather than by directory. **A new page does not appear on the site
+until it is listed there**, and `sidebar_position` frontmatter is ignored
+outside the generated `api/schema` subtree. This is deliberate: adding a page
+means deciding who it is for. Add the doc ID to the category that matches its
+reader, and add a `sidebar.docsSidebar.category.<label>` entry to each
+locale's `current.json` if you introduce a new category.
 
 ## ja translations
 

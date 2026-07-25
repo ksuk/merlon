@@ -1,27 +1,27 @@
-# ADR-NNNN: Title
+# [ADR-NNNN] タイトル
 
-| Field | Value |
+| 項目 | 内容 |
 |---|---|
-| Status | Proposed / Accepted / Deprecated / Superseded |
-| Date | YYYY-MM-DD |
-| Related ADRs | ADR-NNNN |
+| ステータス | 提案 / 承認 / 非推奨 / 置換 |
+| 決定日 | YYYY-MM-DD |
+| 関連ADR | ADR-NNNN |
 
-## Context
+## コンテキスト
 
-[Why this decision is needed, including its constraints.]
+[この決定が必要になった背景と、その制約。]
 
-## Decision
+## 決定
 
-[The chosen approach.]
+[採用した方針。]
 
-## Rationale
+## 根拠
 
-[Why this approach was chosen.]
+[その方針を選んだ理由。]
 
-## Alternatives Considered
+## 棄却した代替案
 
-[Approaches considered but not selected, and why.]
+[検討したが採用しなかった方針と、その理由。]
 
-## Consequences
+## 影響
 
-[Effects and trade-offs of this decision.]
+[この決定による効果とトレードオフ。]

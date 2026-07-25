@@ -1,4 +1,5 @@
 ---
+title: 設定リファレンス
 sidebar_position: 3
 ---
 

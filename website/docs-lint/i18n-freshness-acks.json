@@ -1,16 +1,1 @@
-{
-  "architecture.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "auth.md": "3b924486b64e684af973fd1637b89ec6c60b7cb4",
-  "case-management.md": "3b924486b64e684af973fd1637b89ec6c60b7cb4",
-  "compliance/data-retention.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "compliance/fsa-guideline-mapping.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "compliance/regulatory-scope.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "configuration.md": "30ff09f1f765ee5660e522b936c6d28cb5610cc6",
-  "development/setup.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "development/testing.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "getting-started.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "operations/backup-restore.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "operations/deployment.md": "f326901890fb236598257650a6b94ff0f5d8afea",
-  "operations/partitioning-guide.md": "3b924486b64e684af973fd1637b89ec6c60b7cb4",
-  "operations/upgrade.md": "f326901890fb236598257650a6b94ff0f5d8afea"
-}
+{}

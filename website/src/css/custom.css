@@ -102,6 +102,26 @@ h4 {
   box-shadow: none;
 }
 
+/* The navbar logo is a wide 800x200 lockup rather than a square icon, so the
+   theme's default 2rem height would make it ~8rem wide and crowd out the nav
+   items. Constrain the height and let the width follow the aspect ratio. */
+.navbar__logo {
+  height: 1.75rem;
+  width: auto;
+  margin-right: 0;
+}
+
+.navbar__logo img {
+  height: 100%;
+  width: auto;
+}
+
+@media (max-width: 996px) {
+  .navbar__logo {
+    height: 1.5rem;
+  }
+}
+
 /* Sidebar active item */
 .theme-doc-sidebar-item-link-level-1
   > .menu__link--active:not(.menu__link--sublist),

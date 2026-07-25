@@ -21,7 +21,7 @@ lint-ui: ## Run UI lint
 audit-npm: ## Check npm advisories against the recorded exceptions (same gate as CI)
 	@node scripts/check-npm-audit.mjs ui
 
-test: test-go test-ui ## Run all tests
+test: test-go test-ui test-scripts ## Run all tests
 
 GO_TEST_FLAGS ?=
 
@@ -30,6 +30,9 @@ test-go: ## Run Go tests
 
 test-ui: ## Run UI tests
 	@cd ui && npm run test -- --run
+
+test-scripts: ## Run tests for the reference scripts (standard library only)
+	@python3 -m unittest discover -s scripts -p 'test_*.py'
 
 test-integration: ## Apply migrations twice and run all Go tests against PostgreSQL
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL:-$${MERLON_DATABASE_URL:-}}" || (echo "MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required"; exit 1)

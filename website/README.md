@@ -61,6 +61,11 @@ npm run build
 npm run deploy:cf
 ```
 
-Production deployments run from `.github/workflows/docs-deploy.yml` after a
-push to `main`. Configure `DOCS_SITE_URL` as a GitHub Actions variable and
+Production deployments run from `.github/workflows/docs-deploy.yml`. A push to
+`main` only **builds** the site; the deploy job is gated on a manual
+`workflow_dispatch` run against `main`, so publishing stays a deliberate act
+rather than a side effect of merging. Trigger it from the Actions tab when you
+want the public site updated.
+
+Configure `DOCS_SITE_URL` as a GitHub Actions variable and
 `CLOUDFLARE_API_TOKEN` plus `CLOUDFLARE_ACCOUNT_ID` as GitHub Actions secrets.
