@@ -94,7 +94,10 @@ jobs:
           build-args: VERSION=ci-${{ github.sha }}
 
   required:
-    name: Required
+    # Branch protection matches required status checks by check-run name, and a
+    # check-run is named after its job. Every workflow that gates main needs a
+    # distinct aggregate name, or the contexts collide and none can be required.
+    name: CI Required
     if: ${{ always() }}
     needs: [go-test, ui-build, postgres-integration, release-dry-run]
     runs-on: ubuntu-latest
