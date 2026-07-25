@@ -3,13 +3,16 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
 
 const maxBatchCustomers = 1000
@@ -211,6 +214,102 @@ func (s *Server) evaluateMonitoring(ctx context.Context, c *domain.Customer, txn
 
 type batchMonitorRequest struct {
 	CustomerIDs []string `json:"customer_ids,omitempty"`
+	// Mode selects the scenario set to evaluate. Absent means realtime, which
+	// is what this endpoint has always done.
+	Mode string `json:"mode,omitempty"`
+}
+
+// parseBatchMonitorMode maps the request's optional mode onto an engine
+// evaluation mode.
+//
+// An initial-data backfill needs both passes. Scenarios declaring
+// evaluation_mode: batch (content/_sample/tm_scenarios/
+// dormant_account_reactivation.yaml, high_frequency_small_amount.yaml) are
+// filtered out of a realtime evaluation by runsUnder in the native engine, so
+// a realtime-only backfill completes without ever applying them.
+//
+// "both" is deliberately not accepted as a request mode: it is a scenario-side
+// declaration, and the engine treats any non-batch request mode as realtime,
+// so accepting it here would silently mean "realtime".
+func parseBatchMonitorMode(raw string) (engine.EvaluationMode, error) {
+	switch raw {
+	case "", string(engine.EvaluationModeRealtime):
+		return engine.EvaluationModeRealtime, nil
+	case string(engine.EvaluationModeBatch):
+		return engine.EvaluationModeBatch, nil
+	default:
+		return "", fmt.Errorf("mode must be %q or %q",
+			engine.EvaluationModeRealtime, engine.EvaluationModeBatch)
+	}
+}
+
+// evaluatesUnder reports whether a customer in this status is evaluated by a
+// pass running in the given mode. the data model §1.1.2: a closed customer's
+// TM evaluation stops entirely, and a dormant customer is evaluated only
+// "取引発生時" — the realtime path — never on a batch pass. This mirrors
+// evaluateCustomerBatch in api/internal/batch/scheduler.go so the scheduled
+// job and this endpoint cannot drift apart. frozen customers are evaluated in
+// both modes.
+func evaluatesUnder(status domain.CustomerStatus, mode engine.EvaluationMode) bool {
+	switch status {
+	case domain.CustomerStatusClosed:
+		return false
+	case domain.CustomerStatusDormant:
+		return mode != engine.EvaluationModeBatch
+	default:
+		return true
+	}
+}
+
+// nonBaseCurrencyTxn returns the first transaction whose currency is not the
+// configured TM base currency (the PH9 aggregation invariant, see
+// Server.tmBaseCurrency). The engine sums nominal amounts, so a mixed-currency
+// snapshot would be compared against base-currency thresholds and produce a
+// detection result that is simply wrong. Both the realtime ingest path and the
+// batch pass fail-alert on it rather than evaluating it.
+func (s *Server) nonBaseCurrencyTxn(txns []domain.Transaction) (domain.Transaction, bool) {
+	if s.tmBaseCurrency == "" {
+		return domain.Transaction{}, false
+	}
+	for _, txn := range txns {
+		if !strings.EqualFold(txn.Currency, s.tmBaseCurrency) {
+			return txn, true
+		}
+	}
+	return domain.Transaction{}, false
+}
+
+func (s *Server) errNonBaseCurrency(txn domain.Transaction) error {
+	return fmt.Errorf("currency %s is not normalized to %s", txn.Currency, s.tmBaseCurrency)
+}
+
+// monitoringEventHorizon is how far past the snapshot instant the event-time
+// window reaches. transactionhistory.Query requires an upper bound, but this
+// endpoint has none to give: the ingestion cutoff is what makes the snapshot
+// deterministic, and a transaction carrying a future executed_at is still part
+// of the customer's history the engine must see.
+const monitoringEventHorizon = 100 * 365 * 24 * time.Hour
+
+// snapshotMonitoringHistory returns every transaction ingested for a customer
+// through snapshotAt, in event-time order.
+//
+// It replaces a single ListByCustomer(..., maxBatchCustomers, 0), which
+// returned only the newest 1000 rows ordered by executed_at DESC. Anything
+// older was dropped without a word, which invalidates every long-window and
+// dormancy scenario for an active customer and makes a history backfill report
+// success over data it never looked at.
+//
+// transactionhistory.ListCustomerTransactionsAsOf is the same helper the
+// scheduled TM batch job uses (snapshotCustomerTransactions in
+// api/internal/batch/scheduler.go); it pages exhaustively via the keyset
+// history capability, or by offset on repositories without it.
+func (s *Server) snapshotMonitoringHistory(ctx context.Context, customerID string, snapshotAt time.Time) ([]domain.Transaction, error) {
+	snapshotAt = snapshotAt.UTC()
+	return transactionhistory.ListCustomerTransactionsAsOf(ctx, s.transactions, customerID, transactionhistory.Query{
+		From:           time.Time{},
+		To:             snapshotAt.Add(monitoringEventHorizon),
+		CreatedThrough: snapshotAt,
+	})
 }
 
 type batchMonitorResult struct {
@@ -249,6 +348,12 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode, err := parseBatchMonitorMode(req.Mode)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+		return
+	}
+
 	ctx := r.Context()
 
 	var customers []domain.Customer
@@ -282,13 +387,41 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	bulkPendingLoaded := false
 	bulkPendingAvailable := false
 
+	// failAlert routes a customer whose evaluation could not be trusted into
+	// PENDING_REVIEW, and counts it as a hard failure only when that write is
+	// unavailable (OPS-005, the operational design §4.4 Fail-Alert).
+	failAlert := func(c *domain.Customer, txns []domain.Transaction, cause error) {
+		if !bulkPendingLoaded {
+			var preloadErr error
+			pendingIndex, bulkPendingAvailable, preloadErr = loadPendingReviewIndex(ctx, s.pendingEvals, customers)
+			if preloadErr != nil {
+				slog.WarnContext(ctx, "bulk pending-review preload failed; continuing without per-customer reads", "error", preloadErr)
+			}
+			bulkPendingLoaded = true
+		}
+		queued := false
+		if bulkPendingAvailable {
+			queued = s.queuePendingReviewFromIndex(ctx, c, txns, cause, pendingIndex)
+		} else {
+			queued = s.queuePendingReview(ctx, c, txns, cause)
+		}
+		if queued {
+			resp.QueuedForReview++
+			resp.Results = append(resp.Results, batchMonitorResult{
+				CustomerID:    c.ID,
+				PendingReview: true,
+			})
+			return
+		}
+		resp.Failed++
+		resp.Results = append(resp.Results, batchMonitorResult{
+			CustomerID: c.ID,
+			Error:      cause.Error(),
+		})
+	}
+
 	for _, c := range customers {
-		// the data model §1.1.2: a closed customer's TM evaluation stops
-		// entirely (existing records are kept for the retention period, but
-		// no further scoring/alerting happens). This handler represents the
-		// realtime "取引発生時" path, so frozen/dormant customers are still
-		// evaluated here — only closed is excluded.
-		if c.EffectiveStatus() == domain.CustomerStatusClosed {
+		if !evaluatesUnder(c.EffectiveStatus(), mode) {
 			resp.Succeeded++
 			resp.Results = append(resp.Results, batchMonitorResult{
 				CustomerID:   c.ID,
@@ -297,7 +430,7 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		txns, err := s.transactions.ListByCustomer(ctx, c.ID, maxBatchCustomers, 0)
+		txns, err := s.snapshotMonitoringHistory(ctx, c.ID, start)
 		if err != nil {
 			resp.Failed++
 			resp.Results = append(resp.Results, batchMonitorResult{
@@ -316,35 +449,17 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		alerts, err := s.evaluateMonitoring(ctx, &c, txns, engine.EvaluationModeRealtime, nil)
+		if offending, ok := s.nonBaseCurrencyTxn(txns); ok {
+			// Same treatment the realtime ingest path gives a mixed-currency
+			// snapshot (monitorCreatedTransaction): the aggregation cannot be
+			// trusted, so route it to review instead of reporting a clean pass.
+			failAlert(&c, txns, s.errNonBaseCurrency(offending))
+			continue
+		}
+
+		alerts, err := s.evaluateMonitoring(ctx, &c, txns, mode, nil)
 		if err != nil {
-			if !bulkPendingLoaded {
-				var preloadErr error
-				pendingIndex, bulkPendingAvailable, preloadErr = loadPendingReviewIndex(ctx, s.pendingEvals, customers)
-				if preloadErr != nil {
-					slog.WarnContext(ctx, "bulk pending-review preload failed; continuing without per-customer reads", "error", preloadErr)
-				}
-				bulkPendingLoaded = true
-			}
-			queued := false
-			if bulkPendingAvailable {
-				queued = s.queuePendingReviewFromIndex(ctx, &c, txns, err, pendingIndex)
-			} else {
-				queued = s.queuePendingReview(ctx, &c, txns, err)
-			}
-			if queued {
-				resp.QueuedForReview++
-				resp.Results = append(resp.Results, batchMonitorResult{
-					CustomerID:    c.ID,
-					PendingReview: true,
-				})
-				continue
-			}
-			resp.Failed++
-			resp.Results = append(resp.Results, batchMonitorResult{
-				CustomerID: c.ID,
-				Error:      err.Error(),
-			})
+			failAlert(&c, txns, err)
 			continue
 		}
 

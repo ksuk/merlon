@@ -95,7 +95,9 @@ onto this shape.
   "currency": "JPY",
   "direction": "outbound",
   "channel": "atm",
-  "executed_at": "2026-04-01T09:30:00Z"
+  "executed_at": "2026-04-01T09:30:00Z",
+  "counterparty_id": "CP-000987",
+  "counterparty_country": "KP"
 }
 ```
 
@@ -107,6 +109,16 @@ onto this shape.
 - `executed_at` is the transaction time from your source system. Load it
   accurately: TM scenarios evaluate over windows anchored on this field, so a
   defaulted or ingest-time value silently invalidates the backfill in step 4.
+- `counterparty_country` is optional to the API but load it whenever your
+  source has it. The high-risk-country scenario compares exactly this field,
+  so omitting it leaves that control unable to fire for any imported transfer
+  — a gap that looks identical to "no high-risk transfers occurred".
+- **`currency` must already be the deployment's TM base currency**
+  (`MERLON_TM_BASE_CURRENCY`, default `JPY`). Merlon does not convert. The
+  engine sums nominal amounts, so a foreign-currency row would be compared
+  against base-currency thresholds; both the realtime path and the step 4
+  backfill refuse such a customer and park them in `PENDING_REVIEW` instead of
+  producing a wrong result. Normalize amounts in your export.
 
 Decide deliberately how much history to load. Transaction monitoring
 scenarios evaluate over lookback windows, so loading less history than your
@@ -132,10 +144,44 @@ The response reports `total`, `succeeded`, `failed`, and a per-customer
 inspect the per-customer `error` values — do not proceed to monitoring with
 partially scored customers.
 
+Check `total` and `succeeded` too, not just `failed`. An ID the server does
+not recognise is skipped before evaluation and never reaches `results`, so it
+lowers `total` without incrementing `failed`. Require
+`total == succeeded == len(chunk)` for every chunk.
+
 ## Step 4: Backfill transaction monitoring
 
 `POST /api/v1/batch/monitor`, with the same 1000-ID-per-request limit, runs
-the TM scenarios over the loaded history and produces alerts.
+the TM scenarios over the loaded history and produces alerts. It evaluates
+each customer's full loaded history, not a recent slice of it.
+
+**Run it twice, once per evaluation mode.** A scenario declares which passes
+it belongs to, and the engine applies only the matching ones:
+
+```json
+{ "customer_ids": ["…", "…"], "mode": "realtime" }
+{ "customer_ids": ["…", "…"], "mode": "batch" }
+```
+
+- `mode` is optional and defaults to `realtime`, which is what the endpoint
+  has always done.
+- A realtime pass never applies an `evaluation_mode: batch` scenario — among
+  the shipped samples, dormant account reactivation and high-frequency small
+  amounts. A batch pass never applies a realtime-only one, such as high-risk
+  country transfer. **A single pass therefore leaves part of your rule set
+  unapplied over the whole imported history, and reports success anyway.**
+- Scenarios declaring `both` run in each pass; Merlon deduplicates the
+  resulting alerts by (customer, scenario, aggregation window), so the second
+  pass does not double-count.
+- `mode: "batch"` skips `dormant` customers, matching the scheduled TM batch
+  job (the data model §1.1.2: a dormant customer is evaluated only when a
+  transaction occurs). `closed` customers are skipped in both modes.
+
+The response adds `queued_for_review` to the fields above. It counts
+customers the engine could not evaluate — engine unavailable, or a history
+Merlon refuses to aggregate, such as mixed currencies — whose transactions
+were parked in `PENDING_REVIEW`. Those customers were **not** monitored.
+Treat a non-zero `queued_for_review` as a stop condition alongside `failed`.
 
 Expect this step to generate a large alert backlog: you are evaluating years
 of history in one pass, against thresholds that have not yet been tuned for
@@ -205,13 +251,28 @@ Before declaring the migration complete:
 2. Confirm `customers_by_risk_tier` has an empty or zero `unscored` bucket.
    An unscored customer is not monitored at the correct threshold, so this is
    the check that step 3 actually completed.
-3. Spot-check several customers end to end, including at least one with
-   direct-PII attributes, and confirm the values read back correctly. PII
-   that reads back as ciphertext means records reached the database without
-   going through the API.
-4. Verify transaction timestamps survived the load: pick the oldest and
+3. Confirm direct PII was actually encrypted, **by inspecting the stored
+   value, not an API read**:
+
+   ```sql
+   SELECT attributes->>'full_name' FROM customers LIMIT 5;
+   ```
+
+   An encrypted value is base64 (key version byte + nonce + AES-GCM
+   ciphertext) and unreadable. A legible name means that row reached the
+   database without going through the API, and its PII is stored in plaintext.
+
+   Do not use an API read for this check. `decryptDirectPII`
+   (`api/internal/store/customer_pii.go`) deliberately returns a value it
+   cannot decrypt unchanged, so that enabling encryption does not break reads
+   of pre-existing rows. The consequence is that plaintext written by a direct
+   `INSERT` reads back through the API looking perfectly correct — the API
+   cannot distinguish an encrypted write from a bypassed one.
+4. Spot-check several customers end to end and confirm the non-PII attributes,
+   product types, and country codes match the source export.
+5. Verify transaction timestamps survived the load: pick the oldest and
    newest records and confirm `executed_at` matches the source export rather
    than the load time.
-5. Review the alert backlog volume from step 4 against your triage capacity
+6. Review the alert backlog volume from step 4 against your triage capacity
    before opening the system to analysts.
-6. Revoke the migration API key.
+7. Revoke the migration API key.

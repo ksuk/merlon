@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/apierr"
@@ -248,13 +247,9 @@ func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain
 	if len(txns) == 0 {
 		txns = []domain.Transaction{*created}
 	}
-	if s.tmBaseCurrency != "" {
-		for _, txn := range txns {
-			if !strings.EqualFold(txn.Currency, s.tmBaseCurrency) {
-				_ = s.queuePendingReviewDurably(ctx, customer, txns, fmt.Errorf("currency %s is not normalized to %s", txn.Currency, s.tmBaseCurrency))
-				return
-			}
-		}
+	if offending, ok := s.nonBaseCurrencyTxn(txns); ok {
+		_ = s.queuePendingReviewDurably(ctx, customer, txns, s.errNonBaseCurrency(offending))
+		return
 	}
 
 	alerts, err := s.evaluateMonitoring(monitorCtx, customer, txns, engine.EvaluationModeRealtime, nil)
