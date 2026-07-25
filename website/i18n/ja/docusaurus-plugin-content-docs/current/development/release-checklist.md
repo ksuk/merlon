@@ -15,7 +15,7 @@ title: リリースチェックリスト
 
 ## 検証とセキュリティ
 
-- [ ] 正確なリリースコミットで `CI / Required` と `Security / Required` が連続3回成功した。試行番号付きの実行リンクを記録し、その間にソース変更がない。
+- [ ] 正確なリリースコミットで `CI Required` と `Security Required` が連続3回成功した。試行番号付きの実行リンクを記録し、その間にソース変更がない。
 - [ ] `make lint`、`make test`、`make docs-check`、PostgreSQL マイグレーション再適用、リリースイメージ dry-run、脆弱性検査、ライセンス検査、SBOM が同じコミットで成功した。
 - [ ] 未解決の Critical／High 脆弱性と監査所見を解消した。または、方針に従う期限付き例外を独立承認した。
 - [ ] リリース日に[依存関係のライフサイクル](../operations/dependency-lifecycle.md)の公式サポート／EOL 情報を再確認した。
