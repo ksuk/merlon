@@ -1,21 +1,21 @@
-# ADR-0012: Engine Configuration File Trust Boundary
+# [ADR-0012] エンジン設定ファイルのトラストバウンダリ
 
-| Field | Value |
+| 項目 | 内容 |
 |---|---|
-| Status | Accepted |
-| Date | 2026-07-11 |
-| Related ADRs | ADR-0004, ADR-0014 |
+| ステータス | 承認 |
+| 決定日 | 2026-07-11 |
+| 関連ADR | ADR-0004, ADR-0014 |
 
-## Context
+## コンテキスト
 
-The native Go engine loads CDD weights, transaction-monitoring scenarios, and screening lists directly from operator-supplied files. Those files are outside the database-backed `rule_definitions` audit trail. Treating them as if they were database-managed rules would create an incorrect audit claim.
+ネイティブ Go エンジンは、CDD ウェイト・取引モニタリングシナリオ・スクリーニングリストを、運用者が用意したファイルから直接読み込む。これらのファイルは、データベースが裏付ける `rule_definitions` の監査証跡の外にある。これらをデータベース管理下のルールと同等に扱えば、監査上の誤った主張を作り出すことになる。
 
-## Decision
+## 決定
 
-Configuration files loaded by the engine remain an operator-managed trust boundary. At startup, the engine emits deterministic SHA-256 digests for each configured file or YAML directory. The digest set identifies the exact configuration content used by the running process without exposing local filesystem paths.
+エンジンが読み込む設定ファイルは、運用者が管理するトラストバウンダリのままとする。エンジンは起動時に、設定された各ファイルまたは YAML ディレクトリについて決定的な SHA-256 ダイジェストを出力する。このダイジェスト集合は、ローカルファイルシステムのパスを露出させることなく、稼働中のプロセスが使用している設定内容を厳密に特定する。
 
-## Consequences
+## 影響
 
-Deploying organizations must apply source control, change approval, access control, backup, and deployment controls to engine configuration files. The startup logs and runtime digest support post-hoc verification; they do not prevent unauthorized file modification. Centralizing engine configuration in the database is a future architectural change and is not provided by this release.
+導入組織は、エンジン設定ファイルに対してソース管理・変更承認・アクセス制御・バックアップ・デプロイの各統制を適用しなければならない。起動ログとランタイムダイジェストは事後検証を支えるものであり、権限のないファイル改変を防ぐものではない。エンジン設定のデータベースへの集約は将来のアーキテクチャ変更であり、本リリースでは提供しない。
 
-This decision applies only to operator-supplied configuration files. Database-backed rules created through the rules API are inactive by default and use the atomic maker-checker control and approval ledger defined in ADR-0014. File-based engine configuration remains outside that database control, so deploying organizations must enforce independent author and deployer roles through IAM and their documented change-management process.
+本決定は、運用者が用意した設定ファイルにのみ適用される。ルール API を通じて作成されたデータベース管理下のルールは既定で非活性であり、ADR-0014 が定めるアトミックなメーカー・チェッカー統制と承認台帳を用いる。ファイルベースのエンジン設定はそのデータベース統制の外に留まるため、導入組織は作成者とデプロイ実行者を分離する役割を、IAM と文書化された変更管理プロセスによって自ら強制しなければならない。
