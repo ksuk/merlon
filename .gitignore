@@ -75,3 +75,7 @@ desktop.ini
 .agents/
 .codex/
 .playwright-mcp/
+
+# Python bytecode from the reference scripts and their tests
+__pycache__/
+*.pyc
