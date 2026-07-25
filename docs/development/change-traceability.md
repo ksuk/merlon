@@ -18,11 +18,10 @@ For every pull request:
 - The PR records verification evidence and rollback or migration impact.
 
 `scripts/check-traceability.sh` enforces these fields and footers in the
-`Traceability / Required` pull-request check. The protected `main` ruleset must
-also require CI, Security, DCO, independent approval, CODEOWNERS review, and
-resolved review threads. `scripts/configure-github-ruleset.sh` renders the
-reviewable ruleset payload and changes GitHub only when explicitly invoked
-with `--apply`.
+`Traceability Required` pull-request check, which the protected `main` ruleset
+requires before merge. What else that ruleset blocks on, and which declared
+controls it does not yet implement, is recorded in
+[Protected Main Configuration](./repository-governance.md#protected-main-configuration).
 
 | Change area | Public requirement / decision | Implementation | Verification |
 |---|---|---|---|

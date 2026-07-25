@@ -144,7 +144,7 @@ jobs:
           artifact-name: sbom-website
 
   required:
-    name: Required
+    name: Security Required
     if: ${{ always() }}
     needs: [gitleaks, govulncheck, go-licenses, npm-licenses, npm-licenses-website, npm-audit, sbom]
     runs-on: ubuntu-latest

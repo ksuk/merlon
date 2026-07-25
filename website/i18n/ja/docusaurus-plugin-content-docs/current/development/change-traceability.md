@@ -13,7 +13,7 @@ title: 変更のトレーサビリティ
 - Bot を除く全コミットに `Refs #<番号>` フッターを付ける。
 - 検証証跡と、ロールバックまたはマイグレーションへの影響を記載する。
 
-`scripts/check-traceability.sh` は `Traceability / Required` チェックでこれらを検証する。保護対象 `main` の Ruleset では、CI、Security、DCO、独立承認、CODEOWNERS レビュー、全レビュー会話の解決も必須にする。`scripts/configure-github-ruleset.sh` は確認可能な設定内容を既定で表示するだけで、明示的に `--apply` を指定した場合のみ GitHub を変更する。
+`scripts/check-traceability.sh` は `Traceability Required` チェックでこれらを検証し、保護対象 `main` の Ruleset はこのチェックの通過をマージ前に要求する。同 Ruleset が他に何をブロックし、宣言済みの統制のうち何が未実装かは[main の保護設定](./repository-governance.md#main-の保護設定)に記録している。
 
 | 変更領域 | 実装 | 検証 |
 |---|---|---|

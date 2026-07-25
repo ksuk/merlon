@@ -23,7 +23,7 @@ evidence by itself.
 ## Verification and Security
 
 - [ ] The exact release commit has three consecutive successful runs of
-  `CI / Required` and `Security / Required`; reruns are linked with attempt
+  `CI Required` and `Security Required`; reruns are linked with attempt
   numbers and no source change between them.
 - [ ] `make lint`, `make test`, `make docs-check`, PostgreSQL migration replay,
   release-image dry-run, vulnerability scans, license checks, and SBOM jobs
