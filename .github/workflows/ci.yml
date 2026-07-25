@@ -109,17 +109,19 @@ jobs:
     # distinct aggregate name, or the contexts collide and none can be required.
     name: CI Required
     if: ${{ always() }}
-    needs: [go-test, ui-build, postgres-integration, release-dry-run]
+    needs: [go-test, scripts-test, ui-build, postgres-integration, release-dry-run]
     runs-on: ubuntu-latest
     steps:
       - name: Require every CI job
         env:
           GO_RESULT: ${{ needs.go-test.result }}
+          SCRIPTS_RESULT: ${{ needs.scripts-test.result }}
           UI_RESULT: ${{ needs.ui-build.result }}
           POSTGRES_RESULT: ${{ needs.postgres-integration.result }}
           RELEASE_RESULT: ${{ needs.release-dry-run.result }}
         run: >-
           test "$GO_RESULT" = success
+          -a "$SCRIPTS_RESULT" = success
           -a "$UI_RESULT" = success
           -a "$POSTGRES_RESULT" = success
           -a "$RELEASE_RESULT" = success
