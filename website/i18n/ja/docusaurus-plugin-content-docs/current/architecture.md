@@ -1,4 +1,5 @@
 ---
+title: アーキテクチャ
 sidebar_position: 2
 ---
 

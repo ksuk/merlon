@@ -17,6 +17,12 @@ dist/
 # emitted at build time; not committed.
 docs/api/
 
+# Docs site: release notes page, generated from CHANGELOG.md at build time
+# by website/scripts/generate-changelog-page.mjs. CHANGELOG.md is the source
+# of truth and is committed; this rendering of it is not.
+docs/release-notes.md
+website/i18n/*/docusaurus-plugin-content-docs/current/release-notes.md
+
 # Environment
 .env
 .env.local

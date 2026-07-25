@@ -83,10 +83,13 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Merlon',
+      // No `title`: the wide logo lockup already carries the wordmark, so a
+      // text link beside it would duplicate it. Both modes use the same
+      // 800x200 lockup (img/icon.svg is the square favicon artwork and bakes
+      // in a white background, so it is not usable in the navbar).
       logo: {
-        alt: 'Merlon Logo',
-        src: 'img/icon.svg',
+        alt: 'Merlon',
+        src: 'img/logo.svg',
         srcDark: 'img/logo-inverse.svg',
       },
       items: [

@@ -14,6 +14,11 @@ sidebar_position: 12
 - `docs/decisions/**`（アーキテクチャ決定記録）は構築済みサイトから完全に除外され、日本語で記述されている。翻訳対象ではなく、ドキュメントチェックもこれをスキップする。
 - `docs/standards/**`（社内監査・レビュー標準）も同様に構築済みサイトから除外され、日本語で記述されている。翻訳対象ではなく、ドキュメントチェックもこれをスキップする。
 - `docs/api/**` は生成されたリファレンス出力（OpenAPI、JSON Schema のリファレンスページ）であり、gitignore されている。直接編集してはならない。`make generate-openapi` とウェブサイトのスキーマドキュメントジェネレータによって上書きされる。
+- `docs/release-notes.md` は、リポジトリルートの `CHANGELOG.md` から `website/scripts/generate-changelog-page.mjs` により生成され、同様に gitignore されている。編集するのは `CHANGELOG.md` の方であり、同ファイルは各 GitHub リリースのノートの生成元でもある。
+
+## サイドバーへのページ追加
+
+サイドバーは `website/sidebars.ts` に明示的に定義されており、ディレクトリ構成ではなく読者層（オーディエンス）で分類されている。**新しいページはここに登録するまでサイトに表示されない**。また `sidebar_position` フロントマターは、生成物である `api/schema` サブツリー以外では無視される。これは意図的な設計である。ページを追加するということは、そのページが誰向けかを決めることを意味する。対象読者に合致するカテゴリにドキュメント ID を追加し、新しいカテゴリを設ける場合は各ロケールの `current.json` に `sidebar.docsSidebar.category.<label>` のエントリを追加すること。
 
 ## ja 翻訳
 

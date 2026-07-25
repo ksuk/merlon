@@ -133,13 +133,24 @@ tags:
 
 必須フィールド: `schema_version`、`scenario_id`、`name`、`type`（現時点では `aggregation` のみ定義済み）、`conditions`、及び `severity`。`conditions` の下で、`threshold.by_customer_type` はシナリオごとに顧客種別ごとの異なるしきい値を設定でき、各顧客種別内では `by_risk_tier.{LOW,MEDIUM,HIGH}` が顧客の CDD リスクティアごとにしきい値を設定する。これは Score-Driven Architecture 原則の具体的な仕組みであり、顧客の CDD スコアがどの TM しきい値が適用されるかを決定する。`evaluation_mode` はシナリオがバッチジョブ・インライン・両方のいずれで実行されるかを制御し、省略された場合 v2 シナリオはデフォルトで `batch` となる。
 
-### v1 コンテンツとデュアルサポート
+### レガシーな v1 コンテンツ
 
-既存の `tm_scenario_v1` コンテンツは強制移行の対象ではない。ADR-0006（tm_scenario_v2 Schema and v1 Dual Support）に基づき、Engine は v2 のロールアウトから少なくとも12ヶ月間 v1 コンテンツをデュアルサポートし、v1 のフラットな `risk_tier_adjustments` を、評価結果のセマンティクスを変えることなく、読み込み時に同等の「すべての顧客種別で同一しきい値」という v2 形式に内部変換する。`content/schema/tm_scenario_v1.json`（[リファレンス](./api/schema/tm_scenario_v1.md)）はこの互換性期間中は引き続き利用可能である。新規シナリオは v1 ではなく v2 に対して直接作成すべきである。
+同梱コンテンツで旧来の `tm_scenario_v1` 形式を使用しているものはもはや存在しない。
+`content/_sample/tm_scenarios/` 配下のサンプルはすべて v2 であり、元の v1 ファイルは
+互換性テスト用のフィクスチャとして `content/_sample/tm_scenarios_v1_compat/` に
+保存されているのみである。新規シナリオは v2 で作成すること。
+
+Engine は、v2 のロールアウト以前に作成されたコンテンツが動作し続けるよう、
+v1 ファイルを引き続き受理する。ADR-0006（tm_scenario_v2 スキーマと v1 デュアルサポート）
+に基づき少なくとも12ヶ月間デュアルサポートし、v1 のフラットな `risk_tier_adjustments` を、
+評価結果のセマンティクスを変えることなく、読み込み時に同等の「すべての顧客種別で
+同一しきい値」という v2 形式へ内部変換する。`content/schema/tm_scenario_v1.json`
+（[リファレンス](./api/schema/tm_scenario_v1.md)）は 2027-07-04 まで維持され、
+撤廃の判断はその時点で別途行われる。
 
 ## ルールファイルの検証
 
-デプロイ前に、すべてのルールファイルをそのスキーマに対して検証すること。これは組織的な承認ステップに先立ち、レビューまたは CI プロセスの一部として実行すべき機械的なチェックである。[ルールスキーマ](./api/schema/index.md)配下のスキーマリファレンスページは、`cdd_weight_v1`、`country_risk_v1`、`tm_scenario_v1`、`tm_scenario_v2` のすべてのフィールドと制約を文書化しており、`content/schema/` 内の JSON Schema ファイルから直接生成されるため、Engine が実際に強制する内容と同期し続ける。
+デプロイ前に、すべてのルールファイルをそのスキーマに対して検証すること。これは組織的な承認ステップに先立ち、レビューまたは CI プロセスの一部として実行すべき機械的なチェックである。[ルールスキーマ](./api/schema/index.md)配下のスキーマリファレンスページは、`cdd_weight_v1`、`country_risk_v1`、`tm_scenario_v2` のすべてのフィールドと制約を文書化しており、`content/schema/` 内の JSON Schema ファイルから直接生成されるため、Engine が実際に強制する内容と同期し続ける。
 
 ## スコア駆動のロールアウト
 

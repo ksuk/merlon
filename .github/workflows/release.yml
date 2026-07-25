@@ -98,10 +98,24 @@ jobs:
             > release-manifest.json
           sha256sum release-manifest.json sbom-image.cdx.json > SHA256SUMS
 
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.1'
+
+      - name: Build release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Release notes come from CHANGELOG.md rather than from commit
+          # subjects: it makes the changelog load-bearing, so a release cannot
+          # be cut without one and it cannot silently drift from what shipped.
+          # scripts/changelog.mjs exits non-zero when the tag has no section.
+          node scripts/changelog.mjs "$GITHUB_REF_NAME" > release-notes.md
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
           gh release create "$GITHUB_REF_NAME"
           release-manifest.json sbom-image.cdx.json SHA256SUMS
-          --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+          --verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME"

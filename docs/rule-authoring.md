@@ -195,17 +195,21 @@ principle: a customer's CDD score determines which TM threshold applies to
 them. `evaluation_mode` controls whether the scenario runs in the batch job,
 inline, or both; if omitted, v2 scenarios default to `batch`.
 
-### v1 content and dual support
+### Legacy v1 content
 
-Existing `tm_scenario_v1` content is not being force-migrated. Per
-ADR-0006 (tm_scenario_v2 Schema and v1 Dual Support), the Engine
-dual-supports v1 content for at least 12 months from the v2 rollout,
-internally converting v1's flat `risk_tier_adjustments` into the equivalent
-"same threshold for every customer type" v2 shape at load time, without
-changing the resulting evaluation semantics. `content/schema/tm_scenario_v1.json`
-([reference](./api/schema/tm_scenario_v1.md)) remains available for that
-compatibility period. New scenarios should still be authored directly against
-v2 rather than v1.
+No bundled content uses the older `tm_scenario_v1` format any more — every
+sample under `content/_sample/tm_scenarios/` is v2, and the original v1 files
+are kept only as compatibility test fixtures in
+`content/_sample/tm_scenarios_v1_compat/`. Author new scenarios against v2.
+
+The Engine still accepts v1 files so that any content written before the v2
+rollout keeps working. Per ADR-0006 (tm_scenario_v2 Schema and v1 Dual
+Support) it dual-supports them for at least 12 months, internally converting
+v1's flat `risk_tier_adjustments` into the equivalent "same threshold for
+every customer type" v2 shape at load time, without changing the resulting
+evaluation semantics. `content/schema/tm_scenario_v1.json`
+([reference](./api/schema/tm_scenario_v1.md)) is maintained until 2027-07-04;
+its removal will be decided separately at that point.
 
 ## Validating rule files
 
@@ -213,9 +217,9 @@ Validate every rule file against its schema before deploying it — this is a
 mechanical check that should run as part of your review or CI process, ahead
 of any organizational approval step. The schema reference pages under
 [Rule Schemas](./api/schema/index.md) document every field and constraint for
-`cdd_weight_v1`, `country_risk_v1`, `tm_scenario_v1`, and `tm_scenario_v2` and
-are generated directly from the JSON Schema files in `content/schema/`, so
-they stay in sync with what the Engine actually enforces.
+`cdd_weight_v1`, `country_risk_v1`, and `tm_scenario_v2` and are generated
+directly from the JSON Schema files in `content/schema/`, so they stay in
+sync with what the Engine actually enforces.
 
 ## Score-driven rollout
 

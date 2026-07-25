@@ -1,3 +1,7 @@
+---
+title: デプロイ運用手順
+---
+
 # デプロイ運用手順
 
 本番起動前に migration role でマイグレーションを適用し、`audit_logs` の owner が API role ではなく、API role に UPDATE/DELETE 権限がないことを検証する。検証に失敗した場合、API は起動しない。

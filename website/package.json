@@ -16,8 +16,9 @@
     "license:check": "license-checker --production --excludePrivatePackages --onlyAllow 'MIT;MIT-0;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;MPL-2.0;MPL-1.1;OFL-1.1;Python-2.0;CC-BY-4.0;BlueOak-1.0.0;WTFPL'",
     "gen:schema": "node scripts/generate-schema-docs.mjs",
     "gen:openapi-page": "node scripts/generate-openapi-page.mjs",
+    "gen:changelog": "node scripts/generate-changelog-page.mjs",
     "sync:i18n": "node scripts/sync-i18n-fallback.mjs",
-    "prebuild": "npm run gen:schema && npm run gen:openapi-page && npm run sync:i18n"
+    "prebuild": "npm run gen:schema && npm run gen:openapi-page && npm run gen:changelog && npm run sync:i18n"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",
