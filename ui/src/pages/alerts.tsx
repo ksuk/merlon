@@ -73,7 +73,10 @@ export function AlertsPage() {
   }
 
   useEffect(() => {
-    reload()
+    // Start the load outside the effect's synchronous phase: setLoading(true) at
+    // the head of reload() would otherwise be a synchronous setState in an
+    // effect, which cascades an extra render.
+    void Promise.resolve().then(reload)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when alert filters change
   }, [])
 

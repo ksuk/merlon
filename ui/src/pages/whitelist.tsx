@@ -68,7 +68,10 @@ export function WhitelistPage() {
   }
 
   useEffect(() => {
-    reload()
+    // Start the load outside the effect's synchronous phase: the setState at the
+    // head of reload() would otherwise run synchronously inside the effect, which
+    // cascades an extra render.
+    void Promise.resolve().then(reload)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when filters change
   }, [])
 
