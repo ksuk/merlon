@@ -1,3 +1,3 @@
 *.go text eol=lf
-ui/package.json whitespace=cr-at-eol
-ui/package-lock.json whitespace=cr-at-eol
+ui/package.json text eol=lf
+ui/package-lock.json text eol=lf
