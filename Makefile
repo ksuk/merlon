@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -98,6 +98,9 @@ up: ## Start the standard topology (PostgreSQL + API)
 
 down: ## Stop the standard topology
 	docker compose down
+
+screenshots: ## Capture docs/img demo UI screenshots (needs the demo stack running)
+	@bash scripts/capture-screenshots.sh
 
 demogen: ## Generate synthetic demo data (deploy/seed/demo/*.json; not committed)
 	@cd api && go run ./cmd/merlon-demogen -out ../deploy/seed/demo
