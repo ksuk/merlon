@@ -16,7 +16,7 @@ reason to stop updating. This register was last reviewed on **July 26, 2026**.
 | Node.js | 26.5.0 | [Node.js 26 is Current until it enters Active LTS on October 28, 2026, and ends April 30, 2029](https://github.com/nodejs/Release#release-schedule) | Move to the current supported patch promptly. Until the Active LTS date, treat Node.js as a fast-moving line and re-check upstream on every release; complete migration to a newer LTS at least 90 days before EOL. |
 | PostgreSQL | 18.4 | [PostgreSQL 18 support ends November 14, 2030](https://www.postgresql.org/support/versioning/) | Apply supported minor releases after migration and restore testing; complete the next-major upgrade at least 180 days before EOL. |
 | Alpine Linux | 3.24.1 | [Alpine 3.24 support ends June 1, 2028](https://www.alpinelinux.org/releases/) | Rebuild on security and maintenance releases and move branches at least 90 days before EOL. |
-| nginx | 1.30.4 stable | [nginx publishes current stable and security releases](https://nginx.org/en/download.html) without a fixed EOL date | Track the current stable patch and security advisories; review any stable-series replacement within 30 days. |
+| nginx | 1.30.4 stable | [nginx publishes current stable and security releases](https://nginx.org/en/download.html) without a fixed EOL date | Track the current stable patch and security advisories; review any stable-series replacement within 30 days. Only even-numbered stable series are tracked — odd-numbered mainline releases such as 1.31.x are development branches and are not adopted, and Dependabot is configured not to propose them. When the 1.32 stable series ships, move `ui/Dockerfile` and this row together and drop that Dependabot ignore entry. |
 
 ## Review Process
 
