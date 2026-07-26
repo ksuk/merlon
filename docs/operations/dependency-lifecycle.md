@@ -6,14 +6,14 @@ title: Dependency Lifecycle
 
 Merlon pins toolchains, base images, GitHub Actions, and security scanners to
 reviewed versions or immutable digests. A pin is reproducible evidence, not a
-reason to stop updating. This register was last reviewed on **July 16, 2026**.
+reason to stop updating. This register was last reviewed on **July 26, 2026**.
 
 ## Runtime Register
 
 | Component | Repository pin | Upstream support boundary | Required action |
 |---|---|---|---|
-| Go | 1.25.12 | [Go supports a major release until two newer major releases exist](https://go.dev/doc/devel/release); 1.25 therefore ends support when 1.27 is released | Move to a supported minor immediately for security releases and complete the 1.26 migration before 1.27 is released. |
-| Node.js | 22.23.1 | [Node.js 22 Maintenance LTS ends April 30, 2027](https://github.com/nodejs/Release#release-schedule) | Move to the current supported patch promptly and complete migration to a newer LTS at least 90 days before EOL. |
+| Go | 1.26.5 | [Go supports a major release until two newer major releases exist](https://go.dev/doc/devel/release); 1.26 therefore ends support when 1.28 is released | Move to a supported minor immediately for security releases and complete the 1.27 migration before 1.28 is released. |
+| Node.js | 26.5.0 | [Node.js 26 is Current until it enters Active LTS on October 28, 2026, and ends April 30, 2029](https://github.com/nodejs/Release#release-schedule) | Move to the current supported patch promptly. Until the Active LTS date, treat Node.js as a fast-moving line and re-check upstream on every release; complete migration to a newer LTS at least 90 days before EOL. |
 | PostgreSQL | 18.4 | [PostgreSQL 18 support ends November 14, 2030](https://www.postgresql.org/support/versioning/) | Apply supported minor releases after migration and restore testing; complete the next-major upgrade at least 180 days before EOL. |
 | Alpine Linux | 3.24.1 | [Alpine 3.24 support ends June 1, 2028](https://www.alpinelinux.org/releases/) | Rebuild on security and maintenance releases and move branches at least 90 days before EOL. |
 | nginx | 1.30.4 stable | [nginx publishes current stable and security releases](https://nginx.org/en/download.html) without a fixed EOL date | Track the current stable patch and security advisories; review any stable-series replacement within 30 days. |

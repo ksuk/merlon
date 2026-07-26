@@ -22,18 +22,18 @@ Merlon の開発環境構築手順。DevContainer（推奨）とローカル環�
 
 DevContainer を使わない場合、以下のツールを個別にインストールする。
 
-### Go 1.25+
+### Go 1.26+
 
 ```bash
 # https://go.dev/dl/ から取得、またはパッケージマネージャ
-go version   # go1.25 以上を確認
+go version   # go1.26 以上を確認
 ```
 
-### Node.js 20+ / npm
+### Node.js 26+ / npm
 
 ```bash
 # https://nodejs.org/ から LTS を取得、または nvm
-node --version   # v20 以上
+node --version   # v26 以上
 npm --version
 ```
 
