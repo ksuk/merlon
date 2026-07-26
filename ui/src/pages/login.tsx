@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router"
+import { Link, useNavigate } from "react-router"
 
 export function LoginPage() {
   const { t } = useTranslation()
@@ -70,6 +70,20 @@ export function LoginPage() {
               {t("login.submit")}
             </Button>
           </form>
+          {/*
+            A first-run deployment has no account to log in with, and the setup
+            route is otherwise unreachable without knowing the URL. The link is
+            shown unconditionally rather than probed for, because asking the
+            server whether any user exists would disclose that to anyone who
+            can reach the login page. Following it once an account exists is
+            harmless: POST /api/v1/setup rejects the request.
+          */}
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            {t("login.setupPrompt")}{" "}
+            <Link to="/setup" className="font-medium text-foreground underline underline-offset-4">
+              {t("login.setupLink")}
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>
