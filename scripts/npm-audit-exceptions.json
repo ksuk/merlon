@@ -6,16 +6,5 @@
     "The gate fails once expires passes, once the advisory reaches a dependent outside dependents,",
     "and once the advisory stops being reported at all -- so entries cannot quietly outlive their justification."
   ],
-  "exceptions": [
-    {
-      "workspace": "ui",
-      "advisory": "GHSA-mh99-v99m-4gvg",
-      "package": "brace-expansion",
-      "dependents": ["minimatch"],
-      "severity": "high",
-      "reason": "Unbounded-expansion DoS, reached only through license-checker (brace-expansion -> minimatch -> glob -> read-package-json -> read-installed -> license-checker). license-checker is a devDependency that runs in CI against this repository's own dependency tree, so the input is not attacker-controlled and a crash fails the build rather than affecting a deployment. No forward fix exists: the advisory covers all of license-checker >=5.1.2 and npm's only offer is a downgrade to 5.1.1.",
-      "expires": "2026-10-31",
-      "review": "Re-check for a license-checker release on a current glob, or replace the tool."
-    }
-  ]
+  "exceptions": []
 }
