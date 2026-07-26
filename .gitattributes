@@ -1,6 +1,7 @@
 *.go text eol=lf
 ui/package.json text eol=lf
 ui/package-lock.json text eol=lf
+ui/src/i18n/locales/**/*.json text eol=lf
 
 # Compose files and shell scripts are read by tools that reject or mis-parse
 # CR, and docker-compose.yml had previously drifted into mixed CRLF/LF.
