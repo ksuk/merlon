@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-scripts test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -19,9 +19,9 @@ lint-ui: ## Run UI lint
 	@cd ui && npm run lint
 
 audit-npm: ## Check npm advisories against the recorded exceptions (same gate as CI)
-	@node scripts/check-npm-audit.mjs ui
+	@node scripts/check-npm-audit.mjs ui website
 
-test: test-go test-ui test-scripts ## Run all tests
+test: test-go test-ui test-website test-scripts ## Run all tests
 
 GO_TEST_FLAGS ?=
 
@@ -30,6 +30,9 @@ test-go: ## Run Go tests
 
 test-ui: ## Run UI tests
 	@cd ui && npm run test -- --run
+
+test-website: ## Run documentation generator script tests
+	@cd website && npm run test:scripts
 
 test-scripts: ## Run tests for the reference scripts (standard library only)
 	@python3 -m unittest discover -s scripts -p 'test_*.py'

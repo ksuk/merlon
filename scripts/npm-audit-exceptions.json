@@ -6,5 +6,16 @@
     "The gate fails once expires passes, once the advisory reaches a dependent outside dependents,",
     "and once the advisory stops being reported at all -- so entries cannot quietly outlive their justification."
   ],
-  "exceptions": []
+  "exceptions": [
+    {
+      "workspace": "website",
+      "advisory": "GHSA-mh99-v99m-4gvg",
+      "package": "brace-expansion",
+      "dependents": ["minimatch"],
+      "severity": "high",
+      "reason": "Unbounded-expansion DoS, reached only through Docusaurus's local serve-handler path (brace-expansion -> minimatch -> serve-handler -> @docusaurus/core). Production documentation is deployed as static Cloudflare assets, so the Node serve-handler is not deployed; locally, docusaurus serve passes boolean cleanUrls and directoryListing settings and no user-controlled glob configuration, so HTTP request input does not reach the vulnerable expansion path. No compatible forward fix exists: Docusaurus 3.10.2 and serve-handler 6.1.7 are current, minimatch 3 requires brace-expansion 1.x, and the first patched brace-expansion is 5.0.8.",
+      "expires": "2026-10-31",
+      "review": "Before expiry, check for a Docusaurus or serve-handler release on a patched dependency chain and upgrade and remove this exception if one exists; otherwise revalidate reachability against the current website configuration as tracked in issue #31."
+    }
+  ]
 }
