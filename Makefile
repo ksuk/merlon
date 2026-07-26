@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate audit-harden seed up down dev-up dev-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -80,11 +80,11 @@ dev-up: ## Start development environment
 dev-down: ## Stop development environment
 	docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 
-minimal-up: ## Start minimal environment (PostgreSQL + API only)
-	docker compose -f docker-compose.minimal.yml up --build
+up: ## Start the standard topology (PostgreSQL + API)
+	docker compose up --build
 
-minimal-down: ## Stop minimal environment
-	docker compose -f docker-compose.minimal.yml down
+down: ## Stop the standard topology
+	docker compose down
 
 demogen: ## Generate synthetic demo data (deploy/seed/demo/*.json; not committed)
 	@cd api && go run ./cmd/merlon-demogen -out ../deploy/seed/demo

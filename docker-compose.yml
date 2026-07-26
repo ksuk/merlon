@@ -1,4 +1,8 @@
-# Development/demo topology: db + API. See docs/operations/deployment.md for production.
+# Standard topology: PostgreSQL + API. This is the default entry point, so
+# `docker compose up --build` needs no -f flag. Overlays:
+#   docker-compose.dev.yml   development (run from source, bind-mounted)
+#   docker-compose.demo.yml  synthetic demo dataset, authentication disabled
+# See docs/operations/deployment.md for production.
 
 services:
   db:

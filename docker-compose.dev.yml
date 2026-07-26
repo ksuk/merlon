@@ -1,12 +1,22 @@
 # Development overrides
 # Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Runs the API from source with `go run` so edits under ./api take effect on
+# the next container restart without rebuilding the image. The UI is not
+# served here: api-builder is the Go toolchain stage and has no built UI to
+# copy, so MERLON_UI_DIR is cleared and the UI is expected to run separately
+# via `npm run dev` in ui/ (see docs/development/setup.md).
 
 services:
   api:
     build:
-      target: builder
+      # api-builder, not runtime: the bind mount below replaces /build, which
+      # is that stage's WORKDIR, and the Go toolchain only exists there.
+      target: api-builder
+    command: ["go", "run", "./cmd/merlon-api"]
     volumes:
       - ./api:/build
     environment:
       MERLON_ENV: development
       MERLON_LOG_LEVEL: debug
+      MERLON_UI_DIR: ""
