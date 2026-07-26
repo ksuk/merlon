@@ -133,6 +133,14 @@ See [docs/development/setup.md](docs/development/setup.md) for detailed setup in
 | [Development Setup](docs/development/setup.md) | Local development environment |
 | [ADRs](docs/decisions/) | Architecture decision records |
 
+## Getting Help
+
+- Questions and usage help: [GitHub Discussions](https://github.com/ksuk/merlon/discussions).
+- Bugs and feature requests: open a GitHub issue using one of the templates.
+- Security vulnerabilities: use private reporting as described in [SECURITY.md](SECURITY.md). Never open a public issue for one.
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) — commits require a DCO sign-off.
+- Community expectations: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## Status
 
 This project is in active development and publishes **pre-release tags only**.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question
+    url: https://github.com/ksuk/merlon/discussions
+    about: Questions and usage help go to GitHub Discussions, not the issue tracker.
+  - name: Report a security vulnerability
+    url: https://github.com/ksuk/merlon/security/advisories/new
+    about: Never open a public issue for a vulnerability. Use private reporting (see SECURITY.md).
