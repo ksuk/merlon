@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,48 @@ func TestSPAServesStaticFiles(t *testing.T) {
 	}
 	if cc := w.Header().Get("Cache-Control"); cc == "" {
 		t.Fatal("expected Cache-Control header for assets")
+	}
+	if body := w.Body.String(); body != "console.log('ok')" {
+		t.Fatalf("expected static file content, got %q", body)
+	}
+}
+
+func TestSPAInvalidPathsDoNotEscapeUIRoot(t *testing.T) {
+	parentDir := t.TempDir()
+	uiDir := filepath.Join(parentDir, "ui")
+	if err := os.Mkdir(uiDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(uiDir, "index.html"), []byte("<html>merlon</html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	const outsideContent = "outside-ui-root"
+	if err := os.WriteFile(filepath.Join(parentDir, "secret.txt"), []byte(outsideContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newTestServer()
+	s.SetUIDir(uiDir)
+
+	for _, requestPath := range []string{
+		"/%2e%2e/secret.txt",
+		"/assets/%2e%2e/%2e%2e/secret.txt",
+		"/..%5csecret.txt",
+		"/assets//secret.txt",
+	} {
+		t.Run(requestPath, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, requestPath, nil)
+			w := httptest.NewRecorder()
+			s.mux.ServeHTTP(w, req)
+
+			if w.Code == http.StatusOK {
+				t.Fatalf("expected invalid path %q to be rejected", requestPath)
+			}
+			if strings.Contains(w.Body.String(), outsideContent) {
+				t.Fatalf("request %q served a file outside the UI root", requestPath)
+			}
+		})
 	}
 }
 

@@ -20,6 +20,10 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "nod
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCALES } from "./lib/locales.mjs";
+import {
+  escapeMarkdownTableText as escapeText,
+  markdownTableInlineCode as code,
+} from "./lib/markdown-table.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..", "..");
@@ -56,32 +60,6 @@ function displayTitle(schema, fileName, L) {
 /** Presentation description, allowing a localized override. */
 function displayDescription(schema, fileName, L) {
   return L.schemaDescriptions?.[fileName] || schema.description || "";
-}
-
-// ---------------------------------------------------------------------------
-// Markdown / MDX safety helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Escape a plain-text string so it is safe to place inside a Markdown table
- * cell in an MDX document: neutralize the GFM table delimiter, MDX's JSX
- * opening character, and MDX expression braces, and collapse newlines.
- */
-function escapeText(value) {
-  if (value === undefined || value === null) return "";
-  return String(value)
-    .replace(/\r?\n/g, " ")
-    .replace(/\|/g, "\\|")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\{/g, "&#123;")
-    .replace(/\}/g, "&#125;");
-}
-
-/** Render a value as inline code, safe inside a Markdown table cell. */
-function code(value) {
-  const text = String(value).replace(/\|/g, "\\|").replace(/`/g, "ˋ");
-  return `\`${text}\``;
 }
 
 function jsonCode(value) {

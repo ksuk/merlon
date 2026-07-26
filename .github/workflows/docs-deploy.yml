@@ -62,6 +62,7 @@ jobs:
         run: |
           cd website
           npm ci
+          npm run test:scripts
           npm run typecheck
           npm run build
 

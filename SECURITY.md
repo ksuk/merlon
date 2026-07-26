@@ -44,15 +44,17 @@ This policy covers the Merlon software as distributed in this repository. It doe
 
 ### Dependency Advisories
 
-Every pull request runs `scripts/check-npm-audit.mjs`, which fails on any high or
-critical npm advisory that is not recorded in `scripts/npm-audit-exceptions.json`.
-An advisory may only be recorded there when no forward fix exists — when npm
-offers a non-breaking upgrade, the upgrade is taken instead. Each entry states
-why the advisory is not reachable in this product, names the dependents it was
-assessed against, and carries an expiry date. The gate fails once an entry
-expires, once the advisory reaches a dependent the entry does not cover, and once
-the advisory stops being reported, so an accepted risk cannot quietly outlive its
-justification. Current entries are readable in that file.
+Every pull request runs `scripts/check-npm-audit.mjs` against both the operator UI
+(`ui`) and documentation website (`website`) workspaces. The gate fails on any
+high or critical npm advisory that is not recorded in
+`scripts/npm-audit-exceptions.json`. An advisory may only be recorded there when
+no forward fix exists — when npm offers a non-breaking upgrade, the upgrade is
+taken instead. Each entry states why the advisory is not reachable in this
+product, names the dependents it was assessed against, and carries an expiry date.
+The gate fails once an entry expires, once the advisory reaches a dependent the
+entry does not cover, and once the advisory stops being reported, so an accepted
+risk cannot quietly outlive its justification. Current entries are readable in
+that file.
 
 ### Disclosure Policy
 
