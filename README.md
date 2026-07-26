@@ -89,7 +89,7 @@ in-memory equivalent.
 
 ## Development
 
-Requirements: Go 1.25+, Node.js 20+
+Requirements: Go 1.26+, Node.js 26+
 
 ```bash
 # Run all tests

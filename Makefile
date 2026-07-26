@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin test test-go test-ui test-scripts test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-scripts test-integration build build-go build-ui migrate audit-harden seed dev-up dev-down minimal-up minimal-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ verify-container-pins: ## Verify repeated container image references stay synchr
 
 verify-wrangler-pin: ## Verify the docs deploy workflow and website/package.json name the same Wrangler
 	@bash scripts/check-wrangler-pin.sh
+
+verify-toolchain-pins: ## Verify the build images, workflows, go.mod, and DevContainer name the same Go and Node.js
+	@bash scripts/check-toolchain-pins.sh
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 

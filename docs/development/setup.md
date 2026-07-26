@@ -28,18 +28,18 @@ configuration.
 
 If you're not using the DevContainer, install the following tools yourself.
 
-### Go 1.25+
+### Go 1.26+
 
 ```bash
 # Get it from https://go.dev/dl/, or via your package manager
-go version   # confirm go1.25 or higher
+go version   # confirm go1.26 or higher
 ```
 
-### Node.js 20+ / npm
+### Node.js 26+ / npm
 
 ```bash
 # Get the LTS release from https://nodejs.org/, or use nvm
-node --version   # v20 or higher
+node --version   # v26 or higher
 npm --version
 ```
 
