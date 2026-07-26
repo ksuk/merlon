@@ -9,6 +9,35 @@ public issue, pull request, workflow runs, GitHub Ruleset API response, and
 release artifacts. A checked box must point to evidence; the checklist is not
 evidence by itself.
 
+## Which sections apply
+
+Two tag shapes share one release workflow, and they differ only in what the tag
+promises.
+
+| Section | Production release (`vX.Y.Z`) | Pre-release (`vX.Y.Z-rc.N`) |
+|---|---|---|
+| Governance and People | Required | Not applicable |
+| Verification and Security | Required | Required |
+| Operational Evidence | Required | Not applicable |
+| Version and Provenance | Required | Required |
+
+A pre-release exists so the software can be evaluated from a published,
+attested image while the governance and operational controls are still being
+established. It is built, signed, attested, and published exactly like a
+production release — the artifacts are not weaker — and it is marked
+`--prerelease` on GitHub so it never appears as the latest release.
+
+What a pre-release does not carry is an assertion that this repository can
+operate a production release: no independent approver, no restore exercise
+record, no vulnerability-response exercise record. It is therefore not suitable
+for production use, and [Container Images](../operations/container-images.md)
+states that boundary for operators.
+
+Deciding that a pre-release is good enough to deploy is the operator's
+assessment to make against their own regulatory obligations. Nothing below is
+waived for a production release because a pre-release of the same code went out
+first.
+
 ## Governance and People
 
 - [ ] A named backup maintainer is listed in `MAINTAINERS.md` and has completed
@@ -66,4 +95,6 @@ evidence by itself.
 
 The repository currently has one active maintainer. Until the first four
 governance and people controls above are evidenced, production release remains
-blocked even if the release workflow is technically runnable.
+blocked even if the release workflow is technically runnable. That block is on
+the `vX.Y.Z` channel only; pre-release tags are what the project publishes in
+the meantime.

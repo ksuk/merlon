@@ -25,9 +25,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "Release tag must be strict SemVer: vMAJOR.MINOR.PATCH" >&2
+          # Two channels share this workflow and differ only in what the tag
+          # promises. A production tag (vMAJOR.MINOR.PATCH) asserts the whole
+          # release checklist, including the governance and operational-evidence
+          # controls. A pre-release tag (-alpha.N/-beta.N/-rc.N) asserts only the
+          # verification and provenance controls and exists so the software can
+          # be evaluated from a published image while those governance controls
+          # are still being established. Both are immutable and attested; see
+          # docs/development/release-checklist.md for which sections apply.
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$'
+          if [[ ! "$GITHUB_REF_NAME" =~ $semver ]]; then
+            echo "Release tag must be strict SemVer: vMAJOR.MINOR.PATCH, optionally" >&2
+            echo "followed by -alpha.N, -beta.N, or -rc.N (got: $GITHUB_REF_NAME)" >&2
             exit 1
+          fi
+          prerelease=false
+          if [[ -n "${BASH_REMATCH[4]}" ]]; then
+            prerelease=true
           fi
           if [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]]; then
             echo "Release tag must be annotated." >&2
@@ -39,6 +53,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "commit=$release_commit" >> "$GITHUB_OUTPUT"
           echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -76,7 +91,9 @@ jobs:
           push: true
           provenance: false
           tags: ${{ steps.release.outputs.image }}:${{ github.ref_name }}
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ steps.release.outputs.commit }}
 
       - name: Attest image provenance
         id: attestation
@@ -119,7 +136,16 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          release-manifest.json sbom-image.cdx.json SHA256SUMS
-          --verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME"
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --prerelease keeps the tag out of "Latest release", so an evaluation
+          # build is never presented as the production release.
+          args=(--verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME")
+          if [[ "$PRERELEASE" == true ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            release-manifest.json sbom-image.cdx.json SHA256SUMS \
+            "${args[@]}"
