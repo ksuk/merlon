@@ -127,8 +127,26 @@ func TestSystemInfo(t *testing.T) {
 	var info map[string]any
 	json.NewDecoder(rec.Body).Decode(&info)
 
-	if info["version"] != "1.0.0" {
-		t.Errorf("version = %v", info["version"])
+	// The build's own version, not a literal. This previously asserted
+	// "1.0.0" while /healthz reported the real ldflags-injected value, so the
+	// two endpoints disagreed about what was running.
+	if info["version"] != Version {
+		t.Errorf("version = %v, want %v", info["version"], Version)
+	}
+
+	// Likewise the endpoint count is measured at registration rather than
+	// hardcoded; the previous literal had drifted to about half the real
+	// surface. Assert it tracks the server instead of pinning a number that
+	// every new route would invalidate.
+	endpoints, ok := info["endpoints"].(float64)
+	if !ok {
+		t.Fatalf("endpoints missing or not a number: %v", info["endpoints"])
+	}
+	if int(endpoints) != s.routeCount {
+		t.Errorf("endpoints = %d, want %d", int(endpoints), s.routeCount)
+	}
+	if s.routeCount == 0 {
+		t.Error("no routes were counted; the registration helpers are being bypassed")
 	}
 
 	features, ok := info["features"].(map[string]any)

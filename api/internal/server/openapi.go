@@ -16,10 +16,16 @@ func BuildOpenAPISpec() map[string]any {
 		"info": map[string]any{
 			"title":       "Merlon AML/CFT API",
 			"description": "Self-hosted AML/CFT compliance platform for Japanese non-bank financial institutions",
-			"version":     "1.0.0",
+			// The build's own version, not a literal, so a generated client
+			// records which build it was generated against.
+			"version": Version,
 		},
+		// The path keys below are absolute from the server root and already
+		// carry the /api/v1 prefix, so the server URL must not repeat it.
+		// Declaring "/api/v1" here made every effective URL /api/v1/api/v1/...,
+		// which is what a generated client would have called.
 		"servers": []map[string]any{
-			{"url": "/api/v1", "description": "API v1"},
+			{"url": "/", "description": "This deployment"},
 		},
 		"paths": map[string]any{
 			"/healthz":                                  pathGET("Health check"),
