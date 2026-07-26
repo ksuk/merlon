@@ -14,7 +14,7 @@ Merlon は、ツールチェーン、ベースイメージ、GitHub Actions、�
 | Node.js | 26.5.0 | [Node.js 26 は2026年10月28日に Active LTS へ移行するまで Current であり、2029年4月30日終了](https://github.com/nodejs/Release#release-schedule) | サポート対象の最新パッチへ速やかに更新する。Active LTS 移行日までは変化の速い系列として扱い、リリースごとに上流を再確認する。EOL の90日前までに新しい LTS へ移行する。 |
 | PostgreSQL | 18.4 | [PostgreSQL 18 は2030年11月14日終了](https://www.postgresql.org/support/versioning/) | マイグレーション／復元テスト後にマイナー版を更新し、EOL の180日前までに次のメジャー版へ移行する。 |
 | Alpine Linux | 3.24.1 | [Alpine 3.24 は2028年6月1日終了](https://www.alpinelinux.org/releases/) | セキュリティ／保守リリースで再ビルドし、EOL の90日前までに新ブランチへ移行する。 |
-| nginx | 1.30.4 stable | [nginx は現行 stable とセキュリティリリースを公開](https://nginx.org/en/download.html)しており、固定 EOL 日はない | stable の最新パッチとセキュリティ情報を追跡し、stable 系列の交代を30日以内にレビューする。 |
+| nginx | 1.30.4 stable | [nginx は現行 stable とセキュリティリリースを公開](https://nginx.org/en/download.html)しており、固定 EOL 日はない | stable の最新パッチとセキュリティ情報を追跡し、stable 系列の交代を30日以内にレビューする。追跡対象は偶数番の stable 系列のみであり、1.31.x のような奇数番の mainline は開発版として採用しない。Dependabot も提案しないよう設定している。1.32 stable の公開時に `ui/Dockerfile` と本行を同時に移行し、その際に Dependabot の ignore を外す。 |
 
 ## レビュープロセス
 
