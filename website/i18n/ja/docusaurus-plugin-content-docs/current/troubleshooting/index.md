@@ -11,7 +11,7 @@ title: トラブルシューティング
 | 表示されている内容 | 参照先 |
 |---|---|
 | `set MERLON_POSTGRES_PASSWORD` または `set MERLON_BOOTSTRAP_TOKEN` が出て何も起動しない | [コンテナが1つも起動せず compose が停止する](#コンテナが1つも起動せず-compose-が停止する) |
-| 新規デプロイで `docker ps` が API コンテナを `unhealthy` と表示する | [セットアップ完了までコンテナは unhealthy である](#セットアップ完了までコンテナは-unhealthy-である) |
+| 新規デプロイで `docker compose up --wait` が返ってこない、または readiness プローブが失敗する | [セットアップ完了まで readiness は 503 を返す](#セットアップ完了まで-readiness-は-503-を返す) |
 | ログイン画面が出るが、ログインできるアカウントが無い | [ログインできるアカウントが存在しない](#ログインできるアカウントが存在しない) |
 | `initial setup has already been completed` | [`/setup` が 409 を返す](#setup-が-409-を返す) |
 | `MERLON_AUTH_ENABLED must be true in production` | [本番環境で起動が拒否される](#本番環境で起動が拒否される) |
@@ -67,19 +67,27 @@ docker compose up --build
 
 `.env.example` の値は開発専用であり、その旨が明記されている。自分のマシン以外で動かす前に置き換えること。
 
-### セットアップ完了までコンテナは unhealthy である
+### セットアップ完了まで readiness は 503 を返す
 
 これは新規デプロイでの期待される状態であり、障害ではない。
 
-イメージのヘルスチェックは `GET /healthz/ready` を参照しており、readiness には「管理者アカウントが存在すること」が含まれる。[初期セットアップ](#ログインできるアカウントが存在しない)を完了するまで、このエンドポイントは `503` と次の内容を返す。
+イメージのヘルスチェックは `GET /healthz/live` を参照するため、`docker ps` はプロセスが応答した時点で（セットアップ前でも、データベースが無くても）コンテナを `healthy` と表示する。
+
+readiness はこれとは別の話である。`GET /healthz/ready` には「管理者アカウントが存在すること」が含まれるため、[初期セットアップ](#ログインできるアカウントが存在しない)を完了するまで `503` と次の内容を返す。
 
 ```json
 {"checks":{"setup":"error: initial setup not completed"},"status":"unhealthy"}
 ```
 
-最初の管理者が作成されると、約30秒以内に `healthy` へ切り替わる。
+これは、readiness を意図的に条件にしている箇所で問題になる。
 
-unhealthy なコンテナを再起動するオーケストレーターを使う場合、初回ロールアウト中にセットアップを完了させるか、start period を延ばすこと。そうしないと、誰かがアカウントを作成する前にインスタンスが再起動される。
+- `/healthz/ready` を見る Kubernetes の `readinessProbe`。Pod は Service のエンドポイントに入らない。
+- `docker compose up --wait`。コマンドが返ってこない。
+- readiness を参照する compose のヘルスチェックに対する `depends_on: condition: service_healthy`。デモ用 compose ファイルは、`healthy` が「デモが実際に利用可能である」ことを意味するよう、意図的にこの構成を採っている。
+
+これらの環境では、初回ロールアウト中にセットアップを完了させること。最初の管理者が作成されれば、readiness は1回のプローブ間隔以内に `healthy` へ切り替わる。
+
+なお、ヘルスチェックが liveness に変更される前にビルドされたイメージは、イメージレベルで readiness を参照している。古いイメージではコンテナ自体がセットアップ完了まで `unhealthy` のままとなり、unhealthy なコンテナを再起動するオーケストレーターはその前にインスタンスを停止してしまう。初回ロールアウト中にセットアップを完了させるか、ヘルスチェックの start period を延ばすこと。
 
 ### ログインできるアカウントが存在しない
 

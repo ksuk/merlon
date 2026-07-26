@@ -91,8 +91,16 @@ USER 10001:10001
 # MERLON_HTTP_ADDR is a listen address such as ":8080", so appending it to the
 # host produces "localhost:8080". A deployment that overrides the address keeps
 # a working probe without redefining this instruction.
+#
+# The image-level healthcheck asserts liveness only: the process is up and
+# serving. Readiness — initial setup complete, database reachable, engine
+# loaded — stays at /healthz/ready for orchestrators and compose files that
+# deliberately gate on it. A readiness-based healthcheck here would mark every
+# fresh deployment unhealthy until initial setup, and an orchestrator that
+# restarts unhealthy containers would then kill the instance before anyone
+# could create the first administrator account.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget --spider -q "http://localhost${MERLON_HTTP_ADDR:-:8080}/healthz/ready" || exit 1
+  CMD wget --spider -q "http://localhost${MERLON_HTTP_ADDR:-:8080}/healthz/live" || exit 1
 
 ENTRYPOINT ["./merlon-api"]
 

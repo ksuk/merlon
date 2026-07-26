@@ -12,7 +12,7 @@ explains it.
 | What you are seeing | Go to |
 |---|---|
 | `set MERLON_POSTGRES_PASSWORD` or `set MERLON_BOOTSTRAP_TOKEN`, and nothing starts | [Compose stops before any container starts](#compose-stops-before-any-container-starts) |
-| `docker ps` shows the API container as `unhealthy` on a new deployment | [The container is unhealthy until setup is complete](#the-container-is-unhealthy-until-setup-is-complete) |
+| `docker compose up --wait` hangs, or a readiness probe fails, on a new deployment | [Readiness stays 503 until setup is complete](#readiness-stays-503-until-setup-is-complete) |
 | A login screen, and no account to log in with | [There is no account to log in with](#there-is-no-account-to-log-in-with) |
 | `initial setup has already been completed` | [`/setup` returns 409](#setup-returns-409) |
 | `MERLON_AUTH_ENABLED must be true in production` | [Production refuses to start](#production-refuses-to-start) |
@@ -77,25 +77,40 @@ docker compose up --build
 The values in `.env.example` are development-only and marked as such. Replace
 them before this runs anywhere but your own machine.
 
-### The container is unhealthy until setup is complete
+### Readiness stays 503 until setup is complete
 
 This is expected on a new deployment and is not a fault.
 
-The image healthcheck asks `GET /healthz/ready`, and readiness includes "an
-administrator account exists". Until you complete
-[initial setup](#there-is-no-account-to-log-in-with), the endpoint returns
-`503` with:
+The image healthcheck probes `GET /healthz/live`, so `docker ps` shows the
+container as `healthy` as soon as the process responds — before setup, and
+without a database.
+
+Readiness is a different question. `GET /healthz/ready` includes "an
+administrator account exists", so until you complete
+[initial setup](#there-is-no-account-to-log-in-with) it returns `503` with:
 
 ```json
 {"checks":{"setup":"error: initial setup not completed"},"status":"unhealthy"}
 ```
 
-The container flips to `healthy` within about 30 seconds of the first
-administrator being created.
+That matters wherever readiness is deliberately gated on:
 
-If you are deploying under an orchestrator that restarts unhealthy containers,
-either complete setup during the initial rollout or raise the start period, or
-the instance will be restarted before anyone can create the account.
+- a Kubernetes `readinessProbe` on `/healthz/ready`, which keeps the pod out of
+  the Service endpoints;
+- `docker compose up --wait`, which does not return;
+- `depends_on: condition: service_healthy` against a compose healthcheck that
+  probes readiness — the demo compose file does this on purpose, so that
+  "healthy" means the demo is actually usable.
+
+In those environments, complete setup during the initial rollout. Readiness
+turns `healthy` within one probe interval of the first administrator being
+created.
+
+Images built before the healthcheck moved to liveness probed readiness at the
+image level. With an older image the container itself stays `unhealthy` until
+setup, and an orchestrator that restarts unhealthy containers will kill it
+first: complete setup during the rollout, or raise the healthcheck start
+period.
 
 ### There is no account to log in with
 

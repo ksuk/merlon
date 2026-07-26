@@ -55,8 +55,9 @@ ahead of the first release.
   only, so the software can be evaluated from a published image while those
   controls are being established.
 - Container image hardening: runs as non-root uid 10001, needs no writable
-  path (`--read-only` works unmodified), declares a `/healthz/ready`
-  healthcheck, and carries OCI annotations including the build revision.
+  path (`--read-only` works unmodified), declares a `/healthz/live` liveness
+  healthcheck — readiness is exposed separately at `/healthz/ready` — and
+  carries OCI annotations including the build revision.
 - Troubleshooting guide with a symptom index keyed on the actual error
   strings, and an FAQ covering the design decisions evaluators ask about.
 - Security and assurance documentation for vendor review: a complete

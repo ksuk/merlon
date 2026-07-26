@@ -2,7 +2,7 @@
 
 **このチャートはまだ動作しない。** 本ディレクトリにテンプレートは1つも無く、`helm install` は何もデプロイしない。`values.yaml` は将来のテンプレートが参照する値の形を先に定めたものである。
 
-Kubernetes へ導入する場合は、現時点では `ghcr.io/ksuk/merlon` を用いて自組織のマニフェストを作成すること。イメージの前提（非 root 実行、書き込み不要、`/healthz/ready` によるヘルスチェック、ポート 8080）は [コンテナイメージ](../../../../docs/operations/container-images.md) に記載している。
+Kubernetes へ導入する場合は、現時点では `ghcr.io/ksuk/merlon` を用いて自組織のマニフェストを作成すること。イメージの前提（非 root 実行、書き込み不要、イメージ組み込みの healthcheck は `/healthz/live`（liveness）、ポート 8080）は [コンテナイメージ](../../../../docs/operations/container-images.md) に記載している。手書きのマニフェストでは、readinessProbe に `/healthz/ready`、livenessProbe に `/healthz/live` を使うこと。
 
 ## 今後の追加予定
 

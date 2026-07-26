@@ -54,13 +54,13 @@ only works while no account exists — once the first administrator is created i
 rejects further requests, and additional users are added from **User
 management** inside the application.
 
-:::note The container reports `unhealthy` until you finish this step
+:::note `healthy` does not mean set up
 
-`docker ps` will show the API container as `unhealthy` before the first
-administrator exists, because the container healthcheck asks
-`GET /healthz/ready`, and an instance nobody can log in to is not ready to
-serve. It flips to `healthy` within about 30 seconds of completing setup. See
-[Troubleshooting](troubleshooting/index.md).
+The container healthcheck asks `GET /healthz/live`, so `docker ps` reports the
+API container as `healthy` as soon as the process is serving — before this
+step. Readiness is separate: `GET /healthz/ready` returns `503` until the first
+administrator exists, because an instance nobody can log in to is not ready to
+serve. See [Troubleshooting](troubleshooting/index.md).
 
 :::
 

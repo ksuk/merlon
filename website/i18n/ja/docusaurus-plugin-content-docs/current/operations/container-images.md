@@ -57,8 +57,10 @@ docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/ksuk/merlon:v0.1.0-rc
 | 実行ユーザー | uid/gid `10001`、非 root |
 | 必要な書き込み先 | 無し。`--read-only` のまま動作する |
 | 公開ポート | `8080` |
-| ヘルスチェック | `GET /healthz/ready`（`MERLON_HTTP_ADDR` を尊重） |
+| ヘルスチェック | `GET /healthz/live`（liveness。`MERLON_HTTP_ADDR` を尊重） |
 | 外向き通信 | 設定したものだけ。[データ送出](../security/data-egress.md)を参照 |
+
+組み込みのヘルスチェックは liveness プローブであるため、新規のコンテナはプロセスが応答した時点で `healthy` になる。readiness（初期セットアップの完了、データベースへの到達、エンジンのロード）は `GET /healthz/ready` として別に公開されており、オーケストレーターのプローブや、「利用可能な状態」を意図的に条件にする compose のヘルスチェックはこちらを使う。
 
 すべての状態は PostgreSQL にある。コンテナはデータを保持しないため、コンテナの置き換えがデータ損失になることはない。バックアップが必要な対象は[バックアップと復元](backup-restore.md)を参照。
 

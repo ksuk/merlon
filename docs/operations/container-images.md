@@ -79,8 +79,14 @@ architecture is produced under emulation and neither is a second-class build.
 | Runs as | uid/gid `10001`, non-root |
 | Writable paths needed | None — runs unmodified with `--read-only` |
 | Exposed port | `8080` |
-| Healthcheck | `GET /healthz/ready`, honouring `MERLON_HTTP_ADDR` |
+| Healthcheck | `GET /healthz/live` (liveness), honouring `MERLON_HTTP_ADDR` |
 | Outbound network | Only what you configure; see [Data Egress](../security/data-egress.md) |
+
+The built-in healthcheck is a liveness probe, so a fresh container reports
+`healthy` as soon as the process is serving. Readiness — initial setup
+complete, database reachable, engine loaded — is exposed separately at
+`GET /healthz/ready` for orchestration probes and for compose healthchecks that
+deliberately gate on a usable instance.
 
 All state lives in PostgreSQL. The container holds no data, so replacing it is
 never a data-loss event — see [Backup and Restore](backup-restore.md) for what
