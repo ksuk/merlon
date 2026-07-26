@@ -6,11 +6,17 @@ global:
   imageRegistry: ""
   imagePullSecrets: []
 
-# -- Go API service.
+# -- Merlon API. This single image also serves the operator UI, so there is no
+#    separate UI deployment; see docs/operations/container-images.md.
+#
+#    tag is intentionally empty. Set it to a released version explicitly, or
+#    better, pin a digest. A default here would be a version claim this chart
+#    cannot keep current.
 api:
   image:
-    repository: merlon/api
-    tag: "0.1.0-dev"
+    repository: ghcr.io/ksuk/merlon
+    tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   replicaCount: 2
   service:
@@ -27,24 +33,6 @@ api:
     MERLON_ENV: production
     MERLON_LOG_LEVEL: info
     MERLON_AUTH_ENABLED: "true"
-
-# -- React UI.
-ui:
-  image:
-    repository: merlon/ui
-    tag: "0.1.0-dev"
-    pullPolicy: IfNotPresent
-  replicaCount: 2
-  service:
-    type: ClusterIP
-    port: 80
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: 200m
-      memory: 256Mi
 
 # -- PostgreSQL. For production, prefer a managed instance and set
 #    postgresql.enabled=false with external connection details.

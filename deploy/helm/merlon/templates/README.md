@@ -1,18 +1,22 @@
 # Helm Templates
 
-本ディレクトリは Merlon Helm チャートのテンプレートを格納する。M1.1 段階では骨格のみで、テンプレート本体は今後のマイルストーンで追加する。
+**このチャートはまだ動作しない。** 本ディレクトリにテンプレートは1つも無く、`helm install` は何もデプロイしない。`values.yaml` は将来のテンプレートが参照する値の形を先に定めたものである。
+
+Kubernetes へ導入する場合は、現時点では `ghcr.io/ksuk/merlon` を用いて自組織のマニフェストを作成すること。イメージの前提（非 root 実行、書き込み不要、`/healthz/ready` によるヘルスチェック、ポート 8080）は [コンテナイメージ](../../../../docs/operations/container-images.md) に記載している。
 
 ## 今後の追加予定
 
 | ファイル | 役割 |
 |---|---|
-| `deployment.yaml` | api / ui の Deployment |
+| `deployment.yaml` | api の Deployment（UI は同一イメージが配信するため単独の Deployment は不要） |
 | `service.yaml` | 各コンポーネントの Service |
 | `configmap.yaml` | `config.yaml` 等のアプリ設定 |
-| `secret.yaml` | `MERLON_JWT_SECRET`・DB 認証情報等のシークレット |
+| `secret.yaml` | `MERLON_JWT_SECRET`・DB 認証情報・`MERLON_ENCRYPTION_KEY_RING` 等のシークレット |
 | `ingress.yaml` | 外部公開用 Ingress |
 | `_helpers.tpl` | 共通テンプレートヘルパー |
 | `serviceaccount.yaml` | 各コンポーネントの ServiceAccount |
+
+マイグレーションは起動時に自動実行されないため、テンプレート追加時には `make migrate` 相当を別ロールで実行する Job（または明示的な運用手順）の設計が必要になる。詳細は[アップグレード](../../../../docs/operations/upgrade.md)を参照。
 
 ## 値の参照
 

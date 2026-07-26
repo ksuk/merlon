@@ -49,6 +49,24 @@ ahead of the first release.
   synthetic demo dataset generator.
 - Release workflow publishing a multi-architecture image with build
   provenance attestation, a CycloneDX SBOM, and a release evidence manifest.
+- Pre-release channel: `vX.Y.Z-rc.N` tags publish the same attested,
+  multi-architecture image as a production release, marked as a GitHub
+  pre-release. Governance and operational-evidence controls apply to `vX.Y.Z`
+  only, so the software can be evaluated from a published image while those
+  controls are being established.
+- Container image hardening: runs as non-root uid 10001, needs no writable
+  path (`--read-only` works unmodified), declares a `/healthz/ready`
+  healthcheck, and carries OCI annotations including the build revision.
+- Troubleshooting guide with a symptom index keyed on the actual error
+  strings, and an FAQ covering the design decisions evaluators ask about.
+- Security and assurance documentation for vendor review: a complete
+  enumeration of outbound connections, supply-chain controls and their known
+  gaps, and accepted risks with their compensating controls.
+- `make backup` / `make restore`, which capture the database and the
+  encryption key ring as separate artifacts and refuse to produce a
+  database-only backup silently.
+- Guards for environment-variable drift (`make verify-env-vars`) and OpenAPI
+  coverage (`make verify-openapi-coverage`), both required in CI.
 - Bilingual (English/Japanese) documentation site with generated API and rule
   schema reference pages.
 
@@ -68,11 +86,38 @@ ahead of the first release.
   directory, and the rule schema reference no longer presents configuration
   schema versions as REST API versions.
 
+### Fixed
+
+- `GET /api/v1/system/info` reported a hardcoded version of `1.0.0` and a
+  hardcoded endpoint count that had drifted to roughly half the real API
+  surface. Both are now measured from the running build.
+- The OpenAPI document declared a server URL of `/api/v1` while its path keys
+  already carried that prefix, so every effective URL was
+  `/api/v1/api/v1/...`. A client generated from the published document would
+  have called paths that do not exist. It also reported a hardcoded API
+  version rather than the build's.
+- `docker-compose.dev.yml` targeted a build stage that does not exist, so
+  `make dev-up` could not start. It now builds the Go toolchain stage and runs
+  from source.
+- The first-run path was undocumented: `/setup` creates the initial
+  administrator but was named nowhere, leaving a new deployment at a login
+  screen with no account. It is now covered in the quick start, in the
+  authorization guide, and linked from the login screen.
+- `README.md` stated that enterprise features are controlled by a license key.
+  No such mechanism exists.
+
 ### Removed
 
 - The Rust rule-evaluation engine and its Protocol Buffers/gRPC interface,
   including `MonitoringService`, superseded by the native Go engine
   (ADR-0013, superseding ADR-0002).
+- `ui/Dockerfile` and its nginx dependency. The operator UI is served by the
+  Go binary from `MERLON_UI_DIR`, so no compose file or workflow ever built
+  this image.
+- `docker-compose.minimal.yml`, which was a duplicate of `docker-compose.yml`.
+  The standard topology is now the default, so `docker compose up` needs no
+  `-f` flag. `make minimal-up` / `make minimal-down` become `make up` /
+  `make down`.
 
 ### Known limitations
 
