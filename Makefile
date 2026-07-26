@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate audit-harden seed up down dev-up dev-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -66,6 +66,13 @@ build-ui: ## Build the operator UI
 
 migrate: ## Apply SQL migrations with a versioned ledger (use a migration role)
 	@cd api && go run ./cmd/merlon-migrate --migrations-dir ../migrations
+
+backup: ## Back up PostgreSQL and the encryption key ring (see scripts/backup.sh)
+	@scripts/backup.sh $(BACKUP_DIR)
+
+restore: ## Restore a backup produced by `make backup` (destructive; prompts)
+	@test -n "$(BACKUP_FILE)" || (echo "BACKUP_FILE=path/to/merlon-db-*.dump is required"; exit 1)
+	@scripts/restore.sh "$(BACKUP_FILE)"
 
 audit-harden: ## Apply audit_logs least-privilege grants using a migration role
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL}" || (echo "MERLON_MIGRATION_DATABASE_URL is required"; exit 1)
