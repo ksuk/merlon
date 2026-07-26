@@ -23,6 +23,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_POSTGRES_PASSWORD` | 未設定 | Compose 専用の開発用パスワード。本番環境ではシークレットマネージャーを使用する。 |
 | `MERLON_AUTH_ENABLED` | `false` | 本番環境では `true` が必須。 |
 | `MERLON_SEED` | `false` | 開発・デモデータ専用。本番環境では必ず `false` にする。 |
+| `MERLON_DEMO_DATA_DIR` | 未設定 | 生成済みデモデータセットを含むディレクトリ。`MERLON_SEED` 有効時に読み込む。内容が不完全な場合は内蔵サンプルにフォールバックする。開発・デモ専用。 |
 | `MERLON_CONFIG_PATH` | `config.yaml` | アプリケーション設定へのパス。 |
 | `MERLON_CACHE_BACKEND` | `memory` | 使用するキャッシュバックエンドを選択する。 |
 | `MERLON_EVENT_BUS` | `pg_notify` | PostgreSQL と併用するイベントバスドライバ。 |
@@ -37,6 +38,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_SCREENING_OFAC_URL` / `MERLON_SCREENING_EU_URL` | 未設定 | 承認済みの OFAC/EU リストエンドポイント。 |
 | `MERLON_SCREENING_UN_URL` / `MERLON_SCREENING_MOF_URL` | 未設定 | 承認済みの UN/MOF リストエンドポイント。 |
 | `MERLON_SCREENING_PEP_URL` | 未設定 | 承認済みの PEP プロバイダーエンドポイント。 |
+| `MERLON_SCREENING_THRESHOLD` | エンジン既定値 | 氏名照合スコアの閾値（`0`〜`1`）。この値以上でスクリーニングヒットとする。下げると再現率とレビュー件数が増える。範囲外の値やパースできない値は無視され、既定値が維持される。検知感度を変更するため、ルール変更と同等のレビューを経ること。 |
 | `MERLON_SMTP_HOST` / `MERLON_SMTP_PORT` | 未設定 / `587` | 通知用の SMTP エンドポイント。TLS と認証情報を設定する。 |
 | `MERLON_SMTP_USERNAME` / `MERLON_SMTP_PASSWORD` | 未設定 | SMTP 認証情報。シークレットマネージャーを使用する。 |
 | `MERLON_SMTP_FROM` / `MERLON_SMTP_TO` | 未設定 | 通知の送信元と、カンマ区切りの宛先一覧。 |

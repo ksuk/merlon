@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,12 @@ verify-container-pins: ## Verify repeated container image references stay synchr
 
 verify-wrangler-pin: ## Verify the docs deploy workflow and website/package.json name the same Wrangler
 	@bash scripts/check-wrangler-pin.sh
+
+verify-env-vars: ## Verify env vars agree across the code, docs, and .env.example
+	@bash scripts/check-env-vars.sh
+
+verify-openapi-coverage: ## Verify the OpenAPI document still covers the registered API surface
+	@python3 scripts/check-openapi-coverage.py
 
 verify-toolchain-pins: ## Verify the build images, workflows, go.mod, and DevContainer name the same Go and Node.js
 	@bash scripts/check-toolchain-pins.sh

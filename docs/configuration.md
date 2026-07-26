@@ -27,6 +27,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_POSTGRES_PASSWORD` | unset | Compose-only development password. Use a secret manager in production. |
 | `MERLON_AUTH_ENABLED` | `false` | Must be `true` in production. |
 | `MERLON_SEED` | `false` | Development/demo data only; must be `false` in production. |
+| `MERLON_DEMO_DATA_DIR` | unset | Directory holding a full generated demo dataset, loaded when `MERLON_SEED` is enabled. Falls back to the built-in sample if the directory is incomplete. Development/demo only. |
 | `MERLON_CONFIG_PATH` | `config.yaml` | Path to application configuration. |
 | `MERLON_CACHE_BACKEND` | `memory` | Select the configured cache backend. |
 | `MERLON_EVENT_BUS` | `pg_notify` | Event bus driver used with PostgreSQL. |
@@ -53,6 +54,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_CDD_WEIGHTS_PATH` | `cdd_weights.yaml` | Native Go CDD rule root; pin and review content changes. |
 | `MERLON_COUNTRY_RISK_PATH` | unset | Optional native Go country-risk table. |
 | `MERLON_SCREENING_LISTS_PATH` | `screening_lists` | Native Go last-good screening-list snapshot root. |
+| `MERLON_SCREENING_THRESHOLD` | engine default | Name-match score, `0`–`1`, at or above which a screening hit is raised. Lowering it raises recall and review volume. Values outside the range, or that do not parse, are ignored and leave the default in force. Changing it alters detection sensitivity and should follow the same review as a rule change. |
 | `MERLON_TM_BASE_CURRENCY` | `JPY` | Interim PH9 invariant: mixed/non-base TM aggregation is fail-alerted to `PENDING_REVIEW`; full FX/decimal semantics are PH10. |
 | `MERLON_REALTIME_MONITOR_TIMEOUT` | `30s` | Maximum synchronous history-loading and realtime-monitoring duration before fail-alert queueing. |
 | `MERLON_TM_BATCH_SCHEDULE` | `02:00` | Daily `HH:MM` time for transaction-monitoring batch evaluation. |

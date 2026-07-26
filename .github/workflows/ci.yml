@@ -104,6 +104,16 @@ jobs:
       # keeps those two sets of versions the same.
       - name: Verify synchronized toolchain pins
         run: make verify-toolchain-pins
+      # Same "declared twice must agree" rule, applied to configuration: a
+      # variable the code reads but nobody documented, or one operators are
+      # told to set that nothing reads.
+      - name: Verify synchronized environment variables
+        run: make verify-env-vars
+      # The OpenAPI document is the contract the project promises to keep
+      # compatible. A route registered but never published is callable and
+      # unpromised, so this ratchets coverage rather than letting it slip.
+      - name: Verify OpenAPI coverage
+        run: make verify-openapi-coverage
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       # The same platform list the release workflow publishes. Building only
       # the runner's own architecture here would leave linux/arm64 first
