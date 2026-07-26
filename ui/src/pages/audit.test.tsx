@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
-import { MemoryRouter } from "react-router-dom"
+import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { AuditPage } from "./audit"
 import { api } from "@/lib/api"

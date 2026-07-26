@@ -14,7 +14,7 @@ import { api, type RiskTier, type ScreenResult } from "@/lib/api"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams } from "react-router"
 
 const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
   low: "low",

@@ -1,6 +1,6 @@
 import { Suspense } from "react"
 import { useTranslation } from "react-i18next"
-import { Outlet } from "react-router-dom"
+import { Outlet } from "react-router"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { LanguageSwitcher } from "./language-switcher"

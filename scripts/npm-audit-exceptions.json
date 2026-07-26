@@ -9,16 +9,6 @@
   "exceptions": [
     {
       "workspace": "ui",
-      "advisory": "GHSA-qwww-vcr4-c8h2",
-      "package": "react-router",
-      "dependents": ["react-router-dom"],
-      "severity": "high",
-      "reason": "RSC-mode CSRF bypass. The UI mounts a plain BrowserRouter SPA in src/App.tsx with no RSC or framework mode, so the vulnerable request path is not built. No forward fix exists: the advisory covers 7.12.0-8.2.0 and npm's only offer is a downgrade to 7.11.0.",
-      "expires": "2026-10-31",
-      "review": "Re-check whether react-router has shipped a fixed release above 8.2.0; take it if so."
-    },
-    {
-      "workspace": "ui",
       "advisory": "GHSA-mh99-v99m-4gvg",
       "package": "brace-expansion",
       "dependents": ["minimatch"],

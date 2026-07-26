@@ -14,7 +14,7 @@ import { api, type RiskTier } from "@/lib/api"
 import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router-dom"
+import { Link } from "react-router"
 
 const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
   low: "low",

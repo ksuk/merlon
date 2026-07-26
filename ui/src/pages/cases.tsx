@@ -14,7 +14,7 @@ import { api, type CasePriority } from "@/lib/api"
 import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router-dom"
+import { Link } from "react-router"
 
 const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critical"> = {
   low: "low",

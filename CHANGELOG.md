@@ -43,7 +43,7 @@ ahead of the first release.
 - Cursor-based pagination across list endpoints, with the offset/limit
   contract retained during its deprecation period (ADR-0005).
 - REST API surface with a generated OpenAPI 3.0 document.
-- React UI (Vite, React 19, Tailwind CSS v4, React Router v7).
+- React UI (Vite, React 19, Tailwind CSS v4, React Router v8).
 - PostgreSQL schema with a checksum-verified, forward-only migration runner.
 - Docker Compose topologies (minimal, standard, development, demo) and a
   synthetic demo dataset generator.

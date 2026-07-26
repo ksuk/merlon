@@ -5,7 +5,7 @@ import { api } from "@/lib/api"
 import { ArrowLeft } from "lucide-react"
 import { useCallback } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams } from "react-router"
 
 const DIR_VARIANT: Record<string, "low" | "medium" | "high"> = {
   inbound: "low",

@@ -12,7 +12,7 @@ import { api, type Alert, type AlertSeverity, type AlertStatus } from "@/lib/api
 import { translateApiError } from "@/lib/errors"
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router-dom"
+import { Link } from "react-router"
 
 const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "critical"> = {
   low: "low",
