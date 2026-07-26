@@ -1,5 +1,5 @@
 import { lazy } from "react"
-import { BrowserRouter, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Route, Routes } from "react-router"
 import { AppLayout } from "@/components/layout/app-layout"
 import { ErrorBoundary } from "@/components/error-boundary"
 

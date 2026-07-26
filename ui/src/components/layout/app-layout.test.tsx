@@ -1,5 +1,5 @@
 import { screen, waitFor } from "@testing-library/react"
-import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { MemoryRouter, Route, Routes } from "react-router"
 import { beforeEach, expect, test, vi } from "vitest"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { AppLayout } from "./app-layout"

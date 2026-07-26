@@ -6,7 +6,7 @@ import { api, type AlertSeverity, type AlertStatus } from "@/lib/api"
 import { ArrowLeft } from "lucide-react"
 import { useCallback, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams } from "react-router"
 
 const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "critical"> = {
   low: "low",

@@ -29,7 +29,7 @@ React UI (Vite) → REST → Go API (native engine)
 | Component | Directory | Role |
 |---|---|---|
 | Go API | `api/` | CRUD and business orchestration (net/http, pgx) |
-| React UI | `ui/` | Vite + React 19 + Tailwind CSS v4 + React Router v7 |
+| React UI | `ui/` | Vite + React 19 + Tailwind CSS v4 + React Router v8 |
 | Native engine | `api/internal/engine/native/` | CDD scoring, TM evaluation, screening, backtesting |
 | Rule configs | `content/` | CDD weights and TM scenarios (JSON/YAML) |
 

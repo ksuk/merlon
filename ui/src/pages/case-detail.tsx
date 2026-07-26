@@ -7,7 +7,7 @@ import { translateApiError } from "@/lib/errors"
 import { ArrowLeft, Send } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams } from "react-router"
 
 const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critical"> = {
   low: "low",

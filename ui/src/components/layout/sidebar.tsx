@@ -18,7 +18,7 @@ import {
   Webhook,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation } from "react-router"
 
 const navItems = [
   { to: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
