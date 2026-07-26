@@ -45,8 +45,10 @@ Sanctions and PEP list sources are configured by you. If your lists are hosted
 internally, this connection never leaves your network.
 
 On a failed fetch, Merlon keeps matching against the last successfully imported
-list rather than failing open, and raises an operational alert after three
-consecutive failures. It does not fall back to any alternative source.
+list rather than failing open, and flags the failure for operators after three
+consecutive failures — a structured log field, a flag on the dashboard, and the
+`merlon_screening_list_stale_days` metric; there is no built-in notifier. It
+does not fall back to any alternative source.
 
 ### 3. Webhook deliveries
 

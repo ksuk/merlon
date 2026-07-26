@@ -25,8 +25,8 @@ ahead of the first release.
   thresholds, evaluation modes, and absolute thresholds, with dual support for
   the earlier `tm_scenario_v1` format (ADR-0006).
 - Sanctions and PEP screening with scheduled list imports that continue
-  matching against the last successful list on fetch failure, and an
-  operational alert after repeated failures.
+  matching against the last successful list on fetch failure, and flags repeated
+  failures for operators (structured log, dashboard flag, staleness metric).
 - Backtesting against candidate rule sets, including affected-customer
   reporting and cancellation.
 - Alert and case management: bulk alert close and case assignment, case notes,

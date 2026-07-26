@@ -55,12 +55,17 @@ may therefore be made against data that is hours or days old.
 silently passes every customer — or to fail closed and stop screening
 entirely, which halts onboarding on a transient network error.
 
-**Compensating controls.** Consecutive failures are counted per list, and an
-operational alert is raised after three. Import state is queryable, so the age
-of the list behind any decision is recoverable.
+**Compensating controls.** Consecutive failures are counted per list, and after
+three in a row Merlon flags the condition: the import job logs a structured
+error with `needs_operational_alert=true`, the dashboard's screening-freshness
+data carries the same flag, and the `merlon_screening_list_stale_days` gauge
+reports each list's age on `/metrics`. Merlon does not notify anyone itself —
+there is no built-in notifier. Import state remains queryable, so the age of the
+list behind any decision is recoverable.
 
-**What you must do.** Route that operational alert somewhere a human reads it.
-The control only works if the staleness is noticed.
+**What you must do.** Wire those flags to a human yourself: alert on the log
+field, or on `merlon_screening_list_stale_days`, in your own monitoring stack.
+The control only works if something routes it to someone who reads it.
 
 ## Migrations are forward-only
 

@@ -228,10 +228,16 @@ On a failed list fetch, Merlon keeps matching against the last list that
 imported successfully instead of failing open with an empty list. Screening
 therefore keeps working, and the failure is not visible as missing results.
 
-Consecutive failures are counted per list, and an operational alert is raised
-after three in a row. If screening results look older than expected, check the
-import job for that list rather than the matching logic. The results are stale,
-not wrong.
+Consecutive failures are counted per list, and after three in a row Merlon flags
+the failure for operators: the import job logs a structured error with
+`needs_operational_alert=true`, the dashboard's screening-freshness data carries
+the same flag, and the `merlon_screening_list_stale_days` gauge reports each
+list's age on `/metrics`. Merlon does not notify anyone itself. If nothing in
+your deployment routes those to a human, the staleness goes unnoticed — that is
+a property of your monitoring, not something Merlon does on its own.
+
+If screening results look older than expected, check the import job for that
+list rather than the matching logic. The results are stale, not wrong.
 
 ## Still stuck
 
