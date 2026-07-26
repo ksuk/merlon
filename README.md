@@ -81,6 +81,16 @@ Open [http://127.0.0.1:8080](http://127.0.0.1:8080). Follow
 [docs/demo-tour.md](docs/demo-tour.md) for a guided walkthrough of both a
 compliance-reviewer path and a technical-evaluator path.
 
+![Merlon dashboard with risk-tier and alert-severity distributions](docs/img/demo-dashboard.png)
+
+The dashboard opens on the portfolio: how customers fall across risk tiers, and
+how open alerts fall across severities.
+
+![Customer detail with the risk score, tier, and the attributes behind them](docs/img/demo-customer-cdd.png)
+
+Every customer shows the CDD score and tier it was assigned, the attributes the
+score was derived from, and the history of previous scorings.
+
 This dataset is entirely synthetic — never load real customer or transaction
 data into it, and never run this compose file on a publicly reachable host;
 it has no authentication.
