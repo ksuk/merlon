@@ -93,7 +93,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: '4.110.0'
+          # Kept identical to website/package.json's wrangler dependency;
+          # scripts/check-wrangler-pin.sh enforces it.
+          wranglerVersion: '4.114.0'
           workingDirectory: website
           command: deploy --message "Docs ${{ github.sha }}"
       - name: Smoke test deployment
