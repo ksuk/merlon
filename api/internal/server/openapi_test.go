@@ -125,6 +125,29 @@ func TestBuildOpenAPISpec_MatchesHandlerOutput(t *testing.T) {
 	}
 }
 
+// TestOpenAPISpecDocumentsHealthProbes covers the liveness and readiness
+// probes, which the server registers but the spec did not describe, so a
+// generated client had no way to know they exist.
+func TestOpenAPISpecDocumentsHealthProbes(t *testing.T) {
+	spec := fetchOpenAPISpec(t)
+
+	paths, ok := spec["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("spec.paths missing or not an object")
+	}
+
+	for _, p := range []string{"/healthz/live", "/healthz/ready"} {
+		pathItem, ok := paths[p].(map[string]any)
+		if !ok {
+			t.Errorf("path %q missing from openapi spec", p)
+			continue
+		}
+		if _, ok := pathItem["get"].(map[string]any); !ok {
+			t.Errorf("%s get operation missing", p)
+		}
+	}
+}
+
 func TestOpenAPI_PaginationFieldsPresent(t *testing.T) {
 	spec := fetchOpenAPISpec(t)
 

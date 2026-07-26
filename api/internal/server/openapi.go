@@ -29,6 +29,8 @@ func BuildOpenAPISpec() map[string]any {
 		},
 		"paths": map[string]any{
 			"/healthz":                                  pathGET("Health check"),
+			"/healthz/live":                             pathGET("Liveness probe"),
+			"/healthz/ready":                            pathGET("Readiness probe"),
 			"/api/v1/customers":                         pathListCreate("Customer"),
 			"/api/v1/customers/{id}":                    pathGetPut("Customer"),
 			"/api/v1/customers/{id}/score":              pathPOST("Score customer risk"),
