@@ -52,7 +52,8 @@ func mustParseUUID(s string) [16]byte {
 // customer_score_history — migrations/001, 002, 004, 011, 020) reject
 // demogen's original human-readable IDs outright ("invalid input syntax
 // for type uuid", confirmed against a real postgres:16.14-alpine server
-// during PH7 T2). remap.go's remapIDsToUUIDs is the only caller that writes
+// during PH7 T2 and re-confirmed against postgres:18.4-alpine when the
+// pin moved). remap.go's remapIDsToUUIDs is the only caller that writes
 // uuidFor's output into the actual generated entities; everywhere else in
 // this package (self-checks, story wiring, STORY_IDS.md authoring) keeps
 // working with the plain labels for readability.

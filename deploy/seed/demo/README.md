@@ -92,7 +92,8 @@ RFC 4122 v5 UUID (`ids.go`). The same label always yields the same UUID, so
 regenerating the dataset reproduces byte-identical output, and
 `STORY_IDS.md` documents the label/UUID mapping for every fixed demo-tour ID.
 
-Confirmed end-to-end against a real PostgreSQL 16 instance (not just the
+Confirmed end-to-end against a real PostgreSQL instance (not just the
 in-memory store): all ten JSON files load through the same
 `api/internal/seed` loader, and the fixed story-04 customer/alert/case UUIDs
-in `STORY_IDS.md` resolve via the HTTP API.
+in `STORY_IDS.md` resolve via the HTTP API. Established on PostgreSQL 16 and
+repeated on 18.4 when the pin moved.

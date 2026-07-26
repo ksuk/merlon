@@ -9,14 +9,16 @@
 
 services:
   db:
-    image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     restart: unless-stopped
     environment:
       POSTGRES_DB: merlon
       POSTGRES_USER: merlon
       POSTGRES_PASSWORD: ${MERLON_POSTGRES_PASSWORD:-merlon-demo-local}
     volumes:
-      - demo_pgdata:/var/lib/postgresql/data
+      # 18+ stores data in a major-version subdirectory of /var/lib/postgresql
+      # and rejects a mount at the old /var/lib/postgresql/data path outright.
+      - demo_pgdata:/var/lib/postgresql
       - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U merlon -d merlon"]
@@ -54,10 +56,11 @@ services:
       # 002, 004, 011, 020). deploy/seed/demo/STORY_IDS.md documents the
       # label/UUID mapping for the demo tour's fixed story IDs; regenerating
       # (`make demogen`) reproduces the same UUIDs every time. Confirmed end-
-      # to-end against a real PostgreSQL 16 instance (customers/transactions/
+      # to-end against a real PostgreSQL instance (customers/transactions/
       # alerts/accounts/rule_definitions/score_history/cases/case_notes/
       # screening_results/audit_logs all load; the fixed story-04 customer/
-      # alert/case UUIDs resolve via the HTTP API) during PH7 T2.
+      # alert/case UUIDs resolve via the HTTP API) on 16 during PH7 T2 and
+      # again on 18.4 when the pin moved.
       MERLON_DEMO_DATA_DIR: /app/demo-data
       MERLON_UI_DIR: /app/ui
       MERLON_LOG_LEVEL: info
