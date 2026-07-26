@@ -37,7 +37,7 @@ node --version   # v20 以上
 npm --version
 ```
 
-### PostgreSQL 16+
+### PostgreSQL 18+
 
 Docker での起動を推奨。
 
@@ -47,7 +47,7 @@ docker run -d --name merlon-db \
   -e POSTGRES_PASSWORD=merlon \
   -e POSTGRES_DB=merlon \
   -p 5432:5432 \
-  postgres:16
+  postgres:18
 ```
 
 ## 初回セットアップ手順

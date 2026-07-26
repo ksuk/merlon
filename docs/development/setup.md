@@ -43,7 +43,7 @@ node --version   # v20 or higher
 npm --version
 ```
 
-### PostgreSQL 16+
+### PostgreSQL 18+
 
 Running it via Docker is recommended.
 
@@ -53,7 +53,7 @@ docker run -d --name merlon-db \
   -e POSTGRES_PASSWORD=merlon \
   -e POSTGRES_DB=merlon \
   -p 5432:5432 \
-  postgres:16
+  postgres:18
 ```
 
 ## First-time setup
