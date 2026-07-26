@@ -105,13 +105,21 @@ jobs:
       - name: Verify synchronized toolchain pins
         run: make verify-toolchain-pins
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      # The same platform list the release workflow publishes. Building only
+      # the runner's own architecture here would leave linux/arm64 first
+      # attempted on a tag push, where a failure cannot be corrected without
+      # burning the version. Both builder stages are pinned to BUILDPLATFORM
+      # and Go cross-compiles, so this needs no emulator.
       - name: Build release image without publishing
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: api/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: false
-          build-args: VERSION=ci-${{ github.sha }}
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+            REVISION=${{ github.sha }}
 
   required:
     # Branch protection matches required status checks by check-run name, and a
