@@ -26,6 +26,20 @@ make backup            # または: scripts/backup.sh [出力ディレクトリ]
 
 データベース全体のダンプには、migration ledger や sequence state など運用者専用のオブジェクトも含まれる。そのため、`MERLON_BACKUP_DATABASE_URL` には、既存および将来のすべての table／sequence を読み取れる専用 read-only backup role を使用する。スクリプトは serving role や DDL 可能な migration owner へ意図的にフォールバックしない。
 
+### パスワードをプロセス表に出さない
+
+接続 URL は `pg_dump`、`psql`、`pg_restore` にコマンドライン引数として渡される。バックアップやリストアが動作している間、同居する他ユーザー、PID 名前空間を共有するコンテナ、プロセスをサンプリングする各種エージェントは、`ps` や `/proc/<pid>/cmdline` からこれを読み取れる。以下の例が URL 形式を用いているのは簡潔で自己完結しているためであり、自組織が管理するホスト上での対話的な単発実行にはそれが適している。
+
+定期実行される本番バックアップでは、代わりに libpq の環境変数で接続を与え、`MERLON_BACKUP_DATABASE_URL` は設定しない。
+
+```bash
+export PGHOST=db.internal PGPORT=5432 PGDATABASE=merlon PGUSER=merlon_backup
+export PGPASSWORD="$(read-from-your-secret-store)"   # または ~/.pgpass を使う
+make backup
+```
+
+`scripts/restore.sh` も同様に、`MERLON_MIGRATION_DATABASE_URL` の代わりにこの形式を受け付ける。`PGSERVICE` エントリや `~/.pgpass`（モード `0600`）でも同等であり、そちらはパスワードを環境変数からも外せる。この方式では両スクリプトとも接続引数を一切渡さない。DSN を組み立て直してコマンドラインに戻すことこそが、回避したい露出そのものだからである。
+
 ### backup role のプロビジョニング
 
 認証情報は管理された secret management 手段で作成し、database／role 名を必要に応じて置き換えた上で、次に注記した administrator／object-owner の責務に従って実行する。

@@ -35,6 +35,31 @@ dedicated read-only backup role with access to every existing and future table
 and sequence. The script deliberately does not fall back to the serving role
 or the DDL-capable migration owner.
 
+### Keeping the password out of the process table
+
+A connection URL is passed to `pg_dump`, `psql`, and `pg_restore` as a
+command-line argument. Any co-resident user, any container sharing the PID
+namespace, and any process-sampling agent can read it from `ps` or
+`/proc/<pid>/cmdline` for as long as the backup or restore runs. The examples
+below use the URL form because it is compact and self-contained, which is right
+for an interactive one-off on a host you control.
+
+For a scheduled production backup, supply the connection through libpq's own
+environment instead and leave `MERLON_BACKUP_DATABASE_URL` unset:
+
+```bash
+export PGHOST=db.internal PGPORT=5432 PGDATABASE=merlon PGUSER=merlon_backup
+export PGPASSWORD="$(read-from-your-secret-store)"   # or use ~/.pgpass
+make backup
+```
+
+`scripts/restore.sh` accepts the same, in place of
+`MERLON_MIGRATION_DATABASE_URL`. A `PGSERVICE` entry or a `~/.pgpass` file
+(mode `0600`) works equally well and keeps the password out of the
+environment too. Both scripts pass no connection argument at all in this mode:
+they never reassemble a DSN, because putting one back on the command line is
+the exposure being avoided.
+
 ### Provisioning the backup role
 
 Create the credential through controlled secret-management tooling, and run

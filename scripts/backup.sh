@@ -17,8 +17,14 @@ umask 077
 #     scripts/backup.sh [output-directory]
 #
 # Environment:
-#   MERLON_BACKUP_DATABASE_URL  required dedicated read-only backup connection
+#   MERLON_BACKUP_DATABASE_URL  dedicated read-only backup connection, as a URL
 #   MERLON_ENCRYPTION_KEY_RING  the key ring to capture (see --no-keys)
+#
+# The connection may instead be supplied through libpq's own variables
+# (PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD, PGSERVICE, or ~/.pgpass), which
+# is what production deployments should do: a URL is passed to pg_dump as a
+# command-line argument, where `ps` and /proc/<pid>/cmdline expose its password
+# to every co-resident process for as long as the dump runs.
 #
 # Options:
 #   --no-keys   acknowledge that no key ring is captured. Only correct when
@@ -62,8 +68,23 @@ done
 
 out_dir=${out_dir:-backups}
 
-if [[ -z ${MERLON_BACKUP_DATABASE_URL:-} ]]; then
-  echo "MERLON_BACKUP_DATABASE_URL is required" >&2
+# Either form of connection is passed to every client the same way, as an
+# argument array. When libpq's own variables are in use the array is empty and
+# libpq reads them itself, rather than this script reassembling a DSN it would
+# then have to put back on the command line -- which is the exposure being
+# avoided.
+conn_args=()
+if [[ -n ${MERLON_BACKUP_DATABASE_URL:-} ]]; then
+  conn_args=(--dbname "$MERLON_BACKUP_DATABASE_URL")
+elif [[ -z ${PGDATABASE:-}${PGSERVICE:-}${PGHOST:-} ]]; then
+  cat >&2 <<'EOF'
+MERLON_BACKUP_DATABASE_URL is required, or a libpq connection environment.
+
+Set MERLON_BACKUP_DATABASE_URL to a dedicated read-only connection, or set
+PGDATABASE (with PGHOST/PGPORT/PGUSER/PGPASSWORD as needed) or PGSERVICE. The
+libpq variables keep the password out of the process table and are the better
+choice for a scheduled production backup.
+EOF
   exit 1
 fi
 
@@ -81,7 +102,7 @@ fi
 # Merlon does not support PostgreSQL large objects in this logical-backup
 # contract. Reject that object model explicitly before pg_dump can fail late
 # with a generic permission error or produce artifacts outside the contract.
-large_object_count=$(psql --dbname="$MERLON_BACKUP_DATABASE_URL" \
+large_object_count=$(psql "${conn_args[@]}" \
   --no-psqlrc --tuples-only --no-align --set ON_ERROR_STOP=1 \
   --command "SELECT count(*) FROM pg_catalog.pg_largeobject_metadata")
 if [[ ! $large_object_count =~ ^[0-9]+$ ]]; then
@@ -137,7 +158,7 @@ trap 'exit 143' TERM
 echo "Dumping database to $db_file"
 # Custom format: compressed, and restorable selectively with pg_restore.
 pg_dump --format=custom --no-owner --no-privileges \
-  --file="$db_temp" "$MERLON_BACKUP_DATABASE_URL"
+  --file="$db_temp" "${conn_args[@]}"
 
 keys_sha=""
 if [[ -n ${MERLON_ENCRYPTION_KEY_RING:-} ]]; then

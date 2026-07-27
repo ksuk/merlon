@@ -23,6 +23,26 @@ def write_executable(path: Path, contents: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
+# backup.sh and restore.sh accept a libpq environment as an alternative to the
+# URL variables, so an ambient PGHOST or PGDATABASE would otherwise decide what
+# these tests exercise.
+LIBPQ_ENV_VARS = (
+    "PGDATABASE",
+    "PGHOST",
+    "PGPORT",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGPASSFILE",
+)
+
+
+def clear_libpq_env(env: dict[str, str]) -> None:
+    for name in LIBPQ_ENV_VARS:
+        env.pop(name, None)
+
+
 class HealthcheckTest(unittest.TestCase):
     def run_probe(
         self,
@@ -124,6 +144,7 @@ class BackupTest(unittest.TestCase):
         app_url: str | None,
         large_object_count: int = 0,
         pg_dump_exit: int = 0,
+        libpq_env: dict[str, str] | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -152,12 +173,14 @@ class BackupTest(unittest.TestCase):
             env.pop("MERLON_DATABASE_URL", None)
             env.pop("MERLON_MIGRATION_DATABASE_URL", None)
             env.pop("MERLON_BACKUP_DATABASE_URL", None)
+            clear_libpq_env(env)
             if backup_url is not None:
                 env["MERLON_BACKUP_DATABASE_URL"] = backup_url
             if migration_url is not None:
                 env["MERLON_MIGRATION_DATABASE_URL"] = migration_url
             if app_url is not None:
                 env["MERLON_DATABASE_URL"] = app_url
+            env.update(libpq_env or {})
             result = subprocess.run(
                 ["bash", str(BACKUP), str(tmp_path / "output")],
                 env=env,
@@ -199,6 +222,37 @@ class BackupTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("MERLON_BACKUP_DATABASE_URL is required", result.stderr)
+        self.assertEqual(args, [])
+
+    def test_backup_accepts_a_libpq_environment_without_a_dsn_argument(self):
+        # A URL reaches pg_dump as an argument, so its password sits in
+        # /proc/<pid>/cmdline for the whole dump. libpq's own variables are the
+        # way out, and taking them means passing no connection argument at all
+        # rather than reassembling a DSN and putting it back on the command line.
+        result, args = self.run_backup(
+            backup_url=None,
+            migration_url=None,
+            app_url=None,
+            libpq_env={
+                "PGHOST": "db",
+                "PGDATABASE": "merlon",
+                "PGUSER": "merlon_backup",
+                "PGPASSWORD": "libpq-secret",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("--dbname", args)
+        for arg in args:
+            self.assertNotIn("libpq-secret", arg)
+            self.assertNotIn("merlon_backup", arg)
+
+    def test_backup_reports_both_connection_forms_when_neither_is_set(self):
+        result, args = self.run_backup(
+            backup_url=None, migration_url=None, app_url=None
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("MERLON_BACKUP_DATABASE_URL is required", result.stderr)
+        self.assertIn("PGSERVICE", result.stderr)
         self.assertEqual(args, [])
 
     def test_backup_dumps_with_read_only_role_not_privileged_roles(self):
@@ -256,6 +310,7 @@ class RestoreTest(unittest.TestCase):
         psql_grants_exit: int = 0,
         app_role: str | None = None,
         app_role_ready: str = "ok",
+        libpq_env: dict[str, str] | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -320,12 +375,14 @@ class RestoreTest(unittest.TestCase):
             env.pop("MERLON_DATABASE_URL", None)
             env.pop("MERLON_MIGRATION_DATABASE_URL", None)
             env.pop("MERLON_APP_ROLE", None)
+            clear_libpq_env(env)
             if migration_url is not None:
                 env["MERLON_MIGRATION_DATABASE_URL"] = migration_url
             if app_url is not None:
                 env["MERLON_DATABASE_URL"] = app_url
             if app_role is not None:
                 env["MERLON_APP_ROLE"] = app_role
+            env.update(libpq_env or {})
 
             result = subprocess.run(
                 ["bash", str(RESTORE), str(dump_file)],
@@ -402,6 +459,25 @@ class RestoreTest(unittest.TestCase):
             result.stdout,
         )
         self.assertIn("fresh target", result.stdout)
+
+    def test_restore_accepts_a_libpq_environment_without_a_dsn_argument(self):
+        # Same exposure as backup.sh: a URL reaches pg_restore as an argument,
+        # readable from /proc/<pid>/cmdline for the duration of the restore.
+        result, args = self.run_restore(
+            migration_url=None,
+            app_url=None,
+            libpq_env={
+                "PGHOST": "db",
+                "PGDATABASE": "merlon",
+                "PGUSER": "merlon_migrate",
+                "PGPASSWORD": "libpq-secret",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("--dbname", args)
+        for arg in args + result.psql_grants_args:
+            self.assertNotIn("libpq-secret", arg)
+        self.assertNotIn("libpq-secret", result.stdout + result.stderr)
 
     def test_restore_never_echoes_any_supported_dsn_password_form(self):
         cases = (

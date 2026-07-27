@@ -26,11 +26,31 @@ set -euo pipefail
 #     scripts/restore.sh <backup.dump> [--force]
 #
 # Environment:
-#   MERLON_MIGRATION_DATABASE_URL  required restore/object-owner connection
+#   MERLON_MIGRATION_DATABASE_URL  restore/object-owner connection, as a URL
 #   MERLON_APP_ROLE                 serving role to re-grant (default merlon_app)
+#
+# The connection may instead be supplied through libpq's own variables
+# (PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD, PGSERVICE, or ~/.pgpass). A URL
+# is passed to psql and pg_restore as a command-line argument, where `ps` and
+# /proc/<pid>/cmdline expose its password to every co-resident process for the
+# duration of the restore.
 
+# Print the header comment block. Matches backup.sh rather than using a fixed
+# line range, which silently truncated --help whenever the header grew.
 usage() {
-  sed -n '3,23p' "$0" | sed 's/^# \{0,1\}//'
+  awk '
+    /^# / {
+      printing = 1
+      sub(/^# ?/, "")
+      print
+      next
+    }
+    /^#$/ {
+      if (printing) print ""
+      next
+    }
+    printing { exit }
+  ' "$0"
 }
 
 force=false
@@ -63,8 +83,21 @@ if [[ ! -f $dump_file ]]; then
   exit 1
 fi
 
-if [[ -z ${MERLON_MIGRATION_DATABASE_URL:-} ]]; then
-  echo "MERLON_MIGRATION_DATABASE_URL is required" >&2
+# Either form of connection reaches every client the same way, as an argument
+# array. When libpq's own variables are in use the array is empty and libpq
+# reads them itself, rather than this script reassembling a DSN it would then
+# have to put back on the command line -- which is the exposure being avoided.
+conn_args=()
+if [[ -n ${MERLON_MIGRATION_DATABASE_URL:-} ]]; then
+  conn_args=(--dbname "$MERLON_MIGRATION_DATABASE_URL")
+elif [[ -z ${PGDATABASE:-}${PGSERVICE:-}${PGHOST:-} ]]; then
+  cat >&2 <<'EOF'
+MERLON_MIGRATION_DATABASE_URL is required, or a libpq connection environment.
+
+Set MERLON_MIGRATION_DATABASE_URL to the restore/object-owner connection, or
+set PGDATABASE (with PGHOST/PGPORT/PGUSER/PGPASSWORD as needed) or PGSERVICE.
+The libpq variables keep the password out of the process table.
+EOF
   exit 1
 fi
 app_role=${MERLON_APP_ROLE:-merlon_app}
@@ -181,14 +214,14 @@ fi
 # connection string. libpq accepts URI, keyword/value, and service-file DSNs;
 # echoing any of them after ad-hoc substitution risks leaking a restore-role
 # password in query parameters or keyword values.
-target_identity=$(psql --dbname="$MERLON_MIGRATION_DATABASE_URL" \
+target_identity=$(psql "${conn_args[@]}" \
   --no-psqlrc --tuples-only --no-align --set ON_ERROR_STOP=1 \
   --command "SELECT current_user || '@' ||
     COALESCE(inet_server_addr()::text, 'local') || ':' ||
     COALESCE(inet_server_port()::text, 'local') || '/' ||
     current_database()")
 
-target_freshness=$(psql --dbname="$MERLON_MIGRATION_DATABASE_URL" \
+target_freshness=$(psql "${conn_args[@]}" \
   --no-psqlrc --tuples-only --no-align --set ON_ERROR_STOP=1 \
   --command "SELECT CASE WHEN
       EXISTS (
@@ -231,7 +264,7 @@ if [[ $target_freshness != fresh ]]; then
   exit 1
 fi
 
-schema_access=$(psql --dbname="$MERLON_MIGRATION_DATABASE_URL" \
+schema_access=$(psql "${conn_args[@]}" \
   --no-psqlrc --tuples-only --no-align --set ON_ERROR_STOP=1 \
   --command "SELECT CASE WHEN
       has_schema_privilege(current_user, 'public', 'CREATE')
@@ -266,7 +299,7 @@ fi
 # :'app_role' only when reading a file or standard input. Interpolation is what
 # keeps a role name containing quotes or semicolons from being pasted into the
 # statement, so substituting it into a --command string is not an option.
-app_role_ready=$(psql --dbname="$MERLON_MIGRATION_DATABASE_URL" \
+app_role_ready=$(psql "${conn_args[@]}" \
   --no-psqlrc --tuples-only --no-align --set ON_ERROR_STOP=1 \
   --set "app_role=$app_role" <<'SQL'
 WITH app AS (
@@ -337,10 +370,10 @@ fi
 
 echo "Restoring..."
 pg_restore --no-owner --no-privileges --single-transaction --exit-on-error \
-  --dbname "$MERLON_MIGRATION_DATABASE_URL" "$dump_file"
+  "${conn_args[@]}" "$dump_file"
 
 echo "Reapplying serving-role grants and audit hardening..."
-psql --dbname="$MERLON_MIGRATION_DATABASE_URL" \
+psql "${conn_args[@]}" \
   --no-psqlrc --set ON_ERROR_STOP=1 \
   --set "MERLON_APP_ROLE=$app_role" \
   --file "$role_grants_file"
