@@ -70,7 +70,15 @@ jobs:
           # Release notes come from CHANGELOG.md rather than from commit
           # subjects: it makes the changelog load-bearing, so a release cannot
           # be cut without one and it cannot silently drift from what shipped.
-          # scripts/changelog.mjs exits non-zero when the tag has no section.
+          #
+          # A production tag must have its own "## [X.Y.Z]" section and
+          # scripts/changelog.mjs exits non-zero without one. A pre-release tag
+          # resolves to the section for the release it is a candidate for, and
+          # failing that to "## [Unreleased]" -- Keep a Changelog has no
+          # per-pre-release heading, so demanding "## [X.Y.Z-rc.N]" would make
+          # this channel impossible to use. The section still has to be
+          # non-empty on both channels. The log line above the notes records
+          # which section was used.
           node scripts/changelog.mjs "$GITHUB_REF_NAME" > release-notes.md
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0

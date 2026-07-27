@@ -36,6 +36,7 @@ test-website: ## Run documentation generator script tests
 
 test-scripts: ## Run tests for the reference scripts (standard library only)
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
+	@node --test scripts/*.test.mjs
 
 test-integration: ## Apply migrations twice and run all Go tests against PostgreSQL
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL:-$${MERLON_DATABASE_URL:-}}" || (echo "MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required"; exit 1)

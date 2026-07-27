@@ -38,6 +38,14 @@ assessment to make against their own regulatory obligations. Nothing below is
 waived for a production release because a pre-release of the same code went out
 first.
 
+Release notes come from `CHANGELOG.md` on both channels. A production tag needs
+its own `## [X.Y.Z]` section and the workflow refuses to publish without one. A
+pre-release tag needs no section of its own — Keep a Changelog has no
+per-pre-release heading — so it publishes the section for the release it is a
+candidate for, or `## [Unreleased]` when that section does not exist yet. The
+workflow log records which section was used. The section still has to be
+non-empty either way.
+
 ## Governance and People
 
 - [ ] A named backup maintainer is listed in `MAINTAINERS.md` and has completed
@@ -83,6 +91,8 @@ first.
 
 - [ ] The release version is strict SemVer and uses an annotated, protected tag
   reachable from `main`. The tag message links the release issue and approval.
+- [ ] `CHANGELOG.md` describes what this tag ships. Confirm which section the
+  workflow will publish with `node scripts/changelog.mjs <tag>` before tagging.
 - [ ] The release workflow published the container by immutable digest; no
   mutable `latest` tag is treated as release identity.
 - [ ] `release-manifest.json`, `SHA256SUMS`, and the CycloneDX image SBOM are

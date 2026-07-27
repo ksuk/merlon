@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Release notes for each tagged version are generated from the corresponding
-section below, so every release must have one.
+section below, so every release must have one. Pre-release tags
+(`vX.Y.Z-rc.N` and friends) do not need a section of their own: they publish
+the section for the release they are a candidate for, or `[Unreleased]`.
 
 ## [Unreleased]
 
