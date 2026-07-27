@@ -27,6 +27,14 @@ as soon as any user row exists, so it cannot be replayed to mint a second
 administrator later. `GET /healthz/ready` reports unhealthy until setup is
 complete, making the window visible rather than silent.
 
+Setup state is the only thing the probes disclose. `/healthz`, `/healthz/live`
+and `/healthz/ready` are unauthenticated by necessity — an orchestrator cannot
+hold a credential to check whether the process is ready to hold one — so they
+name which dependency is failing (`{"postgres":"error"}`) and nothing more.
+Dependency error text is written to the server log instead: a PostgreSQL
+connection error names the database host, port, user and database, and engine
+errors name configuration file paths.
+
 **What you must do.** Do not expose a fresh instance to an untrusted network
 before completing setup. The exposure window is between first start and first
 administrator, and it is yours to keep short.
