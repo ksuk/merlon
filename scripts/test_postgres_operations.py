@@ -16,6 +16,17 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 RUN_INTEGRATION = os.environ.get("MERLON_RUN_POSTGRES_OPERATIONS_INTEGRATION") == "1"
 
+# Set by the CI job that exists to exercise these scripts. Skipping is the
+# right outcome for a developer without Docker; it is never the right outcome
+# for that job. Without this, a runner image without Docker, a self-hosted
+# runner, or a typo in the opt-in variable above turns the whole backup and
+# restore surface green while testing nothing -- "Ran 0 tests ... OK", exit 0.
+# Same principle check-env-vars.sh and check-openapi-coverage.py apply to
+# themselves: finding zero of something is an error, not a pass.
+REQUIRE_INTEGRATION = (
+    os.environ.get("MERLON_REQUIRE_POSTGRES_OPERATIONS_INTEGRATION") == "1"
+)
+
 
 def postgres_image() -> str:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
@@ -26,7 +37,7 @@ def postgres_image() -> str:
 
 
 @unittest.skipUnless(
-    RUN_INTEGRATION,
+    RUN_INTEGRATION or REQUIRE_INTEGRATION,
     "set MERLON_RUN_POSTGRES_OPERATIONS_INTEGRATION=1 to run Docker tests",
 )
 class PostgresOperationsIntegrationTest(unittest.TestCase):
@@ -35,6 +46,11 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if shutil.which("docker") is None:
+            if REQUIRE_INTEGRATION:
+                raise RuntimeError(
+                    "MERLON_REQUIRE_POSTGRES_OPERATIONS_INTEGRATION=1 but docker "
+                    "is not installed; these tests must run rather than skip"
+                )
             raise unittest.SkipTest("docker is not installed")
         cls.container = f"merlon-operations-test-{uuid.uuid4().hex[:12]}"
         result = subprocess.run(
@@ -864,6 +880,32 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
             "inspect exact metacharacter role grants",
         ).stdout.strip()
         self.assertEqual(state, "t|f|f|t|f")
+
+
+class IntegrationSuiteFloorTest(unittest.TestCase):
+    """Runs unconditionally, including without Docker.
+
+    Everything above is opt-in, which means this module's exit status alone
+    cannot tell "all the integration tests passed" from "there were none".
+    This class is the floor: it cannot be skipped, so deleting or renaming the
+    integration tests fails here instead of quietly reporting success.
+    """
+
+    def test_the_integration_suite_still_has_tests(self) -> None:
+        names = unittest.defaultTestLoader.getTestCaseNames(
+            PostgresOperationsIntegrationTest
+        )
+        self.assertGreaterEqual(len(names), 5, names)
+
+    def test_requiring_integration_also_enables_it(self) -> None:
+        # REQUIRE implies RUN: a CI job that sets only the require flag must
+        # still execute the suite rather than skip it and pass the floor.
+        if not REQUIRE_INTEGRATION:
+            self.skipTest("MERLON_REQUIRE_POSTGRES_OPERATIONS_INTEGRATION is not set")
+        self.assertFalse(
+            getattr(PostgresOperationsIntegrationTest, "__unittest_skip__", False),
+            "integration tests are marked skipped while they are required",
+        )
 
 
 if __name__ == "__main__":

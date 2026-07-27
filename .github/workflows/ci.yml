@@ -94,9 +94,14 @@ jobs:
         with:
           go-version: '1.26.5'
       - run: make test-integration
+      # MERLON_REQUIRE_... is what stops this step from passing vacuously: with
+      # only the RUN flag, a runner without Docker or a typo in the variable
+      # name skips every test and still exits 0, turning the entire backup and
+      # restore surface green while exercising nothing.
       - name: Exercise PostgreSQL operational scripts
         env:
           MERLON_RUN_POSTGRES_OPERATIONS_INTEGRATION: '1'
+          MERLON_REQUIRE_POSTGRES_OPERATIONS_INTEGRATION: '1'
         run: python3 -m unittest -v scripts.test_postgres_operations
 
   release-dry-run:
