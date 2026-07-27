@@ -411,6 +411,220 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("large objects are not supported", refused.stderr)
 
+    def provision_managed_target(self, label: str) -> tuple[str, str]:
+        """Create a fresh database whose public schema a migration role manages.
+
+        restore.sh refuses a target the restore role does not manage, so this
+        is the minimum setup any restore test needs before it can exercise
+        anything past that check.
+        """
+        database = self.create_database(label)
+        suffix = uuid.uuid4().hex[:12]
+        role = f"merlon_migrate_{suffix}"
+        password = f"Migrate_{suffix}"
+        self.require_ok(
+            self.psql(
+                "postgres",
+                f"CREATE ROLE \"{role}\" LOGIN PASSWORD '{password}'",
+            ),
+            "create migration role",
+        )
+        self.require_ok(
+            self.psql(
+                "postgres",
+                f'GRANT CREATE ON DATABASE "{database}" TO "{role}"',
+            ),
+            "temporarily allow schema ownership transfer",
+        )
+        self.require_ok(
+            self.psql(database, f'ALTER SCHEMA public OWNER TO "{role}"'),
+            "transfer public schema ownership to migration role",
+        )
+        self.require_ok(
+            self.psql(
+                "postgres",
+                f'REVOKE CREATE ON DATABASE "{database}" FROM "{role}"',
+            ),
+            "remove temporary database-level create privilege",
+        )
+        dsn = (
+            f"postgresql://{role}:{password}@127.0.0.1:5432/"
+            f"{database}?sslmode=disable"
+        )
+        return database, dsn
+
+    def assert_target_untouched(self, database: str, operation: str) -> None:
+        untouched = self.require_ok(
+            self.psql(database, "SELECT to_regclass('public.customers') IS NULL"),
+            operation,
+        ).stdout.strip()
+        self.assertEqual(untouched, "t")
+
+    def test_restore_refuses_unusable_serving_role_before_pg_restore(self) -> None:
+        # audit-hardening.sql runs after pg_restore and hard-fails on serving-role
+        # preconditions that have nothing to do with the dump. Without this
+        # preflight the failure lands on a database that is already restored,
+        # has no serving-role grants, and never printed the post-restore
+        # checklist -- the worst possible moment to discover it.
+        source = self.create_database("merlon_role_source")
+        self.require_ok(
+            self.psql(
+                source,
+                """
+                CREATE TABLE customers (id bigint PRIMARY KEY, value text);
+                INSERT INTO customers VALUES (7, 'preflight-sentinel');
+                """,
+            ),
+            "create source schema for the serving-role preflight",
+        )
+        suffix = uuid.uuid4().hex[:12]
+        dump = f"/tmp/merlon-db-{suffix}.dump"
+        self.require_ok(
+            self.docker_exec(
+                [
+                    "pg_dump",
+                    "--username",
+                    "postgres",
+                    "--format=custom",
+                    "--no-owner",
+                    "--no-privileges",
+                    f"--file={dump}",
+                    source,
+                ]
+            ),
+            "create archive for the serving-role preflight",
+        )
+
+        database, dsn = self.provision_managed_target("merlon_role_target")
+        absent = self.docker_exec(
+            ["bash", "/repo/scripts/restore.sh", dump],
+            input_text="restore\n",
+            env={
+                "MERLON_MIGRATION_DATABASE_URL": dsn,
+                "MERLON_APP_ROLE": f"merlon_absent_{suffix}",
+            },
+        )
+        self.assertNotEqual(absent.returncode, 0)
+        self.assertIn("does not exist", absent.stderr)
+        self.assert_target_untouched(
+            database, "verify the missing-role rejection preceded pg_restore"
+        )
+
+        app_role = f"merlon_app_{suffix}"
+        self.require_ok(
+            self.psql("postgres", f'CREATE ROLE "{app_role}" LOGIN'),
+            "create serving role holding a forbidden privilege",
+        )
+        self.require_ok(
+            self.psql(
+                "postgres",
+                f'GRANT CREATE ON DATABASE "{database}" TO "{app_role}"',
+            ),
+            "grant the forbidden database CREATE",
+        )
+        forbidden = self.docker_exec(
+            ["bash", "/repo/scripts/restore.sh", dump],
+            input_text="restore\n",
+            env={
+                "MERLON_MIGRATION_DATABASE_URL": dsn,
+                "MERLON_APP_ROLE": app_role,
+            },
+        )
+        self.assertNotEqual(forbidden.returncode, 0)
+        self.assertIn("forbidden CREATE", forbidden.stderr)
+        self.assert_target_untouched(
+            database, "verify the database-CREATE rejection preceded pg_restore"
+        )
+
+    def test_restore_verifies_the_manifest_checksum_and_finds_siblings(self) -> None:
+        # The backup lives under a directory whose own name starts with
+        # "merlon-db-". Deriving the manifest and key-ring names by substituting
+        # on the whole path rewrites that directory and leaves the filename
+        # alone, so this layout is what tells a correct derivation from one that
+        # reports a key ring missing while it sits right next to the dump.
+        source = self.create_database("merlon_manifest_source")
+        self.require_ok(
+            self.psql(
+                source,
+                """
+                CREATE TABLE customers (id bigint PRIMARY KEY, value text);
+                INSERT INTO customers VALUES (11, 'manifest-sentinel');
+                """,
+            ),
+            "create source schema for the manifest check",
+        )
+        suffix = uuid.uuid4().hex[:12]
+        out_dir = f"/tmp/merlon-db-archive-{suffix}"
+        self.require_ok(
+            self.docker_exec(
+                ["bash", "/repo/scripts/backup.sh", out_dir],
+                env={
+                    "MERLON_BACKUP_DATABASE_URL": (
+                        "postgresql://postgres:operations-test-password@"
+                        f"127.0.0.1:5432/{source}?sslmode=disable"
+                    ),
+                    "MERLON_ENCRYPTION_KEY_RING": "v1:manifest-test-key",
+                },
+            ),
+            "produce a real backup set for the manifest check",
+        )
+        artifacts = self.require_ok(
+            self.docker_exec(["find", out_dir, "-maxdepth", "1", "-type", "f"]),
+            "find backup artifacts",
+        ).stdout.split()
+        dump = next(
+            path
+            for path in artifacts
+            if Path(path).name.startswith("merlon-db-") and path.endswith(".dump")
+        )
+
+        database, dsn = self.provision_managed_target("merlon_manifest_target")
+        app_role = f"merlon_app_{suffix}"
+        self.require_ok(
+            self.psql("postgres", f'CREATE ROLE "{app_role}" LOGIN'),
+            "create serving role for the manifest check",
+        )
+        restored = self.docker_exec(
+            ["bash", "/repo/scripts/restore.sh", dump],
+            input_text="restore\n",
+            env={
+                "MERLON_MIGRATION_DATABASE_URL": dsn,
+                "MERLON_APP_ROLE": app_role,
+            },
+        )
+        self.require_ok(restored, "restore a verified backup set")
+        self.assertIn("Checksum matches.", restored.stdout)
+        self.assertIn("Matching key ring found", restored.stdout)
+        self.assertNotIn("no matching key ring", restored.stderr)
+        value = self.require_ok(
+            self.psql(database, "SELECT value FROM customers WHERE id = 11"),
+            "verify the restored row",
+        ).stdout.strip()
+        self.assertEqual(value, "manifest-sentinel")
+
+        # pg_restore accepts any structurally valid custom archive, so a dump
+        # that no longer matches its manifest has to be caught here or not at all.
+        self.require_ok(
+            self.docker_exec(["bash", "-c", f"printf 'corrupt' >> {dump}"]),
+            "corrupt the dump after the manifest was written",
+        )
+        corrupt_target, corrupt_dsn = self.provision_managed_target(
+            "merlon_manifest_corrupt"
+        )
+        refused = self.docker_exec(
+            ["bash", "/repo/scripts/restore.sh", dump],
+            input_text="restore\n",
+            env={
+                "MERLON_MIGRATION_DATABASE_URL": corrupt_dsn,
+                "MERLON_APP_ROLE": app_role,
+            },
+        )
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("checksum mismatch", refused.stderr)
+        self.assert_target_untouched(
+            corrupt_target, "verify the checksum rejection preceded pg_restore"
+        )
+
     def test_restore_rejects_nonfresh_target_and_restores_fresh_target(self) -> None:
         source = self.create_database("merlon_source")
         nonfresh = self.create_database("merlon_nonfresh")

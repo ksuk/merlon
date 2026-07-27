@@ -183,8 +183,14 @@ archive error cannot commit a partially restored set of objects. A failed
 restore leaves the fresh target without archive objects. Keep the API stopped,
 correct the archive or permissions, and repeat against a fresh target.
 
-The serving role named by `MERLON_APP_ROLE` must already exist. After
-`pg_restore`, the script applies the idempotent serving-role procedure in
+The serving role named by `MERLON_APP_ROLE` must already exist, must not be a
+superuser, must not hold `CREATE` on the target database, and must either hold
+`CONNECT` or the restore role must be able to grant it. The script checks all
+four before prompting, because `audit-hardening.sql` enforces them *after*
+`pg_restore` — a failure there would leave the database restored, without
+serving-role grants, and with the post-restore steps below never printed.
+
+After `pg_restore`, the script applies the idempotent serving-role procedure in
 `audit-hardening.sql`: ordinary application tables receive CRUD, audit and
 rule-activation evidence remains `SELECT`/`INSERT` only, the audit sequence is
 usable, and schema DDL and the migration ledger remain owner-only. The archive
@@ -206,9 +212,17 @@ type `restore` to proceed. The script refuses to run against
 `RESTORE_FORCE=true` into that flag. The common catastrophic mistake is
 restoring into the wrong database, not restoring the wrong backup.
 
-It also looks for the key-ring file matching the dump's timestamp and warns if
-it is absent. That is the last cheap moment to notice: after the restore the
-database looks healthy and the customer attributes silently do not.
+It also looks for the manifest and key-ring files matching the dump's
+timestamp. When the manifest is present, the dump is checked against the
+`sha256` it records and a mismatch stops the restore: `pg_restore` accepts any
+structurally valid custom archive, so a truncated copy or the wrong file out of
+a directory of similar names would otherwise be restored without a word. A
+missing manifest is only a warning — dumps taken before manifests existed, and
+dumps moved on their own, are still restorable.
+
+A missing key ring is likewise a warning. That is the last cheap moment to
+notice: after the restore the database looks healthy and the customer
+attributes silently do not.
 
 ### After restoring
 

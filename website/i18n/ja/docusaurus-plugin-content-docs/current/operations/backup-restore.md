@@ -116,13 +116,17 @@ MERLON_ENV=production make restore \
 
 `pg_restore` は `--single-transaction` と `--exit-on-error` で実行するため、archive error で一部だけ復元された object が commit されることはない。失敗した restore では、fresh target に archive object は残らない。API を停止したまま archive または権限を修正し、fresh target に対して再実行すること。
 
-`MERLON_APP_ROLE` で指定する serving role は事前に存在していなければならない。`pg_restore` の後、スクリプトは `audit-hardening.sql` の冪等な serving-role 手順を適用する。通常のアプリケーション表には CRUD、監査・ルール有効化の証跡には `SELECT`／`INSERT` のみを付与し、監査 sequence は利用可能にする一方、schema DDL と migration ledger は owner 専用のままにする。archive は意図的に ACL を含まないため、この手順は過去に `--no-privileges` で作成されたバックアップの ACL も再構成する。
+`MERLON_APP_ROLE` で指定する serving role は、事前に存在し、superuser ではなく、対象データベースへの `CREATE` を持たず、`CONNECT` を持つか restore role がそれを付与できる状態でなければならない。スクリプトはこの4条件を確認プロンプトより前に検証する。`audit-hardening.sql` がこれらを強制するのは `pg_restore` の**後**であり、そこで失敗すると、データベースは復元済み・serving-role 権限は未付与・後述の復元後手順は未表示という状態で止まってしまうためである。
+
+`pg_restore` の後、スクリプトは `audit-hardening.sql` の冪等な serving-role 手順を適用する。通常のアプリケーション表には CRUD、監査・ルール有効化の証跡には `SELECT`／`INSERT` のみを付与し、監査 sequence は利用可能にする一方、schema DDL と migration ledger は owner 専用のままにする。archive は意図的に ACL を含まないため、この手順は過去に `--no-privileges` で作成されたバックアップの ACL も再構成する。
 
 自動的に再構成されるのは `MERLON_APP_ROLE` で指定したロールだけである。専用 backup role の既存 object grant／default privilege、および組織固有の auditor、read-only、reporting、integration role の ACL は archive にもこの手順にも含まれない。readiness の確認前に、管理された定義からすべてを別途再適用して検証すること。
 
 確認を求める前に、スクリプトは `psql` で接続し、PostgreSQL が報告する対象ユーザー、サーバーアドレス、ポート、データベース名だけを表示する。libpq は単一の URI 置換ではパスワードを安全に伏せられない形式も受け付けるため、接続文字列そのものは一切表示しない。この接続先を確認してから、続行に `restore` と入力すること。また `MERLON_ENV=production` に対しては `--force` なしで実行を拒否し、Make ターゲットは `RESTORE_FORCE=true` だけをこのフラグへ変換する。よくある致命的な誤りは、誤ったバックアップを復元することではなく、誤ったデータベースへ復元することだからである。
 
-スクリプトはダンプのタイムスタンプに対応する鍵リングファイルを探し、無ければ警告する。それが気づくための最後の安価な機会である。復元後はデータベースが正常に見え、顧客属性だけが静かに読めない。
+スクリプトはダンプのタイムスタンプに対応するマニフェストと鍵リングのファイルを探す。マニフェストがある場合、そこに記録された `sha256` とダンプを照合し、不一致なら復元を中止する。`pg_restore` は構造的に妥当な custom archive であれば何でも受理するため、途中で切れたコピーや、似た名前が並ぶディレクトリから取り違えたファイルを、このチェックが無ければ何も言わずに復元してしまう。マニフェストが無い場合は警告のみとする。マニフェスト導入前に取得したバックアップや、ダンプ単体で移送されたものも復元可能である必要があるためである。
+
+鍵リングが無い場合も同様に警告する。それが気づくための最後の安価な機会である。復元後はデータベースが正常に見え、顧客属性だけが静かに読めない。
 
 ### リストア後の手順
 
