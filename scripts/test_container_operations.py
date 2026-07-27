@@ -255,6 +255,7 @@ class RestoreTest(unittest.TestCase):
         schema_access: bool = True,
         psql_grants_exit: int = 0,
         app_role: str | None = None,
+        app_role_ready: str = "ok",
     ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -288,6 +289,14 @@ class RestoreTest(unittest.TestCase):
                 "    printf '%s\\n' psql-schema-access >> \"$FAKE_EVENTS_FILE\"\n"
                 "    printf '%s\\n' \"$FAKE_SCHEMA_ACCESS\"\n"
                 "    ;;\n"
+                # The serving-role preflight sends its SQL on stdin (psql only
+                # interpolates :'app_role' from a file or stdin), so it is
+                # matched on the --set that carries the role name rather than
+                # on the query text like the checks above.
+                "  *'--set app_role='*)\n"
+                "    printf '%s\\n' psql-app-role >> \"$FAKE_EVENTS_FILE\"\n"
+                "    printf '%s\\n' \"$FAKE_APP_ROLE_READY\"\n"
+                "    ;;\n"
                 "  *)\n"
                 "    printf '%s\\n' \"$@\" > \"$FAKE_PSQL_GRANTS_ARGS_FILE\"\n"
                 "    printf '%s\\n' psql-grants >> \"$FAKE_EVENTS_FILE\"\n"
@@ -305,6 +314,7 @@ class RestoreTest(unittest.TestCase):
                 "FAKE_PG_RESTORE_EXIT": str(pg_restore_exit),
                 "FAKE_FRESH_TARGET": "fresh" if fresh_target else "not-fresh",
                 "FAKE_SCHEMA_ACCESS": "managed" if schema_access else "unmanaged",
+                "FAKE_APP_ROLE_READY": app_role_ready,
                 "FAKE_PSQL_GRANTS_EXIT": str(psql_grants_exit),
             }
             env.pop("MERLON_DATABASE_URL", None)
@@ -369,6 +379,7 @@ class RestoreTest(unittest.TestCase):
                 "psql-identity",
                 "psql-freshness",
                 "psql-schema-access",
+                "psql-app-role",
                 "pg_restore",
                 "psql-grants",
             ],
@@ -431,6 +442,7 @@ class RestoreTest(unittest.TestCase):
                 "psql-identity",
                 "psql-freshness",
                 "psql-schema-access",
+                "psql-app-role",
                 "pg_restore",
             ],
         )
@@ -460,6 +472,38 @@ class RestoreTest(unittest.TestCase):
         )
         self.assertEqual(args, [])
 
+    def test_restore_rejects_unusable_serving_role_before_pg_restore(self):
+        # audit-hardening.sql raises on these after pg_restore has already run.
+        # Reaching pg_restore for any of them leaves a restored database with
+        # no serving-role grants and no printed recovery steps.
+        cases = (
+            ("missing", "does not exist"),
+            ("superuser", "must not be a superuser"),
+            ("database-create", "forbidden CREATE"),
+            ("cannot-grant-connect", "lacks CONNECT"),
+            # An unrecognized verdict must fail closed rather than fall through.
+            ("", "could not verify"),
+        )
+        for verdict, message in cases:
+            with self.subTest(verdict=verdict or "(empty)"):
+                result, args = self.run_restore(
+                    migration_url="postgres://merlon_migrate:owner-secret@db/merlon",
+                    app_url=None,
+                    app_role_ready=verdict,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(
+                    result.events,
+                    [
+                        "psql-identity",
+                        "psql-freshness",
+                        "psql-schema-access",
+                        "psql-app-role",
+                    ],
+                )
+                self.assertEqual(args, [])
+
     def test_restore_propagates_serving_role_grant_failure(self):
         result, _ = self.run_restore(
             migration_url="postgres://merlon_migrate:owner-secret@db/merlon",
@@ -473,6 +517,7 @@ class RestoreTest(unittest.TestCase):
                 "psql-identity",
                 "psql-freshness",
                 "psql-schema-access",
+                "psql-app-role",
                 "pg_restore",
                 "psql-grants",
             ],
