@@ -98,6 +98,16 @@ if ! command -v psql >/dev/null 2>&1; then
   echo "script inside a container that has them." >&2
   exit 1
 fi
+# Checked here rather than at the point of use. The checksum is taken after the
+# dump completes, and failing there costs the full dump: the EXIT trap removes
+# the temporary file, so the run ends with no backup, no manifest, and an error
+# naming neither the database nor the real cause. macOS has shasum -a 256
+# instead, which is why this cannot be assumed present.
+if ! command -v sha256sum >/dev/null 2>&1; then
+  echo "sha256sum not found. Install coreutils, or run this script inside a" >&2
+  echo "container that has it." >&2
+  exit 1
+fi
 
 # Merlon does not support PostgreSQL large objects in this logical-backup
 # contract. Reject that object model explicitly before pg_dump can fail late
@@ -134,8 +144,25 @@ EOF
 fi
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-mkdir -p "$out_dir"
-chmod 700 "$out_dir"
+
+# `umask 077` above already creates new directories as 700, so chmod only ever
+# affects a directory that already existed -- which is exactly the documented
+# `make backup BACKUP_DIR=/mnt/backups` case. Silently revoking group and other
+# access on an existing shared mount, an NFS export an offsite agent reads as
+# another user, or a home directory breaks the consumer with no message and no
+# way to connect the breakage to this job. Report it instead and let the
+# operator decide.
+if [[ -d $out_dir ]]; then
+  existing_mode=$(stat -c '%a' "$out_dir" 2>/dev/null || stat -f '%Lp' "$out_dir" 2>/dev/null || echo "")
+  if [[ -n $existing_mode && $((8#$existing_mode & 8#077)) -ne 0 ]]; then
+    echo "warning: $out_dir is mode $existing_mode; group or other can reach the" >&2
+    echo "         backup. The files themselves are written 0600, but the" >&2
+    echo "         directory permissions are left as you set them." >&2
+  fi
+else
+  mkdir -p "$out_dir"
+  chmod 700 "$out_dir"
+fi
 
 db_file="$out_dir/merlon-db-$timestamp.dump"
 keys_file="$out_dir/merlon-keyring-$timestamp.env"
@@ -171,10 +198,15 @@ fi
 
 db_sha=$(sha256sum "$db_temp" | cut -d ' ' -f 1)
 
+# created_at is derived from $timestamp rather than read from the clock again:
+# a second `date -u` here straddles pg_dump, so it would disagree with the
+# timestamp in the filenames this manifest describes by the length of the dump.
+created_at="${timestamp:0:4}-${timestamp:4:2}-${timestamp:6:2}T${timestamp:9:2}:${timestamp:11:2}:${timestamp:13:2}Z"
+
 cat > "$manifest_temp" <<EOF
 {
   "schema_version": 1,
-  "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "created_at": "$created_at",
   "database": {
     "file": "$(basename "$db_file")",
     "sha256": "$db_sha",

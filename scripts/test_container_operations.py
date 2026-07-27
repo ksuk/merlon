@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -144,7 +146,9 @@ class BackupTest(unittest.TestCase):
         app_url: str | None,
         large_object_count: int = 0,
         pg_dump_exit: int = 0,
+        pg_dump_delay: str = "0",
         libpq_env: dict[str, str] | None = None,
+        out_dir: Path | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -156,6 +160,7 @@ class BackupTest(unittest.TestCase):
                 "for arg in \"$@\"; do\n"
                 "  case \"$arg\" in --file=*) printf partial > \"${arg#--file=}\" ;; esac\n"
                 "done\n"
+                "[ \"$FAKE_PG_DUMP_DELAY\" = 0 ] || sleep \"$FAKE_PG_DUMP_DELAY\"\n"
                 "exit \"$FAKE_PG_DUMP_EXIT\"\n",
             )
             write_executable(
@@ -168,6 +173,7 @@ class BackupTest(unittest.TestCase):
                 "FAKE_ARGS_FILE": str(args_file),
                 "FAKE_LARGE_OBJECT_COUNT": str(large_object_count),
                 "FAKE_PG_DUMP_EXIT": str(pg_dump_exit),
+                "FAKE_PG_DUMP_DELAY": pg_dump_delay,
                 "MERLON_ENCRYPTION_KEY_RING": "v1:test-backup-key",
             }
             env.pop("MERLON_DATABASE_URL", None)
@@ -181,8 +187,9 @@ class BackupTest(unittest.TestCase):
             if app_url is not None:
                 env["MERLON_DATABASE_URL"] = app_url
             env.update(libpq_env or {})
+            output_dir = out_dir if out_dir is not None else tmp_path / "output"
             result = subprocess.run(
-                ["bash", str(BACKUP), str(tmp_path / "output")],
+                ["bash", str(BACKUP), str(output_dir)],
                 env=env,
                 text=True,
                 capture_output=True,
@@ -193,11 +200,19 @@ class BackupTest(unittest.TestCase):
                 if args_file.exists()
                 else []
             )
-            output_dir = tmp_path / "output"
             result.output_files = (
                 sorted(path.name for path in output_dir.iterdir())
                 if output_dir.exists()
                 else []
+            )
+            result.output_contents = (
+                {
+                    path.name: path.read_text(encoding="utf-8")
+                    for path in output_dir.iterdir()
+                    if path.suffix == ".json"
+                }
+                if output_dir.exists()
+                else {}
             )
             result.output_modes = (
                 {
@@ -223,6 +238,87 @@ class BackupTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("MERLON_BACKUP_DATABASE_URL is required", result.stderr)
         self.assertEqual(args, [])
+
+    def test_backup_requires_sha256sum_before_dumping(self):
+        # The checksum is taken after pg_dump completes and the EXIT trap
+        # deletes the temporary dump on failure, so a host without sha256sum
+        # (macOS ships shasum -a 256) would pay the full dump cost and end with
+        # nothing. Nothing external runs before this check, so a PATH holding
+        # only the two stubs is enough to prove it fires first.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            args_file = tmp_path / "pg-dump-args"
+            for name in ("pg_dump", "psql"):
+                write_executable(
+                    tmp_path / name,
+                    "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FAKE_ARGS_FILE\"\n",
+                )
+            env = {
+                "PATH": str(tmp_path),
+                "FAKE_ARGS_FILE": str(args_file),
+                "MERLON_BACKUP_DATABASE_URL": "postgres://merlon_backup:s@db/merlon",
+                "MERLON_ENCRYPTION_KEY_RING": "v1:test-backup-key",
+            }
+            bash = shutil.which("bash")
+            self.assertIsNotNone(bash)
+            result = subprocess.run(
+                [bash, str(BACKUP), str(tmp_path / "output")],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("sha256sum not found", result.stderr)
+            self.assertFalse(args_file.exists(), "pg_dump ran before the check")
+
+    def test_backup_leaves_an_existing_output_directory_mode_alone(self):
+        # umask 077 already creates new directories as 700, so an unconditional
+        # chmod only ever changes one the operator already had -- the
+        # documented BACKUP_DIR=/mnt/backups case. Silently revoking group
+        # access there breaks whatever else reads that mount.
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "shared"
+            out_dir.mkdir(mode=0o755)
+            out_dir.chmod(0o755)
+            result, _ = self.run_backup(
+                backup_url="postgres://merlon_backup:backup-secret@db/merlon",
+                migration_url=None,
+                app_url=None,
+                out_dir=out_dir,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(stat.S_IMODE(out_dir.stat().st_mode), 0o755)
+            self.assertIn("is mode 755", result.stderr)
+            # The artifacts themselves stay private regardless.
+            for path in out_dir.iterdir():
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0, path)
+
+    def test_backup_manifest_created_at_matches_the_artifact_timestamp(self):
+        # Reading the clock a second time straddles pg_dump, so created_at
+        # would disagree with the filenames the manifest describes by however
+        # long the dump took.
+        # The dump has to take longer than the clock's one-second resolution
+        # or the two reads land in the same second and the drift is invisible.
+        result, _ = self.run_backup(
+            backup_url="postgres://merlon_backup:backup-secret@db/merlon",
+            migration_url=None,
+            app_url=None,
+            pg_dump_delay="1.2",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest_name = next(
+            name for name in result.output_files if name.endswith(".json")
+        )
+        stamp = manifest_name.removeprefix("merlon-backup-").removesuffix(".json")
+        manifest = json.loads(result.output_contents[manifest_name])
+        self.assertEqual(manifest["schema_version"], 1)
+        self.assertEqual(
+            manifest["created_at"],
+            f"{stamp[0:4]}-{stamp[4:6]}-{stamp[6:8]}T"
+            f"{stamp[9:11]}:{stamp[11:13]}:{stamp[13:15]}Z",
+        )
+        self.assertEqual(manifest["database"]["file"], f"merlon-db-{stamp}.dump")
 
     def test_backup_accepts_a_libpq_environment_without_a_dsn_argument(self):
         # A URL reaches pg_dump as an argument, so its password sits in

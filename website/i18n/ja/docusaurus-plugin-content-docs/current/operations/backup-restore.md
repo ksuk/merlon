@@ -84,7 +84,7 @@ Merlon のこの logical backup は PostgreSQL large object を作成・サポ�
 
 `MERLON_ENCRYPTION_KEY_RING` が未設定の場合、スクリプトは**実行を拒否する**。データベースのみのバックアップを黙って生成することはしない。暗号化属性を一切保存しないデプロイに限り `--no-keys` を渡すこと。本番データベースでこれが正しいことはない。
 
-出力ディレクトリは `BACKUP_DIR` で指定する（`make backup BACKUP_DIR=/mnt/backups`）。既定は `backups/`。スクリプトはこのdirectoryをmode `0700`に強制し、dump、key-ring file、manifestをgroup／other accessなしで作成する。同じdirectory内のhidden temporary fileへ書き込み、manifestを最後に公開する。`pg_dump`が失敗した場合はtemporary dumpを削除し、final-name backupを残さない。
+出力ディレクトリは `BACKUP_DIR` で指定する（`make backup BACKUP_DIR=/mnt/backups`）。既定は `backups/`。スクリプトが新規作成したdirectoryはmode `0700`にする。既存のdirectoryの権限は設定したまま変更しない。共有マウントやNFS exportに対してgroup accessを黙って剥奪すれば、それを読む他の仕組みが壊れる上に、その原因をこのジョブに結び付ける手がかりも残らないためである。ただしgroup／otherから到達可能な場合は警告する。いずれの場合も、dump、key-ring file、manifestはgroup／other accessなしで作成される。スクリプトは同じdirectory内のhidden temporary fileへ書き込み、manifestを最後に公開する。`pg_dump`が失敗した場合はtemporary dumpを削除し、final-name backupを残さない。
 
 ### 保管
 

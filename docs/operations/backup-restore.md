@@ -124,11 +124,15 @@ the deployment genuinely stores no encrypted attributes; that is never correct
 for a production database.
 
 `BACKUP_DIR` selects the output directory (`make backup BACKUP_DIR=/mnt/backups`),
-defaulting to `backups/`. The script enforces mode `0700` on this directory and
-creates the dump, key-ring file, and manifest without group or other access.
-It writes hidden temporary files in that directory and publishes the manifest
-last; if `pg_dump` fails, the temporary dump is removed and no final-name
-backup is left behind.
+defaulting to `backups/`. A directory the script creates is made mode `0700`.
+A directory that already exists is left as you configured it — silently
+revoking group access on a shared mount or an NFS export would break whatever
+else reads it, with no message tying the breakage to this job — but the script
+warns when group or other can reach it. The dump, key-ring file, and manifest
+are always written without group or other access either way. The script writes
+hidden temporary files in that directory and publishes the manifest last; if
+`pg_dump` fails, the temporary dump is removed and no final-name backup is left
+behind.
 
 ### Storing it
 
