@@ -28,9 +28,9 @@ func BuildOpenAPISpec() map[string]any {
 			{"url": "/", "description": "This deployment"},
 		},
 		"paths": map[string]any{
-			"/healthz":                                  pathGET("Health check"),
-			"/healthz/live":                             pathGET("Liveness probe"),
-			"/healthz/ready":                            pathGET("Readiness probe"),
+			"/healthz":                                  pathProbeGET("Health check", true),
+			"/healthz/live":                             pathProbeGET("Liveness probe", false),
+			"/healthz/ready":                            pathProbeGET("Readiness probe", true),
 			"/api/v1/customers":                         pathListCreate("Customer"),
 			"/api/v1/customers/{id}":                    pathGetPut("Customer"),
 			"/api/v1/customers/{id}/score":              pathPOST("Score customer risk"),
@@ -148,6 +148,22 @@ func paginatedListResponses() map[string]any {
 func pathGET(summary string) map[string]any {
 	return map[string]any{
 		"get": map[string]any{"summary": summary, "responses": defaultResponses()},
+	}
+}
+
+func pathProbeGET(summary string, mayBeUnavailable bool) map[string]any {
+	responses := map[string]any{
+		"200": map[string]any{"description": "Healthy"},
+	}
+	if mayBeUnavailable {
+		responses["503"] = map[string]any{"description": "Service Unavailable"}
+	}
+	return map[string]any{
+		"get": map[string]any{
+			"summary":   summary,
+			"security":  []map[string]any{},
+			"responses": responses,
+		},
 	}
 }
 

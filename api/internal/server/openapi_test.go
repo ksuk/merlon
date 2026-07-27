@@ -136,15 +136,42 @@ func TestOpenAPISpecDocumentsHealthProbes(t *testing.T) {
 		t.Fatal("spec.paths missing or not an object")
 	}
 
-	for _, p := range []string{"/healthz/live", "/healthz/ready"} {
+	for _, p := range []string{"/healthz", "/healthz/live", "/healthz/ready"} {
 		pathItem, ok := paths[p].(map[string]any)
 		if !ok {
 			t.Errorf("path %q missing from openapi spec", p)
 			continue
 		}
-		if _, ok := pathItem["get"].(map[string]any); !ok {
+		get, ok := pathItem["get"].(map[string]any)
+		if !ok {
 			t.Errorf("%s get operation missing", p)
+			continue
 		}
+
+		security, ok := get["security"].([]any)
+		if !ok {
+			t.Errorf("%s get.security missing or not an array", p)
+		} else if len(security) != 0 {
+			t.Errorf("%s get.security = %v, want [] (probe must not require authentication)", p, security)
+		}
+	}
+
+	for _, p := range []string{"/healthz", "/healthz/ready"} {
+		get := paths[p].(map[string]any)["get"].(map[string]any)
+		responses, ok := get["responses"].(map[string]any)
+		if !ok {
+			t.Errorf("%s get.responses missing", p)
+			continue
+		}
+		if _, ok := responses["503"]; !ok {
+			t.Errorf("%s get.responses missing 503 Service Unavailable", p)
+		}
+	}
+
+	live := paths["/healthz/live"].(map[string]any)["get"].(map[string]any)
+	liveResponses := live["responses"].(map[string]any)
+	if _, ok := liveResponses["503"]; ok {
+		t.Error("/healthz/live documents 503, but liveness does not check dependencies")
 	}
 }
 

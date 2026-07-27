@@ -24,6 +24,7 @@ Uses only the standard library so it runs in CI without an install step.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -36,6 +37,20 @@ SPEC_FILE = REPO_ROOT / "docs" / "api" / "openapi.json"
 # The number of registered API operations currently present in the OpenAPI
 # document. This may only be raised. See the module docstring.
 BASELINE_DOCUMENTED = 44
+
+# The total number of registered API operations. Pinning this separately from
+# documented coverage makes an undocumented addition visible: without it,
+# covered would remain at BASELINE_DOCUMENTED while the missing list silently
+# grew. Any intentional surface change must update this value in review.
+BASELINE_REGISTERED = 78
+
+# SHA-256 of the normalized, sorted route sets at the baseline above. Counts
+# catch simple additions/removals; these digests also catch a same-count
+# replacement, which would otherwise let a new undocumented route trade places
+# with an old one without failing CI.
+BASELINE_REGISTERED_SHA256 = "8f15dccc5e3de89689a53e813df091e751018d67207184bffbd050ac11870749"
+BASELINE_UNDOCUMENTED = 34
+BASELINE_UNDOCUMENTED_SHA256 = "9e6fcf35b38c5611723f4c7bc2753d0a99495dd83ef6dde686acccc564a4dae4"
 
 # Only /api/ paths form the published contract. Operational probes (/healthz,
 # /metrics) and the SPA asset routes are deliberately outside it, and are
@@ -87,6 +102,12 @@ def normalize(path: str) -> str:
     return path.rstrip("/") or "/"
 
 
+def route_set_digest(routes: set[tuple[str, str]]) -> str:
+    """Return a stable digest of a normalized route set."""
+    payload = "".join(f"{method} {path}\n" for method, path in sorted(routes))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def main() -> int:
     try:
         source = ROUTES_FILE.read_text(encoding="utf-8")
@@ -110,10 +131,59 @@ def main() -> int:
     covered = registered & documented
     missing = sorted(registered - documented)
     stale = sorted(documented - registered)
+    registered_digest = route_set_digest(registered)
+    undocumented_digest = route_set_digest(set(missing))
 
     print(f"OpenAPI coverage: {len(covered)}/{len(registered)} registered API operations documented")
 
     status = 0
+
+    if registered_digest != BASELINE_REGISTERED_SHA256:
+        if len(registered) != BASELINE_REGISTERED:
+            direction = "rose" if len(registered) > BASELINE_REGISTERED else "fell"
+            print(
+                f"\nregistered route count {direction} to {len(registered)}, "
+                f"from the baseline of {BASELINE_REGISTERED}.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"\nregistered route set changed while the count remained "
+                f"{BASELINE_REGISTERED}.",
+                file=sys.stderr,
+            )
+        print(
+            "Document every added route, then update BASELINE_REGISTERED and "
+            "BASELINE_REGISTERED_SHA256 deliberately for the reviewed API "
+            f"surface change (current digest: {registered_digest}).",
+            file=sys.stderr,
+        )
+        status = 1
+
+    if undocumented_digest != BASELINE_UNDOCUMENTED_SHA256:
+        if len(missing) != BASELINE_UNDOCUMENTED:
+            print(
+                f"\nundocumented route count changed to {len(missing)}, from "
+                f"the baseline of {BASELINE_UNDOCUMENTED}.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"\nundocumented route set changed while the count remained "
+                f"{BASELINE_UNDOCUMENTED}.",
+                file=sys.stderr,
+            )
+        print(
+            "Review the missing-route list, then update "
+            "BASELINE_UNDOCUMENTED and BASELINE_UNDOCUMENTED_SHA256 "
+            f"deliberately (current digest: {undocumented_digest}).",
+            file=sys.stderr,
+        )
+        if missing:
+            print("Current undocumented routes:", file=sys.stderr)
+            for method, path in missing:
+                print(f"  {method} {path}", file=sys.stderr)
+        status = 1
 
     if stale:
         print("\ndocumented in openapi.json but not registered by the server:", file=sys.stderr)
@@ -128,8 +198,12 @@ def main() -> int:
             f"\ncoverage fell to {len(covered)}, below the baseline of {BASELINE_DOCUMENTED}.",
             file=sys.stderr,
         )
-        print("Document the new route in api/cmd/openapi-export, or lower the "
-              "baseline deliberately if a route was removed.", file=sys.stderr)
+        print(
+            "Document the route in api/internal/server/openapi.go "
+            "(BuildOpenAPISpec), or lower the baseline deliberately if a "
+            "route was removed.",
+            file=sys.stderr,
+        )
         for method, path in missing:
             print(f"  undocumented: {method} {path}", file=sys.stderr)
         status = 1

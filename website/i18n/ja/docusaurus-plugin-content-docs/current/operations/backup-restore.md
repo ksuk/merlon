@@ -11,7 +11,7 @@ Merlon のバックアップは **1つではなく2つの成果物**である。
 ## バックアップ
 
 ```bash
-export MERLON_DATABASE_URL='postgres://merlon_app:...@host:5432/merlon'
+export MERLON_BACKUP_DATABASE_URL='postgres://merlon_backup:...@host:5432/merlon'
 export MERLON_ENCRYPTION_KEY_RING='...'
 make backup            # または: scripts/backup.sh [出力ディレクトリ]
 ```
@@ -24,9 +24,53 @@ make backup            # または: scripts/backup.sh [出力ディレクトリ]
 | `merlon-keyring-<timestamp>.env` | 鍵リング（パーミッション `0600`） |
 | `merlon-backup-<timestamp>.json` | マニフェスト。両者のタイムスタンプと SHA-256 |
 
+データベース全体のダンプには、migration ledger や sequence state など運用者専用のオブジェクトも含まれる。そのため、`MERLON_BACKUP_DATABASE_URL` には、既存および将来のすべての table／sequence を読み取れる専用 read-only backup role を使用する。スクリプトは serving role や DDL 可能な migration owner へ意図的にフォールバックしない。
+
+### backup role のプロビジョニング
+
+認証情報は管理された secret management 手段で作成し、database／role 名を必要に応じて置き換えた上で、次に注記した administrator／object-owner の責務に従って実行する。
+
+```sql
+-- database administrator として実行し、認証は別途安全に設定する。
+CREATE ROLE merlon_backup
+  LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
+  NOREPLICATION NOBYPASSRLS;
+
+-- database owner／administrator として database grant を実行する。
+GRANT CONNECT ON DATABASE merlon TO merlon_backup;
+
+-- object owner である merlon_migrate として schema/object/default grant を実行する。
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE ALL PRIVILEGES ON SCHEMA public FROM merlon_backup;
+GRANT USAGE ON SCHEMA public TO merlon_backup;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM merlon_backup;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO merlon_backup;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM merlon_backup;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO merlon_backup;
+
+ALTER DEFAULT PRIVILEGES FOR ROLE merlon_migrate
+  REVOKE ALL PRIVILEGES ON SCHEMAS FROM merlon_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE merlon_migrate
+  GRANT USAGE ON SCHEMAS TO merlon_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE merlon_migrate
+  REVOKE ALL PRIVILEGES ON TABLES FROM merlon_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE merlon_migrate
+  GRANT SELECT ON TABLES TO merlon_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE merlon_migrate
+  REVOKE ALL PRIVILEGES ON SEQUENCES FROM merlon_backup;
+ALTER DEFAULT PRIVILEGES FOR ROLE merlon_migrate
+  GRANT SELECT ON SEQUENCES TO merlon_backup;
+```
+
+default privilege は現在の database と、object を作成する正確な role の両方にscopeされ、role membership からそのroleのdefaultは適用されない。すべてのtarget databaseとobjectを作成する各roleについて6つの `ALTER DEFAULT PRIVILEGES` を繰り返し、`public` 以外の対応application schemaがある場合はdirect normalizationも繰り返す。role導入後およびrestoreのたびに既存object用grantを再実行する。
+
+table の `INSERT`、`UPDATE`、`DELETE`、`TRUNCATE`、`TRIGGER`、`REFERENCES`、PostgreSQL 18 の `MAINTAIN`、sequence の `USAGE`／`UPDATE`、schema の `CREATE`、role membership、ownership は付与しない。row-level security を導入する場合は完全な dump を明示的にテストし、広範な ownership や DDL 権限を黙って付与するのではなく、必要最小限の RLS 方針をレビューする。
+
+Merlon のこの logical backup は PostgreSQL large object を作成・サポートしない。スクリプトは `pg_largeobject_metadata` を照会し、1つでも存在する場合は `pg_dump` の前に backup artifact の作成を拒否する。組織管理の large object は別の統制された backup 経路へ移すこと。追加した schema と RLS policy も、database object model を変更するたびにテストする。
+
 `MERLON_ENCRYPTION_KEY_RING` が未設定の場合、スクリプトは**実行を拒否する**。データベースのみのバックアップを黙って生成することはしない。暗号化属性を一切保存しないデプロイに限り `--no-keys` を渡すこと。本番データベースでこれが正しいことはない。
 
-出力ディレクトリは `BACKUP_DIR` で指定する（`make backup BACKUP_DIR=/mnt/backups`）。既定は `backups/`。
+出力ディレクトリは `BACKUP_DIR` で指定する（`make backup BACKUP_DIR=/mnt/backups`）。既定は `backups/`。スクリプトはこのdirectoryをmode `0700`に強制し、dump、key-ring file、manifestをgroup／other accessなしで作成する。同じdirectory内のhidden temporary fileへ書き込み、manifestを最後に公開する。`pg_dump`が失敗した場合はtemporary dumpを削除し、final-name backupを残さない。
 
 ### 保管
 
@@ -38,12 +82,45 @@ make backup            # または: scripts/backup.sh [出力ディレクトリ]
 
 ## リストア
 
-```bash
-export MERLON_DATABASE_URL='postgres://merlon_app:...@host:5432/merlon'
-make restore BACKUP_FILE=backups/merlon-db-20260726T090000Z.dump
+database administrator は、restore role を owner とする隔離targetを作成する。
+
+```sql
+CREATE DATABASE merlon_recovery OWNER merlon_migrate TEMPLATE template0;
 ```
 
-これは破壊的操作である。対象データベースのオブジェクトを削除して再作成する。スクリプトはパスワードを伏せた接続先を表示し、続行に `restore` の入力を要求する。また `MERLON_ENV=production` に対しては `--force` なしで実行を拒否する。よくある致命的な誤りは、誤ったバックアップを復元することではなく、誤ったデータベースへ復元することだからである。
+policy上別のdatabase ownerが必要な場合、DBAはfresh databaseの`public` schemaをrestore roleへ明示的に移譲する。schemaに`CREATE`を付与するだけでは不十分である。PostgreSQLではownership移譲時に、移譲先schema ownerがdatabase-level `CREATE`を持つ必要があるため、その一時的なdatabase権限は移譲直後にrevokeする。また、hardening実行者がdatabase ownerまたはsuperuserでない場合、不足するgrantをhardening手順で作成できないため、両roleへdirect database `CONNECT`を事前付与する。
+
+```sql
+CREATE DATABASE merlon_recovery OWNER platform_db_owner TEMPLATE template0;
+GRANT CONNECT, CREATE ON DATABASE merlon_recovery TO merlon_migrate;
+\connect merlon_recovery
+ALTER SCHEMA public OWNER TO merlon_migrate;
+REVOKE CREATE ON DATABASE merlon_recovery FROM merlon_migrate;
+GRANT CONNECT ON DATABASE merlon_recovery TO merlon_app;
+```
+
+```bash
+export MERLON_MIGRATION_DATABASE_URL='postgres://merlon_migrate:...@host:5432/merlon_recovery'
+export MERLON_APP_ROLE='merlon_app' # 任意。これが既定値
+make restore BACKUP_FILE=backups/merlon-db-20260726T090000Z.dump
+
+# 本番では追加の明示的な確認が必要:
+MERLON_ENV=production make restore \
+  BACKUP_FILE=backups/merlon-db-20260726T090000Z.dump \
+  RESTORE_FORCE=true
+```
+
+この entry point は意図的に in-place restore を行わない。新しい隔離済み target database を作成し、`MERLON_MIGRATION_DATABASE_URL` をそこへ向けること。preflight は、public の relation／routine／type、追加の非system schema、既定外の extension、PostgreSQL large object を拒否する。これらは Merlon migration が作成するすべての object kind を対象とする。したがって、古い archive を新しい Merlon schema の上へ復元して新しい object だけが残ることはなく、非empty target は prompt や変更の前に拒否される。組織定義の collation、conversion、operator、text-search object、publication、subscription、event trigger はこの preflight の対象外であり、隔離 target に事前作成してはならない。
+
+リストア接続には `MERLON_MIGRATION_DATABASE_URL` で指定する target object-owner role を使用する。最小権限の serving role である `merlon_app` は archive object を再作成できず、スクリプトは意図的に `MERLON_DATABASE_URL` へフォールバックしない。promptの前に、スクリプトはこのroleが`public` schemaを管理し、そこで`CREATE`を持つことも検証する。別roleが所有するfresh databaseは、そのownerが上記のとおり`public`を移譲するまで拒否される。prompt は server が報告した接続先 identity と、preflight で fresh target を確認したことを表示する。この entry point は既存 schema を削除しない。
+
+`pg_restore` は `--single-transaction` と `--exit-on-error` で実行するため、archive error で一部だけ復元された object が commit されることはない。失敗した restore では、fresh target に archive object は残らない。API を停止したまま archive または権限を修正し、fresh target に対して再実行すること。
+
+`MERLON_APP_ROLE` で指定する serving role は事前に存在していなければならない。`pg_restore` の後、スクリプトは `audit-hardening.sql` の冪等な serving-role 手順を適用する。通常のアプリケーション表には CRUD、監査・ルール有効化の証跡には `SELECT`／`INSERT` のみを付与し、監査 sequence は利用可能にする一方、schema DDL と migration ledger は owner 専用のままにする。archive は意図的に ACL を含まないため、この手順は過去に `--no-privileges` で作成されたバックアップの ACL も再構成する。
+
+自動的に再構成されるのは `MERLON_APP_ROLE` で指定したロールだけである。専用 backup role の既存 object grant／default privilege、および組織固有の auditor、read-only、reporting、integration role の ACL は archive にもこの手順にも含まれない。readiness の確認前に、管理された定義からすべてを別途再適用して検証すること。
+
+確認を求める前に、スクリプトは `psql` で接続し、PostgreSQL が報告する対象ユーザー、サーバーアドレス、ポート、データベース名だけを表示する。libpq は単一の URI 置換ではパスワードを安全に伏せられない形式も受け付けるため、接続文字列そのものは一切表示しない。この接続先を確認してから、続行に `restore` と入力すること。また `MERLON_ENV=production` に対しては `--force` なしで実行を拒否し、Make ターゲットは `RESTORE_FORCE=true` だけをこのフラグへ変換する。よくある致命的な誤りは、誤ったバックアップを復元することではなく、誤ったデータベースへ復元することだからである。
 
 スクリプトはダンプのタイムスタンプに対応する鍵リングファイルを探し、無ければ警告する。それが気づくための最後の安価な機会である。復元後はデータベースが正常に見え、顧客属性だけが静かに読めない。
 
@@ -53,15 +130,18 @@ make restore BACKUP_FILE=backups/merlon-db-20260726T090000Z.dump
 
 1. 対応する鍵リングを `MERLON_ENCRYPTION_KEY_RING` へ読み込む。
 2. 対象リリースに必要なマイグレーションを適用する（`make migrate`）。過去のマイグレーションファイルを変更しない。
-3. readiness を確認する。`GET /healthz/ready` のすべてのチェックが `ok` であること。
-4. **暗号化された顧客属性を代表的に読み出す。**
-5. `merlon-audit verify` を実行し、検証失敗があれば環境を復旧済みとみなす前に必ず調査する。
+3. 同じ `MERLON_MIGRATION_DATABASE_URL` と `MERLON_APP_ROLE` で `make audit-harden` を実行する。この必須かつ冪等な2回目の適用により、手順2で作成された表へ権限を付与する。migration ledger があるため、既に復元されたオブジェクトの grant を `make migrate` が再適用することはない。
+4. 上記の専用 backup role provisioning（既存 object grant と将来の default privilege を含む）および組織固有の auditor、read-only、reporting、integration role の ACL を管理された定義から再適用し、検証する。
+5. API と worker を停止したまま、それらの secret／configuration を更新し、`MERLON_DATABASE_URL` が migration role や backup role ではなく、serving role で fresh target を指すようにする。その後で両processを起動する。
+6. readiness を確認する。`GET /healthz/ready` のすべてのチェックが `ok` であること。
+7. **暗号化された顧客属性を代表的に読み出す。**
+8. `merlon-audit verify` を実行し、検証失敗があれば環境を復旧済みとみなす前に必ず調査する。
 
-手順4が鍵リングの不一致を検出する。他のすべてのチェックを通過しながら、読み取れないデータを生成した復元はありうる。
+手順7が鍵リングの不一致を検出する。他のすべてのチェックを通過しながら、読み取れないデータを生成した復元はありうる。
 
 ## ロールバックとはリストアのことである
 
-マイグレーションは前方向のみである。スキーマを変更したリリースのロールバックとは、アップグレード前のバックアップを復元することであり、それ以降に書き込まれたすべてを失う。[アップグレード](upgrade.md)および[受容リスク](../security/accepted-risks/index.md)を参照。
+マイグレーションは前方向のみである。スキーマを変更したリリースのロールバックでは、fresh database を作成し、そこへアップグレード前のbackupをrestoreして検証した後でのみ、`MERLON_DATABASE_URL` をそのfresh targetへ切り替える。このrestore entry pointを現在のdatabaseへ向けてはならない。cutoverによりbackup以降に書き込まれたすべてを失う。[アップグレード](upgrade.md)および[受容リスク](../security/accepted-risks/index.md)を参照。
 
 実務上の帰結として、バックアップ間隔がロールバック時のデータ損失の上限になる。慣習ではなくこの観点で間隔を決めること。
 

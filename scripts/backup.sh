@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # Take a Merlon backup: a PostgreSQL dump plus the encryption key ring.
 #
@@ -11,12 +12,12 @@ set -euo pipefail
 # script refuses to produce a database-only backup silently.
 #
 # Usage:
-#   MERLON_DATABASE_URL=postgres://... \
+#   MERLON_BACKUP_DATABASE_URL=postgres://... \
 #   MERLON_ENCRYPTION_KEY_RING=... \
 #     scripts/backup.sh [output-directory]
 #
 # Environment:
-#   MERLON_DATABASE_URL         required; the database to dump
+#   MERLON_BACKUP_DATABASE_URL  required dedicated read-only backup connection
 #   MERLON_ENCRYPTION_KEY_RING  the key ring to capture (see --no-keys)
 #
 # Options:
@@ -25,7 +26,19 @@ set -euo pipefail
 #               encrypted. Never correct for a production database.
 
 usage() {
-  sed -n '3,25p' "$0" | sed 's/^# \{0,1\}//'
+  awk '
+    /^# / {
+      printing = 1
+      sub(/^# ?/, "")
+      print
+      next
+    }
+    /^#$/ {
+      if (printing) print ""
+      next
+    }
+    printing { exit }
+  ' "$0"
 }
 
 no_keys=false
@@ -49,14 +62,34 @@ done
 
 out_dir=${out_dir:-backups}
 
-if [[ -z ${MERLON_DATABASE_URL:-} ]]; then
-  echo "MERLON_DATABASE_URL is required" >&2
+if [[ -z ${MERLON_BACKUP_DATABASE_URL:-} ]]; then
+  echo "MERLON_BACKUP_DATABASE_URL is required" >&2
   exit 1
 fi
 
 if ! command -v pg_dump >/dev/null 2>&1; then
   echo "pg_dump not found. Install the PostgreSQL client tools, or run this" >&2
   echo "script inside a container that has them." >&2
+  exit 1
+fi
+if ! command -v psql >/dev/null 2>&1; then
+  echo "psql not found. Install the PostgreSQL client tools, or run this" >&2
+  echo "script inside a container that has them." >&2
+  exit 1
+fi
+
+# Merlon does not support PostgreSQL large objects in this logical-backup
+# contract. Reject that object model explicitly before pg_dump can fail late
+# with a generic permission error or produce artifacts outside the contract.
+large_object_count=$(psql --dbname="$MERLON_BACKUP_DATABASE_URL" \
+  --no-psqlrc --tuples-only --no-align --set ON_ERROR_STOP=1 \
+  --command "SELECT count(*) FROM pg_catalog.pg_largeobject_metadata")
+if [[ ! $large_object_count =~ ^[0-9]+$ ]]; then
+  echo "could not verify the PostgreSQL large-object precondition" >&2
+  exit 1
+fi
+if (( large_object_count != 0 )); then
+  echo "PostgreSQL large objects are not supported by the Merlon logical backup; refusing to create an incomplete backup" >&2
   exit 1
 fi
 
@@ -81,29 +114,43 @@ fi
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 mkdir -p "$out_dir"
+chmod 700 "$out_dir"
 
 db_file="$out_dir/merlon-db-$timestamp.dump"
 keys_file="$out_dir/merlon-keyring-$timestamp.env"
 manifest_file="$out_dir/merlon-backup-$timestamp.json"
 
+db_temp=$(mktemp "$out_dir/.merlon-db-$timestamp.dump.XXXXXX")
+keys_temp=
+manifest_temp=$(mktemp "$out_dir/.merlon-backup-$timestamp.json.XXXXXX")
+
+cleanup() {
+  [[ -z $db_temp ]] || rm -f -- "$db_temp"
+  [[ -z $keys_temp ]] || rm -f -- "$keys_temp"
+  [[ -z $manifest_temp ]] || rm -f -- "$manifest_temp"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 echo "Dumping database to $db_file"
 # Custom format: compressed, and restorable selectively with pg_restore.
 pg_dump --format=custom --no-owner --no-privileges \
-  --file="$db_file" "$MERLON_DATABASE_URL"
+  --file="$db_temp" "$MERLON_BACKUP_DATABASE_URL"
 
 keys_sha=""
 if [[ -n ${MERLON_ENCRYPTION_KEY_RING:-} ]]; then
   echo "Writing key ring to $keys_file"
-  # Created empty with restrictive permissions before the secret is written,
-  # so it is never briefly world-readable.
-  install -m 600 /dev/null "$keys_file"
-  printf 'MERLON_ENCRYPTION_KEY_RING=%s\n' "$MERLON_ENCRYPTION_KEY_RING" > "$keys_file"
-  keys_sha=$(sha256sum "$keys_file" | cut -d ' ' -f 1)
+  keys_temp=$(mktemp "$out_dir/.merlon-keyring-$timestamp.env.XXXXXX")
+  chmod 600 "$keys_temp"
+  printf 'MERLON_ENCRYPTION_KEY_RING=%s\n' "$MERLON_ENCRYPTION_KEY_RING" > "$keys_temp"
+  keys_sha=$(sha256sum "$keys_temp" | cut -d ' ' -f 1)
 fi
 
-db_sha=$(sha256sum "$db_file" | cut -d ' ' -f 1)
+db_sha=$(sha256sum "$db_temp" | cut -d ' ' -f 1)
 
-cat > "$manifest_file" <<EOF
+cat > "$manifest_temp" <<EOF
 {
   "schema_version": 1,
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
@@ -121,6 +168,17 @@ cat > "$manifest_file" <<EOF
   )
 }
 EOF
+
+# Publish the manifest last. Until it appears, no set of final-name artifacts
+# is advertised as a complete backup; failures remove every temporary file.
+mv -- "$db_temp" "$db_file"
+db_temp=
+if [[ -n $keys_temp ]]; then
+  mv -- "$keys_temp" "$keys_file"
+  keys_temp=
+fi
+mv -- "$manifest_temp" "$manifest_file"
+manifest_temp=
 
 echo
 echo "Backup complete:"

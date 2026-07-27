@@ -36,7 +36,8 @@ codebase are `internal/screening/adapter.go`, `internal/server/webhook.go`, and
 
 ### 1. PostgreSQL
 
-Configured by `MERLON_DATABASE_URL` and `MERLON_MIGRATION_DATABASE_URL`.
+Configured by `MERLON_DATABASE_URL`, `MERLON_MIGRATION_DATABASE_URL`, and
+`MERLON_BACKUP_DATABASE_URL`.
 Normally inside your own network. Merlon does not choose this destination.
 
 ### 2. Screening list imports

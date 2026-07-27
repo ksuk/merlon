@@ -11,10 +11,9 @@ map these roles to their own access-control and change-management policy.
 
 ## The first administrator
 
-A new deployment has no accounts, which means nobody can log in and nobody can
-create a user through the normal path. `POST /api/v1/setup`, reached in the
-browser at `/setup`, resolves that: it creates the first Admin account and
-nothing else.
+A new deployment has no accounts, so no login credential exists.
+`POST /api/v1/setup`, reached in the browser at `/setup`, creates the sole
+initial Admin account and nothing else.
 
 - It is reachable without authentication, because at that moment there is no
   credential that could authenticate anyone.
@@ -26,8 +25,9 @@ nothing else.
   any account exists would disclose that to anyone who can reach the login
   page.
 
-Every subsequent account is created from **User management** by an existing
-Admin, under the role model below.
+The current release has no supported API or UI flow for creating subsequent
+accounts. **User management** and `GET /api/v1/admin/users` provide a read-only
+list of existing users; they do not create users.
 
 The consequence for deployment is that the window between first start and first
 administrator is the one moment where an unauthenticated caller can create a

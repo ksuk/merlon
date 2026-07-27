@@ -27,7 +27,7 @@ Merlon が自組織のネットワーク外へ何を送るのか、その契機�
 
 ### 1. PostgreSQL
 
-`MERLON_DATABASE_URL` および `MERLON_MIGRATION_DATABASE_URL` で設定する。通常は自組織のネットワーク内にある。Merlon がこの宛先を選ぶことはない。
+`MERLON_DATABASE_URL`、`MERLON_MIGRATION_DATABASE_URL`、`MERLON_BACKUP_DATABASE_URL` で設定する。通常は自組織のネットワーク内にある。Merlon がこの宛先を選ぶことはない。
 
 ### 2. スクリーニングリストのインポート
 

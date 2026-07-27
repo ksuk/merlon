@@ -55,13 +55,16 @@ docker pull "${IMAGE}@${DIGEST}"
 ```bash
 export MERLON_MIGRATION_DATABASE_URL='postgres://merlon_migrate:...@host:5432/merlon'
 make migrate
+make audit-harden
 ```
 
 ランナーはすべてのファイル名と SHA-256 を `schema_migrations` に記録し、アドバイザリロックを取得し、各ファイルを個別のトランザクションで適用する。2回目の実行は no-op である。チェックサムの不一致はロールアウトを停止させる。[トラブルシューティング: データベース](../troubleshooting/database.md)を参照。
 
+`make audit-harden` は必須の2段階目である。対象リリースが新たに作成した表を含むすべてのアプリケーション表について、serving role にレビュー済みの権限だけを付与し、監査証跡は追記専用、migration ledger は owner 専用に維持する。同じ `MERLON_MIGRATION_DATABASE_URL` で実行し、serving role が既定の `merlon_app` でない場合は `MERLON_APP_ROLE` を設定すること。
+
 :::warning スキーマ変更をまたぐローリングアップグレードは未対応
 
-旧バージョンと新バージョンを同一データベースに対して同時に稼働させると失敗する。旧コードは新しいスキーマを理解しない。旧バージョンをサービスから外し、マイグレーションを適用してから、新バージョンを起動すること。
+旧バージョンと新バージョンを同一データベースに対して同時に稼働させると失敗する。旧コードは新しいスキーマを理解しない。旧バージョンをサービスから外し、マイグレーションと serving-role grant の再適用を完了してから、新バージョンを起動すること。
 
 :::
 
@@ -96,7 +99,7 @@ cd api && go run ./cmd/merlon-audit verify
 
 1. ロールアウトを停止する。以降のマイグレーションを適用しない。
 2. マイグレーションが未適用であれば、以前のダイジェストを再デプロイする。それでロールバックは完了である。
-3. マイグレーションが適用済みであれば、アップグレード前のバックアップから復元し（[バックアップと復元](backup-restore.md)）、以前のダイジェストを再デプロイする。
+3. マイグレーションが適用済みであれば、fresh databaseを作成し、そこでアップグレード前のbackupをrestore・検証してから（[バックアップと復元](backup-restore.md)）、`MERLON_DATABASE_URL`をcutoverし、以前のダイジェストを再デプロイする。現在のschemaへin-place restoreしてはならない。
 4. 再試行の前に原因を調査する。
 
 ロールアウトを「通す」ために `schema_migrations` の行を削除したり、適用済みのマイグレーションを編集したりしてはならない。それはスキーマの不整合を解消せず、不整合が起きた証跡だけを消す。

@@ -79,7 +79,7 @@ architecture is produced under emulation and neither is a second-class build.
 | Runs as | uid/gid `10001`, non-root |
 | Writable paths needed | None — runs unmodified with `--read-only` |
 | Exposed port | `8080` |
-| Healthcheck | `GET /healthz/live` (liveness), honouring `MERLON_HTTP_ADDR` |
+| Healthcheck | `GET /healthz/live` (liveness), honouring the listener selected by `MERLON_MODE` |
 | Outbound network | Only what you configure; see [Data Egress](../security/data-egress.md) |
 
 The built-in healthcheck is a liveness probe, so a fresh container reports
@@ -87,6 +87,11 @@ The built-in healthcheck is a liveness probe, so a fresh container reports
 complete, database reachable, engine loaded — is exposed separately at
 `GET /healthz/ready` for orchestration probes and for compose healthchecks that
 deliberately gate on a usable instance.
+
+In `worker` mode the probe uses `MERLON_WORKER_HTTP_ADDR` (default `:8081`);
+in `api` and `all` modes it uses `MERLON_HTTP_ADDR` (default `:8080`).
+Wildcard, IPv4/IPv6, and host-qualified listen addresses are normalized into a
+valid loopback or host URL before invoking the probe.
 
 All state lives in PostgreSQL. The container holds no data, so replacing it is
 never a data-loss event — see [Backup and Restore](backup-restore.md) for what

@@ -121,9 +121,9 @@ authenticated path to create one. Use initial setup:
   screen, or open `/setup` directly.
 - Over the API: `POST /api/v1/setup` with `{"email": "...", "password": "..."}`.
 
-The password must be at least 12 characters. The account created is an Admin,
-and every later account is created from **User management** by an existing
-Admin.
+The password must be at least 12 characters. The account created is an Admin.
+The current release has no supported flow for creating later accounts:
+**User management** and `GET /api/v1/admin/users` only list existing users.
 
 ### `/setup` returns 409
 

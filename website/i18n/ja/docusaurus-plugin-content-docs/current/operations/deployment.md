@@ -4,7 +4,7 @@ title: デプロイ運用手順
 
 # デプロイ運用手順
 
-本番起動前に migration role でマイグレーションを適用し、`audit_logs` の owner が API role ではなく、API role に UPDATE/DELETE 権限がないことを検証する。検証に失敗した場合、API は起動しない。
+本番起動前に migration role でマイグレーションと `make audit-harden` を適用し、serving role がアプリケーション表の owner ではなく、監査証跡を変更できないことを検証する。検証に失敗した場合、API は起動しない。
 
 ## 適用範囲
 
@@ -19,11 +19,14 @@ title: デプロイ運用手順
 - ローカル開発環境以外では `MERLON_SEED=false` を維持する。
 - PostgreSQL と API の `/metrics` は、プライベートネットワークまたは認証済みの監視基盤に限定する。
 - `MERLON_ENCRYPTION_KEY_RING` をバックアップし、復旧手順がデータベースデータと必要な鍵材料の両方をリストアできることを検証する。
+- API の起動前に `MERLON_MIGRATION_DATABASE_URL` で `make migrate`、続いて `make audit-harden` を実行する。serving role はアプリケーション表を所有してはならず、database-level `CREATE` も保持してはならない。
 
 ## 設定検証
 
 ロールアウト前に、起動ログからネイティブエンジン設定ダイジェストを記録し、承認済みのルールファイルをリリース証跡とともに保管する。ADR-0012 を参照。
 
-## 監査ログのデータベースロール
+## アプリケーションのデータベースロール
 
-アプリケーションのデータベースロールは `audit_logs` に対する `UPDATE` 権限や `DELETE` 権限を持つべきではない。読み取り専用の監査アクセスは別ロールを通じて付与し、対象環境で権限付与を検証する。ロールテンプレートの例は本ディレクトリ内の `audit-hardening.sql.example` を参照。
+マイグレーション後に、migration owner として `docs/operations/audit-hardening.sql` を適用する。この手順は serving role の権限を、通常のアプリケーション表では CRUD、追記専用の監査証跡では `SELECT`／`INSERT`、migration ledger と schema DDL では権限なしに正規化する。database-level `CREATE` は拒否し、継承したロールメンバーシップから禁止権限を得ている場合も fail closed となる。serving role はアプリケーション表を所有してはならない。
+
+本番の API は監査ログの preflight に失敗すると起動を拒否する。読み取り専用の監査アクセスは組織が管理する別ロールへ付与すること。serving-role 手順はそのロールを作成・復元しない。両方の権限を検証し、その出力をデプロイ証跡として保管する。

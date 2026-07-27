@@ -30,6 +30,10 @@ services:
       MERLON_DATABASE_URL: postgres://merlon:secret@postgres/merlon
 ```
 
+The image healthcheck follows the selected process mode. In `worker` mode it
+probes liveness on `MERLON_WORKER_HTTP_ADDR` (default `:8081`), not the API
+listener.
+
 Backtest requests are durable rows. An API-only deployment accepts and
 persists jobs; a worker (or `all`) deployment claims queued rows with a
 database lease and resumes them after restart. Jobs snapshot `[from,to)` and

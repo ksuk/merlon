@@ -31,8 +31,9 @@ docker compose up --build
 ```
 
 The first build takes a few minutes. Compose reads `.env` for the database
-password and bootstrap token, so the copy in step two is not optional — without
-it, startup stops with `set MERLON_POSTGRES_PASSWORD`.
+password, bootstrap token, and development JWT signing secret, so the copy in
+step two is not optional — without it, startup stops before Merlon can serve
+the login flow.
 
 Wait for this line:
 
@@ -51,8 +52,9 @@ administrator account** below the login form, or go straight to
 
 Enter an email address and a password of at least 12 characters. This route
 only works while no account exists — once the first administrator is created it
-rejects further requests, and additional users are added from **User
-management** inside the application.
+rejects further requests. This release does not provide a supported API or UI
+for creating additional accounts; **User management** is a read-only list of
+accounts that already exist.
 
 :::note `healthy` does not mean set up
 

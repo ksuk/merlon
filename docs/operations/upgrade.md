@@ -68,6 +68,7 @@ role the serving role does not have:
 ```bash
 export MERLON_MIGRATION_DATABASE_URL='postgres://merlon_migrate:...@host:5432/merlon'
 make migrate
+make audit-harden
 ```
 
 The runner records every filename and SHA-256 in `schema_migrations`, takes an
@@ -75,11 +76,19 @@ advisory lock, and applies each file in its own transaction. A second run is a
 no-op. A checksum mismatch stops the rollout — see
 [Troubleshooting: Database](../troubleshooting/database.md).
 
+`make audit-harden` is the required second step. It grants the serving role
+only the reviewed access for every application table, including tables just
+created by the target release, while keeping audit evidence append-only and
+the migration ledger owner-only. Run it with the same
+`MERLON_MIGRATION_DATABASE_URL`; set `MERLON_APP_ROLE` when the serving role is
+not the default `merlon_app`.
+
 :::warning Rolling upgrades are not supported across a schema change
 
 Running the old and new versions against the same database at the same time
 will fail: the old code does not understand the new schema. Take the old
-version out of service, migrate, then bring the new one up.
+version out of service, migrate, reapply the serving-role grants, then bring
+the new one up.
 
 :::
 
@@ -120,8 +129,10 @@ If validation fails:
 1. Stop the rollout. Do not apply further migrations.
 2. If no migration was applied, redeploy the previous digest. That is the whole
    rollback.
-3. If a migration was applied, restore from the pre-upgrade backup
-   ([Backup and Restore](backup-restore.md)) and redeploy the previous digest.
+3. If a migration was applied, create a fresh database, restore and validate
+   the pre-upgrade backup there ([Backup and Restore](backup-restore.md)), then
+   cut `MERLON_DATABASE_URL` over and redeploy the previous digest. Never
+   restore in place over the current schema.
 4. Investigate before retrying.
 
 Never delete rows from `schema_migrations` or edit an already-applied migration

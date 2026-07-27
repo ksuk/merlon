@@ -2,10 +2,10 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
@@ -65,8 +65,13 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if err := s.users.Create(r.Context(), user); err != nil {
+	created, err := s.users.CreateIfEmpty(r.Context(), user)
+	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+	if !created {
+		writeAuthError(w, http.StatusConflict, apierr.CodeConflict, "initial setup has already been completed")
 		return
 	}
 

@@ -86,12 +86,21 @@ jobs:
         with:
           go-version: '1.26.5'
       - run: make test-integration
+      - name: Exercise PostgreSQL operational scripts
+        env:
+          MERLON_RUN_POSTGRES_OPERATIONS_INTEGRATION: '1'
+        run: python3 -m unittest -v scripts.test_postgres_operations
 
   release-dry-run:
     name: Release Image Dry Run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+      # OpenAPI coverage verifies a freshly generated document, so this job
+      # needs the same pinned Go toolchain as the Go verification job.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26.5'
       - name: Verify synchronized container pins
         run: make verify-container-pins
       # Kept beside the container pins so every "same version declared twice"

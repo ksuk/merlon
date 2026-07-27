@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # 設定リファレンス
 
-マイグレーション専用接続には `MERLON_MIGRATION_DATABASE_URL` を使用し、既存データベースを台帳へ登録する場合だけ `MERLON_MIGRATION_BASELINE` を明示する。API の接続とは分離すること。
+schema/object-owner操作には`MERLON_MIGRATION_DATABASE_URL`、定期backupには専用read-only roleの`MERLON_BACKUP_DATABASE_URL`を使用し、APIの最小権限接続から分離する。既存databaseを台帳へ登録する場合だけ`MERLON_MIGRATION_BASELINE`を明示すること。
 
 Merlon は環境変数で設定する。ローカル開発では `.env.example` を `.env` にコピーする。そこに含まれる認証情報やシークレットを本番環境で使用してはならない。
 
@@ -16,6 +16,9 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_ENV` | `development` | `production` に設定する。 |
 | `MERLON_HTTP_ADDR` | `:8080` | TLS 終端を行うリバースプロキシの背後でバインドする。 |
 | `MERLON_DATABASE_URL` | 未設定 | TLS（`sslmode=require` 以上）と最小権限のアプリケーションロールを使用する。 |
+| `MERLON_BACKUP_DATABASE_URL` | 未設定 | `make backup` だけで使用する専用の read-only backup 接続。文書化された既存・将来の table／sequence 読取権限を付与し、serving-role URL や schema-owner URL で代用しない。 |
+| `MERLON_MIGRATION_DATABASE_URL` | 未設定 | `make migrate`、`make restore`、`make audit-harden` で使用する、分離されたschema/object-owner接続。このroleはtargetの`public` schemaを管理し、そこで`CREATE`を持つ必要がある。別roleがfresh restore databaseを所有する場合、そのownerは`public`をこのroleへ移譲し、このroleとapplication roleの両方へdatabaseのdirect `CONNECT`を事前付与する。serving-role URLで代用しない。 |
+| `MERLON_MIGRATIONS_DIR` | `migrations` | マイグレーションコマンド専用。バージョン付き SQL マイグレーションを格納するディレクトリ。`--migrations-dir` フラグを指定した場合はその値を優先する。 |
 | `MERLON_ENCRYPTION_KEY_RING` | 未設定 | 本番環境の PII 保護に必須。`merlon-keyrotate` が受け付ける文書化されたキーリング形式を使用する。参照されているすべての鍵を失うと、過去の暗号化された値は復元不能になる。鍵は保護された KMS またはシークレットマネージャーでバックアップする。 |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | 未設定 | ローカルユーザー認証には RS256 鍵ペアを使用する。 |
 | `MERLON_JWT_SECRET` | 未設定 | 開発用フォールバックのみ。ローカルユーザー認証を使用する場合、本番環境では設定しないこと。 |

@@ -29,6 +29,9 @@ type UserRepository interface {
 	Get(ctx context.Context, id string) (*User, error)
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, u *User) error
+	// CreateIfEmpty atomically creates u only when no user exists. It is the
+	// final serialization point for initial-administrator setup.
+	CreateIfEmpty(ctx context.Context, u *User) (bool, error)
 	Update(ctx context.Context, u *User) error
 	// Count is used to determine whether initial setup (the operational design §4.5) has
 	// already been completed.

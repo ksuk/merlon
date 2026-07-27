@@ -27,7 +27,11 @@ env_example=.env.example
 #   MERLON_POSTGRES_PASSWORD -- consumed by Compose to build the connection
 #   string and to initialize the postgres container. The application only ever
 #   sees the assembled MERLON_DATABASE_URL.
+#   MERLON_BACKUP_DATABASE_URL -- consumed by scripts/backup.sh, not by the Go
+#   serving or migration processes. It must identify a dedicated read-only
+#   backup role.
 allowlist=(
+  MERLON_BACKUP_DATABASE_URL
   MERLON_POSTGRES_PASSWORD
 )
 
@@ -35,7 +39,7 @@ allowlist=(
 # the call forms that read an environment variable, so a name appearing only in
 # a comment or an error string is not mistaken for a read.
 code_vars() {
-  grep -rhoE '(os\.Getenv|os\.LookupEnv|getEnv[A-Za-z]*|envOr)\("MERLON_[A-Z0-9_]+"' \
+  grep -rhoE '(os\.Getenv|os\.LookupEnv|getEnv[A-Za-z]*|getenv|envOr)\("MERLON_[A-Z0-9_]+"' \
     api/ --include='*.go' |
     grep -oE 'MERLON_[A-Z0-9_]+' | sort -u
 }

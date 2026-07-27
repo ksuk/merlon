@@ -54,7 +54,7 @@ verify-wrangler-pin: ## Verify the docs deploy workflow and website/package.json
 verify-env-vars: ## Verify env vars agree across the code, docs, and .env.example
 	@bash scripts/check-env-vars.sh
 
-verify-openapi-coverage: ## Verify the OpenAPI document still covers the registered API surface
+verify-openapi-coverage: generate-openapi ## Verify the OpenAPI document still covers the registered API surface
 	@python3 scripts/check-openapi-coverage.py
 
 verify-toolchain-pins: ## Verify the build images, workflows, go.mod, and DevContainer name the same Go and Node.js
@@ -73,14 +73,15 @@ build-ui: ## Build the operator UI
 migrate: ## Apply SQL migrations with a versioned ledger (use a migration role)
 	@cd api && go run ./cmd/merlon-migrate --migrations-dir ../migrations
 
-backup: ## Back up PostgreSQL and the encryption key ring (see scripts/backup.sh)
+backup: ## Back up PostgreSQL with the dedicated read-only role and capture the key ring
 	@scripts/backup.sh $(BACKUP_DIR)
 
-restore: ## Restore a backup produced by `make backup` (destructive; prompts)
+restore: ## Restore a backup into a fresh target database (prompts)
 	@test -n "$(BACKUP_FILE)" || (echo "BACKUP_FILE=path/to/merlon-db-*.dump is required"; exit 1)
-	@scripts/restore.sh "$(BACKUP_FILE)"
+	@test -z "$(RESTORE_FORCE)" || test "$(RESTORE_FORCE)" = "true" || (echo "RESTORE_FORCE must be true or unset"; exit 1)
+	@scripts/restore.sh "$(BACKUP_FILE)" $(if $(filter true,$(RESTORE_FORCE)),--force,)
 
-audit-harden: ## Apply audit_logs least-privilege grants using a migration role
+audit-harden: ## Reapply serving-role grants and append-only audit hardening
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL}" || (echo "MERLON_MIGRATION_DATABASE_URL is required"; exit 1)
 	@psql "$${MERLON_MIGRATION_DATABASE_URL}" -v ON_ERROR_STOP=1 -v MERLON_APP_ROLE="$${MERLON_APP_ROLE:-merlon_app}" -f docs/operations/audit-hardening.sql
 
