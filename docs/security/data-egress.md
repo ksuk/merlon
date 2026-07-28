@@ -15,12 +15,12 @@ telemetry, no usage analytics, no crash reporting, no licence check, and no
 update check.
 
 A default deployment — one where no adapter is configured, no screening list
-source is set, and no webhook subscription exists — makes exactly one outbound
-connection: to your own PostgreSQL database.
+source is set, no webhook subscription exists, and no SMTP server is set —
+makes exactly one outbound connection: to your own PostgreSQL database.
 
 ## The complete list
 
-Every outbound connection the application can make. There are three, and each
+Every outbound connection the application can make. There are five, and each
 exists only when you configure it.
 
 | # | Destination | Triggered by | Carries |
@@ -29,10 +29,13 @@ exists only when you configure it.
 | 2 | Screening list sources you configure | The scheduled list import job | Nothing outbound beyond the HTTP request; the response is the list |
 | 3 | Webhook URLs you subscribe | Events matching an active subscription | The event payload |
 | 4 | REST endpoints in your adapter configuration | Ingestion from your core banking or wallet system | Query parameters for the records being fetched |
+| 5 | The SMTP server you configure | An alert matching a notification route | The notification email, including alert details |
 
-There is no fifth. This is verifiable: the outbound HTTP call sites in the
-codebase are `internal/screening/adapter.go`, `internal/server/webhook.go`, and
-`internal/adapter/rest.go`.
+There is no sixth. This is verifiable from the outbound call sites in the
+codebase: `internal/screening/adapter.go`, `internal/server/webhook.go` and
+`internal/adapter/rest.go` for HTTP, `internal/adapter/dryrun.go` for the
+adapter reachability probe (row 4, same destination), and
+`internal/notify/mailer.go` for SMTP.
 
 ### 1. PostgreSQL
 
@@ -68,6 +71,26 @@ Configured through `MERLON_ADAPTER_CONFIG_PATH`. These are your systems, at
 addresses you specify. The adapter uses a restricted transport governed by the
 adapter security configuration.
 
+The adapter dry-run opens a plain TCP connection to the same host and port to
+report reachability. It sends no payload and is only reaching the destination
+you already configured for ingestion.
+
+### 5. Email notifications
+
+Configured by `MERLON_SMTP_HOST` (with `MERLON_SMTP_PORT`,
+`MERLON_SMTP_USERNAME`, `MERLON_SMTP_PASSWORD`, `MERLON_SMTP_FROM`,
+`MERLON_SMTP_TO`, and `MERLON_SMTP_USE_TLS`). Unset by default, and nothing is
+sent when it is unset.
+
+This is the one egress path that carries alert content to a destination that is
+often outside your network — a hosted mail provider is still someone else's
+infrastructure. Notification emails identify the alert and its severity. Point
+it at an internal relay if that matters to you, or leave it unconfigured and
+use the dashboard.
+
+Transport is STARTTLS by default; `MERLON_SMTP_USE_TLS=true` selects implicit
+TLS instead.
+
 ## What is not there
 
 | Not present | Notes |
@@ -101,8 +124,8 @@ one. `GET /healthz` reports the version you are running.
 ## Verifying this yourself
 
 Do not take this page's word for it. On a deployment with no adapter, no
-screening source, and no webhook subscriptions, capture egress from the
-container and confirm PostgreSQL is the only destination:
+screening source, no webhook subscriptions, and no SMTP host, capture egress
+from the container and confirm PostgreSQL is the only destination:
 
 ```bash
 # Everything the container tries to reach, excluding your database host.

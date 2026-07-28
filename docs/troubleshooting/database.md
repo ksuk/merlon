@@ -82,12 +82,13 @@ migrations "look applied" is how a schema gets silently half-applied. You state
 it:
 
 ```bash
-MERLON_MIGRATION_BASELINE=017_case_notes.sql make migrate
+MERLON_MIGRATION_BASELINE=017_retention.sql make migrate
 ```
 
 Every migration up to and including that filename is recorded as applied
 without being run; everything after it is applied normally. The value must be
-an exact filename from `migrations/`.
+an exact filename from `migrations/` — run `ls migrations/` and copy one,
+rather than reconstructing a name from what a table is called.
 
 Take a backup before doing this. A wrong baseline skips real migrations, and
 the ledger will then claim they ran.

@@ -61,10 +61,10 @@ MERLON_MIGRATION_BASELINE "0xx_name.sql" does not match a migration filename
 ランナーはテーブルの内容からベースラインを推測しない。どのマイグレーションが「適用済みに見えるか」を推測することこそ、スキーマが気づかぬうちに中途半端に適用される原因である。ベースラインは明示的に指定する。
 
 ```bash
-MERLON_MIGRATION_BASELINE=017_case_notes.sql make migrate
+MERLON_MIGRATION_BASELINE=017_retention.sql make migrate
 ```
 
-そのファイル名までのマイグレーションは、実行されずに適用済みとして記録される。それ以降は通常どおり適用される。値は `migrations/` に実在するファイル名と正確に一致する必要がある。
+そのファイル名までのマイグレーションは、実行されずに適用済みとして記録される。それ以降は通常どおり適用される。値は `migrations/` に実在するファイル名と正確に一致する必要がある。テーブル名から名前を組み立てるのではなく、`ls migrations/` の出力からコピーすること。
 
 実施前にバックアップを取ること。誤ったベースラインは本来必要なマイグレーションを飛ばし、台帳はそれらが実行されたと主張することになる。
 
