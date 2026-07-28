@@ -3,6 +3,7 @@ import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { CasesPage } from "./cases"
+import { paginatedResponse } from "@/test/api-test-utils"
 
 function renderWithRouter(ui: React.ReactElement) {
   return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
@@ -27,13 +28,11 @@ beforeEach(() => {
 
 test("displays new/reopened/str_filed status badges", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify([
+    paginatedResponse([
         makeCase("case-new", "new"),
         makeCase("case-reopened", "reopened"),
         makeCase("case-str", "str_filed"),
       ]),
-    ),
   )
 
   await renderWithRouter(<CasesPage />)

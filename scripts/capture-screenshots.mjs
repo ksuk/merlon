@@ -16,18 +16,16 @@
 // chart animations do not land on identical sub-pixel values. Re-run this only
 // when the UI itself has changed, and expect a real diff when you do.
 //
-// Three shots are captured; README.md embeds two of them (the dashboard and
-// the customer detail). demo-case.png is captured and committed for future
-// documentation use and is not yet referenced anywhere.
+// Four shots are captured. README.md embeds two of them (the dashboard and the
+// customer detail); demo-case.png and demo-customers.png are captured and
+// committed for documentation use and are not referenced from README yet.
 //
-// No list view is captured, deliberately. Every list page in the UI --
-// /customers, /alerts, /cases, /transactions -- currently renders as empty
-// regardless of the data behind it: request() in ui/src/lib/api.ts returns the
-// API's {"data": [...]} envelope, while the list pages treat that object as
-// the array itself, so they all show "0 items". Detail pages return a bare
-// object and are unaffected, which is why the customer and case shots below
-// are fine. Add a list shot back here once that is fixed; a screenshot of an
-// empty table is worse than no screenshot.
+// demo-customers.png doubles as a check on the API list envelope: every list
+// route answers with {"data": [...], "pagination": {...}}, and a client that
+// treats that object as the array renders an empty table with the data sitting
+// right there. That is not hypothetical -- it is why no list shot was captured
+// until ui/src/lib/api.ts was corrected. A blank table here means the envelope
+// handling has regressed, not that the demo failed to seed.
 
 import { chromium } from 'playwright';
 
@@ -37,6 +35,7 @@ const OUT_DIR = process.env.OUT_DIR || '/out';
 // Fixed IDs from the deterministic demo dataset (deploy/seed/demo/STORY_IDS.md).
 const SHOTS = [
   { name: 'demo-dashboard.png', path: '/' },
+  { name: 'demo-customers.png', path: '/customers' },
   {
     name: 'demo-customer-cdd.png',
     path: '/customers/61a626c6-ced4-536d-be74-41d6ca874e4d',

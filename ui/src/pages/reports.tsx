@@ -9,7 +9,8 @@ import { useTranslation } from "react-i18next"
 
 export function ReportsPage() {
   const { t } = useTranslation()
-  const { data: alerts, loading, error } = useApi(api.alerts.list)
+  const { data: page, loading, error } = useApi(api.alerts.list)
+  const alerts = page?.data
   const [result, setResult] = useState<{ id: string; alert_id: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)

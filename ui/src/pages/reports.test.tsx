@@ -3,6 +3,7 @@ import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { ReportsPage } from "./reports"
+import { paginatedResponse } from "@/test/api-test-utils"
 
 function renderWithRouter(ui: React.ReactElement) {
   return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
@@ -14,8 +15,7 @@ beforeEach(() => {
 
 test("renders STR report form with alerts", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify([
+    paginatedResponse([
         {
           id: "a1",
           customer_id: "c1",
@@ -30,7 +30,6 @@ test("renders STR report form with alerts", async () => {
           updated_at: "2025-01-10T10:00:00Z",
         },
       ]),
-    ),
   )
 
   await renderWithRouter(<ReportsPage />)
@@ -41,7 +40,7 @@ test("renders STR report form with alerts", async () => {
 })
 
 test("shows empty alert state", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([]))
 
   await renderWithRouter(<ReportsPage />)
 

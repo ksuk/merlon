@@ -62,7 +62,7 @@ export function AlertsPage() {
   async function reload() {
     setLoading(true)
     try {
-      const data = await api.alerts.list()
+      const { data } = await api.alerts.list()
       setAlerts(data)
       setError(null)
     } catch (err) {

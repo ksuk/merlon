@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { api, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
 import { BacktestPage } from "./backtest"
+import { paginatedResponse } from "@/test/api-test-utils"
 
 function renderWithRouter(ui: React.ReactElement) {
   return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
@@ -74,8 +75,7 @@ async function startBacktest() {
 
 test("renders backtest form with customers", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify([
+    paginatedResponse([
         {
           id: "c1",
           external_id: "EXT-001",
@@ -87,8 +87,6 @@ test("renders backtest form with customers", async () => {
           updated_at: "2025-01-01T00:00:00Z",
         },
       ]),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    ),
   )
 
   await renderWithRouter(<BacktestPage />)
@@ -109,7 +107,10 @@ test("shows error state", async () => {
 describe("durable backtest polling", () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.spyOn(api.customers, "list").mockResolvedValue([customer])
+    vi.spyOn(api.customers, "list").mockResolvedValue({
+      data: [customer],
+      pagination: { has_more: false },
+    })
   })
 
   test("polls with bounded exponential backoff until completion", async () => {

@@ -22,7 +22,8 @@ function isAbortError(error: unknown) {
 
 export function BacktestPage() {
   const { t } = useTranslation()
-  const { data: customers, loading, error } = useApi(api.customers.list)
+  const { data: page, loading, error } = useApi(api.customers.list)
+  const customers = page?.data
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
   const [cancelling, setCancelling] = useState(false)

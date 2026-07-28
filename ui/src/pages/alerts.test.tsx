@@ -3,6 +3,7 @@ import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { AlertsPage } from "./alerts"
+import { paginatedResponse } from "@/test/api-test-utils"
 
 const sampleAlert = {
   id: "a1",
@@ -27,7 +28,7 @@ beforeEach(() => {
 })
 
 test("renders alert table with data", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([sampleAlert])))
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([sampleAlert]))
 
   await renderWithRouter(<AlertsPage />)
 
@@ -39,7 +40,7 @@ test("renders alert table with data", async () => {
 })
 
 test("shows empty state when no alerts", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([]))
 
   await renderWithRouter(<AlertsPage />)
 
@@ -47,7 +48,7 @@ test("shows empty state when no alerts", async () => {
 })
 
 test("bulk close requires a reason before submitting", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([sampleAlert])))
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([sampleAlert]))
 
   await renderWithRouter(<AlertsPage />)
   await screen.findByText("大口取引の検出")
@@ -58,7 +59,7 @@ test("bulk close requires a reason before submitting", async () => {
 
 test("bulk close calls the filter-based bulk-close endpoint", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch")
-  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([sampleAlert])))
+  fetchMock.mockResolvedValueOnce(paginatedResponse([sampleAlert]))
 
   await renderWithRouter(<AlertsPage />)
   await screen.findByText("大口取引の検出")
@@ -68,7 +69,7 @@ test("bulk close calls the filter-based bulk-close endpoint", async () => {
   })
 
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ closed_count: 1, alert_ids: ["a1"] })))
-  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([])))
+  fetchMock.mockResolvedValueOnce(paginatedResponse([]))
 
   fireEvent.click(screen.getByText("条件に一致するアラートをクローズ"))
 
@@ -86,7 +87,7 @@ test("bulk close calls the filter-based bulk-close endpoint", async () => {
 
 test("selecting an alert enables bulk case assignment", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch")
-  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([sampleAlert])))
+  fetchMock.mockResolvedValueOnce(paginatedResponse([sampleAlert]))
 
   await renderWithRouter(<AlertsPage />)
   await screen.findByText("大口取引の検出")
@@ -98,7 +99,7 @@ test("selecting an alert enables bulk case assignment", async () => {
   expect(await screen.findByText("選択中: 1 件")).toBeDefined()
 
   fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ case_id: "case-1", created: true })))
-  fetchMock.mockResolvedValueOnce(new Response(JSON.stringify([])))
+  fetchMock.mockResolvedValueOnce(paginatedResponse([]))
 
   fireEvent.click(screen.getByText("選択したアラートをケースにまとめる"))
 

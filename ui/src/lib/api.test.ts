@@ -42,3 +42,50 @@ test("ApiError is an instance of Error", async () => {
     expect(err).toBeInstanceOf(Error)
   }
 })
+
+// Every list endpoint returns the {"data": [...], "pagination": {...}} envelope
+// the HTTP API contract §1.1 specifies (writePaginatedJSON in
+// api/internal/server/helpers.go). request<T> hands back res.json() unwrapped,
+// so a client method that declares a bare array does not fail loudly -- it
+// hands the page an object with no .filter, .map or .length and the list view
+// renders empty against a real server while its tests pass.
+//
+// The guard here is the type check, not the runtime assertions: types are
+// erased, so `page.data` below only compiles while the declaration is honest.
+// Re-declaring any of these as an array fails `npm run build` in this file.
+// The runtime assertions pin the wire shape these declarations claim.
+test.each([
+  ["customers", () => api.customers.list()],
+  ["alerts", () => api.alerts.list()],
+  ["cases", () => api.cases.list()],
+  ["transactions", () => api.transactions.list()],
+])("%s.list returns the paginated envelope, not a bare array", async (_name, list) => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({ data: [{ id: "1" }], pagination: { has_more: false } }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  )
+
+  const page = await list()
+
+  expect(Array.isArray(page.data)).toBe(true)
+  expect(page.data).toHaveLength(1)
+  expect(page.pagination.has_more).toBe(false)
+})
+
+// The counterpart: these are served with writeJSON, not writePaginatedJSON, so
+// declaring them as envelopes would break them the same way in reverse.
+test.each([
+  ["customers.scoreHistory", () => api.customers.scoreHistory("c1")],
+  ["cases.related", () => api.cases.related("k1")],
+])("%s returns a bare array", async (_name, fetchList) => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify([{ id: "1" }]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }),
+  )
+
+  expect(Array.isArray(await fetchList())).toBe(true)
+})

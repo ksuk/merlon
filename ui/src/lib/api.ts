@@ -480,7 +480,7 @@ export interface WhitelistReview {
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
-    list: () => request<Customer[]>("/customers"),
+    list: () => request<PaginatedResponse<Customer>>("/customers"),
     get: (id: string) => request<Customer>(`/customers/${encodeURIComponent(id)}`),
     create: (data: { external_id: string; customer_type: string; country_code: string; product_types: string[]; attributes: Record<string, string> }) =>
       request<Customer>("/customers", { method: "POST", body: JSON.stringify(data) }),
@@ -500,7 +500,7 @@ export const api = {
       }),
   },
   alerts: {
-    list: () => request<Alert[]>("/alerts"),
+    list: () => request<PaginatedResponse<Alert>>("/alerts"),
     get: (id: string) => request<Alert>(`/alerts/${encodeURIComponent(id)}`),
     updateStatus: (id: string, status: AlertStatus) =>
       request<Alert>(`/alerts/${encodeURIComponent(id)}`, {
@@ -519,7 +519,7 @@ export const api = {
       }),
   },
   cases: {
-    list: () => request<Case[]>("/cases"),
+    list: () => request<PaginatedResponse<Case>>("/cases"),
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
       request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),
@@ -541,7 +541,7 @@ export const api = {
       }),
   },
   transactions: {
-    list: () => request<Transaction[]>("/transactions"),
+    list: () => request<PaginatedResponse<Transaction>>("/transactions"),
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; executed_at: string }) =>
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data) }),

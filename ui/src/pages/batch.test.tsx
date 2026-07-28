@@ -3,6 +3,7 @@ import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { BatchPage } from "./batch"
+import { paginatedResponse } from "@/test/api-test-utils"
 
 function renderWithRouter(ui: React.ReactElement) {
   return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
@@ -14,8 +15,7 @@ beforeEach(() => {
 
 test("renders batch page with customers", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify([
+    paginatedResponse([
         {
           id: "c1",
           external_id: "EXT-001",
@@ -27,7 +27,6 @@ test("renders batch page with customers", async () => {
           updated_at: "2025-01-01T00:00:00Z",
         },
       ]),
-    ),
   )
 
   await renderWithRouter(<BatchPage />)
