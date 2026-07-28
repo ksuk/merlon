@@ -59,11 +59,29 @@ fi
 # Derived, never hardcoded: the compose network name is the project name plus
 # "_default", and the project name follows the directory the repository was
 # cloned into.
-network=$(docker inspect "$api_container" \
-  --format '{{range $k,$_ := .NetworkSettings.Networks}}{{$k}}{{end}}')
-if [[ -z $network ]]; then
+#
+# One name per line. Emitting them back to back with no separator turns two
+# attached networks into a single garbage string like "merlon_defaultproxynet",
+# which passes an is-it-empty check and only fails later inside `docker create`
+# with an error that says nothing about the cause.
+networks=$(docker inspect "$api_container" \
+  --format '{{range $k,$_ := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' \
+  | sed '/^[[:space:]]*$/d')
+
+if [[ -n ${MERLON_DEMO_NETWORK:-} ]]; then
+  network=$MERLON_DEMO_NETWORK
+elif [[ -z $networks ]]; then
   echo "Could not determine the compose network for the demo API container." >&2
   exit 1
+elif [[ $(printf '%s\n' "$networks" | wc -l) -gt 1 ]]; then
+  echo "The demo API container is attached to more than one network:" >&2
+  printf '  %s\n' $networks >&2
+  echo >&2
+  echo "Pick the one Playwright should join:" >&2
+  echo "  MERLON_DEMO_NETWORK=<name> $0" >&2
+  exit 1
+else
+  network=$networks
 fi
 
 echo "Using network: $network"

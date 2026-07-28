@@ -12,7 +12,11 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS api-builder
 WORKDIR /build
 COPY api/go.mod api/go.sum* ./
-RUN go mod download 2>/dev/null || true
+# Not suppressed: a checksum mismatch, a proxy outage, or a GOSUMDB failure has
+# to stop the build here rather than surface later as a confusing `go build`
+# error in the next layer -- or, for docker-compose.dev.yml, as a container
+# that needs network at start-up because the download never happened.
+RUN go mod download
 COPY api/ .
 ARG VERSION=dev
 # TARGETARCH is supplied by BuildKit. CGO is already disabled, so setting GOARCH
