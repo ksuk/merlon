@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-)
 
-var Version = "dev"
+	"github.com/ksuk/merlon/api/internal/buildinfo"
+)
 
 const healthzReadyDBPingTimeout = 2 * time.Second
 
@@ -47,7 +47,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": Version})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 }
 
 // handleHealthLive is the liveness probe (the operational design §4.4): only whether

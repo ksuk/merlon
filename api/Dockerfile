@@ -22,7 +22,7 @@ ARG VERSION=dev
 # TARGETARCH is supplied by BuildKit. CGO is already disabled, so setting GOARCH
 # is all a cross-build needs and no C toolchain or emulator is involved.
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-} go build -ldflags "-X main.version=$VERSION" -o merlon-api ./cmd/merlon-api
+RUN CGO_ENABLED=0 GOARCH=${TARGETARCH:-} go build -ldflags "-X github.com/ksuk/merlon/api/internal/buildinfo.Version=$VERSION" -o merlon-api ./cmd/merlon-api
 # merlon-demogen is only used here, to produce the demo dataset copied into
 # the "demo" target below (PH7 T2). It is deterministic (fixed default
 # seed/anchor, see api/internal/demogen), so this reproduces the same

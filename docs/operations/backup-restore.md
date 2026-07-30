@@ -132,7 +132,9 @@ warns when group or other can reach it. The dump, key-ring file, and manifest
 are always written without group or other access either way. The script writes
 hidden temporary files in that directory and publishes the manifest last; if
 `pg_dump` fails, the temporary dump is removed and no final-name backup is left
-behind.
+behind. Before dumping, it atomically reserves the timestamp shared by all
+three filenames. A concurrent or sequential run that resolves to the same
+second fails rather than overwriting any part of the first backup set.
 
 ### Storing it
 
@@ -249,9 +251,19 @@ a directory of similar names would otherwise be restored without a word. A
 missing manifest is only a warning — dumps taken before manifests existed, and
 dumps moved on their own, are still restorable.
 
-A missing key ring is likewise a warning. That is the last cheap moment to
-notice: after the restore the database looks healthy and the customer
-attributes silently do not.
+When the manifest declares a key ring, the script uses its sibling filename
+and verifies that file against the recorded `sha256` too. A present but
+truncated, substituted, or otherwise mismatched key ring stops the restore
+before the target database is inspected. Only a checksum match is reported as
+a verified matching key ring. An unsafe filename or malformed checksum in the
+manifest also fails closed.
+
+A missing key ring remains a warning because the runbook requires storing it
+separately and it may be supplied later. A schema-v1 manifest with
+`"key_ring": null` records a deliberate `--no-keys` backup and produces no
+missing-file warning. Without a manifest, a sibling file is reported only as
+an unverified candidate. These distinctions matter: after the restore the
+database looks healthy even when encrypted customer attributes are unreadable.
 
 ### After restoring
 

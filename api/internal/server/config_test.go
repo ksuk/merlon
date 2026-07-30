@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ksuk/merlon/api/internal/buildinfo"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/store"
@@ -130,8 +131,8 @@ func TestSystemInfo(t *testing.T) {
 	// The build's own version, not a literal. This previously asserted
 	// "1.0.0" while /healthz reported the real ldflags-injected value, so the
 	// two endpoints disagreed about what was running.
-	if info["version"] != Version {
-		t.Errorf("version = %v, want %v", info["version"], Version)
+	if info["version"] != buildinfo.Version {
+		t.Errorf("version = %v, want %v", info["version"], buildinfo.Version)
 	}
 
 	// Likewise the endpoint count is measured at registration rather than

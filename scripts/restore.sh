@@ -145,10 +145,11 @@ sibling() {
 }
 
 manifest_file=
+derived_keys_file=
 keys_file=
 if [[ $dump_base == merlon-db-*.dump ]]; then
   manifest_file=$(sibling merlon-backup- .json)
-  keys_file=$(sibling merlon-keyring- .env)
+  derived_keys_file=$(sibling merlon-keyring- .env)
 fi
 
 # backup.sh publishes the manifest last, so its presence is what marks a set of
@@ -173,8 +174,17 @@ elif [[ -f $manifest_file ]]; then
   fi
   # Scoped to the "database" object: the manifest also carries the key ring's
   # checksum, and comparing the dump against that one would always fail.
-  manifest_sha=$(sed -n '/"database"[[:space:]]*:/,/}/p' "$manifest_file" \
+  database_manifest=$(sed -n '/"database"[[:space:]]*:/,/}/p' "$manifest_file")
+  manifest_database_file=$(printf '%s\n' "$database_manifest" \
+    | sed -n 's/.*"file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  manifest_sha=$(printf '%s\n' "$database_manifest" \
     | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p')
+  if [[ $manifest_database_file != "$dump_base" ]]; then
+    echo "manifest database filename mismatch in $manifest_file" >&2
+    echo "  manifest: ${manifest_database_file:-none}" >&2
+    echo "  dump:     $dump_base" >&2
+    exit 1
+  fi
   if [[ ! $manifest_sha =~ ^[0-9a-f]{64}$ ]]; then
     echo "could not read the database checksum from $manifest_file" >&2
     exit 1
@@ -188,25 +198,72 @@ elif [[ -f $manifest_file ]]; then
     exit 1
   fi
   echo "Checksum matches."
+
+  key_ring_line=$(sed -n '/"key_ring"[[:space:]]*:/p' "$manifest_file" | head -n 1)
+  if [[ $key_ring_line =~ \"key_ring\"[[:space:]]*:[[:space:]]*null ]]; then
+    # --no-keys backups deliberately have no sibling key ring. Do not turn
+    # that recorded decision into a misleading missing-file warning.
+    keys_file=
+  elif [[ $key_ring_line =~ \"key_ring\"[[:space:]]*:[[:space:]]*\{ ]]; then
+    key_ring_manifest=$(sed -n \
+      '/"key_ring"[[:space:]]*:/,/^[[:space:]]*}[,]*[[:space:]]*$/p' \
+      "$manifest_file")
+    manifest_key_file=$(printf '%s\n' "$key_ring_manifest" \
+      | sed -n 's/.*"file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      | head -n 1)
+    manifest_key_sha=$(printf '%s\n' "$key_ring_manifest" \
+      | sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9a-f]*\)".*/\1/p' \
+      | head -n 1)
+
+    if [[ ! $manifest_key_file =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+      echo "unsafe key-ring filename '${manifest_key_file:-none}' in $manifest_file" >&2
+      echo "the manifest may only name a sibling file by basename" >&2
+      exit 1
+    fi
+    if [[ ! $manifest_key_sha =~ ^[0-9a-f]{64}$ ]]; then
+      echo "could not read the key ring checksum from $manifest_file" >&2
+      exit 1
+    fi
+
+    keys_file="$dump_dir/$manifest_key_file"
+    if [[ -f $keys_file ]]; then
+      echo "Verifying key ring against $manifest_file"
+      key_sha=$(sha256sum "$keys_file" | cut -d ' ' -f 1)
+      if [[ $key_sha != "$manifest_key_sha" ]]; then
+        echo "key ring checksum mismatch: this key ring is not the one the manifest describes" >&2
+        echo "  manifest: $manifest_key_sha" >&2
+        echo "  key ring: $key_sha" >&2
+        exit 1
+      fi
+      echo "Key ring checksum matches."
+      echo "Verified matching key ring: $keys_file"
+      echo "Load it into MERLON_ENCRYPTION_KEY_RING before starting the API."
+    fi
+  else
+    echo "could not read key_ring metadata from $manifest_file" >&2
+    exit 1
+  fi
 else
   # Not fatal: dumps taken before manifests existed, and dumps moved on their
   # own, are still restorable. Failing here would block a legitimate recovery.
   echo "warning: no backup manifest found next to this dump" >&2
   echo "         (expected $manifest_file)" >&2
   echo "         The dump's integrity cannot be verified before restoring." >&2
+  keys_file=$derived_keys_file
 fi
 
 # Finding the key ring here is the last cheap moment to notice it is missing —
 # after the restore, the database looks fine and the customer attributes
 # silently do not.
 if [[ -n $keys_file ]]; then
-  if [[ -f $keys_file ]]; then
-    echo "Matching key ring found: $keys_file"
-    echo "Load it into MERLON_ENCRYPTION_KEY_RING before starting the API."
-  else
+  if [[ ! -f $keys_file ]]; then
     echo "warning: no matching key ring found next to this dump" >&2
     echo "         (expected $keys_file)" >&2
     echo "         Encrypted customer attributes will not be readable without it." >&2
+  elif [[ ! -f $manifest_file ]]; then
+    echo "warning: unverified key ring candidate found: $keys_file" >&2
+    echo "         No manifest checksum is available to prove that it belongs to" >&2
+    echo "         this dump. Verify it independently before starting the API." >&2
   fi
 fi
 

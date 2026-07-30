@@ -118,6 +118,94 @@ func TestSPASkipsWhenNoIndexHTML(t *testing.T) {
 	}
 }
 
+func TestSPAIsPublicButAPIRemainsProtectedWhenAuthIsEnabled(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html>merlon</html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	assetsDir := filepath.Join(dir, "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetsDir, "main.js"), []byte("console.log('ok')"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := testServerWithAuth()
+	s.SetUIDir(dir)
+
+	for _, requestPath := range []string{
+		"/",
+		"/login",
+		"/setup",
+		"/customers/customer-1",
+		"/assets/main.js",
+	} {
+		t.Run("public "+requestPath, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, requestPath, nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s status = %d, want %d, body: %s", requestPath, rec.Code, http.StatusOK, rec.Body.String())
+			}
+		})
+	}
+
+	for _, requestPath := range []string{
+		"/api/v1/customers",
+		"/api/v1/does-not-exist",
+		"/metrics",
+	} {
+		t.Run("protected "+requestPath, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, requestPath, nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s status = %d, want %d, body: %s", requestPath, rec.Code, http.StatusUnauthorized, rec.Body.String())
+			}
+		})
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/login", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("POST /login status = %d, want %d, body: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
+func TestSPAReservedServerPathsNeverFallBackToIndex(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html>merlon</html>"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newTestServer()
+	s.SetUIDir(dir)
+
+	for _, requestPath := range []string{
+		"/api",
+		"/api/v1/does-not-exist",
+		"/healthz/does-not-exist",
+		"/metrics/does-not-exist",
+	} {
+		t.Run(requestPath, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, requestPath, nil)
+			rec := httptest.NewRecorder()
+			s.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("GET %s status = %d, want %d, body: %s", requestPath, rec.Code, http.StatusNotFound, rec.Body.String())
+			}
+			if strings.Contains(rec.Body.String(), "merlon") {
+				t.Fatalf("GET %s unexpectedly served index.html", requestPath)
+			}
+		})
+	}
+}
+
 func newTestServer() *Server {
 	return New(":0", Deps{})
 }

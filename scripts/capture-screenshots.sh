@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # The browser runs in a container, not on this machine. Merlon has no browser
 # toolchain — no Playwright dependency, no headless Chromium — and adding one
-# to the repository to produce three PNGs that change only when the UI changes
+# to the repository to produce four PNGs that change only when the UI changes
 # would not pay for itself. Instead a thin image derived from Microsoft's
 # Playwright image (browsers already baked in) is run on the demo stack's own
 # compose network, scripts/capture-screenshots.mjs is copied in, and the PNGs
@@ -26,6 +26,7 @@ set -euo pipefail
 #
 # Output:
 #   docs/img/demo-dashboard.png     embedded in README.md
+#   docs/img/demo-customers.png     list-envelope regression artifact
 #   docs/img/demo-customer-cdd.png  embedded in README.md
 #   docs/img/demo-case.png          committed for future documentation use
 
@@ -144,8 +145,14 @@ docker cp "$CONTAINER:/out/." "$OUT_DIR/"
 # and it is small. This does not prove the pages rendered correctly, but it
 # does catch the failure mode where they rendered nothing at all.
 readonly MIN_BYTES=20480
+readonly -a EXPECTED_SCREENSHOTS=(
+  demo-dashboard.png
+  demo-customers.png
+  demo-customer-cdd.png
+  demo-case.png
+)
 failed=0
-for name in demo-dashboard.png demo-customer-cdd.png demo-case.png; do
+for name in "${EXPECTED_SCREENSHOTS[@]}"; do
   file="$OUT_DIR/$name"
   if [[ ! -f $file ]]; then
     echo "missing: $file" >&2

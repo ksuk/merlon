@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/ksuk/merlon/api/internal/buildinfo"
 )
 
 func fetchOpenAPISpec(t *testing.T) map[string]any {
@@ -122,6 +124,23 @@ func TestBuildOpenAPISpec_MatchesHandlerOutput(t *testing.T) {
 		if _, ok := paths[p]; !ok {
 			t.Errorf("path %q missing from BuildOpenAPISpec() output", p)
 		}
+	}
+}
+
+func TestBuildOpenAPISpec_UsesBuildVersion(t *testing.T) {
+	previous := buildinfo.Version
+	buildinfo.Version = "v9.8.7-test"
+	t.Cleanup(func() {
+		buildinfo.Version = previous
+	})
+
+	spec := BuildOpenAPISpec()
+	info, ok := spec["info"].(map[string]any)
+	if !ok {
+		t.Fatal("spec.info missing or not an object")
+	}
+	if got := info["version"]; got != "v9.8.7-test" {
+		t.Errorf("info.version = %v, want v9.8.7-test", got)
 	}
 }
 

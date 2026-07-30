@@ -21,10 +21,18 @@ class MakeTargetTests(unittest.TestCase):
         )
 
     def test_openapi_verification_generates_the_ignored_artifact_first(self) -> None:
-        result = self.run_make("--dry-run", "verify-openapi-coverage")
+        result = self.run_make(
+            "--dry-run",
+            "verify-openapi-coverage",
+            "VERSION=review-test",
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        generator = "go run ./cmd/openapi-export -o ../docs/api/openapi.json"
+        generator = (
+            'go run -ldflags "-X '
+            "github.com/ksuk/merlon/api/internal/buildinfo.Version=review-test"
+            '" ./cmd/openapi-export -o ../docs/api/openapi.json'
+        )
         verifier = "python3 scripts/check-openapi-coverage.py"
         self.assertIn(generator, result.stdout)
         self.assertIn(verifier, result.stdout)

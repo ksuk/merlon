@@ -485,6 +485,11 @@
     "retention_shorten_forbidden": "保持期間を規定の最低期間より短縮することはできません。",
     "unknown": "予期しないエラーが発生しました。"
   },
+  "authGate": {
+    "checking": "セッションを確認しています",
+    "errorTitle": "セッションを確認できませんでした",
+    "errorDescription": "Merlon API に接続できません。サービスの状態を確認して再試行してください。"
+  },
   "login": {
     "title": "ログイン",
     "emailLabel": "メールアドレス",

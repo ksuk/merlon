@@ -1,6 +1,10 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/ksuk/merlon/api/internal/buildinfo"
+)
 
 func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, BuildOpenAPISpec())
@@ -18,7 +22,7 @@ func BuildOpenAPISpec() map[string]any {
 			"description": "Self-hosted AML/CFT compliance platform for Japanese non-bank financial institutions",
 			// The build's own version, not a literal, so a generated client
 			// records which build it was generated against.
-			"version": Version,
+			"version": buildinfo.Version,
 		},
 		// The path keys below are absolute from the server root and already
 		// carry the /api/v1 prefix, so the server URL must not repeat it.

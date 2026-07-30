@@ -593,6 +593,12 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
             for path in artifacts
             if Path(path).name.startswith("merlon-db-") and path.endswith(".dump")
         )
+        key_ring = next(
+            path
+            for path in artifacts
+            if Path(path).name.startswith("merlon-keyring-")
+            and path.endswith(".env")
+        )
 
         database, dsn = self.provision_managed_target("merlon_manifest_target")
         app_role = f"merlon_app_{suffix}"
@@ -610,13 +616,39 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
         )
         self.require_ok(restored, "restore a verified backup set")
         self.assertIn("Checksum matches.", restored.stdout)
-        self.assertIn("Matching key ring found", restored.stdout)
+        self.assertIn("Key ring checksum matches.", restored.stdout)
+        self.assertIn("Verified matching key ring", restored.stdout)
         self.assertNotIn("no matching key ring", restored.stderr)
         value = self.require_ok(
             self.psql(database, "SELECT value FROM customers WHERE id = 11"),
             "verify the restored row",
         ).stdout.strip()
         self.assertEqual(value, "manifest-sentinel")
+
+        # A sibling key ring is not matching merely because its filename does.
+        # Restore must reject a truncated or substituted key before touching
+        # the target, just as it rejects a corrupt database archive.
+        self.require_ok(
+            self.docker_exec(["bash", "-c", f"printf 'corrupt' >> {key_ring}"]),
+            "corrupt the key ring after the manifest was written",
+        )
+        corrupt_key_target, corrupt_key_dsn = self.provision_managed_target(
+            "merlon_manifest_corrupt_key"
+        )
+        corrupt_key = self.docker_exec(
+            ["bash", "/repo/scripts/restore.sh", dump],
+            input_text="restore\n",
+            env={
+                "MERLON_MIGRATION_DATABASE_URL": corrupt_key_dsn,
+                "MERLON_APP_ROLE": app_role,
+            },
+        )
+        self.assertNotEqual(corrupt_key.returncode, 0)
+        self.assertIn("key ring checksum mismatch", corrupt_key.stderr)
+        self.assert_target_untouched(
+            corrupt_key_target,
+            "verify the key-ring rejection preceded pg_restore",
+        )
 
         # pg_restore accepts any structurally valid custom archive, so a dump
         # that no longer matches its manifest has to be caught here or not at all.

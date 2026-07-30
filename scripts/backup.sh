@@ -168,19 +168,50 @@ db_file="$out_dir/merlon-db-$timestamp.dump"
 keys_file="$out_dir/merlon-keyring-$timestamp.env"
 manifest_file="$out_dir/merlon-backup-$timestamp.json"
 
-db_temp=$(mktemp "$out_dir/.merlon-db-$timestamp.dump.XXXXXX")
+# A timestamp is part of the public backup contract, so two invocations that
+# start in the same second derive the same three final names. Reserve that name
+# as one unit before pg_dump. mkdir is the atomic operation here: every
+# cooperating invocation either owns the whole timestamp or fails without
+# writing a dump. The explicit final-name check also rejects a sequential
+# same-second retry and any incomplete set left by an earlier hard crash.
+reservation_dir="$out_dir/.merlon-backup-$timestamp.lock"
+if ! mkdir -- "$reservation_dir" 2>/dev/null; then
+  echo "backup name '$timestamp' is already reserved in $out_dir; refusing to overwrite another run" >&2
+  exit 1
+fi
+
+db_temp=
 keys_temp=
-manifest_temp=$(mktemp "$out_dir/.merlon-backup-$timestamp.json.XXXXXX")
+manifest_temp=
+published_files=()
+backup_complete=false
 
 cleanup() {
   [[ -z $db_temp ]] || rm -f -- "$db_temp"
   [[ -z $keys_temp ]] || rm -f -- "$keys_temp"
   [[ -z $manifest_temp ]] || rm -f -- "$manifest_temp"
+  if [[ $backup_complete != true ]]; then
+    for published_file in "${published_files[@]}"; do
+      rm -f -- "$published_file"
+    done
+  fi
+  rmdir -- "$reservation_dir" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+for final_file in "$db_file" "$keys_file" "$manifest_file"; do
+  if [[ -e $final_file ]]; then
+    echo "backup artifact already exists: $final_file" >&2
+    echo "refusing to overwrite a backup with timestamp $timestamp" >&2
+    exit 1
+  fi
+done
+
+db_temp=$(mktemp "$out_dir/.merlon-db-$timestamp.dump.XXXXXX")
+manifest_temp=$(mktemp "$out_dir/.merlon-backup-$timestamp.json.XXXXXX")
 
 echo "Dumping database to $db_file"
 # Custom format: compressed, and restorable selectively with pg_restore.
@@ -226,12 +257,16 @@ EOF
 # is advertised as a complete backup; failures remove every temporary file.
 mv -- "$db_temp" "$db_file"
 db_temp=
+published_files+=("$db_file")
 if [[ -n $keys_temp ]]; then
   mv -- "$keys_temp" "$keys_file"
   keys_temp=
+  published_files+=("$keys_file")
 fi
 mv -- "$manifest_temp" "$manifest_file"
 manifest_temp=
+published_files+=("$manifest_file")
+backup_complete=true
 
 echo
 echo "Backup complete:"

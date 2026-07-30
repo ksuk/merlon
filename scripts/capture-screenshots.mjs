@@ -35,7 +35,14 @@ const OUT_DIR = process.env.OUT_DIR || '/out';
 // Fixed IDs from the deterministic demo dataset (deploy/seed/demo/STORY_IDS.md).
 const SHOTS = [
   { name: 'demo-dashboard.png', path: '/' },
-  { name: 'demo-customers.png', path: '/customers' },
+  {
+    name: 'demo-customers.png',
+    path: '/customers',
+    // The sidebar makes even an empty customer page large enough to pass the
+    // PNG byte-size check. Require a real data row so this image remains an
+    // executable regression check for the paginated list envelope.
+    requiredSelector: 'tbody a[href^="/customers/"]',
+  },
   {
     name: 'demo-customer-cdd.png',
     path: '/customers/61a626c6-ced4-536d-be74-41d6ca874e4d',
@@ -100,6 +107,12 @@ async function main() {
       await page.reload({ waitUntil: 'networkidle' });
       await page.waitForTimeout(SETTLE_MS);
       await assertNoRawKeys(page, shot.name);
+      if (shot.requiredSelector) {
+        await page.locator(shot.requiredSelector).first().waitFor({
+          state: 'visible',
+          timeout: 10_000,
+        });
+      }
       await page.screenshot({ path: out, fullPage: false });
       await page.close();
       console.log(`captured ${shot.name} from ${url}`);

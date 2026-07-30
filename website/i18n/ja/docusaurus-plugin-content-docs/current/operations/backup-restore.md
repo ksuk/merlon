@@ -84,7 +84,7 @@ Merlon のこの logical backup は PostgreSQL large object を作成・サポ�
 
 `MERLON_ENCRYPTION_KEY_RING` が未設定の場合、スクリプトは**実行を拒否する**。データベースのみのバックアップを黙って生成することはしない。暗号化属性を一切保存しないデプロイに限り `--no-keys` を渡すこと。本番データベースでこれが正しいことはない。
 
-出力ディレクトリは `BACKUP_DIR` で指定する（`make backup BACKUP_DIR=/mnt/backups`）。既定は `backups/`。スクリプトが新規作成したdirectoryはmode `0700`にする。既存のdirectoryの権限は設定したまま変更しない。共有マウントやNFS exportに対してgroup accessを黙って剥奪すれば、それを読む他の仕組みが壊れる上に、その原因をこのジョブに結び付ける手がかりも残らないためである。ただしgroup／otherから到達可能な場合は警告する。いずれの場合も、dump、key-ring file、manifestはgroup／other accessなしで作成される。スクリプトは同じdirectory内のhidden temporary fileへ書き込み、manifestを最後に公開する。`pg_dump`が失敗した場合はtemporary dumpを削除し、final-name backupを残さない。
+出力ディレクトリは `BACKUP_DIR` で指定する（`make backup BACKUP_DIR=/mnt/backups`）。既定は `backups/`。スクリプトが新規作成したdirectoryはmode `0700`にする。既存のdirectoryの権限は設定したまま変更しない。共有マウントやNFS exportに対してgroup accessを黙って剥奪すれば、それを読む他の仕組みが壊れる上に、その原因をこのジョブに結び付ける手がかりも残らないためである。ただしgroup／otherから到達可能な場合は警告する。いずれの場合も、dump、key-ring file、manifestはgroup／other accessなしで作成される。スクリプトは同じdirectory内のhidden temporary fileへ書き込み、manifestを最後に公開する。`pg_dump`が失敗した場合はtemporary dumpを削除し、final-name backupを残さない。dumpを開始する前に、3つのfilenameが共有するtimestampを原子的に予約する。同じ秒へ解決された同時または逐次実行は、最初のbackup setの一部を上書きせず失敗する。
 
 ### 保管
 
@@ -140,7 +140,9 @@ MERLON_ENV=production make restore \
 
 スクリプトはダンプのタイムスタンプに対応するマニフェストと鍵リングのファイルを探す。マニフェストがある場合、そこに記録された `sha256` とダンプを照合し、不一致なら復元を中止する。`pg_restore` は構造的に妥当な custom archive であれば何でも受理するため、途中で切れたコピーや、似た名前が並ぶディレクトリから取り違えたファイルを、このチェックが無ければ何も言わずに復元してしまう。マニフェストが無い場合は警告のみとする。マニフェスト導入前に取得したバックアップや、ダンプ単体で移送されたものも復元可能である必要があるためである。
 
-鍵リングが無い場合も同様に警告する。それが気づくための最後の安価な機会である。復元後はデータベースが正常に見え、顧客属性だけが静かに読めない。
+マニフェストが鍵リングを宣言している場合、スクリプトはそこに記録された同一directory内のfilenameを使用し、そのfileも記録済み`sha256`と照合する。存在する鍵リングが切り詰められている、別backupのものへ置換されている、またはその他の理由で不一致なら、target databaseを調べる前に復元を中止する。checksumが一致した場合だけ検証済みの対応鍵リングとして報告する。安全でないfilenameまたは不正なchecksum metadataもfail closedで拒否する。
+
+鍵リングの欠落は、runbookが別保管を要求し後から投入できるため、引き続き警告のみとする。`"key_ring": null`を持つschema v1 manifestは意図的な`--no-keys` backupを表すため、欠落警告を出さない。manifestが無い場合、同名規則で見つかったfileは未検証候補としてのみ報告する。この区別は重要である。復元後はデータベースが正常に見えても、暗号化された顧客属性だけが読めない場合がある。
 
 ### リストア後の手順
 

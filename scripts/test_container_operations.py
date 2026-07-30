@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -393,6 +395,98 @@ class BackupTest(unittest.TestCase):
         self.assertIn("large objects are not supported", result.stderr)
         self.assertEqual(args, [])
 
+    def test_backup_atomically_rejects_a_same_timestamp_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            bin_dir = tmp_path / "bin"
+            bin_dir.mkdir()
+            output_dir = tmp_path / "output"
+            invocations = tmp_path / "pg-dump-invocations"
+
+            write_executable(
+                bin_dir / "date",
+                "#!/bin/sh\nprintf '%s\\n' 20260729T120000Z\n",
+            )
+            write_executable(
+                bin_dir / "psql",
+                "#!/bin/sh\nprintf '%s\\n' 0\n",
+            )
+            write_executable(
+                bin_dir / "pg_dump",
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"$$\" >> \"$FAKE_INVOCATIONS_FILE\"\n"
+                "for arg in \"$@\"; do\n"
+                "  case \"$arg\" in --file=*) printf '%s' \"$$\" > \"${arg#--file=}\" ;; esac\n"
+                "done\n"
+                "sleep 1.5\n",
+            )
+
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "FAKE_INVOCATIONS_FILE": str(invocations),
+                "MERLON_BACKUP_DATABASE_URL": "postgres://merlon_backup:secret@db/merlon",
+                "MERLON_ENCRYPTION_KEY_RING": "v1:concurrency-test-key",
+            }
+            clear_libpq_env(env)
+
+            first = subprocess.Popen(
+                ["bash", str(BACKUP), str(output_dir)],
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + 5
+            while not invocations.exists():
+                if first.poll() is not None:
+                    stdout, stderr = first.communicate()
+                    self.fail(
+                        "first backup exited before invoking pg_dump\n"
+                        f"stdout:\n{stdout}\nstderr:\n{stderr}"
+                    )
+                if time.monotonic() >= deadline:
+                    first.terminate()
+                    first.communicate()
+                    self.fail("first backup did not invoke pg_dump")
+                time.sleep(0.02)
+
+            second = subprocess.run(
+                ["bash", str(BACKUP), str(output_dir)],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            first_stdout, first_stderr = first.communicate(timeout=5)
+
+            self.assertEqual(first.returncode, 0, first_stdout + first_stderr)
+            self.assertNotEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertIn("already reserved", second.stderr)
+            self.assertEqual(
+                len(invocations.read_text(encoding="utf-8").splitlines()),
+                1,
+            )
+            self.assertEqual(
+                sorted(path.name for path in output_dir.iterdir()),
+                [
+                    "merlon-backup-20260729T120000Z.json",
+                    "merlon-db-20260729T120000Z.dump",
+                    "merlon-keyring-20260729T120000Z.env",
+                ],
+            )
+            manifest = json.loads(
+                (output_dir / "merlon-backup-20260729T120000Z.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            for field in ("database", "key_ring"):
+                artifact = output_dir / manifest[field]["file"]
+                self.assertEqual(
+                    hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                    manifest[field]["sha256"],
+                )
+
 
 class RestoreTest(unittest.TestCase):
     def run_restore(
@@ -407,11 +501,44 @@ class RestoreTest(unittest.TestCase):
         app_role: str | None = None,
         app_role_ready: str = "ok",
         libpq_env: dict[str, str] | None = None,
+        write_manifest: bool = False,
+        manifest_database_file: str | None = None,
+        manifest_key_file: str | None = None,
+        manifest_key_sha: str | None = None,
+        key_ring_contents: str | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             dump_file = tmp_path / "merlon-db-20260726T090000Z.dump"
-            dump_file.touch()
+            dump_contents = b"test pg_dump archive"
+            dump_file.write_bytes(dump_contents)
+            if write_manifest:
+                key_ring: dict[str, str] | None = None
+                if manifest_key_file is not None or manifest_key_sha is not None:
+                    key_ring = {}
+                    if manifest_key_file is not None:
+                        key_ring["file"] = manifest_key_file
+                    if manifest_key_sha is not None:
+                        key_ring["sha256"] = manifest_key_sha
+                manifest = {
+                    "schema_version": 1,
+                    "created_at": "2026-07-26T09:00:00Z",
+                    "database": {
+                        "file": manifest_database_file or dump_file.name,
+                        "sha256": hashlib.sha256(dump_contents).hexdigest(),
+                        "format": "pg_dump custom",
+                    },
+                    "key_ring": key_ring,
+                }
+                (tmp_path / "merlon-backup-20260726T090000Z.json").write_text(
+                    json.dumps(manifest, indent=2),
+                    encoding="utf-8",
+                )
+            if key_ring_contents is not None:
+                (tmp_path / "merlon-keyring-20260726T090000Z.env").write_text(
+                    key_ring_contents,
+                    encoding="utf-8",
+                )
             args_file = tmp_path / "pg-restore-args"
             psql_args_file = tmp_path / "psql-args"
             psql_grants_args_file = tmp_path / "psql-grants-args"
@@ -707,6 +834,62 @@ class RestoreTest(unittest.TestCase):
             "MERLON_APP_ROLE=merlon_serving",
             result.psql_grants_args,
         )
+
+    def test_restore_verifies_the_manifest_key_ring_checksum(self):
+        key_ring = "MERLON_ENCRYPTION_KEY_RING=v1:verified-key\n"
+        result, _ = self.run_restore(
+            migration_url="postgres://merlon_migrate:owner-secret@db/merlon",
+            app_url=None,
+            write_manifest=True,
+            manifest_key_file="merlon-keyring-20260726T090000Z.env",
+            manifest_key_sha=hashlib.sha256(key_ring.encode()).hexdigest(),
+            key_ring_contents=key_ring,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Key ring checksum matches.", result.stdout)
+        self.assertIn("Verified matching key ring", result.stdout)
+
+    def test_restore_rejects_a_corrupt_key_ring_before_target_access(self):
+        expected = "MERLON_ENCRYPTION_KEY_RING=v1:expected-key\n"
+        result, args = self.run_restore(
+            migration_url="postgres://merlon_migrate:owner-secret@db/merlon",
+            app_url=None,
+            write_manifest=True,
+            manifest_key_file="merlon-keyring-20260726T090000Z.env",
+            manifest_key_sha=hashlib.sha256(expected.encode()).hexdigest(),
+            key_ring_contents="MERLON_ENCRYPTION_KEY_RING=v1:corrupt-key\n",
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("key ring checksum mismatch", result.stderr)
+        self.assertEqual(result.events, [])
+        self.assertEqual(args, [])
+
+    def test_restore_honors_a_manifest_without_a_key_ring(self):
+        result, _ = self.run_restore(
+            migration_url="postgres://merlon_migrate:owner-secret@db/merlon",
+            app_url=None,
+            write_manifest=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("no matching key ring", result.stderr)
+        self.assertNotIn("Verified matching key ring", result.stdout)
+
+    def test_restore_rejects_an_unsafe_manifest_key_ring_filename(self):
+        result, args = self.run_restore(
+            migration_url="postgres://merlon_migrate:owner-secret@db/merlon",
+            app_url=None,
+            write_manifest=True,
+            manifest_key_file="../outside.env",
+            manifest_key_sha="a" * 64,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsafe key-ring filename", result.stderr)
+        self.assertEqual(result.events, [])
+        self.assertEqual(args, [])
 
 
 class PackagingContractTest(unittest.TestCase):
