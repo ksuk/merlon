@@ -11,7 +11,7 @@ cd "$repo_root"
 # that the resulting binary passed anything. api/go.mod and the DevContainer
 # name the same toolchain again, so both can drift the same way.
 
-dockerfiles=(api/Dockerfile ui/Dockerfile)
+dockerfiles=(api/Dockerfile)
 workflows=(
   .github/workflows/ci.yml
   .github/workflows/docs-deploy.yml
@@ -22,8 +22,11 @@ devcontainer_file=.devcontainer/devcontainer.json
 
 # image_versions FILE IMAGE -- the tag version of every digest-pinned FROM in
 # FILE naming IMAGE, one per line, with the -alpineN.NN suffix removed.
+# FROM may carry flags such as --platform=$BUILDPLATFORM before the image
+# reference; they are skipped rather than causing the line to be missed, which
+# would silently reduce the match count to zero.
 image_versions() {
-  sed -nE "s|^FROM[[:space:]]+$2:([0-9][^[:space:]@]*)@sha256:[0-9a-f]{64}([[:space:]].*)?$|\1|p" "$1" |
+  sed -nE "s|^FROM[[:space:]]+(--[^[:space:]]+[[:space:]]+)*$2:([0-9][^[:space:]@]*)@sha256:[0-9a-f]{64}([[:space:]].*)?$|\2|p" "$1" |
     sed -E 's/-alpine.*$//'
 }
 

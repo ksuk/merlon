@@ -44,7 +44,8 @@ export function CasesPage() {
     reopened: t("caseStatus.reopened"),
     str_filed: t("caseStatus.str_filed"),
   }
-  const { data: cases, loading, error } = useApi(api.cases.list)
+  const { data: page, loading, error } = useApi(api.cases.list)
+  const cases = page?.data
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [priority, setPriority] = useState<CasePriority>("medium")

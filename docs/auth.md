@@ -9,6 +9,37 @@ Merlon authenticates interactive users with JWT sessions and non-interactive
 clients with API keys. Both paths apply the same role model. Deployments must
 map these roles to their own access-control and change-management policy.
 
+## The first administrator
+
+A new deployment has no accounts, so no login credential exists.
+`POST /api/v1/setup`, reached in the browser at `/setup`, creates the sole
+initial Admin account and nothing else.
+
+- It is reachable without authentication, because at that moment there is no
+  credential that could authenticate anyone.
+- It succeeds exactly once. Once any user row exists it returns `409`, so it
+  cannot be replayed to mint a second administrator later.
+- The password minimum is 12 characters.
+- The login screen links to it, since a first-run operator would otherwise have
+  to know the URL. The link is unconditional: probing the server for whether
+  any account exists would disclose that to anyone who can reach the login
+  page.
+
+The current release has no supported API or UI flow for creating subsequent
+accounts. **User management** and `GET /api/v1/admin/users` provide a read-only
+list of existing users; they do not create users.
+
+The consequence for deployment is that the window between first start and first
+administrator is the one moment where an unauthenticated caller can create a
+privileged account. Do not expose a fresh instance to an untrusted network
+before completing setup.
+
+`MERLON_AUTH_ENABLED=false` disables authentication entirely. It exists for the
+demo topology and for local development. It must never be set in production;
+see [Configuration Reference](configuration.md).
+
+## Roles
+
 | Permission | Admin | Analyst | Viewer |
 |---|:---:|:---:|:---:|
 | Request a whitelist entry (`whitelist:request`) | Yes | Yes | No |

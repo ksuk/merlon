@@ -485,20 +485,29 @@
     "retention_shorten_forbidden": "The retention period cannot be shortened below the regulatory minimum.",
     "unknown": "An unexpected error occurred."
   },
+  "authGate": {
+    "checking": "Checking your session",
+    "errorTitle": "Unable to verify your session",
+    "errorDescription": "Merlon could not reach the API. Check the service and try again."
+  },
   "login": {
     "title": "Log in",
     "emailLabel": "Email address",
     "passwordLabel": "Password",
     "submit": "Log in",
-    "error": "Incorrect email or password"
+    "error": "Incorrect email or password",
+    "setupPrompt": "Starting Merlon for the first time?",
+    "setupLink": "Create the administrator account"
   },
   "setup": {
     "title": "Initial setup",
-    "description": "Create the administrator account. A license key can be applied later.",
+    "description": "Create the first administrator account. This is only possible while no account exists.",
     "emailLabel": "Email address",
     "passwordLabel": "Initial password (12+ characters)",
     "submit": "Create administrator account",
-    "error": "Initial setup failed. An administrator account may already exist."
+    "error": "Initial setup failed. An administrator account may already exist.",
+    "loginPrompt": "Already have an account?",
+    "loginLink": "Log in"
   },
   "users": {
     "title": "User management",

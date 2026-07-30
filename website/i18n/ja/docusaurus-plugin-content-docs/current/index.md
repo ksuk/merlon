@@ -22,6 +22,8 @@ Merlon は、日本のノンバンク金融機関向けの自己ホスト型 AML
   アラート、ケース解決までを一通り体験する
 - [アーキテクチャ](architecture.md) — Go API・ネイティブエンジン・React UI の
   関係と、CDD スコアが中心軸である理由
+- [よくある質問](faq.md) — Merlon が何であるか、および評価時に最も多く問われる
+  設計判断
 
 ## コンプライアンスと統制
 
@@ -50,6 +52,8 @@ Merlon の検知の厳しさを決める担当者向け。すべてのルール�
 本番環境で Merlon を稼働させる担当者向け。
 
 - [デプロイ手順](operations/deployment.md) — 本番構成とロールアウト
+- [コンテナイメージ](operations/container-images.md) — 何が公開されるか、各タグが
+  何を保証するか、`latest` が存在しない理由
 - [API / ワーカーモード](operations/worker-mode.md) — API とバックグラウンドジョブ処理の分離
 - [初期データ移行](operations/initial-migration.md) — 既存の顧客マスタと取引履歴を
   ファイルから投入する
@@ -60,6 +64,20 @@ Merlon の検知の厳しさを決める担当者向け。すべてのルール�
 - [依存関係のライフサイクル](operations/dependency-lifecycle.md) — サポート対象の
   ランタイムバージョンと EOL 管理
 - [リリースノート](release-notes.md) — 各バージョンの変更点
+- [トラブルシューティング](troubleshooting/index.md) — 実際に表示されている
+  エラーメッセージから引く症状の逆引き
+
+## セキュリティと保証
+
+セキュリティレビュー担当、ベンダーリスク評価担当、内部監査向け。
+
+- [セキュリティと保証](security/index.md) — 要点と、詳細の所在
+- [データ送出](security/data-egress.md) — Merlon が行いうる外向き通信のすべてと、
+  その契機
+- [サプライチェーン](security/supply-chain.md) — 固定、スキャン、リリース来歴、
+  および既知のギャップ
+- [受容リスク](security/accepted-risks/index.md) — Merlon が意図的に行わないことと、
+  その補完統制
 
 ## 連携と拡張
 

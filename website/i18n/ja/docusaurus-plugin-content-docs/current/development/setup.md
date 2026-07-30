@@ -78,7 +78,7 @@ make seed
 | `make migrate` | `MERLON_DATABASE_URL` を使って DB マイグレーションを適用 |
 | `make seed` | デモデータ付きでフル構成の docker-compose トポロジーを起動（`MERLON_SEED=true docker compose up --build`） |
 | `make dev-up` / `make dev-down` | 開発用トポロジー（`docker-compose.yml` + `docker-compose.dev.yml`）を起動／停止 |
-| `make minimal-up` / `make minimal-down` | 最小トポロジー（PostgreSQL + API のみ）を起動／停止 |
+| `make up` / `make down` | 標準トポロジー（PostgreSQL + API）を起動／停止 |
 | `make generate-openapi` | OpenAPI 仕様を `docs/api/openapi.json` にエクスポート |
 
 すでに起動中の PostgreSQL インスタンスに、compose トポロジー全体を起動せずにデモデータを投入するには、`scripts/seed-demo.sh` を実行する。このスクリプトは `psql` 経由で `deploy/seed/legacy/seed.sql` を読み込む。このファイルは現行スキーマと不一致（`deploy/seed/legacy/README.md` 参照）のため、動作するデモデータには `make seed`（`MERLON_SEED=true`）を推奨する。

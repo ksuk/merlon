@@ -18,8 +18,10 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_WORKER_HTTP_ADDR` | `:8081` | Control/health listener used when `MERLON_MODE=worker`. |
 | `MERLON_WORKER_CONCURRENCY` | `4` | Worker evaluation concurrency; keep bounded to the database/CPU budget. |
 | `MERLON_DATABASE_URL` | unset | Use TLS (`sslmode=require` or stronger) and a least-privilege application role. |
-| `MERLON_MIGRATION_DATABASE_URL` | unset | Migration command only; use a separate schema-owner connection. Required by `make migrate` in production. |
+| `MERLON_BACKUP_DATABASE_URL` | unset | Dedicated read-only backup connection used only by `make backup`. Grant the documented existing/future table and sequence read privileges; never substitute a serving or schema-owner URL. |
+| `MERLON_MIGRATION_DATABASE_URL` | unset | Separate schema/object-owner connection used by `make migrate`, `make restore`, and `make audit-harden`. This role must manage and have `CREATE` on the target `public` schema. When another role owns a fresh restore database, its owner must transfer `public` to this role and pre-grant direct database `CONNECT` to both this role and the application role. Never substitute the serving-role URL. |
 | `MERLON_MIGRATION_BASELINE` | unset | Explicit last-applied migration filename for a pre-ledger database; never inferred automatically. |
+| `MERLON_MIGRATIONS_DIR` | `migrations` | Migration command only; directory containing versioned SQL migrations. The `--migrations-dir` flag takes precedence. |
 | `MERLON_ENCRYPTION_KEY_RING` | unset | Required for production PII protection. Use the documented key-ring format accepted by `merlon-keyrotate`; loss of every referenced key makes historical encrypted values unrecoverable. Back up keys through a protected KMS or secret manager. |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | unset | Use an RS256 key pair for local-user authentication. |
 | `MERLON_JWT_SECRET` | unset | Development fallback only. Do not set in production when using local-user authentication. |
@@ -27,6 +29,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_POSTGRES_PASSWORD` | unset | Compose-only development password. Use a secret manager in production. |
 | `MERLON_AUTH_ENABLED` | `false` | Must be `true` in production. |
 | `MERLON_SEED` | `false` | Development/demo data only; must be `false` in production. |
+| `MERLON_DEMO_DATA_DIR` | unset | Directory holding a full generated demo dataset, loaded when `MERLON_SEED` is enabled. Falls back to the built-in sample if the directory is incomplete. Development/demo only. |
 | `MERLON_CONFIG_PATH` | `config.yaml` | Path to application configuration. |
 | `MERLON_CACHE_BACKEND` | `memory` | Select the configured cache backend. |
 | `MERLON_EVENT_BUS` | `pg_notify` | Event bus driver used with PostgreSQL. |
@@ -53,6 +56,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_CDD_WEIGHTS_PATH` | `cdd_weights.yaml` | Native Go CDD rule root; pin and review content changes. |
 | `MERLON_COUNTRY_RISK_PATH` | unset | Optional native Go country-risk table. |
 | `MERLON_SCREENING_LISTS_PATH` | `screening_lists` | Native Go last-good screening-list snapshot root. |
+| `MERLON_SCREENING_THRESHOLD` | engine default | Name-match score, `0`–`1`, at or above which a screening hit is raised. Lowering it raises recall and review volume. Values outside the range, or that do not parse, are ignored and leave the default in force. Changing it alters detection sensitivity and should follow the same review as a rule change. |
 | `MERLON_TM_BASE_CURRENCY` | `JPY` | Interim PH9 invariant: mixed/non-base TM aggregation is fail-alerted to `PENDING_REVIEW`; full FX/decimal semantics are PH10. |
 | `MERLON_REALTIME_MONITOR_TIMEOUT` | `30s` | Maximum synchronous history-loading and realtime-monitoring duration before fail-alert queueing. |
 | `MERLON_TM_BATCH_SCHEDULE` | `02:00` | Daily `HH:MM` time for transaction-monitoring batch evaluation. |

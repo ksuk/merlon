@@ -88,6 +88,10 @@ services:
     healthcheck:
       # api/Dockerfile's runtime image is alpine with no curl; busybox wget
       # (already present in the alpine base) is used instead.
+      #
+      # Deliberately readiness, not the image's liveness healthcheck: here
+      # "healthy" must mean the demo is actually usable — database up, engine
+      # loaded, dataset seeded — which `--wait` and the demo tour rely on.
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz/ready"]
       interval: 5s
       timeout: 5s

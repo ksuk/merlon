@@ -32,7 +32,8 @@ function formatAmount(amount: number, currency: string, locale: string) {
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation()
-  const { data: transactions, loading, error } = useApi(api.transactions.list)
+  const { data: page, loading, error } = useApi(api.transactions.list)
+  const transactions = page?.data
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [direction, setDirection] = useState("inbound")

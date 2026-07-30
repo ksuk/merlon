@@ -21,17 +21,24 @@ The repository Docker Compose files are development/demo topologies. They are no
 - Keep `MERLON_SEED=false` outside local development.
 - Restrict PostgreSQL and API `/metrics` to private networks or authenticated monitoring infrastructure.
 - Back up `MERLON_ENCRYPTION_KEY_RING` and verify that recovery procedures can restore both database data and required key material.
-- Run `make migrate` with `MERLON_MIGRATION_DATABASE_URL` before starting the API. The serving role must not own application tables.
+- Run `make migrate`, then `make audit-harden`, with
+  `MERLON_MIGRATION_DATABASE_URL` before starting the API. The serving role
+  must not own application tables or hold database-level `CREATE`.
 
 ## Configuration verification
 
 Before rollout, record the native engine configuration digests from startup logs and retain the approved rule files with the release evidence. See ADR-0012.
 
-## Audit-log database roles
+## Application database roles
 
-The application database role should not have `UPDATE` or `DELETE` privileges on
-`audit_logs`, and must not own that table. Apply
-`docs/operations/audit-hardening.sql` as the migration owner, then verify the
-preflight query before rollout. The API refuses to start in production when
-the check fails. Grant read-only audit access through a separate role and
-retain the verification output with deployment evidence.
+Apply `docs/operations/audit-hardening.sql` as the migration owner after
+migrations. It normalizes the serving role to CRUD on ordinary application
+tables, `SELECT`/`INSERT` on append-only audit evidence, and no access to the
+migration ledger or schema DDL. It rejects database-level `CREATE` and also
+fails closed if inherited role membership supplies a forbidden privilege. The
+serving role must not own application tables.
+
+The API refuses to start in production when its audit-log preflight fails.
+Grant read-only audit access through a separate, organization-managed role;
+the serving-role procedure does not create or restore that role. Verify both
+sets of grants and retain the output with deployment evidence.

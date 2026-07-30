@@ -232,6 +232,52 @@ func TestHealthzReadyHealthyWhenAllDepsUp(t *testing.T) {
 	}
 }
 
+// TestHealthProbesDoNotLeakDependencyErrors guards the consequence of these
+// probes being unauthenticated: auth.go exempts /healthz, /healthz/live and
+// /healthz/ready, and the OpenAPI document declares them with an empty
+// security requirement, so whatever these bodies contain is readable by anyone
+// who can reach the port. A pgx connection error is formatted "failed to
+// connect to `host=... user=... database=...`" and engine errors carry
+// configuration file paths, so neither may be echoed back.
+func TestHealthProbesDoNotLeakDependencyErrors(t *testing.T) {
+	const dbError = "failed to connect to `host=db.internal user=merlon database=merlon`: dial tcp 10.0.0.7:5432: connect: connection refused"
+	const engineError = "load config /etc/merlon/content/cdd_weights.json: no such file or directory"
+
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Users:        store.NewMemoryUserRepo(),
+		DB:           &stubDBPinger{err: errors.New(dbError)},
+		EngineHealth: &engine.MockHealthChecker{Err: errors.New(engineError)},
+	})
+
+	for _, path := range []string{"/healthz", "/healthz/ready"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		body := rec.Body.String()
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s status code = %d, want %d, body: %s", path, rec.Code, http.StatusServiceUnavailable, body)
+		}
+		for _, leaked := range []string{dbError, engineError, "host=", "10.0.0.7", "/etc/merlon"} {
+			if strings.Contains(body, leaked) {
+				t.Errorf("%s body leaks %q: %s", path, leaked, body)
+			}
+		}
+	}
+
+	// Redaction must not cost operators the one thing the probe is for:
+	// knowing which dependency is down.
+	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	for _, want := range []string{`"postgres":"error"`, `"engine":"error"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("body = %s, want it to contain %s", rec.Body.String(), want)
+		}
+	}
+}
+
 // TestHealthzReadyUnhealthyOnEngineDown ensures the engine check still gates
 // readiness independently of the DB check (regression guard for the
 // checks-map refactor).

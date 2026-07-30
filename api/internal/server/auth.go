@@ -42,7 +42,7 @@ func HashAPIKey(raw string) string {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.apikeys == nil || r.URL.Path == "/healthz" || r.URL.Path == "/healthz/live" || r.URL.Path == "/healthz/ready" {
+		if s.apikeys == nil || r.URL.Path == "/healthz" || r.URL.Path == "/healthz/live" || r.URL.Path == "/healthz/ready" || s.isPublicSPARequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -87,6 +87,25 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// isPublicSPARequest keeps the browser application shell outside the API
+// authentication boundary. The JavaScript bundle contains no protected data;
+// it must be reachable before a browser can render /login or redirect a
+// protected client-side route there. Only requests that actually resolve to
+// the registered SPA handlers are exempted, and reserved server namespaces
+// never qualify even though the SPA's GET / fallback would otherwise match
+// them.
+func (s *Server) isPublicSPARequest(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if isReservedServerPath(r.URL.Path) {
+		return false
+	}
+
+	_, pattern := s.mux.Handler(r)
+	return pattern == "GET /" || pattern == "GET /assets/"
 }
 
 type authError struct {

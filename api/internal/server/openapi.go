@@ -1,6 +1,10 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/ksuk/merlon/api/internal/buildinfo"
+)
 
 func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, BuildOpenAPISpec())
@@ -16,13 +20,21 @@ func BuildOpenAPISpec() map[string]any {
 		"info": map[string]any{
 			"title":       "Merlon AML/CFT API",
 			"description": "Self-hosted AML/CFT compliance platform for Japanese non-bank financial institutions",
-			"version":     "1.0.0",
+			// The build's own version, not a literal, so a generated client
+			// records which build it was generated against.
+			"version": buildinfo.Version,
 		},
+		// The path keys below are absolute from the server root and already
+		// carry the /api/v1 prefix, so the server URL must not repeat it.
+		// Declaring "/api/v1" here made every effective URL /api/v1/api/v1/...,
+		// which is what a generated client would have called.
 		"servers": []map[string]any{
-			{"url": "/api/v1", "description": "API v1"},
+			{"url": "/", "description": "This deployment"},
 		},
 		"paths": map[string]any{
-			"/healthz":                                  pathGET("Health check"),
+			"/healthz":                                  pathProbeGET("Health check", true),
+			"/healthz/live":                             pathProbeGET("Liveness probe", false),
+			"/healthz/ready":                            pathProbeGET("Readiness probe", true),
 			"/api/v1/customers":                         pathListCreate("Customer"),
 			"/api/v1/customers/{id}":                    pathGetPut("Customer"),
 			"/api/v1/customers/{id}/score":              pathPOST("Score customer risk"),
@@ -140,6 +152,22 @@ func paginatedListResponses() map[string]any {
 func pathGET(summary string) map[string]any {
 	return map[string]any{
 		"get": map[string]any{"summary": summary, "responses": defaultResponses()},
+	}
+}
+
+func pathProbeGET(summary string, mayBeUnavailable bool) map[string]any {
+	responses := map[string]any{
+		"200": map[string]any{"description": "Healthy"},
+	}
+	if mayBeUnavailable {
+		responses["503"] = map[string]any{"description": "Service Unavailable"}
+	}
+	return map[string]any{
+		"get": map[string]any{
+			"summary":   summary,
+			"security":  []map[string]any{},
+			"responses": responses,
+		},
 	}
 }
 

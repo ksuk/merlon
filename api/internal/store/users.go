@@ -52,6 +52,16 @@ func (r *MemoryUserRepo) Create(_ context.Context, u *domain.User) error {
 	return nil
 }
 
+func (r *MemoryUserRepo) CreateIfEmpty(_ context.Context, u *domain.User) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.data) != 0 {
+		return false, nil
+	}
+	r.data[u.ID] = u
+	return true, nil
+}
+
 func (r *MemoryUserRepo) Update(_ context.Context, u *domain.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -164,6 +174,8 @@ func (r *MemoryRefreshTokenRepo) ListActiveByUser(_ context.Context, userID stri
 
 // PgUserRepo
 
+const initialAdministratorLockSQL = `SELECT pg_advisory_xact_lock(hashtextextended('merlon.initial-administrator', 0))`
+
 type PgUserRepo struct {
 	pool *pgxpool.Pool
 }
@@ -201,6 +213,43 @@ func (r *PgUserRepo) Create(ctx context.Context, u *domain.User) error {
 		`INSERT INTO users (id, email, password_hash, role, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		u.ID, u.Email, u.PasswordHash, string(u.Role), u.Active, u.CreatedAt, u.UpdatedAt)
 	return err
+}
+
+func (r *PgUserRepo) CreateIfEmpty(ctx context.Context, u *domain.User) (bool, error) {
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback(ctx)
+
+	// All initial-setup callers share this transaction-scoped lock. The
+	// explicit READ COMMITTED isolation above ensures the emptiness query gets
+	// a fresh snapshot after a winning setup transaction commits while this
+	// caller waits for the lock.
+	if _, err := tx.Exec(ctx, initialAdministratorLockSQL); err != nil {
+		return false, err
+	}
+
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users)`).Scan(&exists); err != nil {
+		return false, err
+	}
+	if exists {
+		if err := tx.Commit(ctx); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO users (id, email, password_hash, role, active, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		u.ID, u.Email, u.PasswordHash, string(u.Role), u.Active, u.CreatedAt, u.UpdatedAt); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *PgUserRepo) Update(ctx context.Context, u *domain.User) error {

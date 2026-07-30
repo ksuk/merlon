@@ -33,12 +33,6 @@ import (
 	"github.com/ksuk/merlon/api/internal/store"
 )
 
-// whitelistExpiryCheckInterval governs how often the ticker checks for
-// overdue/soon-to-expire whitelist entries (whitelist.md §2, WL-006). The
-// job itself (batch.RunWhitelistExpiryJob) is idempotent, so an hourly
-// cadence is safe regardless of exact expiry timing.
-var version = "dev"
-
 const whitelistExpiryCheckInterval = time.Hour
 
 // webhookRetryCheckInterval governs how often the retry worker polls for
@@ -148,7 +142,6 @@ func runSeed(ctx context.Context, pool *pgxpool.Pool, encryptor *crypto.Encrypto
 }
 
 func main() {
-	server.Version = version
 	slog.SetDefault(logging.NewLogger(os.Stdout))
 
 	cfg := config.Load()

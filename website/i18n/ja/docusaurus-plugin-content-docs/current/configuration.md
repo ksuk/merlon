@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # 設定リファレンス
 
-マイグレーション専用接続には `MERLON_MIGRATION_DATABASE_URL` を使用し、既存データベースを台帳へ登録する場合だけ `MERLON_MIGRATION_BASELINE` を明示する。API の接続とは分離すること。
+schema/object-owner操作には`MERLON_MIGRATION_DATABASE_URL`、定期backupには専用read-only roleの`MERLON_BACKUP_DATABASE_URL`を使用し、APIの最小権限接続から分離する。既存databaseを台帳へ登録する場合だけ`MERLON_MIGRATION_BASELINE`を明示すること。
 
 Merlon は環境変数で設定する。ローカル開発では `.env.example` を `.env` にコピーする。そこに含まれる認証情報やシークレットを本番環境で使用してはならない。
 
@@ -16,6 +16,9 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_ENV` | `development` | `production` に設定する。 |
 | `MERLON_HTTP_ADDR` | `:8080` | TLS 終端を行うリバースプロキシの背後でバインドする。 |
 | `MERLON_DATABASE_URL` | 未設定 | TLS（`sslmode=require` 以上）と最小権限のアプリケーションロールを使用する。 |
+| `MERLON_BACKUP_DATABASE_URL` | 未設定 | `make backup` だけで使用する専用の read-only backup 接続。文書化された既存・将来の table／sequence 読取権限を付与し、serving-role URL や schema-owner URL で代用しない。 |
+| `MERLON_MIGRATION_DATABASE_URL` | 未設定 | `make migrate`、`make restore`、`make audit-harden` で使用する、分離されたschema/object-owner接続。このroleはtargetの`public` schemaを管理し、そこで`CREATE`を持つ必要がある。別roleがfresh restore databaseを所有する場合、そのownerは`public`をこのroleへ移譲し、このroleとapplication roleの両方へdatabaseのdirect `CONNECT`を事前付与する。serving-role URLで代用しない。 |
+| `MERLON_MIGRATIONS_DIR` | `migrations` | マイグレーションコマンド専用。バージョン付き SQL マイグレーションを格納するディレクトリ。`--migrations-dir` フラグを指定した場合はその値を優先する。 |
 | `MERLON_ENCRYPTION_KEY_RING` | 未設定 | 本番環境の PII 保護に必須。`merlon-keyrotate` が受け付ける文書化されたキーリング形式を使用する。参照されているすべての鍵を失うと、過去の暗号化された値は復元不能になる。鍵は保護された KMS またはシークレットマネージャーでバックアップする。 |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | 未設定 | ローカルユーザー認証には RS256 鍵ペアを使用する。 |
 | `MERLON_JWT_SECRET` | 未設定 | 開発用フォールバックのみ。ローカルユーザー認証を使用する場合、本番環境では設定しないこと。 |
@@ -23,6 +26,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_POSTGRES_PASSWORD` | 未設定 | Compose 専用の開発用パスワード。本番環境ではシークレットマネージャーを使用する。 |
 | `MERLON_AUTH_ENABLED` | `false` | 本番環境では `true` が必須。 |
 | `MERLON_SEED` | `false` | 開発・デモデータ専用。本番環境では必ず `false` にする。 |
+| `MERLON_DEMO_DATA_DIR` | 未設定 | 生成済みデモデータセットを含むディレクトリ。`MERLON_SEED` 有効時に読み込む。内容が不完全な場合は内蔵サンプルにフォールバックする。開発・デモ専用。 |
 | `MERLON_CONFIG_PATH` | `config.yaml` | アプリケーション設定へのパス。 |
 | `MERLON_CACHE_BACKEND` | `memory` | 使用するキャッシュバックエンドを選択する。 |
 | `MERLON_EVENT_BUS` | `pg_notify` | PostgreSQL と併用するイベントバスドライバ。 |
@@ -37,6 +41,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_SCREENING_OFAC_URL` / `MERLON_SCREENING_EU_URL` | 未設定 | 承認済みの OFAC/EU リストエンドポイント。 |
 | `MERLON_SCREENING_UN_URL` / `MERLON_SCREENING_MOF_URL` | 未設定 | 承認済みの UN/MOF リストエンドポイント。 |
 | `MERLON_SCREENING_PEP_URL` | 未設定 | 承認済みの PEP プロバイダーエンドポイント。 |
+| `MERLON_SCREENING_THRESHOLD` | エンジン既定値 | 氏名照合スコアの閾値（`0`〜`1`）。この値以上でスクリーニングヒットとする。下げると再現率とレビュー件数が増える。範囲外の値やパースできない値は無視され、既定値が維持される。検知感度を変更するため、ルール変更と同等のレビューを経ること。 |
 | `MERLON_SMTP_HOST` / `MERLON_SMTP_PORT` | 未設定 / `587` | 通知用の SMTP エンドポイント。TLS と認証情報を設定する。 |
 | `MERLON_SMTP_USERNAME` / `MERLON_SMTP_PASSWORD` | 未設定 | SMTP 認証情報。シークレットマネージャーを使用する。 |
 | `MERLON_SMTP_FROM` / `MERLON_SMTP_TO` | 未設定 | 通知の送信元と、カンマ区切りの宛先一覧。 |

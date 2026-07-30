@@ -39,7 +39,8 @@ export function CustomersPage() {
     { value: "corporate_domestic", label: t("customers.type.corporateDomestic") },
     { value: "corporate_foreign", label: t("customers.type.corporateForeign") },
   ]
-  const { data: customers, loading, error } = useApi(api.customers.list)
+  const { data: page, loading, error } = useApi(api.customers.list)
+  const customers = page?.data
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState("")

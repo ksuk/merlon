@@ -2,8 +2,10 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
+
+	"github.com/ksuk/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/buildinfo"
 )
 
 type validateConfigRequest struct {
@@ -58,9 +60,12 @@ func (s *Server) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSystemInfo(w http.ResponseWriter, _ *http.Request) {
 	info := map[string]any{
-		"version":    "1.0.0",
+		// The build's own version, the same value /healthz reports, rather
+		// than a literal. A system that produces regulatory records must not
+		// report a version it is not.
+		"version":    buildinfo.Version,
 		"components": []string{"api", "engine", "database"},
-		"endpoints":  36,
+		"endpoints":  s.routeCount,
 		"features": map[string]bool{
 			"auth":       s.apikeys != nil,
 			"audit":      s.audit != nil,

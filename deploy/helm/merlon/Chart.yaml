@@ -3,6 +3,8 @@ name: merlon
 description: AML/CFT compliance software for Japanese non-bank financial institutions
 type: application
 version: 0.1.0
-appVersion: "0.1.0-dev"
+# No appVersion. This chart has no templates yet (see templates/README.md), so
+# it cannot deploy any version of Merlon, and naming one would be a claim it
+# does not support. Set it when the templates land, to a released tag.
 maintainers:
   - name: Merlon Project

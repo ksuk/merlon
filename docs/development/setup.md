@@ -84,7 +84,7 @@ make seed
 | `make migrate` | Apply DB migrations with a checksum ledger using `MERLON_MIGRATION_DATABASE_URL` |
 | `make seed` | Start the full docker-compose topology with demo data (`MERLON_SEED=true docker compose up --build`) |
 | `make dev-up` / `make dev-down` | Start/stop the development topology (`docker-compose.yml` + `docker-compose.dev.yml`) |
-| `make minimal-up` / `make minimal-down` | Start/stop the minimal topology (PostgreSQL + API only) |
+| `make up` / `make down` | Start/stop the standard topology (PostgreSQL + API) |
 | `make generate-openapi` | Export the OpenAPI spec to `docs/api/openapi.json` |
 
 To seed demo data into an already-running PostgreSQL instance instead of

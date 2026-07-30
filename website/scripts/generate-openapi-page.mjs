@@ -65,11 +65,69 @@ function countByMethod(paths) {
   return { counts, total };
 }
 
-function renderOpenApiPage(spec, L) {
+/**
+ * The mount point most endpoints in the document share, e.g. "/api/v1".
+ *
+ * This is the base path a reader needs, and it is not `servers[0].url`: the
+ * path keys already carry the mount point, so that field is "/" and printing
+ * it verbatim tells a reader nothing.
+ *
+ * Not a prefix common to *every* path, because the probes are deliberately
+ * mounted at the root (/healthz) alongside the API, and requiring universality
+ * would yield "" for exactly the documents this is meant to describe. Instead
+ * the paths are grouped by first segment and the largest group's shared prefix
+ * wins, so the handful of root-mounted endpoints do not erase the answer for
+ * the rest. Returns "" only when the document has no paths at all.
+ */
+export function dominantPathPrefix(paths) {
+  const keys = Object.keys(paths || {}).filter((key) => key.startsWith("/"));
+  if (keys.length === 0) return "";
+
+  const groups = new Map();
+  for (const key of keys) {
+    const segments = key.split("/").filter(Boolean);
+    if (segments.length === 0) continue;
+    const group = groups.get(segments[0]) ?? [];
+    group.push(segments);
+    groups.set(segments[0], group);
+  }
+  if (groups.size === 0) return "";
+
+  // Insertion order breaks ties, so the result does not depend on Map ordering
+  // details when two groups are the same size.
+  let largest = [];
+  for (const group of groups.values()) {
+    if (group.length > largest.length) largest = group;
+  }
+
+  let prefix = largest[0];
+  for (const segments of largest.slice(1)) {
+    let shared = 0;
+    while (
+      shared < prefix.length &&
+      shared < segments.length &&
+      prefix[shared] === segments[shared]
+    ) {
+      shared++;
+    }
+    prefix = prefix.slice(0, shared);
+    if (prefix.length === 0) return "";
+  }
+  return `/${prefix.join("/")}`;
+}
+
+export function renderOpenApiPage(spec, L) {
   const info = spec.info || {};
   const title = "REST API Reference";
   const version = info.version || "unversioned";
-  const server = spec.servers?.[0]?.url;
+  const declaredServer = spec.servers?.[0]?.url;
+  // A declared server of "/" (or nothing) is not a usable base path, so prefer
+  // what the paths themselves say and keep the declared value only as a
+  // fallback for a document whose paths share no prefix.
+  const basePrefix = dominantPathPrefix(spec.paths);
+  const server =
+    basePrefix ||
+    (declaredServer && declaredServer !== "/" ? declaredServer : "");
   const { counts, total } = countByMethod(spec.paths);
 
   const out = [];
@@ -164,4 +222,8 @@ function main() {
   }
 }
 
-main();
+// Run as a CLI only when invoked directly, so the renderer can be imported
+// by tests without writing files.
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  main();
+}

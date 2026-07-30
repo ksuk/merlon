@@ -3,6 +3,7 @@ import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { CustomersPage } from "./customers"
+import { paginatedResponse } from "@/test/api-test-utils"
 
 function renderWithRouter(ui: React.ReactElement) {
   return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
@@ -14,8 +15,7 @@ beforeEach(() => {
 
 test("renders customer table with data", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(
-      JSON.stringify([
+    paginatedResponse([
         {
           id: "c1",
           external_id: "EXT-001",
@@ -30,7 +30,6 @@ test("renders customer table with data", async () => {
           updated_at: "2025-01-15T00:00:00Z",
         },
       ]),
-    ),
   )
 
   await renderWithRouter(<CustomersPage />)
@@ -43,7 +42,7 @@ test("renders customer table with data", async () => {
 })
 
 test("shows empty state when no customers", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([])))
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([]))
 
   await renderWithRouter(<CustomersPage />)
 

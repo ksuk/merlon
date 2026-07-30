@@ -32,6 +32,7 @@ type DBPinger interface {
 
 type Server struct {
 	mux                      *http.ServeMux
+	routeCount               int
 	addr                     string
 	customers                domain.CustomerRepository
 	transactions             domain.TransactionRepository
@@ -205,147 +206,163 @@ func New(addr string, deps Deps) *Server {
 	return s
 }
 
+// route and routeHandler register an API route and count it. Registration goes
+// through them rather than through s.mux directly so GET /api/v1/system/info
+// can report the real size of the API surface; it previously reported a literal
+// that had drifted to roughly half the true count. The SPA file routes
+// (see spa.go) register on s.mux directly and are deliberately not counted —
+// they serve the UI rather than forming part of the API contract.
+func (s *Server) route(pattern string, handler http.HandlerFunc) {
+	s.mux.HandleFunc(pattern, handler)
+	s.routeCount++
+}
+
+func (s *Server) routeHandler(pattern string, handler http.Handler) {
+	s.mux.Handle(pattern, handler)
+	s.routeCount++
+}
+
 func (s *Server) routes() {
-	s.mux.HandleFunc("GET /healthz", s.handleHealth)
-	s.mux.HandleFunc("GET /healthz/live", s.handleHealthLive)
-	s.mux.HandleFunc("GET /healthz/ready", s.handleHealthReady)
-	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	s.route("GET /healthz", s.handleHealth)
+	s.route("GET /healthz/live", s.handleHealthLive)
+	s.route("GET /healthz/ready", s.handleHealthReady)
+	s.route("GET /metrics", s.handleMetrics)
 
 	// Initial setup (the operational design §4.5)
-	s.mux.HandleFunc("POST /api/v1/setup", s.handleSetup)
+	s.route("POST /api/v1/setup", s.handleSetup)
 
 	// Customers
-	s.mux.HandleFunc("GET /api/v1/customers", s.handleListCustomers)
-	s.mux.HandleFunc("GET /api/v1/customers/{id}", s.handleGetCustomer)
-	s.mux.HandleFunc("POST /api/v1/customers", s.handleCreateCustomer)
-	s.mux.HandleFunc("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
-	s.mux.HandleFunc("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
-	s.mux.HandleFunc("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
-	s.mux.HandleFunc("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
+	s.route("GET /api/v1/customers", s.handleListCustomers)
+	s.route("GET /api/v1/customers/{id}", s.handleGetCustomer)
+	s.route("POST /api/v1/customers", s.handleCreateCustomer)
+	s.route("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
+	s.route("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
+	s.route("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
+	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
 	// Screening (WS-7)
-	s.mux.HandleFunc("POST /api/v1/screening/check", s.handleScreeningCheck)
-	s.mux.HandleFunc("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
+	s.route("POST /api/v1/screening/check", s.handleScreeningCheck)
+	s.route("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
 
 	// Accounts (joint accounts, the data model §1.1.3)
-	s.mux.HandleFunc("POST /api/v1/accounts", s.handleCreateAccount)
-	s.mux.HandleFunc("GET /api/v1/accounts/{id}", s.handleGetAccount)
-	s.mux.HandleFunc("POST /api/v1/accounts/{id}/customers", s.handleAddAccountCustomer)
-	s.mux.HandleFunc("GET /api/v1/accounts/{id}/customers", s.handleListAccountCustomers)
+	s.route("POST /api/v1/accounts", s.handleCreateAccount)
+	s.route("GET /api/v1/accounts/{id}", s.handleGetAccount)
+	s.route("POST /api/v1/accounts/{id}/customers", s.handleAddAccountCustomer)
+	s.route("GET /api/v1/accounts/{id}/customers", s.handleListAccountCustomers)
 
 	// Transactions
-	s.mux.HandleFunc("GET /api/v1/transactions", s.handleListTransactions)
-	s.mux.HandleFunc("GET /api/v1/transactions/{id}", s.handleGetTransaction)
-	s.mux.HandleFunc("POST /api/v1/transactions", s.handleCreateTransaction)
+	s.route("GET /api/v1/transactions", s.handleListTransactions)
+	s.route("GET /api/v1/transactions/{id}", s.handleGetTransaction)
+	s.route("POST /api/v1/transactions", s.handleCreateTransaction)
 
 	// Alerts
-	s.mux.HandleFunc("GET /api/v1/alerts", s.handleListAlerts)
-	s.mux.HandleFunc("POST /api/v1/alerts/bulk-close", s.handleBulkCloseAlerts)
-	s.mux.HandleFunc("POST /api/v1/alerts/bulk-case", s.handleBulkCaseAssignment)
-	s.mux.HandleFunc("GET /api/v1/alerts/{id}", s.handleGetAlert)
-	s.mux.HandleFunc("PATCH /api/v1/alerts/{id}", s.handleUpdateAlertStatus)
+	s.route("GET /api/v1/alerts", s.handleListAlerts)
+	s.route("POST /api/v1/alerts/bulk-close", s.handleBulkCloseAlerts)
+	s.route("POST /api/v1/alerts/bulk-case", s.handleBulkCaseAssignment)
+	s.route("GET /api/v1/alerts/{id}", s.handleGetAlert)
+	s.route("PATCH /api/v1/alerts/{id}", s.handleUpdateAlertStatus)
 
 	// Backtest
-	s.mux.HandleFunc("POST /api/v1/backtest", s.handleRunBacktest)
-	s.mux.HandleFunc("POST /api/v1/backtests", s.handleCreateBacktestJob)
-	s.mux.HandleFunc("GET /api/v1/backtests", s.handleListBacktestJobs)
-	s.mux.HandleFunc("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
-	s.mux.HandleFunc("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
-	s.mux.HandleFunc("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
+	s.route("POST /api/v1/backtest", s.handleRunBacktest)
+	s.route("POST /api/v1/backtests", s.handleCreateBacktestJob)
+	s.route("GET /api/v1/backtests", s.handleListBacktestJobs)
+	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
+	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
+	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
 
 	// Reports
-	s.mux.HandleFunc("POST /api/v1/reports/str", s.handleCreateSTR)
-	s.mux.HandleFunc("GET /api/v1/reports/str/export", s.handleExportSTR)
+	s.route("POST /api/v1/reports/str", s.handleCreateSTR)
+	s.route("GET /api/v1/reports/str/export", s.handleExportSTR)
 
 	// Cases
-	s.mux.HandleFunc("POST /api/v1/cases", s.handleCreateCase)
-	s.mux.HandleFunc("GET /api/v1/cases", s.handleListCases)
-	s.mux.HandleFunc("GET /api/v1/cases/{id}", s.handleGetCase)
-	s.mux.HandleFunc("PATCH /api/v1/cases/{id}", s.handleUpdateCase)
-	s.mux.HandleFunc("POST /api/v1/cases/{id}/notes", s.handleAddCaseNote)
-	s.mux.HandleFunc("GET /api/v1/cases/{id}/related", s.handleGetRelatedCases)
-	s.mux.HandleFunc("POST /api/v1/cases/{id}/related", s.handleAddRelatedCase)
+	s.route("POST /api/v1/cases", s.handleCreateCase)
+	s.route("GET /api/v1/cases", s.handleListCases)
+	s.route("GET /api/v1/cases/{id}", s.handleGetCase)
+	s.route("PATCH /api/v1/cases/{id}", s.handleUpdateCase)
+	s.route("POST /api/v1/cases/{id}/notes", s.handleAddCaseNote)
+	s.route("GET /api/v1/cases/{id}/related", s.handleGetRelatedCases)
+	s.route("POST /api/v1/cases/{id}/related", s.handleAddRelatedCase)
 
 	// Dashboard
-	s.mux.HandleFunc("GET /api/v1/dashboard", s.handleDashboard)
+	s.route("GET /api/v1/dashboard", s.handleDashboard)
 
 	// Batch
-	s.mux.HandleFunc("POST /api/v1/batch/score", s.handleBatchScore)
-	s.mux.HandleFunc("POST /api/v1/batch/monitor", s.handleBatchMonitor)
+	s.route("POST /api/v1/batch/score", s.handleBatchScore)
+	s.route("POST /api/v1/batch/monitor", s.handleBatchMonitor)
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
-	s.mux.HandleFunc("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
+	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
 
 	// Webhooks
-	s.mux.HandleFunc("POST /api/v1/webhooks", s.handleCreateWebhook)
-	s.mux.HandleFunc("GET /api/v1/webhooks", s.handleListWebhooks)
-	s.mux.HandleFunc("GET /api/v1/webhooks/{id}", s.handleGetWebhook)
-	s.mux.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleDeleteWebhook)
-	s.mux.HandleFunc("GET /api/v1/webhooks/{id}/deliveries", s.handleListWebhookDeliveries)
-	s.mux.HandleFunc("GET /api/v1/webhooks/dlq", s.handleListDLQEntries)
-	s.mux.HandleFunc("POST /api/v1/webhooks/dlq/{id}/reprocess", s.handleReprocessDLQEntry)
+	s.route("POST /api/v1/webhooks", s.handleCreateWebhook)
+	s.route("GET /api/v1/webhooks", s.handleListWebhooks)
+	s.route("GET /api/v1/webhooks/{id}", s.handleGetWebhook)
+	s.route("DELETE /api/v1/webhooks/{id}", s.handleDeleteWebhook)
+	s.route("GET /api/v1/webhooks/{id}/deliveries", s.handleListWebhookDeliveries)
+	s.route("GET /api/v1/webhooks/dlq", s.handleListDLQEntries)
+	s.route("POST /api/v1/webhooks/dlq/{id}/reprocess", s.handleReprocessDLQEntry)
 
 	// API Keys (admin only, requires admin API key or bootstrap token)
-	s.mux.HandleFunc("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
-	s.mux.HandleFunc("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
-	s.mux.HandleFunc("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)
+	s.route("POST /api/v1/admin/apikeys", s.handleCreateAPIKey)
+	s.route("GET /api/v1/admin/apikeys", s.handleListAPIKeys)
+	s.route("DELETE /api/v1/admin/apikeys/{id}", s.handleRevokeAPIKey)
 
 	// Users (admin only)
-	s.mux.HandleFunc("GET /api/v1/admin/users", s.handleListUsers)
+	s.route("GET /api/v1/admin/users", s.handleListUsers)
 
 	// Retention policies (admin only via /api/v1/admin/ prefix gate,
 	// the audit design RET-001/RET-002). Update additionally enforces a
 	// positive period and any optional deployment-defined minimum.
-	s.mux.HandleFunc("GET /api/v1/admin/retention-policies", s.handleListRetentionPolicies)
-	s.mux.HandleFunc("PUT /api/v1/admin/retention-policies/{category}", s.handleUpdateRetentionPolicy)
+	s.route("GET /api/v1/admin/retention-policies", s.handleListRetentionPolicies)
+	s.route("PUT /api/v1/admin/retention-policies/{category}", s.handleUpdateRetentionPolicy)
 
 	// Session (JWT login/logout/refresh/me)
-	s.mux.HandleFunc("POST /api/v1/auth/login", s.handleLogin)
-	s.mux.HandleFunc("POST /api/v1/auth/logout", s.handleLogout)
-	s.mux.HandleFunc("POST /api/v1/auth/refresh", s.handleRefresh)
-	s.mux.HandleFunc("GET /api/v1/auth/me", s.handleMe)
+	s.route("POST /api/v1/auth/login", s.handleLogin)
+	s.route("POST /api/v1/auth/logout", s.handleLogout)
+	s.route("POST /api/v1/auth/refresh", s.handleRefresh)
+	s.route("GET /api/v1/auth/me", s.handleMe)
 
 	// Audit (ALD-001/002 listing stays open like other list endpoints;
 	// ALD-004/005 export requires auth.PermAuditRead since it extracts the
 	// full filtered result set in one response, a higher-risk action than
 	// browsing a page at a time).
-	s.mux.HandleFunc("GET /api/v1/audit", s.handleListAuditLogs)
-	s.mux.Handle("GET /api/v1/audit/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportAuditLogs)))
+	s.route("GET /api/v1/audit", s.handleListAuditLogs)
+	s.routeHandler("GET /api/v1/audit/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportAuditLogs)))
 
 	// Config validation
-	s.mux.HandleFunc("POST /api/v1/config/validate", s.handleValidateConfig)
+	s.route("POST /api/v1/config/validate", s.handleValidateConfig)
 
 	// Rules (the HTTP API contract §1.4): reads are open to all roles, writes require
 	// auth.PermRuleWrite (Admin only) on top of the coarse role check, since
 	// hasPermission alone would let Analyst write like most other resources.
-	s.mux.HandleFunc("GET /api/v1/rules", s.handleListRules)
-	s.mux.HandleFunc("GET /api/v1/rules/{id}", s.handleGetRule)
-	s.mux.HandleFunc("GET /api/v1/rules/{id}/export", s.handleExportRule)
-	s.mux.Handle("POST /api/v1/rules", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleCreateRule)))
-	s.mux.Handle("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
-	s.mux.Handle("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
-	s.mux.Handle("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
-	s.mux.Handle("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
+	s.route("GET /api/v1/rules", s.handleListRules)
+	s.route("GET /api/v1/rules/{id}", s.handleGetRule)
+	s.route("GET /api/v1/rules/{id}/export", s.handleExportRule)
+	s.routeHandler("POST /api/v1/rules", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleCreateRule)))
+	s.routeHandler("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
+	s.routeHandler("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
+	s.routeHandler("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
+	s.routeHandler("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
 
 	// Whitelist (whitelist.md §1, §3.1): reads are open to all roles; request
 	// and revoke require auth.PermWhitelistRequest, approve requires the
 	// stricter auth.PermWhitelistApprove (segregation of duties, WL-003).
-	s.mux.HandleFunc("GET /api/v1/whitelist", s.handleListWhitelistEntries)
-	s.mux.HandleFunc("GET /api/v1/whitelist/{id}", s.handleGetWhitelistEntry)
-	s.mux.Handle("POST /api/v1/whitelist", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleCreateWhitelistEntry)))
-	s.mux.Handle("POST /api/v1/whitelist/{id}/approve", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleApproveWhitelistEntry)))
-	s.mux.Handle("POST /api/v1/whitelist/{id}/revoke", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleRevokeWhitelistEntry)))
+	s.route("GET /api/v1/whitelist", s.handleListWhitelistEntries)
+	s.route("GET /api/v1/whitelist/{id}", s.handleGetWhitelistEntry)
+	s.routeHandler("POST /api/v1/whitelist", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleCreateWhitelistEntry)))
+	s.routeHandler("POST /api/v1/whitelist/{id}/approve", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleApproveWhitelistEntry)))
+	s.routeHandler("POST /api/v1/whitelist/{id}/revoke", auth.RequirePermission(auth.PermWhitelistRequest)(http.HandlerFunc(s.handleRevokeWhitelistEntry)))
 	// Reviews decide whether to keep suppressing an active entry (renew) or
 	// lapse it (expire), the same authority level as approval, so this shares
 	// auth.PermWhitelistApprove rather than the request-level permission.
-	s.mux.Handle("POST /api/v1/whitelist/{id}/reviews", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleCreateWhitelistReview)))
+	s.routeHandler("POST /api/v1/whitelist/{id}/reviews", auth.RequirePermission(auth.PermWhitelistApprove)(http.HandlerFunc(s.handleCreateWhitelistReview)))
 
 	// System info
-	s.mux.HandleFunc("GET /api/v1/system/info", s.handleSystemInfo)
-	s.mux.HandleFunc("GET /api/v1/system/config-digests", s.handleConfigDigests)
+	s.route("GET /api/v1/system/info", s.handleSystemInfo)
+	s.route("GET /api/v1/system/config-digests", s.handleConfigDigests)
 
 	// OpenAPI
-	s.mux.HandleFunc("GET /api/v1/openapi.json", s.handleOpenAPI)
+	s.route("GET /api/v1/openapi.json", s.handleOpenAPI)
 }
 
 func (s *Server) Handler() http.Handler {

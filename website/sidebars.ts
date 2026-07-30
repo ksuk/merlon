@@ -31,7 +31,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Understand Merlon',
       collapsed: false,
-      items: ['getting-started', 'demo-tour', 'architecture'],
+      items: ['getting-started', 'demo-tour', 'architecture', 'faq'],
     },
     {
       type: 'category',
@@ -54,6 +54,7 @@ const sidebars: SidebarsConfig = {
       label: 'Deploy and Operate',
       items: [
         'operations/deployment',
+        'operations/container-images',
         'operations/worker-mode',
         'operations/initial-migration',
         'operations/upgrade',
@@ -61,6 +62,21 @@ const sidebars: SidebarsConfig = {
         'operations/partitioning-guide',
         'operations/dependency-lifecycle',
         'release-notes',
+        {
+          type: 'category',
+          label: 'Troubleshooting',
+          items: ['troubleshooting/index', 'troubleshooting/database'],
+        },
+      ],
+    },
+    {
+      type: 'category',
+      label: 'Security and Assurance',
+      items: [
+        'security/index',
+        'security/data-egress',
+        'security/supply-chain',
+        'security/accepted-risks/index',
       ],
     },
     {

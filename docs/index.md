@@ -24,6 +24,8 @@ Start here regardless of your role.
   scoring, alerts, and case resolution
 - [Architecture](architecture.md) — how the Go API, native engine, and React
   UI fit together, and why the CDD score is the central axis
+- [FAQ](faq.md) — what Merlon is, and the design decisions evaluators ask
+  about most
 
 ## Compliance and controls
 
@@ -57,6 +59,8 @@ For whoever runs Merlon in production.
 
 - [Deployment Runbook](operations/deployment.md) — production topology and
   rollout
+- [Container Images](operations/container-images.md) — what is published,
+  what each tag promises, and why there is no `latest`
 - [API and Worker Mode](operations/worker-mode.md) — splitting the API from
   background job processing
 - [Initial Data Migration](operations/initial-migration.md) — loading your
@@ -68,6 +72,21 @@ For whoever runs Merlon in production.
 - [Dependency Lifecycle](operations/dependency-lifecycle.md) — supported
   runtime versions and EOL tracking
 - [Release Notes](release-notes.md) — what changed in each version
+- [Troubleshooting](troubleshooting/index.md) — a symptom index keyed on the
+  error messages you are actually seeing
+
+## Security and assurance
+
+For security reviewers, vendor-risk assessors, and internal audit.
+
+- [Security and Assurance](security/index.md) — the short answers, and where
+  the long ones are
+- [Data Egress](security/data-egress.md) — every outbound connection Merlon
+  can make, and what triggers it
+- [Supply Chain](security/supply-chain.md) — pinning, scanning, release
+  provenance, and the known gaps
+- [Accepted Risks](security/accepted-risks/index.md) — what Merlon
+  deliberately does not do, and the compensating controls
 
 ## Integrate and extend
 

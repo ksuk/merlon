@@ -12,6 +12,11 @@ func (s *Server) serveSPA(uiFS fs.FS) {
 	fileServer := http.FileServerFS(uiFS)
 
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		if isReservedServerPath(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+
 		name, ok := spaFileName(r.URL.Path)
 		if !ok {
 			http.NotFound(w, r)
@@ -34,6 +39,19 @@ func (s *Server) serveSPA(uiFS fs.FS) {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// isReservedServerPath prevents a typo or unknown endpoint under a server
+// namespace from being answered with the SPA's index.html. Besides producing
+// the correct 404 for authenticated callers, authMiddleware uses the same
+// predicate so these paths can never inherit the SPA's public-shell exemption.
+func isReservedServerPath(urlPath string) bool {
+	return urlPath == "/api" ||
+		strings.HasPrefix(urlPath, "/api/") ||
+		urlPath == "/healthz" ||
+		strings.HasPrefix(urlPath, "/healthz/") ||
+		urlPath == "/metrics" ||
+		strings.HasPrefix(urlPath, "/metrics/")
 }
 
 func spaFileName(urlPath string) (string, bool) {

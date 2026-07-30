@@ -7,7 +7,6 @@ cd "$repo_root"
 files=(
   docker-compose.yml
   docker-compose.demo.yml
-  docker-compose.minimal.yml
   .github/workflows/ci.yml
 )
 

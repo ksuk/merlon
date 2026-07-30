@@ -9,6 +9,43 @@ public issue, pull request, workflow runs, GitHub Ruleset API response, and
 release artifacts. A checked box must point to evidence; the checklist is not
 evidence by itself.
 
+## Which sections apply
+
+Two tag shapes share one release workflow, and they differ only in what the tag
+promises.
+
+| Section | Production release (`vX.Y.Z`) | Pre-release (`vX.Y.Z-rc.N`) |
+|---|---|---|
+| Governance and People | Required | Not applicable |
+| Verification and Security | Required | Required |
+| Operational Evidence | Required | Not applicable |
+| Version and Provenance | Required | Required |
+
+A pre-release exists so the software can be evaluated from a published,
+attested image while the governance and operational controls are still being
+established. It is built, signed, attested, and published exactly like a
+production release — the artifacts are not weaker — and it is marked
+`--prerelease` on GitHub so it never appears as the latest release.
+
+What a pre-release does not carry is an assertion that this repository can
+operate a production release: no independent approver, no restore exercise
+record, no vulnerability-response exercise record. It is therefore not suitable
+for production use, and [Container Images](../operations/container-images.md)
+states that boundary for operators.
+
+Deciding that a pre-release is good enough to deploy is the operator's
+assessment to make against their own regulatory obligations. Nothing below is
+waived for a production release because a pre-release of the same code went out
+first.
+
+Release notes come from `CHANGELOG.md` on both channels. A production tag needs
+its own `## [X.Y.Z]` section and the workflow refuses to publish without one. A
+pre-release tag needs no section of its own — Keep a Changelog has no
+per-pre-release heading — so it publishes the section for the release it is a
+candidate for, or `## [Unreleased]` when that section does not exist yet. The
+workflow log records which section was used. The section still has to be
+non-empty either way.
+
 ## Governance and People
 
 - [ ] A named backup maintainer is listed in `MAINTAINERS.md` and has completed
@@ -54,6 +91,8 @@ evidence by itself.
 
 - [ ] The release version is strict SemVer and uses an annotated, protected tag
   reachable from `main`. The tag message links the release issue and approval.
+- [ ] `CHANGELOG.md` describes what this tag ships. Confirm which section the
+  workflow will publish with `node scripts/changelog.mjs <tag>` before tagging.
 - [ ] The release workflow published the container by immutable digest; no
   mutable `latest` tag is treated as release identity.
 - [ ] `release-manifest.json`, `SHA256SUMS`, and the CycloneDX image SBOM are
@@ -66,4 +105,6 @@ evidence by itself.
 
 The repository currently has one active maintainer. Until the first four
 governance and people controls above are evidenced, production release remains
-blocked even if the release workflow is technically runnable.
+blocked even if the release workflow is technically runnable. That block is on
+the `vX.Y.Z` channel only; pre-release tags are what the project publishes in
+the meantime.

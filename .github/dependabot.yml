@@ -75,7 +75,6 @@ updates:
   - package-ecosystem: docker
     directories:
       - /api
-      - /ui
       - /.devcontainer
       - /.github/workflows
     schedule:
@@ -84,19 +83,6 @@ updates:
     open-pull-requests-limit: 1
     cooldown:
       default-days: 14
-    ignore:
-      # nginx numbers even minor series as stable and odd ones as mainline, so
-      # a bump like 1.30.4 -> 1.31.2 moves ui/Dockerfile from the stable branch
-      # to the development branch rather than forward within it. Only stable
-      # patches are adopted, so minor and major proposals are dropped here
-      # instead of being re-argued on every mainline release. Stable security
-      # fixes are backported within the tracked series and arrive as patches,
-      # so they are unaffected by this rule. Remove this entry deliberately
-      # when moving to the 1.32 stable series.
-      - dependency-name: "nginx"
-        update-types:
-          - "version-update:semver-minor"
-          - "version-update:semver-major"
     groups:
       infrastructure:
         applies-to: version-updates

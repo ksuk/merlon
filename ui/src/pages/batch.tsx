@@ -17,7 +17,8 @@ import { useTranslation } from "react-i18next"
 
 export function BatchPage() {
   const { t } = useTranslation()
-  const { data: customers, loading, error } = useApi(api.customers.list)
+  const { data: page, loading, error } = useApi(api.customers.list)
+  const customers = page?.data
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [scoreRunning, setScoreRunning] = useState(false)
   const [monitorRunning, setMonitorRunning] = useState(false)

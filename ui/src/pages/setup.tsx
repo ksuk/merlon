@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { api } from "@/lib/api"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { useNavigate } from "react-router"
+import { Link, useNavigate } from "react-router"
 
 export function SetupPage() {
   const { t } = useTranslation()
@@ -74,6 +74,12 @@ export function SetupPage() {
               {t("setup.submit")}
             </Button>
           </form>
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            {t("setup.loginPrompt")}{" "}
+            <Link to="/login" className="font-medium text-foreground underline underline-offset-4">
+              {t("setup.loginLink")}
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </div>

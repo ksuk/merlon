@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/ksuk/merlon/api/internal/buildinfo"
 )
 
 func fetchOpenAPISpec(t *testing.T) map[string]any {
@@ -122,6 +124,73 @@ func TestBuildOpenAPISpec_MatchesHandlerOutput(t *testing.T) {
 		if _, ok := paths[p]; !ok {
 			t.Errorf("path %q missing from BuildOpenAPISpec() output", p)
 		}
+	}
+}
+
+func TestBuildOpenAPISpec_UsesBuildVersion(t *testing.T) {
+	previous := buildinfo.Version
+	buildinfo.Version = "v9.8.7-test"
+	t.Cleanup(func() {
+		buildinfo.Version = previous
+	})
+
+	spec := BuildOpenAPISpec()
+	info, ok := spec["info"].(map[string]any)
+	if !ok {
+		t.Fatal("spec.info missing or not an object")
+	}
+	if got := info["version"]; got != "v9.8.7-test" {
+		t.Errorf("info.version = %v, want v9.8.7-test", got)
+	}
+}
+
+// TestOpenAPISpecDocumentsHealthProbes covers the liveness and readiness
+// probes, which the server registers but the spec did not describe, so a
+// generated client had no way to know they exist.
+func TestOpenAPISpecDocumentsHealthProbes(t *testing.T) {
+	spec := fetchOpenAPISpec(t)
+
+	paths, ok := spec["paths"].(map[string]any)
+	if !ok {
+		t.Fatal("spec.paths missing or not an object")
+	}
+
+	for _, p := range []string{"/healthz", "/healthz/live", "/healthz/ready"} {
+		pathItem, ok := paths[p].(map[string]any)
+		if !ok {
+			t.Errorf("path %q missing from openapi spec", p)
+			continue
+		}
+		get, ok := pathItem["get"].(map[string]any)
+		if !ok {
+			t.Errorf("%s get operation missing", p)
+			continue
+		}
+
+		security, ok := get["security"].([]any)
+		if !ok {
+			t.Errorf("%s get.security missing or not an array", p)
+		} else if len(security) != 0 {
+			t.Errorf("%s get.security = %v, want [] (probe must not require authentication)", p, security)
+		}
+	}
+
+	for _, p := range []string{"/healthz", "/healthz/ready"} {
+		get := paths[p].(map[string]any)["get"].(map[string]any)
+		responses, ok := get["responses"].(map[string]any)
+		if !ok {
+			t.Errorf("%s get.responses missing", p)
+			continue
+		}
+		if _, ok := responses["503"]; !ok {
+			t.Errorf("%s get.responses missing 503 Service Unavailable", p)
+		}
+	}
+
+	live := paths["/healthz/live"].(map[string]any)["get"].(map[string]any)
+	liveResponses := live["responses"].(map[string]any)
+	if _, ok := liveResponses["503"]; ok {
+		t.Error("/healthz/live documents 503, but liveness does not check dependencies")
 	}
 }
 

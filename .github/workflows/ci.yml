@@ -36,6 +36,14 @@ jobs:
       # No setup-python step: the tests are standard library only and run on
       # the runner's preinstalled python3, matching how an operator runs the
       # migration script itself.
+      #
+      # Node is pinned rather than taken from the runner image because
+      # scripts/changelog.mjs gates every release, and check-toolchain-pins.sh
+      # holds this version to the same one the other jobs and the image build
+      # use. No `npm ci`: the script tests are node: built-ins only.
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '26.5.0'
       - run: make test-scripts
 
   ui-build:
@@ -86,12 +94,26 @@ jobs:
         with:
           go-version: '1.26.5'
       - run: make test-integration
+      # MERLON_REQUIRE_... is what stops this step from passing vacuously: with
+      # only the RUN flag, a runner without Docker or a typo in the variable
+      # name skips every test and still exits 0, turning the entire backup and
+      # restore surface green while exercising nothing.
+      - name: Exercise PostgreSQL operational scripts
+        env:
+          MERLON_RUN_POSTGRES_OPERATIONS_INTEGRATION: '1'
+          MERLON_REQUIRE_POSTGRES_OPERATIONS_INTEGRATION: '1'
+        run: python3 -m unittest -v scripts.test_postgres_operations
 
   release-dry-run:
     name: Release Image Dry Run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+      # OpenAPI coverage verifies a freshly generated document, so this job
+      # needs the same pinned Go toolchain as the Go verification job.
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.26.5'
       - name: Verify synchronized container pins
         run: make verify-container-pins
       # Kept beside the container pins so every "same version declared twice"
@@ -104,14 +126,32 @@ jobs:
       # keeps those two sets of versions the same.
       - name: Verify synchronized toolchain pins
         run: make verify-toolchain-pins
+      # Same "declared twice must agree" rule, applied to configuration: a
+      # variable the code reads but nobody documented, or one operators are
+      # told to set that nothing reads.
+      - name: Verify synchronized environment variables
+        run: make verify-env-vars
+      # The OpenAPI document is the contract the project promises to keep
+      # compatible. A route registered but never published is callable and
+      # unpromised, so this ratchets coverage rather than letting it slip.
+      - name: Verify OpenAPI coverage
+        run: make verify-openapi-coverage
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      # The same platform list the release workflow publishes. Building only
+      # the runner's own architecture here would leave linux/arm64 first
+      # attempted on a tag push, where a failure cannot be corrected without
+      # burning the version. Both builder stages are pinned to BUILDPLATFORM
+      # and Go cross-compiles, so this needs no emulator.
       - name: Build release image without publishing
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: api/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: false
-          build-args: VERSION=ci-${{ github.sha }}
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+            REVISION=${{ github.sha }}
 
   required:
     # Branch protection matches required status checks by check-run name, and a

@@ -23,7 +23,7 @@ Describe what happened instead.
 ## Environment
 - Merlon version:
 - Component: API / native engine / UI / unknown
-- Deployment method: Docker Compose / Helm / other
+- Deployment method: Docker Compose / container image / from source / other
 - Operating system:
 
 ## Logs or screenshots
