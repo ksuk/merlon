@@ -18,8 +18,8 @@ jobs:
     name: Go Verification
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
       - run: make verify-go GO_TEST_FLAGS='-coverprofile=coverage.out -covermode=atomic'
@@ -32,7 +32,7 @@ jobs:
     name: Reference Scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
       # No setup-python step: the tests are standard library only and run on
       # the runner's preinstalled python3, matching how an operator runs the
       # migration script itself.
@@ -41,7 +41,7 @@ jobs:
       # scripts/changelog.mjs gates every release, and check-toolchain-pins.sh
       # holds this version to the same one the other jobs and the image build
       # use. No `npm ci`: the script tests are node: built-ins only.
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '26.5.0'
       - run: make test-scripts
@@ -53,8 +53,8 @@ jobs:
       run:
         working-directory: ui
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '26.5.0'
           cache: 'npm'
@@ -89,8 +89,8 @@ jobs:
       MERLON_DATABASE_URL: postgres://merlon:merlon-ci@localhost:5432/merlon?sslmode=disable
       MERLON_MIGRATION_DATABASE_URL: postgres://merlon:merlon-ci@localhost:5432/merlon?sslmode=disable
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
       - run: make test-integration
@@ -108,10 +108,10 @@ jobs:
     name: Release Image Dry Run
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
       # OpenAPI coverage verifies a freshly generated document, so this job
       # needs the same pinned Go toolchain as the Go verification job.
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
       - name: Verify synchronized container pins
