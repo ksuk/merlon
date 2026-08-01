@@ -1,11 +1,11 @@
 import { cn } from "@/lib/utils"
+import { BrandLogo } from "@/components/brand-logo"
 import {
   LayoutDashboard,
   Users,
   AlertTriangle,
   FolderOpen,
   ArrowLeftRight,
-  Shield,
   FileText,
   FlaskConical,
   KeyRound,
@@ -44,9 +44,8 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r bg-sidebar">
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Shield className="h-6 w-6 text-primary" />
-        <span className="text-lg font-bold tracking-tight">Merlon</span>
+      <div className="flex h-14 items-center border-b px-4">
+        <BrandLogo className="h-8" />
       </div>
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => {

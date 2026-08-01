@@ -78,6 +78,8 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
                         "exec",
                         cls.container,
                         "pg_isready",
+                        "--host",
+                        "127.0.0.1",
                         "--username",
                         "postgres",
                     ],

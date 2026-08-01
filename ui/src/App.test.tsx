@@ -49,7 +49,7 @@ test("renders the protected dashboard after the session probe succeeds", async (
 
   render(<App />);
 
-  expect(await screen.findByText("Merlon")).toBeDefined();
+  expect(await screen.findByRole("img", { name: "Merlon" })).toBeDefined();
   expect(await screen.findByText("dashboard sentinel")).toBeDefined();
   expect(screen.getByText("ダッシュボード")).toBeDefined();
   expect(screen.getByText("顧客")).toBeDefined();
@@ -87,7 +87,8 @@ test("redirects an unauthenticated protected route to login before mounting the 
   expect(
     (await screen.findAllByText("ログイン")).length,
   ).toBeGreaterThanOrEqual(1);
-  expect(screen.queryByText("Merlon")).toBeNull();
+  expect(screen.getByRole("img", { name: "Merlon" })).toBeDefined();
+  expect(screen.queryByRole("navigation")).toBeNull();
   expect(fetchSpy).toHaveBeenCalledWith(
     "/api/v1/auth/refresh",
     expect.objectContaining({ method: "POST" }),
@@ -119,7 +120,7 @@ test("uses a valid refresh token before deciding the user is unauthenticated", a
 
   render(<App />);
 
-  expect(await screen.findByText("Merlon")).toBeDefined();
+  expect(await screen.findByRole("img", { name: "Merlon" })).toBeDefined();
   expect(window.location.pathname).toBe("/definitely-missing");
   expect(fetchSpy).toHaveBeenCalledWith(
     "/api/v1/auth/refresh",
@@ -145,7 +146,7 @@ test("keeps the authentication-disabled demo topology usable", async () => {
 
   render(<App />);
 
-  expect(await screen.findByText("Merlon")).toBeDefined();
+  expect(await screen.findByRole("img", { name: "Merlon" })).toBeDefined();
   expect(screen.queryByRole("heading", { name: "ログイン" })).toBeNull();
   expect(
     fetchSpy.mock.calls.some(([input]) =>

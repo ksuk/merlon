@@ -38,6 +38,17 @@ test("does not show the synthetic demo data badge when the flag is off", async (
   expect(screen.queryByText("合成デモデータ")).toBeNull()
 })
 
+test("shows the Merlon brand in the sidebar", async () => {
+  vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("fail"))
+
+  await renderLayout()
+
+  expect(await screen.findByRole("img", { name: "Merlon" })).toHaveAttribute(
+    "src",
+    "/logo.svg",
+  )
+})
+
 test("shows the synthetic demo data badge when features.demo_data is true", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(
