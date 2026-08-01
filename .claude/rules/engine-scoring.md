@@ -1,7 +1,6 @@
 ---
 paths:
-  - "engine/crates/merlon-engine/src/scoring/**"
-  - "engine/crates/merlon-engine/src/monitoring/**"
+  - "api/internal/engine/native/**"
   - "content/**"
 ---
 CDD score is the central axis of the system (Score-Driven Architecture). Changes to scoring logic cascade to TM thresholds, case priority, and screening frequency.

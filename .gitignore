@@ -63,8 +63,11 @@ desktop.ini
 # Repo-review audit reports and evidence (/repo-review skill output; never commit)
 /.audit/
 
-# Local agent state
-.claude/settings.json
+# Local agent state. `.claude/settings.json` is deliberately tracked so that
+# shared plugin enablement is reproducible; personal overrides belong in
+# `.claude/settings.local.json`.
+CLAUDE.local.md
+.claude/settings.local.json
 .claude/worktrees/
 .claude/checkpoints/
 .claude/mailbox/
