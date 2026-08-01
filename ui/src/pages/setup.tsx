@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { BrandLogo } from "@/components/brand-logo"
 import { api } from "@/lib/api"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -32,7 +33,8 @@ export function SetupPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background p-6">
+      <BrandLogo className="h-12" />
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">{t("setup.title")}</CardTitle>

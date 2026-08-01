@@ -12,6 +12,15 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
+test("shows the Merlon brand", async () => {
+  await renderWithRouter(<SetupPage />)
+
+  expect(screen.getByRole("img", { name: "Merlon" })).toHaveAttribute(
+    "src",
+    "/logo.svg",
+  )
+})
+
 test("submits the initial admin account creation form", async () => {
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(JSON.stringify({ id: "u1", email: "admin@example.com", role: "admin" }), {

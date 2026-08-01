@@ -50,6 +50,7 @@ const SHOTS = [
   {
     name: 'demo-case.png',
     path: '/cases/3a55610e-d00f-5a34-8bfa-cc9753cbfa06',
+    contrastSelector: '.bg-destructive',
   },
 ];
 
@@ -58,23 +59,9 @@ const SHOTS = [
 // "done" element.
 const SETTLE_MS = 1500;
 
-// Every page is loaded twice, and the screenshot is taken after the second
-// load. This is not superstition: the UI renders raw i18n keys
-// ("nav.dashboard") instead of labels on a page's first load, reproducibly.
-// ui/src/main.tsx starts rendering without awaiting initI18n(), the
-// translation catalog is a dynamically imported chunk, and nothing re-renders
-// when it arrives (addResourceBundle does not, by design), so a first paint
-// that beats the chunk keeps the keys on screen. After a reload the chunk is
-// in the renderer's memory cache and resolves before the first paint every
-// time.
-//
-// The reloaded state is the honest one to publish -- it is what the UI shows
-// on every visit after the first, and what it shows the moment anything
-// re-renders -- but the first-load flash is a real defect worth fixing in the
-// UI rather than only here.
-//
-// assertNoRawKeys is the backstop: if this ever stops working, the run fails
-// instead of quietly writing a screenshot full of untranslated keys.
+// Each page is loaded exactly once. assertNoRawKeys makes the capture an
+// executable regression check for first-load i18n initialization: a raw key
+// must fail the run instead of being hidden by a cache-warming reload.
 async function assertNoRawKeys(page, name) {
   const nav = page.locator('nav').first();
   if ((await nav.count()) === 0) return;
@@ -84,6 +71,73 @@ async function assertNoRawKeys(page, name) {
       `${name} shows untranslated i18n keys in the sidebar; refusing to save it`,
     );
   }
+}
+
+async function assertBrandLogo(page, name) {
+  try {
+    await page.getByRole('img', { name: 'Merlon' }).first().waitFor({
+      state: 'visible',
+      timeout: 10_000,
+    });
+  } catch {
+    throw new Error(`${name} does not show the Merlon brand logo`);
+  }
+}
+
+function relativeLuminance([red, green, blue]) {
+  const linear = [red, green, blue].map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+}
+
+function contrastRatio(foreground, background) {
+  const lighter = Math.max(
+    relativeLuminance(foreground),
+    relativeLuminance(background),
+  );
+  const darker = Math.min(
+    relativeLuminance(foreground),
+    relativeLuminance(background),
+  );
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+async function assertContrast(page, selector, name) {
+  const target = page.locator(selector).first();
+  await target.waitFor({ state: 'visible', timeout: 10_000 });
+  const colors = await target.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('could not create a color sampling context');
+
+    function sample(color) {
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+      return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
+    }
+
+    return {
+      foreground: sample(style.color),
+      background: sample(style.backgroundColor),
+    };
+  });
+  const ratio = contrastRatio(colors.foreground, colors.background);
+  if (ratio < 4.5) {
+    throw new Error(
+      `${name} has ${ratio.toFixed(2)}:1 foreground contrast for ${selector}; expected at least 4.5:1`,
+    );
+  }
+  console.log(
+    `verified ${name} foreground contrast for ${selector}: ${ratio.toFixed(2)}:1`,
+  );
 }
 
 async function main() {
@@ -102,16 +156,16 @@ async function main() {
       const page = await context.newPage();
       await page.goto(url, { waitUntil: 'networkidle' });
       await page.waitForTimeout(SETTLE_MS);
-      // See the note above assertNoRawKeys: the second load is the one worth
-      // photographing.
-      await page.reload({ waitUntil: 'networkidle' });
-      await page.waitForTimeout(SETTLE_MS);
       await assertNoRawKeys(page, shot.name);
+      await assertBrandLogo(page, shot.name);
       if (shot.requiredSelector) {
         await page.locator(shot.requiredSelector).first().waitFor({
           state: 'visible',
           timeout: 10_000,
         });
+      }
+      if (shot.contrastSelector) {
+        await assertContrast(page, shot.contrastSelector, shot.name);
       }
       await page.screenshot({ path: out, fullPage: false });
       await page.close();

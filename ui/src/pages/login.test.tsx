@@ -12,6 +12,15 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+test("shows the Merlon brand", async () => {
+  await renderWithRouter(<LoginPage />);
+
+  expect(screen.getByRole("img", { name: "Merlon" })).toHaveAttribute(
+    "src",
+    "/logo.svg",
+  );
+});
+
 test("submits credentials and calls the login API", async () => {
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(
