@@ -29,6 +29,10 @@ func alertCursor(a domain.Alert) Cursor {
 	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID}
 }
 
+func alertRiskCursor(a domain.Alert) Cursor {
+	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID, Sort: "risk", Rank: domain.AlertSeverityRank(a.Severity)}
+}
+
 // recordAlertCreated increments merlon_alerts_total (OPS-003, the operational design
 // §4.4) for a single newly created alert. Call this exactly once per alert,
 // right after its creation is confirmed, to avoid double-counting.
@@ -74,19 +78,36 @@ func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, 
 
 	fetchLimit := pageReq.Limit + 1
 	after := toDomainCursor(pageReq.Cursor)
+	riskSorted := r.URL.Query().Get("sort") == "risk"
+	if pageReq.Cursor != nil && ((riskSorted && pageReq.Cursor.Sort != "risk") || (!riskSorted && pageReq.Cursor.Sort == "risk")) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "cursor sort does not match request sort")
+		return
+	}
 
 	var alerts []domain.Alert
 	if customerID != "" {
-		alerts, err = s.alerts.ListByCustomerCursor(r.Context(), customerID, fetchLimit, after)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListByCustomerRiskCursor(r.Context(), customerID, fetchLimit, after)
+		} else {
+			alerts, err = s.alerts.ListByCustomerCursor(r.Context(), customerID, fetchLimit, after)
+		}
 	} else {
-		alerts, err = s.alerts.ListOpenByCursor(r.Context(), fetchLimit, after)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListOpenByRiskCursor(r.Context(), fetchLimit, after)
+		} else {
+			alerts, err = s.alerts.ListOpenByCursor(r.Context(), fetchLimit, after)
+		}
 	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
-	page, meta := BuildPaginationMeta(alerts, pageReq.Limit, alertCursor)
+	cursorOf := alertCursor
+	if riskSorted {
+		cursorOf = alertRiskCursor
+	}
+	page, meta := BuildPaginationMeta(alerts, pageReq.Limit, cursorOf)
 	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
@@ -105,11 +126,20 @@ func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, 
 		alerts []domain.Alert
 		err    error
 	)
+	riskSorted := r.URL.Query().Get("sort") == "risk"
 
 	if customerID != "" {
-		alerts, err = s.alerts.ListByCustomer(r.Context(), customerID, limit+1, offset)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListByCustomerRisk(r.Context(), customerID, limit+1, offset)
+		} else {
+			alerts, err = s.alerts.ListByCustomer(r.Context(), customerID, limit+1, offset)
+		}
 	} else {
-		alerts, err = s.alerts.ListOpen(r.Context(), limit+1, offset)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListOpenByRisk(r.Context(), limit+1, offset)
+		} else {
+			alerts, err = s.alerts.ListOpen(r.Context(), limit+1, offset)
+		}
 	}
 
 	if err != nil {
@@ -121,7 +151,11 @@ func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, 
 		setOffsetDeprecationHeaders(w)
 	}
 
-	page, meta := BuildPaginationMeta(alerts, limit, alertCursor)
+	cursorOf := alertCursor
+	if riskSorted {
+		cursorOf = alertRiskCursor
+	}
+	page, meta := BuildPaginationMeta(alerts, limit, cursorOf)
 	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 

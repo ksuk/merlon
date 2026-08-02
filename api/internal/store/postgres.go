@@ -572,6 +572,13 @@ func NewPgAlertRepo(pool DBTX) *PgAlertRepo {
 // batch_run_id/batch_reviewed_at (WS-5 Task4, migrations/012_alert_dedup.sql).
 const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, batch_reviewed_at"
 
+const alertRiskRankSQL = `CASE severity::text
+	WHEN 'critical' THEN 4
+	WHEN 'high' THEN 3
+	WHEN 'medium' THEN 2
+	WHEN 'low' THEN 1
+	ELSE 0 END`
+
 func scanAlertRow(row interface {
 	Scan(dest ...any) error
 }, a *domain.Alert) error {
@@ -636,10 +643,26 @@ func (r *PgAlertRepo) ListByCustomer(ctx context.Context, customerID string, lim
 	)
 }
 
+func (r *PgAlertRepo) ListByCustomerRisk(ctx context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
+	return r.listAlerts(ctx,
+		`SELECT `+alertColumns+`
+		FROM alerts WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+		customerID, limit, offset,
+	)
+}
+
 func (r *PgAlertRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Alert, error) {
 	return r.listAlerts(ctx,
 		`SELECT `+alertColumns+`
 		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open' ORDER BY severity DESC, detected_at DESC LIMIT $1 OFFSET $2`,
+		limit, offset,
+	)
+}
+
+func (r *PgAlertRepo) ListOpenByRisk(ctx context.Context, limit, offset int) ([]domain.Alert, error) {
+	return r.listAlerts(ctx,
+		`SELECT `+alertColumns+`
+		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open' ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
 }
@@ -655,6 +678,16 @@ func (r *PgAlertRepo) ListByCustomerCursor(ctx context.Context, customerID strin
 		customerID, after.CreatedAt, after.ID, limit)
 }
 
+func (r *PgAlertRepo) ListByCustomerRiskCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	baseQuery := `SELECT ` + alertColumns + `
+		FROM alerts WHERE customer_id = $1 AND purge_marked_at IS NULL`
+	if after == nil {
+		return r.listAlerts(ctx, baseQuery+` ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $2`, customerID, limit)
+	}
+	return r.listAlerts(ctx, baseQuery+` AND (`+alertRiskRankSQL+`, created_at, id) < ($2, $3, $4) ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $5`,
+		customerID, after.Rank, after.CreatedAt, after.ID, limit)
+}
+
 func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
 	baseQuery := `SELECT ` + alertColumns + `
 		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open'`
@@ -664,6 +697,16 @@ func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *do
 	}
 	return r.listAlerts(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 		after.CreatedAt, after.ID, limit)
+}
+
+func (r *PgAlertRepo) ListOpenByRiskCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	baseQuery := `SELECT ` + alertColumns + `
+		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open'`
+	if after == nil {
+		return r.listAlerts(ctx, baseQuery+` ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1`, limit)
+	}
+	return r.listAlerts(ctx, baseQuery+` AND (`+alertRiskRankSQL+`, created_at, id) < ($1, $2, $3) ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $4`,
+		after.Rank, after.CreatedAt, after.ID, limit)
 }
 
 func (r *PgAlertRepo) DashboardUnresolvedCounts(ctx context.Context) (map[string]int, map[string]int, error) {
@@ -1071,6 +1114,19 @@ func (r *PgCaseRepo) ListByCustomerOffset(ctx context.Context, customerID string
 		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, customerID, limit, offset)
 }
 
+const caseRiskRankSQL = `CASE priority
+	WHEN 'critical' THEN 4
+	WHEN 'high' THEN 3
+	WHEN 'medium' THEN 2
+	WHEN 'low' THEN 1
+	ELSE 0 END`
+
+func (r *PgCaseRepo) ListByCustomerRiskOffset(ctx context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
+	return r.listCases(ctx,
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
+		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $2 OFFSET $3`, customerID, limit, offset)
+}
+
 func (r *PgCaseRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
 	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL`
@@ -1082,10 +1138,26 @@ func (r *PgCaseRepo) ListByCustomerCursor(ctx context.Context, customerID string
 		customerID, after.CreatedAt, after.ID, limit)
 }
 
+func (r *PgCaseRepo) ListByCustomerRiskCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	baseQuery := `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
+		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL`
+	if after == nil {
+		return r.listCases(ctx, baseQuery+` ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $2`, customerID, limit)
+	}
+	return r.listCases(ctx, baseQuery+` AND (`+caseRiskRankSQL+`, created_at, id) < ($2, $3, $4) ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $5`,
+		customerID, after.Rank, after.CreatedAt, after.ID, limit)
+}
+
 func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Case, error) {
 	return r.listCases(ctx,
 		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
 		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed' ORDER BY priority DESC, created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+}
+
+func (r *PgCaseRepo) ListOpenByRisk(ctx context.Context, limit, offset int) ([]domain.Case, error) {
+	return r.listCases(ctx,
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
+		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed' ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2`, limit, offset)
 }
 
 func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
@@ -1097,6 +1169,16 @@ func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *dom
 	}
 	return r.listCases(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 		after.CreatedAt, after.ID, limit)
+}
+
+func (r *PgCaseRepo) ListOpenByRiskCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	baseQuery := `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
+		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed'`
+	if after == nil {
+		return r.listCases(ctx, baseQuery+` ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1`, limit)
+	}
+	return r.listCases(ctx, baseQuery+` AND (`+caseRiskRankSQL+`, created_at, id) < ($1, $2, $3) ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $4`,
+		after.Rank, after.CreatedAt, after.ID, limit)
 }
 
 func (r *PgCaseRepo) DashboardUnresolvedCounts(ctx context.Context) (map[string]int, error) {

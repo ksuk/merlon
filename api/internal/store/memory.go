@@ -64,6 +64,55 @@ func sortAndPageByCursor[T any](items []T, limit int, after *domain.Cursor, crea
 	return items
 }
 
+// sortAndPageByRiskCursor orders a queue by explicit risk rank, then by the
+// API-03 deterministic created_at/id tie-breakers. The cursor carries the
+// rank so keyset traversal cannot skip a lower-risk item after a page break.
+func sortAndPageByRiskCursor[T any](items []T, limit int, after *domain.Cursor, rank func(T) int, createdAt func(T) time.Time, id func(T) string) []T {
+	sort.Slice(items, func(i, j int) bool {
+		ri, rj := rank(items[i]), rank(items[j])
+		if ri != rj {
+			return ri > rj
+		}
+		ci, cj := createdAt(items[i]), createdAt(items[j])
+		if !ci.Equal(cj) {
+			return ci.After(cj)
+		}
+		return id(items[i]) > id(items[j])
+	})
+
+	if after != nil {
+		filtered := make([]T, 0, len(items))
+		for _, it := range items {
+			r := rank(it)
+			createdBefore := createdAt(it).Before(after.CreatedAt)
+			sameCreatedBeforeID := createdAt(it).Equal(after.CreatedAt) && id(it) < after.ID
+			if r < after.Rank || (r == after.Rank && (createdBefore || sameCreatedBeforeID)) {
+				filtered = append(filtered, it)
+			}
+		}
+		items = filtered
+	}
+
+	if limit >= 0 && limit < len(items) {
+		items = items[:limit]
+	}
+	return items
+}
+
+func sortByRiskDesc[T any](items []T, rank func(T) int, createdAt func(T) time.Time, id func(T) string) {
+	sort.Slice(items, func(i, j int) bool {
+		ri, rj := rank(items[i]), rank(items[j])
+		if ri != rj {
+			return ri > rj
+		}
+		ci, cj := createdAt(items[i]), createdAt(items[j])
+		if !ci.Equal(cj) {
+			return ci.After(cj)
+		}
+		return id(items[i]) > id(items[j])
+	})
+}
+
 type MemoryCustomerRepo struct {
 	mu       sync.RWMutex
 	data     map[string]*domain.Customer
@@ -399,6 +448,21 @@ func (r *MemoryAlertRepo) ListByCustomer(_ context.Context, customerID string, l
 	return pageByOffset(all, limit, offset), nil
 }
 
+func (r *MemoryAlertRepo) ListByCustomerRisk(_ context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Alert
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
+	}
+	sortByRiskDesc(all,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
 func (r *MemoryAlertRepo) ListOpen(_ context.Context, limit, offset int) ([]domain.Alert, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -409,6 +473,23 @@ func (r *MemoryAlertRepo) ListOpen(_ context.Context, limit, offset int) ([]doma
 		}
 	}
 	sortByCreatedAtDesc(open,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return pageByOffset(open, limit, offset), nil
+}
+
+func (r *MemoryAlertRepo) ListOpenByRisk(_ context.Context, limit, offset int) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Alert
+	for _, a := range r.data {
+		if a.Status == domain.AlertStatusOpen {
+			open = append(open, *a)
+		}
+	}
+	sortByRiskDesc(open,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
 		func(a domain.Alert) time.Time { return a.CreatedAt },
 		func(a domain.Alert) string { return a.ID },
 	)
@@ -428,6 +509,20 @@ func (r *MemoryAlertRepo) ListByCustomerCursor(_ context.Context, customerID str
 	), nil
 }
 
+func (r *MemoryAlertRepo) ListByCustomerRiskCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Alert
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
+	}
+	return sortAndPageByRiskCursor(all, limit, after,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	), nil
+}
+
 func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -438,6 +533,22 @@ func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *
 		}
 	}
 	return sortAndPageByCursor(open, limit, after,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	), nil
+}
+
+func (r *MemoryAlertRepo) ListOpenByRiskCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Alert
+	for _, a := range r.data {
+		if a.Status == domain.AlertStatusOpen {
+			open = append(open, *a)
+		}
+	}
+	return sortAndPageByRiskCursor(open, limit, after,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
 		func(a domain.Alert) time.Time { return a.CreatedAt },
 		func(a domain.Alert) string { return a.ID },
 	), nil
@@ -724,6 +835,23 @@ func (r *MemoryCaseRepo) ListByCustomerOffset(_ context.Context, customerID stri
 	return pageByOffset(result, limit, offset), nil
 }
 
+func (r *MemoryCaseRepo) ListByCustomerRiskOffset(_ context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	sortByRiskDesc(result,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
+	return pageByOffset(result, limit, offset), nil
+}
+
 func (r *MemoryCaseRepo) ListByCustomerCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -734,6 +862,22 @@ func (r *MemoryCaseRepo) ListByCustomerCursor(_ context.Context, customerID stri
 		}
 	}
 	return sortAndPageByCursor(result, limit, after,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerRiskCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	return sortAndPageByRiskCursor(result, limit, after,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
 		func(c domain.Case) time.Time { return c.CreatedAt },
 		func(c domain.Case) string { return c.ID },
 	), nil
@@ -755,6 +899,23 @@ func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domai
 	return pageByOffset(open, limit, offset), nil
 }
 
+func (r *MemoryCaseRepo) ListOpenByRisk(_ context.Context, limit, offset int) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Case
+	for _, c := range r.data {
+		if c.Status != domain.CaseStatusClosed {
+			open = append(open, *c)
+		}
+	}
+	sortByRiskDesc(open,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
+	return pageByOffset(open, limit, offset), nil
+}
+
 func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -765,6 +926,22 @@ func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *d
 		}
 	}
 	return sortAndPageByCursor(open, limit, after,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
+}
+
+func (r *MemoryCaseRepo) ListOpenByRiskCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Case
+	for _, c := range r.data {
+		if c.Status != domain.CaseStatusClosed {
+			open = append(open, *c)
+		}
+	}
+	return sortAndPageByRiskCursor(open, limit, after,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
 		func(c domain.Case) time.Time { return c.CreatedAt },
 		func(c domain.Case) string { return c.ID },
 	), nil

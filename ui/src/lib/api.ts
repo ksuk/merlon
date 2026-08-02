@@ -471,6 +471,7 @@ export interface PaginatedResponse<T> {
 export interface CursorPageParams {
   cursor?: string
   limit?: number
+  sort?: "risk"
 }
 
 interface ListAllPagesOptions {
@@ -512,6 +513,7 @@ function buildCursorQuery(params?: CursorPageParams): URLSearchParams {
   const qs = new URLSearchParams()
   if (params?.cursor) qs.set("cursor", params.cursor)
   if (params?.limit != null) qs.set("limit", String(params.limit))
+  if (params?.sort) qs.set("sort", params.sort)
   return qs
 }
 
@@ -589,8 +591,8 @@ export const api = {
       const query = qs.toString()
       return request<PaginatedResponse<Alert>>(`/alerts${query ? `?${query}` : ""}`)
     },
-    listAll: (params?: { customerId?: string }) =>
-      listAllPages((page) => api.alerts.list({ ...params, ...page })),
+    listAll: (params?: { customerId?: string; sort?: "risk" }) =>
+      listAllPages((page) => api.alerts.list({ ...params, sort: params?.sort ?? "risk", ...page })),
     get: (id: string) => request<Alert>(`/alerts/${encodeURIComponent(id)}`),
     updateStatus: (id: string, status: AlertStatus, expectedUpdatedAt?: string) =>
       request<Alert>(`/alerts/${encodeURIComponent(id)}`, {
@@ -615,8 +617,8 @@ export const api = {
       const query = qs.toString()
       return request<PaginatedResponse<Case>>(`/cases${query ? `?${query}` : ""}`)
     },
-    listAll: (params?: { customerId?: string }) =>
-      listAllPages((page) => api.cases.list({ ...params, ...page })),
+    listAll: (params?: { customerId?: string; sort?: "risk" }) =>
+      listAllPages((page) => api.cases.list({ ...params, sort: params?.sort ?? "risk", ...page })),
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
       request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),

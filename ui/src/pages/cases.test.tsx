@@ -9,13 +9,13 @@ function renderWithRouter(ui: React.ReactElement) {
   return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
-function makeCase(id: string, status: string) {
+function makeCase(id: string, status: string, priority = "medium") {
   return {
     id,
     customer_id: "c1",
     alert_ids: [],
     status,
-    priority: "medium",
+    priority,
     summary: `${status} case`,
     created_at: "2025-01-15T10:00:00Z",
     updated_at: "2025-01-15T10:00:00Z",
@@ -57,4 +57,20 @@ test("loads a case from the second cursor page", async () => {
 
   expect(await screen.findByText("investigating case")).toBeDefined()
   expect(fetchMock.mock.calls.some(([input]) => String(input).includes("cursor=page-2"))).toBe(true)
+})
+
+test("renders critical cases before lower-priority cases", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    paginatedResponse([
+      makeCase("case-low", "new", "low"),
+      makeCase("case-critical", "new", "critical"),
+    ]),
+  )
+
+  await renderWithRouter(<CasesPage />)
+
+  await screen.findAllByText("new case")
+  const rows = screen.getAllByRole("row").slice(1)
+  expect(rows[0]).toHaveTextContent("case-critical")
+  expect(rows[1]).toHaveTextContent("case-low")
 })

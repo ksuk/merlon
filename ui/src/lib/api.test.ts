@@ -125,6 +125,18 @@ test("listAllPages follows the next cursor and keeps the envelope", async () => 
   expect(String(fetchMock.mock.calls[1][0])).toContain("search=needle")
 })
 
+test("alert and case queue traversals request the explicit risk sort", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
+  )
+
+  await api.alerts.listAll()
+  await api.cases.listAll()
+
+  expect(String(fetchMock.mock.calls[0][0])).toContain("sort=risk")
+  expect(String(fetchMock.mock.calls[1][0])).toContain("sort=risk")
+})
+
 test("alert and case mutations send the observed updated_at token", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(JSON.stringify({ id: "updated" }), { status: 200 }),

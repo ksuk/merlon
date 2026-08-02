@@ -42,7 +42,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/customers/{id}/scores":             pathGET("Get customer score history"),
 			"/api/v1/transactions":                      pathListCreate("Transaction"),
 			"/api/v1/transactions/{id}":                 pathGET("Get transaction"),
-			"/api/v1/alerts":                            pathListPaginated("List alerts"),
+			"/api/v1/alerts":                            pathListRiskPaginated("List alerts"),
 			"/api/v1/alerts/{id}":                       pathGetPatch("Alert"),
 			"/api/v1/backtest":                          pathPOST("Run backtest"),
 			"/api/v1/backtests":                         pathListCreate("Durable backtest job"),
@@ -51,7 +51,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/backtests/{id}/affected-customers": pathGET("List affected backtest customers"),
 			"/api/v1/reports/str":                       pathPOST("Create STR report"),
 			"/api/v1/reports/str/export":                pathGET("Export STR report"),
-			"/api/v1/cases":                             pathListCreate("Case"),
+			"/api/v1/cases":                             pathListRiskCreate("Case"),
 			"/api/v1/cases/{id}":                        pathGetPatch("Case"),
 			"/api/v1/cases/{id}/notes":                  pathPOST("Add case note"),
 			"/api/v1/cases/{id}/related":                pathGetPost("List related cases", "Add manual related case link"),
@@ -198,6 +198,37 @@ func pathListPaginated(summary string) map[string]any {
 			"parameters": paginationParams(),
 			"responses":  paginatedListResponses(),
 		},
+	}
+}
+
+func riskQueuePaginationParams() []map[string]any {
+	params := paginationParams()
+	return append(params, map[string]any{
+		"name":        "sort",
+		"in":          "query",
+		"description": "Optional queue sort; risk ranks critical > high > medium > low, with created_at/id tie-breakers",
+		"schema":      map[string]any{"type": "string", "enum": []string{"risk"}},
+	})
+}
+
+func pathListRiskPaginated(summary string) map[string]any {
+	return map[string]any{
+		"get": map[string]any{
+			"summary":    summary,
+			"parameters": riskQueuePaginationParams(),
+			"responses":  paginatedListResponses(),
+		},
+	}
+}
+
+func pathListRiskCreate(resource string) map[string]any {
+	return map[string]any{
+		"get": map[string]any{
+			"summary":    "List " + resource + "s",
+			"parameters": riskQueuePaginationParams(),
+			"responses":  paginatedListResponses(),
+		},
+		"post": map[string]any{"summary": "Create " + resource, "responses": defaultResponses()},
 	}
 }
 

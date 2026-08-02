@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -160,6 +162,44 @@ func TestHandleListCases_CursorPagination(t *testing.T) {
 	}
 	if meta2.HasMore {
 		t.Error("expected has_more = false on second page")
+	}
+}
+
+func TestHandleListCases_RiskSortRanksCriticalFirst(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	priorities := []domain.CasePriority{
+		domain.CasePriorityLow,
+		domain.CasePriorityMedium,
+		domain.CasePriorityHigh,
+		domain.CasePriorityCritical,
+	}
+	for i, priority := range priorities {
+		if err := s.cases.Create(context.Background(), &domain.Case{
+			ID: fmt.Sprintf("risk-api-case-%d", i), CustomerID: cust.ID,
+			Status: domain.CaseStatusInvestigating, Priority: priority,
+			Summary: "risk queue test", CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create case: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cases?sort=risk&limit=4", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	cases, meta := decodeListResponse[domain.Case](t, rec.Body)
+	if meta.HasMore {
+		t.Error("has_more = true, want false")
+	}
+	want := []string{"risk-api-case-3", "risk-api-case-2", "risk-api-case-1", "risk-api-case-0"}
+	for i, id := range want {
+		if cases[i].ID != id {
+			t.Errorf("cases[%d].ID = %q, want %q", i, cases[i].ID, id)
+		}
 	}
 }
 

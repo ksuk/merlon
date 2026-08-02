@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table"
 import { api, type Alert, type AlertSeverity, type AlertStatus } from "@/lib/api"
 import { translateApiError } from "@/lib/errors"
+import { compareRiskValues } from "@/lib/risk"
 import { useEffect, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
@@ -62,8 +63,8 @@ export function AlertsPage() {
   async function reload() {
     setLoading(true)
     try {
-      const { data } = await api.alerts.listAll()
-      setAlerts(data)
+      const { data } = await api.alerts.listAll({ sort: "risk" })
+      setAlerts([...data].sort((left, right) => compareRiskValues({ risk: left.severity, created_at: left.created_at, id: left.id }, { risk: right.severity, created_at: right.created_at, id: right.id })))
       setError(null)
     } catch (err) {
       setError(translateApiError(err, t))

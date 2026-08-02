@@ -151,6 +151,10 @@ func caseCursor(c domain.Case) Cursor {
 	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID}
 }
 
+func caseRiskCursor(c domain.Case) Cursor {
+	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID, Sort: "risk", Rank: domain.CasePriorityRank(c.Priority)}
+}
+
 func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	if s.cases == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "case management not configured")
@@ -183,17 +187,34 @@ func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request, c
 	}
 
 	var cases []domain.Case
+	riskSorted := r.URL.Query().Get("sort") == "risk"
+	if pageReq.Cursor != nil && ((riskSorted && pageReq.Cursor.Sort != "risk") || (!riskSorted && pageReq.Cursor.Sort == "risk")) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "cursor sort does not match request sort")
+		return
+	}
 	if len(customerIDs) > 0 && customerIDs[0] != "" {
-		cases, err = s.cases.ListByCustomerCursor(r.Context(), customerIDs[0], pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+		if riskRepo, ok := s.cases.(domain.CaseRiskSortRepository); riskSorted && ok {
+			cases, err = riskRepo.ListByCustomerRiskCursor(r.Context(), customerIDs[0], pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+		} else {
+			cases, err = s.cases.ListByCustomerCursor(r.Context(), customerIDs[0], pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+		}
 	} else {
-		cases, err = s.cases.ListOpenByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+		if riskRepo, ok := s.cases.(domain.CaseRiskSortRepository); riskSorted && ok {
+			cases, err = riskRepo.ListOpenByRiskCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+		} else {
+			cases, err = s.cases.ListOpenByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+		}
 	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
-	page, meta := BuildPaginationMeta(cases, pageReq.Limit, caseCursor)
+	cursorOf := caseCursor
+	if riskSorted {
+		cursorOf = caseRiskCursor
+	}
+	page, meta := BuildPaginationMeta(cases, pageReq.Limit, cursorOf)
 	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
@@ -210,10 +231,19 @@ func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request, c
 
 	var cases []domain.Case
 	var err error
+	riskSorted := r.URL.Query().Get("sort") == "risk"
 	if len(customerIDs) > 0 && customerIDs[0] != "" {
-		cases, err = s.cases.ListByCustomerOffset(r.Context(), customerIDs[0], limit+1, offset)
+		if riskRepo, ok := s.cases.(domain.CaseRiskSortRepository); riskSorted && ok {
+			cases, err = riskRepo.ListByCustomerRiskOffset(r.Context(), customerIDs[0], limit+1, offset)
+		} else {
+			cases, err = s.cases.ListByCustomerOffset(r.Context(), customerIDs[0], limit+1, offset)
+		}
 	} else {
-		cases, err = s.cases.ListOpen(r.Context(), limit+1, offset)
+		if riskRepo, ok := s.cases.(domain.CaseRiskSortRepository); riskSorted && ok {
+			cases, err = riskRepo.ListOpenByRisk(r.Context(), limit+1, offset)
+		} else {
+			cases, err = s.cases.ListOpen(r.Context(), limit+1, offset)
+		}
 	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
@@ -224,7 +254,11 @@ func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request, c
 		setOffsetDeprecationHeaders(w)
 	}
 
-	page, meta := BuildPaginationMeta(cases, limit, caseCursor)
+	cursorOf := caseCursor
+	if riskSorted {
+		cursorOf = caseRiskCursor
+	}
+	page, meta := BuildPaginationMeta(cases, limit, cursorOf)
 	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 

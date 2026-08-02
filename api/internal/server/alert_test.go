@@ -227,6 +227,43 @@ func TestHandleListAlerts_CursorPagination(t *testing.T) {
 	}
 }
 
+func TestHandleListAlerts_RiskSortRanksCriticalFirst(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	severities := []domain.AlertSeverity{
+		domain.AlertSeverityLow,
+		domain.AlertSeverityMedium,
+		domain.AlertSeverityHigh,
+		domain.AlertSeverityCritical,
+	}
+	for i, severity := range severities {
+		if err := s.alerts.Create(context.Background(), &domain.Alert{
+			ID: fmt.Sprintf("risk-api-alert-%d", i), CustomerID: cust.ID, Severity: severity,
+			Status: domain.AlertStatusOpen, CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create alert: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/alerts?sort=risk&limit=4", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	alerts, meta := decodeListResponse[domain.Alert](t, rec.Body)
+	if meta.HasMore {
+		t.Error("has_more = true, want false")
+	}
+	want := []string{"risk-api-alert-3", "risk-api-alert-2", "risk-api-alert-1", "risk-api-alert-0"}
+	for i, id := range want {
+		if alerts[i].ID != id {
+			t.Errorf("alerts[%d].ID = %q, want %q", i, alerts[i].ID, id)
+		}
+	}
+}
+
 func TestHandleListAlerts_OffsetStillWorks(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)

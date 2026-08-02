@@ -11,6 +11,11 @@ import (
 type Cursor struct {
 	CreatedAt time.Time
 	ID        string
+	// Sort identifies an additive queue sort variant. Empty preserves the
+	// API-03 created_at/id cursor contract; "risk" adds the rank as the
+	// primary key for alert/case operator queues.
+	Sort string
+	Rank int
 }
 
 type CustomerRepository interface {
@@ -125,10 +130,28 @@ type AlertDashboardRepository interface {
 	DashboardUnresolvedCounts(ctx context.Context) (byStatus, bySeverity map[string]int, err error)
 }
 
+// AlertRiskSortRepository is the additive risk-ranked queue capability. The
+// base AlertRepository retains the API-03 created_at/id list contract.
+type AlertRiskSortRepository interface {
+	ListByCustomerRisk(ctx context.Context, customerID string, limit, offset int) ([]Alert, error)
+	ListByCustomerRiskCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Alert, error)
+	ListOpenByRisk(ctx context.Context, limit, offset int) ([]Alert, error)
+	ListOpenByRiskCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
+}
+
 // CaseDashboardRepository provides unresolved case aggregates without
 // materializing a capped list in the request handler.
 type CaseDashboardRepository interface {
 	DashboardUnresolvedCounts(ctx context.Context) (map[string]int, error)
+}
+
+// CaseRiskSortRepository is the additive risk-ranked queue capability. The
+// base CaseRepository retains the API-03 created_at/id list contract.
+type CaseRiskSortRepository interface {
+	ListByCustomerRiskOffset(ctx context.Context, customerID string, limit, offset int) ([]Case, error)
+	ListByCustomerRiskCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Case, error)
+	ListOpenByRisk(ctx context.Context, limit, offset int) ([]Case, error)
+	ListOpenByRiskCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
 }
 
 type ErrNotFound struct {
