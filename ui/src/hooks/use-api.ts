@@ -6,7 +6,9 @@ interface UseApiResult<T> {
   loading: boolean
 }
 
-export function useApi<T>(fetcher: () => Promise<T>): UseApiResult<T> {
+// dependencyKey lets a page re-run a request when its explicit scope changes
+// while preserving the one-shot behavior used by the existing pages.
+export function useApi<T>(fetcher: () => Promise<T>, dependencyKey?: unknown): UseApiResult<T> {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -31,8 +33,8 @@ export function useApi<T>(fetcher: () => Promise<T>): UseApiResult<T> {
     return () => {
       cancelled = true
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- request callback is stable by contract
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetcher is scoped by the explicit dependency key
+  }, [dependencyKey])
 
   return { data, error, loading }
 }

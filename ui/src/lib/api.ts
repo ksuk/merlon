@@ -567,7 +567,12 @@ export const api = {
       }),
   },
   transactions: {
-    list: () => request<PaginatedResponse<Transaction>>("/transactions"),
+    // The API intentionally requires customer_id so an operator cannot
+    // accidentally request an unbounded cross-customer transaction list.
+    list: (customerId: string) => {
+      const qs = new URLSearchParams({ customer_id: customerId })
+      return request<PaginatedResponse<Transaction>>(`/transactions?${qs.toString()}`)
+    },
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; executed_at: string }) =>
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data) }),

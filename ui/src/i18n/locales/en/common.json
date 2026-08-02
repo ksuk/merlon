@@ -352,6 +352,11 @@
     "count": "{{count}} items",
     "createButton": "Register new",
     "error": "Failed to fetch transaction data",
+    "customerSelector": "Customer scope",
+    "customerSelectorPlaceholder": "Select a customer before loading transactions",
+    "customerSelectorLoading": "Loading customers...",
+    "customerSelectorError": "Failed to load customers. You can still register or recover a transaction by entering a customer ID below.",
+    "customerSelectorPrompt": "Select a customer to load its transactions.",
     "form": {
       "title": "Register transaction",
       "customerId": "Customer ID",

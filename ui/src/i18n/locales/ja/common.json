@@ -352,6 +352,11 @@
     "count": "{{count}} 件",
     "createButton": "新規登録",
     "error": "取引データの取得に失敗しました",
+    "customerSelector": "顧客スコープ",
+    "customerSelectorPlaceholder": "取引を読み込む顧客を選択してください",
+    "customerSelectorLoading": "顧客を読み込み中…",
+    "customerSelectorError": "顧客の読み込みに失敗しました。下の顧客ID入力欄から取引の登録・復旧を続行できます。",
+    "customerSelectorPrompt": "顧客を選択すると、その顧客の取引を読み込みます。",
     "form": {
       "title": "取引登録",
       "customerId": "顧客ID",

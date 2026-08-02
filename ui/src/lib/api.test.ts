@@ -58,7 +58,7 @@ test.each([
   ["customers", () => api.customers.list()],
   ["alerts", () => api.alerts.list()],
   ["cases", () => api.cases.list()],
-  ["transactions", () => api.transactions.list()],
+  ["transactions", () => api.transactions.list("c1")],
 ])("%s.list returns the paginated envelope, not a bare array", async (_name, list) => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(
@@ -72,6 +72,19 @@ test.each([
   expect(Array.isArray(page.data)).toBe(true)
   expect(page.data).toHaveLength(1)
   expect(page.pagination.has_more).toBe(false)
+})
+
+test("transactions.list always sends its required customer scope", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
+  )
+
+  await api.transactions.list("c1")
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/transactions?customer_id=c1",
+    expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+  )
 })
 
 // The counterpart: these are served with writeJSON, not writePaginatedJSON, so
