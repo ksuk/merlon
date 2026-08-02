@@ -330,7 +330,7 @@ func Generate(opts Options) (*Result, error) {
 		"demo-story-01": domain.AlertStatusClosedTruePositive,
 		"demo-story-02": domain.AlertStatusClosedTruePositive,
 		"demo-story-03": domain.AlertStatusClosedTruePositive,
-		"demo-story-04": domain.AlertStatusOpen, // A7: "直近ストーリーはopen系に"
+		"demo-story-04": domain.AlertStatusInvestigating, // linked to the investigating case; A7 open-family story
 		"demo-story-05": domain.AlertStatusClosedTruePositive,
 		"demo-story-06": domain.AlertStatusInvestigating, // A7: "直近ストーリーはopen系に"
 	}

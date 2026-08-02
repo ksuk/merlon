@@ -638,7 +638,7 @@ func (r *PgAlertRepo) Get(ctx context.Context, id string) (*domain.Alert, error)
 func (r *PgAlertRepo) ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
 	return r.listAlerts(ctx,
 		`SELECT `+alertColumns+`
-		FROM alerts WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY detected_at DESC LIMIT $2 OFFSET $3`,
+		FROM alerts WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		customerID, limit, offset,
 	)
 }
@@ -654,7 +654,7 @@ func (r *PgAlertRepo) ListByCustomerRisk(ctx context.Context, customerID string,
 func (r *PgAlertRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Alert, error) {
 	return r.listAlerts(ctx,
 		`SELECT `+alertColumns+`
-		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open' ORDER BY severity DESC, detected_at DESC LIMIT $1 OFFSET $2`,
+		FROM alerts WHERE purge_marked_at IS NULL AND status IN ('open', 'investigating', 'escalated') ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
 }
@@ -662,7 +662,7 @@ func (r *PgAlertRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain
 func (r *PgAlertRepo) ListOpenByRisk(ctx context.Context, limit, offset int) ([]domain.Alert, error) {
 	return r.listAlerts(ctx,
 		`SELECT `+alertColumns+`
-		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open' ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2`,
+		FROM alerts WHERE purge_marked_at IS NULL AND status IN ('open', 'investigating', 'escalated') ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2`,
 		limit, offset,
 	)
 }
@@ -690,7 +690,7 @@ func (r *PgAlertRepo) ListByCustomerRiskCursor(ctx context.Context, customerID s
 
 func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
 	baseQuery := `SELECT ` + alertColumns + `
-		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open'`
+		FROM alerts WHERE purge_marked_at IS NULL AND status IN ('open', 'investigating', 'escalated')`
 
 	if after == nil {
 		return r.listAlerts(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
@@ -701,7 +701,7 @@ func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *do
 
 func (r *PgAlertRepo) ListOpenByRiskCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
 	baseQuery := `SELECT ` + alertColumns + `
-		FROM alerts WHERE purge_marked_at IS NULL AND status = 'open'`
+		FROM alerts WHERE purge_marked_at IS NULL AND status IN ('open', 'investigating', 'escalated')`
 	if after == nil {
 		return r.listAlerts(ctx, baseQuery+` ORDER BY `+alertRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1`, limit)
 	}
@@ -875,16 +875,25 @@ func (r *PgAlertRepo) AnnotateBatchReviewed(ctx context.Context, alertID string,
 }
 
 func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain.AlertStatus, resolvedBy string) error {
+	if domain.IsAlertTerminal(status) && strings.TrimSpace(resolvedBy) == "" {
+		return fmt.Errorf("resolved_by is required for terminal alert status")
+	}
 	now := time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE alerts SET status=$2, resolved_by=$3, resolved_at=$4, updated_at=$5 WHERE id=$1`,
-		id, string(status), resolvedBy, now, now,
+		`UPDATE alerts SET status=$2,
+			resolved_by=CASE WHEN $2 IN ('closed_true_positive', 'closed_false_positive') THEN NULLIF($3, '') ELSE NULL END,
+			resolved_at=CASE WHEN $2 IN ('closed_true_positive', 'closed_false_positive') THEN $4 ELSE NULL END,
+			updated_at=$4
+		 WHERE id=$1
+		   AND ((status = 'open' AND $2 IN ('investigating', 'escalated'))
+		    OR (status IN ('investigating', 'escalated') AND $2 IN ('investigating', 'escalated', 'closed_true_positive', 'closed_false_positive')))`,
+		id, string(status), resolvedBy, now,
 	)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return &domain.ErrNotFound{Entity: "alert", ID: id}
+		return r.alertStatusUpdateFailure(ctx, id, status)
 	}
 	return nil
 }
@@ -895,21 +904,49 @@ func (r *PgAlertRepo) UpdateStatus(ctx context.Context, id string, status domain
 // moved on) is reported as *domain.ErrConflict; zero rows because the
 // alert doesn't exist at all is reported as *domain.ErrNotFound.
 func (r *PgAlertRepo) UpdateStatusIfUnmodified(ctx context.Context, id string, status domain.AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error {
+	if domain.IsAlertTerminal(status) && strings.TrimSpace(resolvedBy) == "" {
+		return fmt.Errorf("resolved_by is required for terminal alert status")
+	}
 	now := time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE alerts SET status=$2, resolved_by=$3, resolved_at=$4, updated_at=$5 WHERE id=$1 AND updated_at=$6`,
-		id, string(status), resolvedBy, now, now, expectedUpdatedAt,
+		`UPDATE alerts SET status=$2,
+			resolved_by=CASE WHEN $2 IN ('closed_true_positive', 'closed_false_positive') THEN NULLIF($3, '') ELSE NULL END,
+			resolved_at=CASE WHEN $2 IN ('closed_true_positive', 'closed_false_positive') THEN $4 ELSE NULL END,
+			updated_at=$4
+		 WHERE id=$1 AND updated_at=$5
+		   AND ((status = 'open' AND $2 IN ('investigating', 'escalated'))
+		    OR (status IN ('investigating', 'escalated') AND $2 IN ('investigating', 'escalated', 'closed_true_positive', 'closed_false_positive')))`,
+		id, string(status), resolvedBy, now, expectedUpdatedAt,
 	)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		if _, err := r.Get(ctx, id); err != nil {
-			return err
+		current, getErr := r.Get(ctx, id)
+		if getErr != nil {
+			return getErr
 		}
-		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
+		if !current.UpdatedAt.Equal(expectedUpdatedAt) {
+			return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
+		}
+		return invalidAlertStatusTransition(current, status)
 	}
 	return nil
+}
+
+func (r *PgAlertRepo) alertStatusUpdateFailure(ctx context.Context, id string, status domain.AlertStatus) error {
+	current, err := r.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	return invalidAlertStatusTransition(current, status)
+}
+
+func invalidAlertStatusTransition(current *domain.Alert, status domain.AlertStatus) error {
+	if !domain.ValidAlertStatusTransition(current.Status, status) {
+		return &domain.ErrInvalidStateTransition{Entity: "alert", ID: current.ID, From: string(current.Status), To: string(status)}
+	}
+	return &domain.ErrConflict{Entity: "alert", ID: current.ID, Reason: "status changed concurrently"}
 }
 
 func (r *PgAlertRepo) EscalateSeverity(ctx context.Context, id string, severity domain.AlertSeverity) error {
@@ -1151,18 +1188,18 @@ func (r *PgCaseRepo) ListByCustomerRiskCursor(ctx context.Context, customerID st
 func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Case, error) {
 	return r.listCases(ctx,
 		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
-		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed' ORDER BY priority DESC, created_at DESC LIMIT $1 OFFSET $2`, limit, offset)
+		FROM cases WHERE purge_marked_at IS NULL AND status IN ('open', 'new', 'investigating', 'escalated', 'reopened') ORDER BY created_at DESC, id DESC LIMIT $1 OFFSET $2`, limit, offset)
 }
 
 func (r *PgCaseRepo) ListOpenByRisk(ctx context.Context, limit, offset int) ([]domain.Case, error) {
 	return r.listCases(ctx,
 		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
-		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed' ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2`, limit, offset)
+		FROM cases WHERE purge_marked_at IS NULL AND status IN ('open', 'new', 'investigating', 'escalated', 'reopened') ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1 OFFSET $2`, limit, offset)
 }
 
 func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
 	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
-		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed'`
+		FROM cases WHERE purge_marked_at IS NULL AND status IN ('open', 'new', 'investigating', 'escalated', 'reopened')`
 
 	if after == nil {
 		return r.listCases(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $1`, limit)
@@ -1173,7 +1210,7 @@ func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *dom
 
 func (r *PgCaseRepo) ListOpenByRiskCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
 	baseQuery := `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
-		FROM cases WHERE purge_marked_at IS NULL AND status != 'closed'`
+		FROM cases WHERE purge_marked_at IS NULL AND status IN ('open', 'new', 'investigating', 'escalated', 'reopened')`
 	if after == nil {
 		return r.listCases(ctx, baseQuery+` ORDER BY `+caseRiskRankSQL+` DESC, created_at DESC, id DESC LIMIT $1`, limit)
 	}
@@ -1185,7 +1222,7 @@ func (r *PgCaseRepo) DashboardUnresolvedCounts(ctx context.Context) (map[string]
 	rows, err := r.pool.Query(ctx,
 		`SELECT status, COUNT(*)
 		 FROM cases
-		 WHERE purge_marked_at IS NULL AND status NOT IN ('closed', 'str_filed')
+		 WHERE purge_marked_at IS NULL AND status IN ('open', 'new', 'investigating', 'escalated', 'reopened')
 		 GROUP BY status`)
 	if err != nil {
 		return nil, err
@@ -1231,6 +1268,13 @@ func (r *PgCaseRepo) Create(ctx context.Context, c *domain.Case) error {
 }
 
 func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
+	current, err := r.Get(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	if current.Status != c.Status && !domain.ValidCaseStatusTransition(current.Status, c.Status) {
+		return &domain.ErrInvalidStateTransition{Entity: "case", ID: c.ID, From: string(current.Status), To: string(c.Status)}
+	}
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9 WHERE id=$1`,
@@ -1250,6 +1294,16 @@ func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
 // reported as *domain.ErrConflict; zero rows because the case doesn't exist
 // at all is reported as *domain.ErrNotFound.
 func (r *PgCaseRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Case, expectedUpdatedAt time.Time) error {
+	current, err := r.Get(ctx, c.ID)
+	if err != nil {
+		return err
+	}
+	if !current.UpdatedAt.Equal(expectedUpdatedAt) {
+		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
+	}
+	if current.Status != c.Status && !domain.ValidCaseStatusTransition(current.Status, c.Status) {
+		return &domain.ErrInvalidStateTransition{Entity: "case", ID: c.ID, From: string(current.Status), To: string(c.Status)}
+	}
 	newUpdatedAt := time.Now()
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE cases SET status=$2, priority=$3, assigned_to=$4, summary=$5, reopen_reason=$6, related_case_ids=$7, updated_at=$8, closed_at=$9

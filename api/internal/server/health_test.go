@@ -33,16 +33,19 @@ func testServer() *Server {
 }
 
 func testServerFull() *Server {
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
 	return New(":0", Deps{
-		Customers:    store.NewMemoryCustomerRepo(),
-		Transactions: store.NewMemoryTransactionRepo(),
-		Alerts:       store.NewMemoryAlertRepo(),
-		Scoring:      &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
-		Monitoring:   &engine.MockMonitoringEngine{},
-		Screening:    &engine.MockScreeningEngine{},
-		Backtest:     &engine.MockBacktestEngine{},
-		Audit:        store.NewMemoryAuditRepo(),
-		Cases:        store.NewMemoryCaseRepo(),
+		Customers:          store.NewMemoryCustomerRepo(),
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Scoring:            &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Backtest:           &engine.MockBacktestEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
 	})
 }
 

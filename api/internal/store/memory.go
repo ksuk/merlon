@@ -468,7 +468,7 @@ func (r *MemoryAlertRepo) ListOpen(_ context.Context, limit, offset int) ([]doma
 	defer r.mu.RUnlock()
 	var open []domain.Alert
 	for _, a := range r.data {
-		if a.Status == domain.AlertStatusOpen {
+		if domain.IsAlertUnresolved(a.Status) {
 			open = append(open, *a)
 		}
 	}
@@ -484,7 +484,7 @@ func (r *MemoryAlertRepo) ListOpenByRisk(_ context.Context, limit, offset int) (
 	defer r.mu.RUnlock()
 	var open []domain.Alert
 	for _, a := range r.data {
-		if a.Status == domain.AlertStatusOpen {
+		if domain.IsAlertUnresolved(a.Status) {
 			open = append(open, *a)
 		}
 	}
@@ -528,7 +528,7 @@ func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *
 	defer r.mu.RUnlock()
 	var open []domain.Alert
 	for _, a := range r.data {
-		if a.Status == domain.AlertStatusOpen {
+		if domain.IsAlertUnresolved(a.Status) {
 			open = append(open, *a)
 		}
 	}
@@ -543,7 +543,7 @@ func (r *MemoryAlertRepo) ListOpenByRiskCursor(_ context.Context, limit int, aft
 	defer r.mu.RUnlock()
 	var open []domain.Alert
 	for _, a := range r.data {
-		if a.Status == domain.AlertStatusOpen {
+		if domain.IsAlertUnresolved(a.Status) {
 			open = append(open, *a)
 		}
 	}
@@ -659,12 +659,7 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 	if !ok {
 		return &domain.ErrNotFound{Entity: "alert", ID: id}
 	}
-	a.Status = status
-	a.ResolvedBy = resolvedBy
-	now := time.Now()
-	a.ResolvedAt = &now
-	a.UpdatedAt = now
-	return nil
+	return updateMemoryAlertStatus(a, status, resolvedBy)
 }
 
 // UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
@@ -679,10 +674,26 @@ func (r *MemoryAlertRepo) UpdateStatusIfUnmodified(_ context.Context, id string,
 	if !a.UpdatedAt.Equal(expectedUpdatedAt) {
 		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
 	}
-	a.Status = status
-	a.ResolvedBy = resolvedBy
+	return updateMemoryAlertStatus(a, status, resolvedBy)
+}
+
+func updateMemoryAlertStatus(a *domain.Alert, status domain.AlertStatus, resolvedBy string) error {
+	if !domain.ValidAlertStatusTransition(a.Status, status) {
+		return &domain.ErrInvalidStateTransition{Entity: "alert", ID: a.ID, From: string(a.Status), To: string(status)}
+	}
+	if domain.IsAlertTerminal(status) && strings.TrimSpace(resolvedBy) == "" {
+		return fmt.Errorf("resolved_by is required for terminal alert status")
+	}
+
 	now := time.Now()
-	a.ResolvedAt = &now
+	a.Status = status
+	if domain.IsAlertTerminal(status) {
+		a.ResolvedBy = resolvedBy
+		a.ResolvedAt = &now
+	} else {
+		a.ResolvedBy = ""
+		a.ResolvedAt = nil
+	}
 	a.UpdatedAt = now
 	return nil
 }
@@ -888,7 +899,7 @@ func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domai
 	defer r.mu.RUnlock()
 	var open []domain.Case
 	for _, c := range r.data {
-		if c.Status != domain.CaseStatusClosed {
+		if domain.IsCaseUnresolved(c.Status) {
 			open = append(open, *c)
 		}
 	}
@@ -904,7 +915,7 @@ func (r *MemoryCaseRepo) ListOpenByRisk(_ context.Context, limit, offset int) ([
 	defer r.mu.RUnlock()
 	var open []domain.Case
 	for _, c := range r.data {
-		if c.Status != domain.CaseStatusClosed {
+		if domain.IsCaseUnresolved(c.Status) {
 			open = append(open, *c)
 		}
 	}
@@ -921,7 +932,7 @@ func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *d
 	defer r.mu.RUnlock()
 	var open []domain.Case
 	for _, c := range r.data {
-		if c.Status != domain.CaseStatusClosed {
+		if domain.IsCaseUnresolved(c.Status) {
 			open = append(open, *c)
 		}
 	}
@@ -936,7 +947,7 @@ func (r *MemoryCaseRepo) ListOpenByRiskCursor(_ context.Context, limit int, afte
 	defer r.mu.RUnlock()
 	var open []domain.Case
 	for _, c := range r.data {
-		if c.Status != domain.CaseStatusClosed {
+		if domain.IsCaseUnresolved(c.Status) {
 			open = append(open, *c)
 		}
 	}
@@ -953,10 +964,7 @@ func (r *MemoryCaseRepo) DashboardUnresolvedCounts(_ context.Context) (map[strin
 
 	counts := make(map[string]int)
 	for _, c := range r.data {
-		switch c.Status {
-		case domain.CaseStatusClosed, domain.CaseStatusStrFiled:
-			continue
-		default:
+		if domain.IsCaseUnresolved(c.Status) {
 			counts[string(c.Status)]++
 		}
 	}
@@ -973,8 +981,12 @@ func (r *MemoryCaseRepo) Create(_ context.Context, c *domain.Case) error {
 func (r *MemoryCaseRepo) Update(_ context.Context, c *domain.Case) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.data[c.ID]; !ok {
+	existing, ok := r.data[c.ID]
+	if !ok {
 		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	if existing.Status != c.Status && !domain.ValidCaseStatusTransition(existing.Status, c.Status) {
+		return &domain.ErrInvalidStateTransition{Entity: "case", ID: c.ID, From: string(existing.Status), To: string(c.Status)}
 	}
 	c.UpdatedAt = time.Now()
 	r.data[c.ID] = c
@@ -992,6 +1004,9 @@ func (r *MemoryCaseRepo) UpdateIfUnmodified(_ context.Context, c *domain.Case, e
 	}
 	if !existing.UpdatedAt.Equal(expectedUpdatedAt) {
 		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
+	}
+	if existing.Status != c.Status && !domain.ValidCaseStatusTransition(existing.Status, c.Status) {
+		return &domain.ErrInvalidStateTransition{Entity: "case", ID: c.ID, From: string(existing.Status), To: string(c.Status)}
 	}
 	c.UpdatedAt = time.Now()
 	r.data[c.ID] = c

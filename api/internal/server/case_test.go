@@ -234,6 +234,71 @@ func TestUpdateCase(t *testing.T) {
 	}
 }
 
+func TestUpdateCaseAdvancesLinkedAlertAtomically(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	now := time.Now()
+	caseRecord := &domain.Case{
+		ID: "case-linked-active", CustomerID: cust.ID, AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusNew, Priority: domain.CasePriorityMedium,
+		Summary: "linked lifecycle", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseRecord.ID, strings.NewReader(`{"status":"investigating"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updatedCase, err := s.cases.Get(context.Background(), caseRecord.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedAlert, err := s.alerts.Get(context.Background(), alert.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedCase.Status != domain.CaseStatusInvestigating || updatedAlert.Status != domain.AlertStatusInvestigating {
+		t.Fatalf("case/alert lifecycle = (%q, %q), want investigating/investigating", updatedCase.Status, updatedAlert.Status)
+	}
+	if updatedAlert.ResolvedAt != nil || updatedAlert.ResolvedBy != "" {
+		t.Fatalf("active linked alert retained resolution metadata: %+v", updatedAlert)
+	}
+}
+
+func TestUpdateCaseRejectsTerminalWithActiveLinkedAlert(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	now := time.Now()
+	caseRecord := &domain.Case{
+		ID: "case-linked-close", CustomerID: cust.ID, AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityMedium,
+		Summary: "linked close", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseRecord.ID, strings.NewReader(`{"status":"closed"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+
+	unchangedCase, _ := s.cases.Get(context.Background(), caseRecord.ID)
+	unchangedAlert, _ := s.alerts.Get(context.Background(), alert.ID)
+	if unchangedCase.Status != domain.CaseStatusInvestigating || unchangedAlert.Status != domain.AlertStatusOpen {
+		t.Fatalf("rejected close changed state: case=%q alert=%q", unchangedCase.Status, unchangedAlert.Status)
+	}
+}
+
 // TestCaseStatusChangeUpdatesGauge is Task 9 (the operational design §4.4 OPS-003):
 // merlon_cases_open must track a case through its open sub-statuses and
 // stop counting it once closed, without ever counting "closed" itself

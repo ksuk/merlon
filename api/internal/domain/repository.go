@@ -139,6 +139,26 @@ type AlertRiskSortRepository interface {
 	ListOpenByRiskCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
 }
 
+// AlertStatusTransition is one alert update coordinated with a case update.
+// From and ExpectedUpdatedAt make the operation safe against a concurrent
+// operator changing a linked alert between the case read and the commit. When
+// From and To are equal, the entry is validation-only: the linked alert is
+// rechecked in the same transaction but not mutated.
+type AlertStatusTransition struct {
+	ID                string
+	From              AlertStatus
+	To                AlertStatus
+	ResolvedBy        string
+	ExpectedUpdatedAt time.Time
+}
+
+// CaseAlertLifecycleRepository applies a case transition and any linked alert
+// transitions in one transaction. Implementations must apply no mutation when
+// any expected version or compatibility check fails.
+type CaseAlertLifecycleRepository interface {
+	UpdateCaseAndAlerts(ctx context.Context, c *Case, expectedUpdatedAt time.Time, alerts []AlertStatusTransition) error
+}
+
 // CaseDashboardRepository provides unresolved case aggregates without
 // materializing a capped list in the request handler.
 type CaseDashboardRepository interface {
@@ -175,4 +195,17 @@ type ErrConflict struct {
 
 func (e *ErrConflict) Error() string {
 	return e.Entity + " conflict: " + e.ID + ": " + e.Reason
+}
+
+// ErrInvalidStateTransition is returned when a caller attempts a lifecycle
+// edge that the domain contract does not permit.
+type ErrInvalidStateTransition struct {
+	Entity string
+	ID     string
+	From   string
+	To     string
+}
+
+func (e *ErrInvalidStateTransition) Error() string {
+	return e.Entity + " invalid state transition: " + e.From + " -> " + e.To
 }

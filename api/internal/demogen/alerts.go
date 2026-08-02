@@ -144,6 +144,14 @@ func fpStatusWeights(rng *rand.Rand) domain.AlertStatus {
 func finalizeAlerts(ctx *alertBuildContext) []domain.Alert {
 	for i := range ctx.alerts {
 		ctx.alerts[i].ID = fmt.Sprintf("demo-alert-%05d", i+1)
+		if domain.IsAlertTerminal(ctx.alerts[i].Status) {
+			resolvedAt := ctx.alerts[i].UpdatedAt
+			ctx.alerts[i].ResolvedAt = &resolvedAt
+			ctx.alerts[i].ResolvedBy = "demo-seed"
+		} else {
+			ctx.alerts[i].ResolvedAt = nil
+			ctx.alerts[i].ResolvedBy = ""
+		}
 	}
 	return ctx.alerts
 }

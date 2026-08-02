@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/ksuk/merlon/api/internal/apierr"
@@ -24,6 +25,8 @@ var openCaseStatuses = map[domain.CaseStatus]bool{
 	domain.CaseStatusEscalated:     true,
 	domain.CaseStatusReopened:      true,
 }
+
+var errCaseAlertLifecycleUnavailable = errors.New("case/alert lifecycle repository is not configured")
 
 // adjustCasesOpenGauge updates merlon_cases_open for a case status
 // transition. oldStatus is "" for a newly created case. Call this exactly
@@ -288,9 +291,32 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oldStatus := c.Status
+	expectedCaseUpdatedAt := c.UpdatedAt
+	var linkedAlertTransitions []domain.AlertStatusTransition
 	if req.Status != "" {
 		if !domain.ValidCaseStatusTransition(oldStatus, req.Status) {
 			writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, "invalid case status transition")
+			return
+		}
+
+		var err error
+		linkedAlertTransitions, err = s.prepareCaseAlertTransitions(r.Context(), c, req.Status)
+		if err != nil {
+			var notFound *domain.ErrNotFound
+			if errors.As(err, &notFound) {
+				writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+				return
+			}
+			var conflict *domain.ErrConflict
+			if errors.As(err, &conflict) {
+				writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
+				return
+			}
+			if errors.Is(err, errCaseAlertLifecycleUnavailable) {
+				writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, err.Error())
+				return
+			}
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
 
@@ -313,9 +339,11 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		}
 
 		c.Status = req.Status
-		if req.Status == domain.CaseStatusClosed {
+		if domain.IsCaseTerminal(req.Status) {
 			now := time.Now()
 			c.ClosedAt = &now
+		} else {
+			c.ClosedAt = nil
 		}
 	}
 	if req.AssignedTo != "" {
@@ -325,23 +353,22 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		c.Summary = req.Summary
 	}
 
-	if req.ExpectedUpdatedAt != nil {
+	if req.Status != "" && len(c.AlertIDs) > 0 {
+		if s.caseAlertLifecycle == nil {
+			writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, errCaseAlertLifecycleUnavailable.Error())
+			return
+		}
+		if err := s.caseAlertLifecycle.UpdateCaseAndAlerts(r.Context(), c, caseExpectedUpdatedAt(req.ExpectedUpdatedAt, expectedCaseUpdatedAt), linkedAlertTransitions); err != nil {
+			writeCaseUpdateError(w, err)
+			return
+		}
+	} else if req.ExpectedUpdatedAt != nil {
 		if err := s.cases.UpdateIfUnmodified(r.Context(), c, *req.ExpectedUpdatedAt); err != nil {
-			var conflict *domain.ErrConflict
-			if errors.As(err, &conflict) {
-				writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
-				return
-			}
-			var nf *domain.ErrNotFound
-			if errors.As(err, &nf) {
-				writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
-				return
-			}
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			writeCaseUpdateError(w, err)
 			return
 		}
 	} else if err := s.cases.Update(r.Context(), c); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		writeCaseUpdateError(w, err)
 		return
 	}
 	if req.Status != "" {
@@ -355,6 +382,97 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 	s.dispatchWebhook(r.Context(), event, c)
 
 	writeJSON(w, http.StatusOK, c)
+}
+
+func caseExpectedUpdatedAt(expected *time.Time, observed time.Time) time.Time {
+	if expected != nil {
+		return *expected
+	}
+	return observed
+}
+
+// prepareCaseAlertTransitions checks the compatibility between a target case
+// status and all linked alerts. A case may not become terminal while any
+// linked alert is still unresolved. Moving a case into investigation or
+// escalation may advance linked active alerts, and that advancement is later
+// committed with the case in one transaction.
+func (s *Server) prepareCaseAlertTransitions(ctx context.Context, c *domain.Case, target domain.CaseStatus) ([]domain.AlertStatusTransition, error) {
+	if len(c.AlertIDs) == 0 {
+		return nil, nil
+	}
+	if s.alerts == nil {
+		return nil, errCaseAlertLifecycleUnavailable
+	}
+
+	var transitions []domain.AlertStatusTransition
+	for _, alertID := range c.AlertIDs {
+		a, err := s.alerts.Get(ctx, alertID)
+		if err != nil {
+			return nil, err
+		}
+
+		if domain.IsCaseTerminal(target) {
+			if !domain.IsAlertTerminal(a.Status) {
+				return nil, &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "cannot close case while linked alert " + a.ID + " is unresolved"}
+			}
+			transitions = append(transitions, domain.AlertStatusTransition{ID: a.ID, From: a.Status, To: a.Status, ExpectedUpdatedAt: a.UpdatedAt})
+			continue
+		}
+
+		switch target {
+		case domain.CaseStatusInvestigating:
+			if !domain.IsAlertUnresolved(a.Status) {
+				return nil, &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "linked alert " + a.ID + " is not active"}
+			}
+			if a.Status == domain.AlertStatusOpen {
+				transitions = append(transitions, domain.AlertStatusTransition{
+					ID: a.ID, From: a.Status, To: domain.AlertStatusInvestigating, ExpectedUpdatedAt: a.UpdatedAt,
+				})
+			} else {
+				transitions = append(transitions, domain.AlertStatusTransition{ID: a.ID, From: a.Status, To: a.Status, ExpectedUpdatedAt: a.UpdatedAt})
+			}
+		case domain.CaseStatusEscalated:
+			if !domain.IsAlertUnresolved(a.Status) {
+				return nil, &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "linked alert " + a.ID + " is not active"}
+			}
+			if a.Status == domain.AlertStatusOpen || a.Status == domain.AlertStatusInvestigating {
+				transitions = append(transitions, domain.AlertStatusTransition{
+					ID: a.ID, From: a.Status, To: domain.AlertStatusEscalated, ExpectedUpdatedAt: a.UpdatedAt,
+				})
+			} else {
+				transitions = append(transitions, domain.AlertStatusTransition{ID: a.ID, From: a.Status, To: a.Status, ExpectedUpdatedAt: a.UpdatedAt})
+			}
+		default:
+			// Reopening a case cannot reopen an immutable terminal alert. Keep
+			// the link active-only and reject incompatible legacy data above.
+			if domain.IsCaseUnresolved(target) {
+				if !domain.IsAlertUnresolved(a.Status) {
+					return nil, &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "linked alert " + a.ID + " is not active"}
+				}
+				transitions = append(transitions, domain.AlertStatusTransition{ID: a.ID, From: a.Status, To: a.Status, ExpectedUpdatedAt: a.UpdatedAt})
+			}
+		}
+	}
+	return transitions, nil
+}
+
+func writeCaseUpdateError(w http.ResponseWriter, err error) {
+	var conflict *domain.ErrConflict
+	if errors.As(err, &conflict) {
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
+		return
+	}
+	var notFound *domain.ErrNotFound
+	if errors.As(err, &notFound) {
+		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, notFound.Error())
+		return
+	}
+	var invalid *domain.ErrInvalidStateTransition
+	if errors.As(err, &invalid) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, invalid.Error())
+		return
+	}
+	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 }
 
 func (s *Server) handleAddCaseNote(w http.ResponseWriter, r *http.Request) {
