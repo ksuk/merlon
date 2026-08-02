@@ -116,6 +116,24 @@ func (r *MemoryCustomerRepo) List(_ context.Context, limit, offset int) ([]domai
 	return pageByOffset(all, limit, offset), nil
 }
 
+// DashboardRiskTierCounts returns a complete aggregate rather than relying
+// on the dashboard's former 10,000-row list cap. A missing tier is exposed as
+// "unscored", matching the dashboard's customer-level presentation.
+func (r *MemoryCustomerRepo) DashboardRiskTierCounts(_ context.Context) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, c := range r.data {
+		tier := "unscored"
+		if c.RiskTier != nil {
+			tier = string(*c.RiskTier)
+		}
+		counts[tier]++
+	}
+	return counts, nil
+}
+
 func (r *MemoryCustomerRepo) ListByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Customer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -292,6 +310,19 @@ func (r *MemoryTransactionRepo) ListByCustomerCursor(_ context.Context, customer
 	), nil
 }
 
+func (r *MemoryTransactionRepo) CountExecutedSince(_ context.Context, since time.Time) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for _, t := range r.data {
+		if !t.ExecutedAt.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (r *MemoryTransactionRepo) ListByCustomerEventRange(_ context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *domain.TransactionEventCursor) ([]domain.Transaction, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -410,6 +441,22 @@ func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *
 		func(a domain.Alert) time.Time { return a.CreatedAt },
 		func(a domain.Alert) string { return a.ID },
 	), nil
+}
+
+func (r *MemoryAlertRepo) DashboardUnresolvedCounts(_ context.Context) (map[string]int, map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	byStatus := make(map[string]int)
+	bySeverity := make(map[string]int)
+	for _, a := range r.data {
+		switch a.Status {
+		case domain.AlertStatusOpen, domain.AlertStatusInvestigating, domain.AlertStatusEscalated:
+			byStatus[string(a.Status)]++
+			bySeverity[string(a.Severity)]++
+		}
+	}
+	return byStatus, bySeverity, nil
 }
 
 func (r *MemoryAlertRepo) ListByFilter(_ context.Context, f domain.AlertBulkFilter) ([]domain.Alert, error) {
@@ -721,6 +768,22 @@ func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *d
 		func(c domain.Case) time.Time { return c.CreatedAt },
 		func(c domain.Case) string { return c.ID },
 	), nil
+}
+
+func (r *MemoryCaseRepo) DashboardUnresolvedCounts(_ context.Context) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, c := range r.data {
+		switch c.Status {
+		case domain.CaseStatusClosed, domain.CaseStatusStrFiled:
+			continue
+		default:
+			counts[string(c.Status)]++
+		}
+	}
+	return counts, nil
 }
 
 func (r *MemoryCaseRepo) Create(_ context.Context, c *domain.Case) error {

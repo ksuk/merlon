@@ -71,6 +71,7 @@ export interface DashboardStats {
   cases_by_status: Record<string, number>
   total_cases: number
   recent_transactions: number
+  recent_transactions_window_hours: number
   screening_list_freshness?: ScreeningListFreshnessStat[]
 }
 

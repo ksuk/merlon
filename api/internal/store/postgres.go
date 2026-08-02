@@ -126,6 +126,31 @@ func (r *PgCustomerRepo) List(ctx context.Context, limit, offset int) ([]domain.
 	return customers, rows.Err()
 }
 
+// DashboardRiskTierCounts keeps dashboard totals independent of the list
+// endpoint's page-size limits. PostgreSQL's NULL aggregate bucket is exposed
+// as "unscored", matching the memory repository and UI contract.
+func (r *PgCustomerRepo) DashboardRiskTierCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT COALESCE(risk_tier::text, 'unscored'), COUNT(*)
+		 FROM customers WHERE purge_marked_at IS NULL
+		 GROUP BY risk_tier`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var tier string
+		var count int64
+		if err := rows.Scan(&tier, &count); err != nil {
+			return nil, err
+		}
+		counts[tier] = int(count)
+	}
+	return counts, rows.Err()
+}
+
 func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *domain.Cursor) ([]domain.Customer, error) {
 	baseQuery := `SELECT ` + customerColumns + ` FROM customers WHERE purge_marked_at IS NULL`
 
@@ -461,6 +486,16 @@ func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID
 	return txns, rows.Err()
 }
 
+func (r *PgTransactionRepo) CountExecutedSince(ctx context.Context, since time.Time) (int, error) {
+	var count int64
+	if err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM transactions WHERE purge_marked_at IS NULL AND executed_at >= $1`, since,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
 func (r *PgTransactionRepo) ListByCustomerEventRange(ctx context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *domain.TransactionEventCursor) ([]domain.Transaction, error) {
 	query := `SELECT ` + transactionColumns + ` FROM transactions WHERE customer_id=$1 AND purge_marked_at IS NULL AND executed_at >= $2 AND executed_at < $3 AND created_at <= $4`
 	args := []any{customerID, from, to, createdBefore, limit}
@@ -629,6 +664,52 @@ func (r *PgAlertRepo) ListOpenByCursor(ctx context.Context, limit int, after *do
 	}
 	return r.listAlerts(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 		after.CreatedAt, after.ID, limit)
+}
+
+func (r *PgAlertRepo) DashboardUnresolvedCounts(ctx context.Context) (map[string]int, map[string]int, error) {
+	byStatus := make(map[string]int)
+	statusRows, err := r.pool.Query(ctx,
+		`SELECT status::text, COUNT(*)
+		 FROM alerts
+		 WHERE purge_marked_at IS NULL AND status IN ('open', 'investigating', 'escalated')
+		 GROUP BY status`)
+	if err != nil {
+		return nil, nil, err
+	}
+	for statusRows.Next() {
+		var status string
+		var count int64
+		if err := statusRows.Scan(&status, &count); err != nil {
+			statusRows.Close()
+			return nil, nil, err
+		}
+		byStatus[status] = int(count)
+	}
+	if err := statusRows.Err(); err != nil {
+		statusRows.Close()
+		return nil, nil, err
+	}
+	statusRows.Close()
+
+	bySeverity := make(map[string]int)
+	severityRows, err := r.pool.Query(ctx,
+		`SELECT severity::text, COUNT(*)
+		 FROM alerts
+		 WHERE purge_marked_at IS NULL AND status IN ('open', 'investigating', 'escalated')
+		 GROUP BY severity`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer severityRows.Close()
+	for severityRows.Next() {
+		var severity string
+		var count int64
+		if err := severityRows.Scan(&severity, &count); err != nil {
+			return nil, nil, err
+		}
+		bySeverity[severity] = int(count)
+	}
+	return byStatus, bySeverity, severityRows.Err()
 }
 
 // ListByFilter returns alerts matching f, for bulk operations (WS-8 Task 7,
@@ -1016,6 +1097,29 @@ func (r *PgCaseRepo) ListOpenByCursor(ctx context.Context, limit int, after *dom
 	}
 	return r.listCases(ctx, baseQuery+` AND (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3`,
 		after.CreatedAt, after.ID, limit)
+}
+
+func (r *PgCaseRepo) DashboardUnresolvedCounts(ctx context.Context) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT status, COUNT(*)
+		 FROM cases
+		 WHERE purge_marked_at IS NULL AND status NOT IN ('closed', 'str_filed')
+		 GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int64
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		counts[status] = int(count)
+	}
+	return counts, rows.Err()
 }
 
 func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) ([]domain.Case, error) {

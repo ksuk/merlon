@@ -38,7 +38,7 @@
       "alertsDescription": "未解決",
       "cases": "ケース",
       "casesDescription": "オープン",
-      "recentTransactions": "直近の取引",
+      "recentTransactions": "直近の取引（過去{{hours}}時間）",
       "whitelistExpiringSoon": "ホワイトリスト期限切れ間近",
       "whitelistExpiringSoonDescription": "{{days}}日以内"
     },

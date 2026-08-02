@@ -38,7 +38,7 @@
       "alertsDescription": "Open",
       "cases": "Cases",
       "casesDescription": "Open",
-      "recentTransactions": "Recent transactions",
+      "recentTransactions": "Recent transactions (last {{hours}} hours)",
       "whitelistExpiringSoon": "Whitelist expiring soon",
       "whitelistExpiringSoonDescription": "Within {{days}} days"
     },

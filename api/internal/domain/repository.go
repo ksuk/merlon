@@ -44,6 +44,13 @@ type CustomerSearchRepository interface {
 	ListSearch(ctx context.Context, search string, limit, offset int) ([]Customer, error)
 }
 
+// CustomerDashboardRepository exposes aggregate reads used by the dashboard.
+// It is optional so adapters can adopt the read model without changing the
+// CRUD CustomerRepository contract.
+type CustomerDashboardRepository interface {
+	DashboardRiskTierCounts(ctx context.Context) (map[string]int, error)
+}
+
 type TransactionRepository interface {
 	Get(ctx context.Context, id string) (*Transaction, error)
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Transaction, error)
@@ -56,6 +63,12 @@ type TransactionRepository interface {
 // a created_at snapshot, and carries an explicit half-open event window.
 type TransactionHistoryRepository interface {
 	ListByCustomerEventRange(ctx context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *TransactionEventCursor) ([]Transaction, error)
+}
+
+// TransactionDashboardRepository provides a bounded aggregate for the
+// dashboard's documented recent-transaction window.
+type TransactionDashboardRepository interface {
+	CountExecutedSince(ctx context.Context, since time.Time) (int, error)
 }
 
 type TransactionEventCursor struct {
@@ -104,6 +117,18 @@ type AlertRepository interface {
 	// §1.1.2: customer death -> frozen escalates all of that customer's
 	// alerts to HIGH), independent of its status.
 	EscalateSeverity(ctx context.Context, id string, severity AlertSeverity) error
+}
+
+// AlertDashboardRepository provides unresolved alert aggregates without
+// materializing a capped list in the request handler.
+type AlertDashboardRepository interface {
+	DashboardUnresolvedCounts(ctx context.Context) (byStatus, bySeverity map[string]int, err error)
+}
+
+// CaseDashboardRepository provides unresolved case aggregates without
+// materializing a capped list in the request handler.
+type CaseDashboardRepository interface {
+	DashboardUnresolvedCounts(ctx context.Context) (map[string]int, error)
 }
 
 type ErrNotFound struct {
