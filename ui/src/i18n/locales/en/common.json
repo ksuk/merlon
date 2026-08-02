@@ -594,6 +594,7 @@
       "transactions": "Transactions",
       "alerts": "Alerts generated",
       "executionTime": "Execution time",
+      "empty": "No scenario findings were generated. This is a valid empty result.",
       "table": {
         "header": {
           "scenario": "Scenario",

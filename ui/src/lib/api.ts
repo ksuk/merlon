@@ -362,6 +362,32 @@ export interface ScreenResult {
   screened_at: string
 }
 
+function normalizeScreenResult(result: ScreenResult): ScreenResult {
+  return {
+    ...result,
+    matches: result.matches ?? [],
+  }
+}
+
+function normalizeBacktestResult(result: BacktestResult): BacktestResult {
+  return {
+    ...result,
+    scenario_results: (result.scenario_results ?? []).map((scenario) => ({
+      ...scenario,
+      affected_customer_ids: scenario.affected_customer_ids ?? [],
+    })),
+  }
+}
+
+function normalizeBacktestJob(job: BacktestJob): BacktestJob {
+  return {
+    ...job,
+    baseline: job.baseline ? normalizeBacktestResult(job.baseline) : job.baseline,
+    candidate: job.candidate ? normalizeBacktestResult(job.candidate) : job.candidate,
+    delta: job.delta ? normalizeBacktestResult(job.delta) : job.delta,
+  }
+}
+
 export interface BatchScoreResult {
   customer_id: string
   score: number
@@ -493,11 +519,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ rule_set_id: ruleSetId }),
       }),
-    screen: (id: string, listIds: string[]) =>
-      request<ScreenResult>(`/customers/${encodeURIComponent(id)}/screen`, {
+    screen: async (id: string, listIds: string[]) =>
+      normalizeScreenResult(await request<ScreenResult>(`/customers/${encodeURIComponent(id)}/screen`, {
         method: "POST",
         body: JSON.stringify({ list_ids: listIds }),
-      }),
+      })),
   },
   alerts: {
     list: () => request<PaginatedResponse<Alert>>("/alerts"),
@@ -595,15 +621,17 @@ export const api = {
       `${BASE}/reports/str/export?alert_id=${encodeURIComponent(alertId)}&format=${format}`,
   },
   backtest: {
-    create: (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string }, signal?: AbortSignal) =>
-      request<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(input), signal }),
-    get: (id: string, signal?: AbortSignal) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}`, { signal }),
-    cancel: (id: string) => request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+    create: async (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string }, signal?: AbortSignal) =>
+      normalizeBacktestJob(await request<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(input), signal })),
+    get: async (id: string, signal?: AbortSignal) =>
+      normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}`, { signal })),
+    cancel: async (id: string) =>
+      normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" })),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>
       request<BacktestResult>("/backtest", {
         method: "POST",
         body: JSON.stringify({ customer_ids: customerIds, scenario_ids: scenarioIds, description }),
-      }),
+      }).then(normalizeBacktestResult),
   },
   webhooks: {
     list: () => request<Webhook[]>("/webhooks"),

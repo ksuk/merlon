@@ -594,6 +594,7 @@
       "transactions": "取引数",
       "alerts": "生成アラート",
       "executionTime": "実行時間",
+      "empty": "該当するシナリオ結果はありません。これは有効な空の結果です。",
       "table": {
         "header": {
           "scenario": "シナリオ",

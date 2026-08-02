@@ -89,3 +89,46 @@ test.each([
 
   expect(Array.isArray(await fetchList())).toBe(true)
 })
+
+test("customers.screen normalizes legacy null matches", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        customer_id: "c1",
+        hit: false,
+        matches: null,
+        lists_checked: 2,
+        screened_at: "2026-08-02T00:00:00Z",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  )
+
+  const result = await api.customers.screen("c1", [])
+
+  expect(result.matches).toEqual([])
+})
+
+test("backtest.get normalizes legacy null scenario results", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        id: "job-1",
+        status: "completed",
+        candidate: {
+          backtest_id: "backtest-1",
+          total_transactions: 0,
+          total_customers: 0,
+          total_alerts: 0,
+          scenario_results: null,
+          execution_time_ms: 0,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  )
+
+  const job = await api.backtest.get("job-1")
+
+  expect(job.candidate?.scenario_results).toEqual([])
+})

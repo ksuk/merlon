@@ -136,6 +136,24 @@ describe("durable backtest polling", () => {
 
     expect(get).toHaveBeenCalledTimes(3)
     expect(screen.getByText("実行結果")).toBeDefined()
+    expect(screen.getByRole("status").textContent).toContain("有効な空の結果")
+  })
+
+  test("keeps the shell for a completed job with legacy null scenario results", async () => {
+    vi.spyOn(api.backtest, "create").mockResolvedValue(makeJob("queued"))
+    vi.spyOn(api.backtest, "get").mockResolvedValue(
+      makeJob("completed", {
+        candidate: { ...result, scenario_results: null as unknown as BacktestResult["scenario_results"] },
+      }),
+    )
+
+    await renderWithRouter(<BacktestPage />)
+    await flushInitialLoad()
+    await startBacktest()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+
+    expect(screen.getByText("実行結果")).toBeDefined()
+    expect(screen.getByText("EXT-001")).toBeDefined()
   })
 
   test("shows a polling error and can resume the same job", async () => {

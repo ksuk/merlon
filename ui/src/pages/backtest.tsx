@@ -199,6 +199,7 @@ export function BacktestPage() {
   }
 
   const hasActiveJob = job?.status === "queued" || job?.status === "running"
+  const scenarioResults = result?.scenario_results ?? []
 
   if (loading) {
     return (
@@ -332,7 +333,11 @@ export function BacktestPage() {
               </div>
             </div>
 
-            {result.scenario_results.length > 0 && (
+            {scenarioResults.length === 0 ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t("backtest.result.empty")}
+              </p>
+            ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -345,7 +350,7 @@ export function BacktestPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {result.scenario_results.map((s) => (
+                  {scenarioResults.map((s) => (
                     <TableRow key={s.scenario_id}>
                       <TableCell className="font-mono text-xs">{s.scenario_id}</TableCell>
                       <TableCell className="text-right">{s.alerts_generated}</TableCell>
