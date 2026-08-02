@@ -20,12 +20,24 @@ publicly reachable host.
 ## Start the local stack
 
 ```bash
-docker compose -f docker-compose.demo.yml up --build
+docker compose -p merlon-demo -f docker-compose.demo.yml up --build
 ```
 
 No environment variables are required. This starts `db` and `api` bound to
 `127.0.0.1:8080` with authentication disabled and around 1,015 synthetic
 customers and 98 alerts already loaded.
+
+If port `8080` is already in use, choose an explicit project and host port:
+
+```bash
+MERLON_API_HOST_PORT=18050 \
+  docker compose -p merlon-demo-18050 -f docker-compose.demo.yml up --build
+```
+
+For that variant, replace every `127.0.0.1:8080` link in this tour with
+`127.0.0.1:18050`. Use the same `-p merlon-demo-18050` value for reset and
+cleanup. The demo database remains internal unless the test-only overlay is
+explicitly added.
 
 Once `docker compose` reports both services healthy, open
 [http://127.0.0.1:8080](http://127.0.0.1:8080). Anything you do while
@@ -35,8 +47,8 @@ until you tear the stack down.
 ### Reset the dataset
 
 ```bash
-docker compose -f docker-compose.demo.yml down -v
-docker compose -f docker-compose.demo.yml up --build
+docker compose -p merlon-demo -f docker-compose.demo.yml down -v
+docker compose -p merlon-demo -f docker-compose.demo.yml up --build
 ```
 
 `down -v` drops the demo Postgres volume, so the next `up` reloads the same

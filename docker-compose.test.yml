@@ -1,0 +1,7 @@
+# Test-only overlay. It exposes PostgreSQL on loopback for local test clients;
+# never use this overlay for production or publicly reachable deployments.
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:${MERLON_DB_HOST_PORT:-5432}:5432"

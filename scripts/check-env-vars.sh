@@ -30,10 +30,28 @@ env_example=.env.example
 #   MERLON_BACKUP_DATABASE_URL -- consumed by scripts/backup.sh, not by the Go
 #   serving or migration processes. It must identify a dedicated read-only
 #   backup role.
+#   MERLON_API_HOST_PORT -- consumed by Docker Compose for the host-side API
+#   binding; the Go process continues to listen on its container port.
+#   MERLON_DB_HOST_PORT -- consumed by the test-only Docker Compose overlay for
+#   its loopback PostgreSQL binding; the standard/demo topologies do not expose
+#   PostgreSQL to the host.
 allowlist=(
   MERLON_BACKUP_DATABASE_URL
   MERLON_POSTGRES_PASSWORD
 )
+
+# The Compose-only variables are optional to this guard's minimal fixture in
+# scripts/test_check_env_vars.py. Enable each exception only after both
+# operator-facing sources declare it; if either source is missing, the normal
+# drift checks below must report that inconsistency.
+if grep -qE '`MERLON_API_HOST_PORT`' "$config_doc" &&
+  grep -qE '^[[:space:]]*#?[[:space:]]*MERLON_API_HOST_PORT[[:space:]]*=' "$env_example"; then
+  allowlist+=(MERLON_API_HOST_PORT)
+fi
+if grep -qE '`MERLON_DB_HOST_PORT`' "$config_doc" &&
+  grep -qE '^[[:space:]]*#?[[:space:]]*MERLON_DB_HOST_PORT[[:space:]]*=' "$env_example"; then
+  allowlist+=(MERLON_DB_HOST_PORT)
+fi
 
 # code_vars -- every MERLON_* name the Go code actually reads. Restricted to
 # the call forms that read an environment variable, so a name appearing only in
