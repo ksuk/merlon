@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -846,7 +847,10 @@ func (r *PgAuditRepo) List(ctx context.Context, filter domain.AuditListFilter) (
 	for rows.Next() {
 		var e domain.AuditEntry
 		var details []byte
-		var ipAddr *string
+		// PostgreSQL's INET codec does not scan into *string in pgx v5.
+		// Use a nullable *netip.Addr so both IPv4/IPv6 and SQL NULL are
+		// decoded without turning a valid audit row into a 500 response.
+		var ipAddr *netip.Addr
 		if err := rows.Scan(
 			&e.ID, &e.UserID, &e.Action, &e.ResourceType, &e.ResourceID,
 			&details, &ipAddr, &e.UserAgent, &e.CreatedAt,
@@ -857,7 +861,7 @@ func (r *PgAuditRepo) List(ctx context.Context, filter domain.AuditListFilter) (
 			json.Unmarshal(details, &e.Details)
 		}
 		if ipAddr != nil {
-			e.IPAddress = *ipAddr
+			e.IPAddress = ipAddr.String()
 		}
 		entries = append(entries, e)
 	}

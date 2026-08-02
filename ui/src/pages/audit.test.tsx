@@ -57,6 +57,35 @@ test("shows empty state when no entries", async () => {
   expect(await screen.findByText("監査ログがありません")).toBeDefined()
 })
 
+test("renders IPv6 and missing audit IP addresses", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    paginatedResponse([
+      {
+        id: 10,
+        user_id: "admin",
+        action: "create",
+        resource_type: "customers",
+        resource_id: "c-ipv6",
+        ip_address: "2001:db8::10",
+        created_at: "2025-01-15T10:00:00Z",
+      },
+      {
+        id: 11,
+        user_id: "system",
+        action: "update",
+        resource_type: "rules",
+        resource_id: "r-null-ip",
+        created_at: "2025-01-15T11:00:00Z",
+      },
+    ]),
+  )
+
+  await renderWithRouter(<AuditPage />)
+
+  expect(await screen.findByText("2001:db8::10")).toBeDefined()
+  expect(screen.getAllByText("-").length).toBeGreaterThan(0)
+})
+
 test("filters by date range", async () => {
   const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([]))
 
