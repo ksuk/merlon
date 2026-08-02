@@ -44,7 +44,7 @@ export function CasesPage() {
     reopened: t("caseStatus.reopened"),
     str_filed: t("caseStatus.str_filed"),
   }
-  const { data: page, loading, error } = useApi(api.cases.list)
+  const { data: page, loading, error } = useApi(api.cases.listAll)
   const cases = page?.data
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -190,6 +190,7 @@ export function CasesPage() {
           </TableBody>
         </Table>
       </div>
+      {cases && <p className="text-center text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
     </div>
   )
 }

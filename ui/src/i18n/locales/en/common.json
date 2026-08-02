@@ -7,6 +7,9 @@
   "layout": {
     "demoDataBadge": "Synthetic demo data"
   },
+  "list": {
+    "allLoaded": "All records loaded"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "customers": "Customers",
@@ -562,6 +565,7 @@
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Backtest description...",
       "targetCustomers": "Target customers",
+      "noCustomers": "No customers available",
       "selectAll": "Select all",
       "deselectAll": "Deselect all",
       "from": "From (UTC)",
@@ -619,6 +623,7 @@
       "title": "Target customers",
       "selectedCount": "{{count}} selected",
       "allTargeted": "All customers targeted (none selected)",
+      "noCustomers": "No customers available",
       "selectAll": "Select all",
       "deselectAll": "Deselect all"
     },

@@ -57,7 +57,7 @@ func (s *Server) consolidateAlertIntoCase(ctx context.Context, a *domain.Alert) 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	customerID := r.URL.Query().Get("customer_id")
 
-	if r.URL.Query().Get("cursor") != "" {
+	if useCursorPagination(r) {
 		s.handleListAlertsCursor(w, r, customerID)
 		return
 	}

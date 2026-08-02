@@ -41,3 +41,20 @@ test("displays new/reopened/str_filed status badges", async () => {
   expect(screen.getByText("STR対象")).toBeDefined()
   expect(screen.getAllByText("新規").length).toBeGreaterThan(0)
 })
+
+test("loads a case from the second cursor page", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (String(input).includes("cursor=page-2")) {
+      return paginatedResponse([makeCase("case-second", "investigating")])
+    }
+    return new Response(JSON.stringify({
+      data: [makeCase("case-first", "new")],
+      pagination: { has_more: true, next_cursor: "page-2" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
+
+  await renderWithRouter(<CasesPage />)
+
+  expect(await screen.findByText("investigating case")).toBeDefined()
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("cursor=page-2"))).toBe(true)
+})

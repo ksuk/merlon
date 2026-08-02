@@ -35,6 +35,15 @@ type CustomerRepository interface {
 	UpdateStatus(ctx context.Context, id string, status CustomerStatus, reason string) (*Customer, error)
 }
 
+// CustomerSearchRepository is the optional cursor/offset search capability
+// used by the operator list. Keeping search separate preserves the stable
+// CustomerRepository contract for adapters that do not expose server-side
+// search yet.
+type CustomerSearchRepository interface {
+	ListByCursorSearch(ctx context.Context, limit int, after *Cursor, search string) ([]Customer, error)
+	ListSearch(ctx context.Context, search string, limit, offset int) ([]Customer, error)
+}
+
 type TransactionRepository interface {
 	Get(ctx context.Context, id string) (*Transaction, error)
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Transaction, error)

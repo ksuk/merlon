@@ -159,16 +159,15 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 
 	customerID := r.URL.Query().Get("customer_id")
 	if customerID != "" {
-		cases, err := s.cases.ListByCustomer(r.Context(), customerID)
-		if err != nil {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-			return
+		if useCursorPagination(r) {
+			s.handleListCasesCursor(w, r, customerID)
+		} else {
+			s.handleListCasesOffset(w, r, customerID)
 		}
-		writePaginatedJSON(w, http.StatusOK, cases, PaginationMeta{HasMore: false})
 		return
 	}
 
-	if r.URL.Query().Get("cursor") != "" {
+	if useCursorPagination(r) {
 		s.handleListCasesCursor(w, r)
 		return
 	}
@@ -176,14 +175,19 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListCasesCursor serves the HTTP API contract §1.1 cursor-based pagination.
-func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request, customerIDs ...string) {
 	pageReq, err := ParsePageRequest(r)
 	if err != nil {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
-	cases, err := s.cases.ListOpenByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+	var cases []domain.Case
+	if len(customerIDs) > 0 && customerIDs[0] != "" {
+		cases, err = s.cases.ListByCustomerCursor(r.Context(), customerIDs[0], pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+	} else {
+		cases, err = s.cases.ListOpenByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
@@ -196,7 +200,7 @@ func (s *Server) handleListCasesCursor(w http.ResponseWriter, r *http.Request) {
 // handleListCasesOffset preserves the pre-existing offset/limit contract
 // (the HTTP API contract §1.2 dual-support / deprecation period) while still returning the
 // additive {"data", "pagination"} envelope.
-func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request, customerIDs ...string) {
 	offsetParam := r.URL.Query().Get("offset")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(offsetParam)
@@ -204,7 +208,13 @@ func (s *Server) handleListCasesOffset(w http.ResponseWriter, r *http.Request) {
 		limit = 50
 	}
 
-	cases, err := s.cases.ListOpen(r.Context(), limit+1, offset)
+	var cases []domain.Case
+	var err error
+	if len(customerIDs) > 0 && customerIDs[0] != "" {
+		cases, err = s.cases.ListByCustomerOffset(r.Context(), customerIDs[0], limit+1, offset)
+	} else {
+		cases, err = s.cases.ListOpen(r.Context(), limit+1, offset)
+	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return

@@ -58,6 +58,13 @@ type PageRequest struct {
 	Cursor *Cursor
 }
 
+// useCursorPagination selects the stable keyset contract unless a caller
+// explicitly supplies the deprecated offset parameter. This lets a first
+// request use cursor pagination without inventing a sentinel cursor value.
+func useCursorPagination(r *http.Request) bool {
+	return r.URL.Query().Get("cursor") != "" || r.URL.Query().Get("offset") == ""
+}
+
 // ParsePageRequest interprets the limit/cursor query parameters of an http.Request.
 // An unspecified or non-positive limit defaults to 50; limits over 200 are
 // clamped to 200. An invalid cursor value returns an error.

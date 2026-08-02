@@ -48,7 +48,7 @@ test("shows error state", async () => {
 test("marks queued PENDING_REVIEW results as requiring operator review", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
-    if (url.endsWith("/customers")) {
+    if (url.includes("/customers?")) {
       return paginatedResponse([{
         id: "c1",
         external_id: "EXT-001",

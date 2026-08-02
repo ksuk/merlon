@@ -467,6 +467,53 @@ export interface PaginatedResponse<T> {
   pagination: PaginationMeta
 }
 
+export interface CursorPageParams {
+  cursor?: string
+  limit?: number
+}
+
+interface ListAllPagesOptions {
+  limit?: number
+  maxPages?: number
+}
+
+// Follow keyset pages without dropping the response envelope. The caller's
+// list function owns all non-pagination filters, so every request in the
+// traversal retains the same search/scope semantics.
+export async function listAllPages<T>(
+  fetchPage: (params?: CursorPageParams) => Promise<PaginatedResponse<T>>,
+  options: ListAllPagesOptions = {},
+): Promise<PaginatedResponse<T>> {
+  const limit = options.limit ?? 200
+  const maxPages = options.maxPages ?? 10_000
+  const data: T[] = []
+  let cursor: string | undefined
+
+  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
+    const page = await fetchPage(cursor ? { cursor, limit } : { limit })
+    data.push(...page.data)
+
+    if (!page.pagination.has_more) {
+      return { data, pagination: { has_more: false } }
+    }
+
+    const nextCursor = page.pagination.next_cursor
+    if (!nextCursor || nextCursor === cursor) {
+      throw new Error("paginated response has_more without a usable next_cursor")
+    }
+    cursor = nextCursor
+  }
+
+  throw new Error("paginated response exceeded the maximum page count")
+}
+
+function buildCursorQuery(params?: CursorPageParams): URLSearchParams {
+  const qs = new URLSearchParams()
+  if (params?.cursor) qs.set("cursor", params.cursor)
+  if (params?.limit != null) qs.set("limit", String(params.limit))
+  return qs
+}
+
 export interface RuleImportItem {
   type: RuleType
   name: string
@@ -508,7 +555,14 @@ export interface WhitelistReview {
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
   customers: {
-    list: () => request<PaginatedResponse<Customer>>("/customers"),
+    list: (params?: CursorPageParams & { search?: string }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.search) qs.set("search", params.search)
+      const query = qs.toString()
+      return request<PaginatedResponse<Customer>>(`/customers${query ? `?${query}` : ""}`)
+    },
+    listAll: (params?: { search?: string }) =>
+      listAllPages((page) => api.customers.list({ ...params, ...page })),
     get: (id: string) => request<Customer>(`/customers/${encodeURIComponent(id)}`),
     create: (data: { external_id: string; customer_type: string; country_code: string; product_types: string[]; attributes: Record<string, string> }) =>
       request<Customer>("/customers", { method: "POST", body: JSON.stringify(data) }),
@@ -528,7 +582,14 @@ export const api = {
       })),
   },
   alerts: {
-    list: () => request<PaginatedResponse<Alert>>("/alerts"),
+    list: (params?: CursorPageParams & { customerId?: string }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      const query = qs.toString()
+      return request<PaginatedResponse<Alert>>(`/alerts${query ? `?${query}` : ""}`)
+    },
+    listAll: (params?: { customerId?: string }) =>
+      listAllPages((page) => api.alerts.list({ ...params, ...page })),
     get: (id: string) => request<Alert>(`/alerts/${encodeURIComponent(id)}`),
     updateStatus: (id: string, status: AlertStatus) =>
       request<Alert>(`/alerts/${encodeURIComponent(id)}`, {
@@ -547,7 +608,14 @@ export const api = {
       }),
   },
   cases: {
-    list: () => request<PaginatedResponse<Case>>("/cases"),
+    list: (params?: CursorPageParams & { customerId?: string }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      const query = qs.toString()
+      return request<PaginatedResponse<Case>>(`/cases${query ? `?${query}` : ""}`)
+    },
+    listAll: (params?: { customerId?: string }) =>
+      listAllPages((page) => api.cases.list({ ...params, ...page })),
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
       request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),
@@ -571,10 +639,14 @@ export const api = {
   transactions: {
     // The API intentionally requires customer_id so an operator cannot
     // accidentally request an unbounded cross-customer transaction list.
-    list: (customerId: string) => {
+    list: (customerId: string, params?: CursorPageParams) => {
       const qs = new URLSearchParams({ customer_id: customerId })
+      if (params?.cursor) qs.set("cursor", params.cursor)
+      if (params?.limit != null) qs.set("limit", String(params.limit))
       return request<PaginatedResponse<Transaction>>(`/transactions?${qs.toString()}`)
     },
+    listAll: (customerId: string) =>
+      listAllPages((page) => api.transactions.list(customerId, page)),
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; executed_at: string }) =>
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data) }),
@@ -680,13 +752,15 @@ export const api = {
       }),
   },
   rules: {
-    list: (params?: { type?: RuleType; activeOnly?: boolean }) => {
-      const qs = new URLSearchParams()
+    list: (params?: { type?: RuleType; activeOnly?: boolean } & CursorPageParams) => {
+      const qs = buildCursorQuery(params)
       if (params?.type) qs.set("type", params.type)
       if (params?.activeOnly) qs.set("is_active", "true")
       const q = qs.toString()
       return request<PaginatedResponse<RuleDefinition>>(`/rules${q ? `?${q}` : ""}`)
     },
+    listAll: (params?: { type?: RuleType; activeOnly?: boolean }) =>
+      listAllPages((page) => api.rules.list({ ...params, ...page })),
     get: (id: string, version?: number) =>
       request<RuleDefinition>(`/rules/${encodeURIComponent(id)}${version ? `?version=${version}` : ""}`),
     create: (data: { type: RuleType; name: string; description?: string; definition: unknown; is_active?: boolean }) =>

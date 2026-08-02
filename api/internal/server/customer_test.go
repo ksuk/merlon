@@ -251,6 +251,48 @@ func TestHandleListCustomers_CursorPagination(t *testing.T) {
 	}
 }
 
+func TestHandleListCustomers_ServerSearchRetainsCursorFilter(t *testing.T) {
+	s := testServer()
+
+	for i, ext := range []string{"TARGET-001", "OTHER-001", "TARGET-002"} {
+		body := `{"external_id":"` + ext + `","customer_type":"individual","country_code":"JP","attributes":{"name":"` + ext + `"}}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create customer %d: status = %d, body: %s", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/customers?search=TARGET&limit=1", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search page 1 status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	page1, meta1 := decodeListResponse[domain.Customer](t, rec.Body)
+	if len(page1) != 1 || !strings.Contains(page1[0].ExternalID, "TARGET") {
+		t.Fatalf("search page 1 = %#v, want one TARGET customer", page1)
+	}
+	if !meta1.HasMore || meta1.NextCursor == "" {
+		t.Fatal("expected a cursor for the second matching customer")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers?search=TARGET&limit=1&cursor="+url.QueryEscape(meta1.NextCursor), nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search page 2 status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	page2, meta2 := decodeListResponse[domain.Customer](t, rec.Body)
+	if len(page2) != 1 || !strings.Contains(page2[0].ExternalID, "TARGET") {
+		t.Fatalf("search page 2 = %#v, want one TARGET customer", page2)
+	}
+	if meta2.HasMore {
+		t.Error("expected search page 2 to be the end")
+	}
+}
+
 func TestUpdateCustomer(t *testing.T) {
 	s := testServer()
 

@@ -157,6 +157,63 @@ func (r *PgCustomerRepo) ListByCursor(ctx context.Context, limit int, after *dom
 	return customers, rows.Err()
 }
 
+func (r *PgCustomerRepo) ListSearch(ctx context.Context, search string, limit, offset int) ([]domain.Customer, error) {
+	pattern := "%" + search + "%"
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+customerColumns+` FROM customers
+		 WHERE purge_marked_at IS NULL
+		 AND (id::text ILIKE $1 OR external_id ILIKE $1 OR country_code ILIKE $1 OR attributes->>'name' ILIKE $1)
+		 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+		pattern, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var customers []domain.Customer
+	for rows.Next() {
+		c, err := scanCustomerRows(rows, r.encryptor)
+		if err != nil {
+			return nil, err
+		}
+		customers = append(customers, c)
+	}
+	return customers, rows.Err()
+}
+
+func (r *PgCustomerRepo) ListByCursorSearch(ctx context.Context, limit int, after *domain.Cursor, search string) ([]domain.Customer, error) {
+	pattern := "%" + search + "%"
+	baseQuery := `SELECT ` + customerColumns + ` FROM customers
+		WHERE purge_marked_at IS NULL
+		AND (id::text ILIKE $1 OR external_id ILIKE $1 OR country_code ILIKE $1 OR attributes->>'name' ILIKE $1)`
+
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if after == nil {
+		rows, err = r.pool.Query(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $2`, pattern, limit)
+	} else {
+		rows, err = r.pool.Query(ctx, baseQuery+` AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4`,
+			pattern, after.CreatedAt, after.ID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var customers []domain.Customer
+	for rows.Next() {
+		c, err := scanCustomerRows(rows, r.encryptor)
+		if err != nil {
+			return nil, err
+		}
+		customers = append(customers, c)
+	}
+	return customers, rows.Err()
+}
+
 // ListEDDPending returns High-tier customers with an open EDD requirement
 // (the case-management workflow §EDD未実施継続時の段階的措置).
 func (r *PgCustomerRepo) ListEDDPending(ctx context.Context) ([]domain.Customer, error) {
@@ -924,7 +981,24 @@ func (r *PgCaseRepo) Get(ctx context.Context, id string) (*domain.Case, error) {
 func (r *PgCaseRepo) ListByCustomer(ctx context.Context, customerID string) ([]domain.Case, error) {
 	return r.listCases(ctx,
 		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
-		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC`, customerID)
+		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC`, customerID)
+}
+
+func (r *PgCaseRepo) ListByCustomerOffset(ctx context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
+	return r.listCases(ctx,
+		`SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
+		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`, customerID, limit, offset)
+}
+
+func (r *PgCaseRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	const baseQuery = `SELECT id, customer_id, alert_ids, status, priority, assigned_to, summary, reopen_reason, related_case_ids, created_at, updated_at, closed_at
+		FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL`
+
+	if after == nil {
+		return r.listCases(ctx, baseQuery+` ORDER BY created_at DESC, id DESC LIMIT $2`, customerID, limit)
+	}
+	return r.listCases(ctx, baseQuery+` AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4`,
+		customerID, after.CreatedAt, after.ID, limit)
 }
 
 func (r *PgCaseRepo) ListOpen(ctx context.Context, limit, offset int) ([]domain.Case, error) {

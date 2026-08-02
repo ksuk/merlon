@@ -87,6 +87,44 @@ test("transactions.list always sends its required customer scope", async () => {
   )
 })
 
+test("list clients propagate cursor, limit, and search parameters", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
+  )
+
+  await api.customers.list({ search: "TARGET", cursor: "next page", limit: 2 })
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/customers?cursor=next+page&limit=2&search=TARGET",
+    expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+  )
+})
+
+test("listAllPages follows the next cursor and keeps the envelope", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        data: [{ id: "first" }],
+        pagination: { has_more: true, next_cursor: "cursor-2" },
+      }), { status: 200 }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        data: [{ id: "second" }],
+        pagination: { has_more: false },
+      }), { status: 200 }),
+    )
+
+  const page = await api.customers.listAll({ search: "needle" })
+
+  expect(page.data.map((customer) => customer.id)).toEqual(["first", "second"])
+  expect(page.pagination).toEqual({ has_more: false })
+  expect(String(fetchMock.mock.calls[0][0])).toContain("limit=200")
+  expect(String(fetchMock.mock.calls[0][0])).toContain("search=needle")
+  expect(String(fetchMock.mock.calls[1][0])).toContain("cursor=cursor-2")
+  expect(String(fetchMock.mock.calls[1][0])).toContain("search=needle")
+})
+
 // The counterpart: these are served with writeJSON, not writePaginatedJSON, so
 // declaring them as envelopes would break them the same way in reverse.
 test.each([

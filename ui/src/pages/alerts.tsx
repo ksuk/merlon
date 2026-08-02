@@ -62,7 +62,7 @@ export function AlertsPage() {
   async function reload() {
     setLoading(true)
     try {
-      const { data } = await api.alerts.list()
+      const { data } = await api.alerts.listAll()
       setAlerts(data)
       setError(null)
     } catch (err) {
@@ -250,6 +250,7 @@ export function AlertsPage() {
           </TableBody>
         </Table>
       </div>
+      {alerts && <p className="text-center text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
     </div>
   )
 }

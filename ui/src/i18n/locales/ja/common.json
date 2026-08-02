@@ -7,6 +7,9 @@
   "layout": {
     "demoDataBadge": "合成デモデータ"
   },
+  "list": {
+    "allLoaded": "すべてのレコードを読み込みました"
+  },
   "nav": {
     "dashboard": "ダッシュボード",
     "customers": "顧客",
@@ -562,6 +565,7 @@
       "descriptionLabel": "説明",
       "descriptionPlaceholder": "バックテストの説明...",
       "targetCustomers": "対象顧客",
+      "noCustomers": "利用可能な顧客がありません",
       "selectAll": "全選択",
       "deselectAll": "全解除",
       "from": "開始日時（UTC）",
@@ -619,6 +623,7 @@
       "title": "対象顧客",
       "selectedCount": "{{count}}件選択中",
       "allTargeted": "全顧客が対象（未選択時）",
+      "noCustomers": "利用可能な顧客がありません",
       "selectAll": "全選択",
       "deselectAll": "全解除"
     },

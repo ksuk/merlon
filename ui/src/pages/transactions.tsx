@@ -38,10 +38,10 @@ function formatAmount(amount: number, currency: string, locale: string) {
 export function TransactionsPage() {
   const { t, i18n } = useTranslation()
   const [selectedCustomerId, setSelectedCustomerId] = useState("")
-  const { data: customerPage, loading: customersLoading, error: customersError } = useApi(api.customers.list)
+  const { data: customerPage, loading: customersLoading, error: customersError } = useApi(api.customers.listAll)
   const fetchTransactions = useCallback(
     () => selectedCustomerId
-      ? api.transactions.list(selectedCustomerId)
+      ? api.transactions.listAll(selectedCustomerId)
       : Promise.resolve(EMPTY_TRANSACTION_PAGE),
     [selectedCustomerId],
   )

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,6 +122,55 @@ func (r *MemoryCustomerRepo) ListByCursor(_ context.Context, limit int, after *d
 	var all []domain.Customer
 	for _, c := range r.data {
 		all = append(all, *c)
+	}
+	return sortAndPageByCursor(all, limit, after,
+		func(c domain.Customer) time.Time { return c.CreatedAt },
+		func(c domain.Customer) string { return c.ID },
+	), nil
+}
+
+func customerMatchesSearch(c domain.Customer, search string) bool {
+	needle := strings.ToLower(strings.TrimSpace(search))
+	if needle == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(c.ID), needle) ||
+		strings.Contains(strings.ToLower(c.ExternalID), needle) ||
+		strings.Contains(strings.ToLower(c.CountryCode), needle) {
+		return true
+	}
+	for key, value := range c.Attributes {
+		if strings.Contains(strings.ToLower(key), needle) || strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *MemoryCustomerRepo) ListSearch(_ context.Context, search string, limit, offset int) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Customer
+	for _, c := range r.data {
+		if customerMatchesSearch(*c, search) {
+			all = append(all, *c)
+		}
+	}
+	sortByCreatedAtDesc(all,
+		func(c domain.Customer) time.Time { return c.CreatedAt },
+		func(c domain.Customer) string { return c.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryCustomerRepo) ListByCursorSearch(_ context.Context, limit int, after *domain.Cursor, search string) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Customer
+	for _, c := range r.data {
+		if customerMatchesSearch(*c, search) {
+			all = append(all, *c)
+		}
 	}
 	return sortAndPageByCursor(all, limit, after,
 		func(c domain.Customer) time.Time { return c.CreatedAt },
@@ -612,7 +662,34 @@ func (r *MemoryCaseRepo) ListByCustomer(_ context.Context, customerID string) ([
 			result = append(result, *c)
 		}
 	}
+	sortByCreatedAtDesc(result,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
 	return result, nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerOffset(_ context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
+	result, err := r.ListByCustomer(context.Background(), customerID)
+	if err != nil {
+		return nil, err
+	}
+	return pageByOffset(result, limit, offset), nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	return sortAndPageByCursor(result, limit, after,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
 }
 
 func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domain.Case, error) {

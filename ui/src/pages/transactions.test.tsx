@@ -31,7 +31,7 @@ beforeEach(() => {
 test("does not request transactions until an explicit customer is selected", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
-    if (url.endsWith("/customers")) return paginatedResponse([customer])
+    if (url.includes("/customers?")) return paginatedResponse([customer])
     if (url.includes("/transactions?customer_id=c1")) {
       return paginatedResponse([{
         id: "tx1",
@@ -62,7 +62,7 @@ test("does not request transactions until an explicit customer is selected", asy
 test("keeps registration available when the scoped list fails", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
-    if (url.endsWith("/customers")) return paginatedResponse([customer])
+    if (url.includes("/customers?")) return paginatedResponse([customer])
     if (url.includes("/transactions?customer_id=c1")) {
       return new Response(JSON.stringify({ error: "temporary failure" }), { status: 500 })
     }
@@ -82,7 +82,7 @@ test("keeps registration available when the scoped list fails", async () => {
 test("shows an empty state for a selected customer with no transactions", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
     const url = String(input)
-    if (url.endsWith("/customers")) return paginatedResponse([customer])
+    if (url.includes("/customers?")) return paginatedResponse([customer])
     if (url.includes("/transactions?customer_id=c1")) return paginatedResponse([])
     throw new Error(`unexpected request: ${url}`)
   })

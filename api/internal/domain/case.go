@@ -94,6 +94,8 @@ type CaseNote struct {
 type CaseRepository interface {
 	Get(ctx context.Context, id string) (*Case, error)
 	ListByCustomer(ctx context.Context, customerID string) ([]Case, error)
+	ListByCustomerOffset(ctx context.Context, customerID string, limit, offset int) ([]Case, error)
+	ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Case, error)
 	ListOpen(ctx context.Context, limit, offset int) ([]Case, error)
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
 	Create(ctx context.Context, c *Case) error

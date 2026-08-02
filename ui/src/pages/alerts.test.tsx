@@ -47,6 +47,24 @@ test("shows empty state when no alerts", async () => {
   expect(await screen.findByText("アラートがありません")).toBeDefined()
 })
 
+test("loads an alert from the second cursor page", async () => {
+  const secondAlert = { ...sampleAlert, id: "a2", description: "2ページ目のアラート" }
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (String(input).includes("cursor=page-2")) {
+      return paginatedResponse([secondAlert])
+    }
+    return new Response(JSON.stringify({
+      data: [sampleAlert],
+      pagination: { has_more: true, next_cursor: "page-2" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
+
+  await renderWithRouter(<AlertsPage />)
+
+  expect(await screen.findByText("2ページ目のアラート")).toBeDefined()
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("cursor=page-2"))).toBe(true)
+})
+
 test("bulk close requires a reason before submitting", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([sampleAlert]))
 
