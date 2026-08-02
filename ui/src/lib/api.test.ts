@@ -126,7 +126,7 @@ test("listAllPages follows the next cursor and keeps the envelope", async () => 
 })
 
 test("alert and case queue traversals request the explicit risk sort", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
   )
 
@@ -138,7 +138,7 @@ test("alert and case queue traversals request the explicit risk sort", async () 
 })
 
 test("alert and case mutations send the observed updated_at token", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     new Response(JSON.stringify({ id: "updated" }), { status: 200 }),
   )
   const expectedUpdatedAt = "2026-08-02T00:00:00.000000Z"

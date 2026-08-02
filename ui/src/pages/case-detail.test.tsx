@@ -19,7 +19,7 @@ beforeEach(() => {
 })
 
 test("renders case detail with notes and transitions", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     new Response(
       JSON.stringify({
         id: "case1",
@@ -107,7 +107,7 @@ test("shows related cases section", async () => {
 })
 
 test("hides note form for closed case", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     new Response(
       JSON.stringify({
         id: "case2",

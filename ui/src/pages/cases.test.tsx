@@ -71,6 +71,6 @@ test("renders critical cases before lower-priority cases", async () => {
 
   await screen.findAllByText("new case")
   const rows = screen.getAllByRole("row").slice(1)
-  expect(rows[0]).toHaveTextContent("case-critical")
-  expect(rows[1]).toHaveTextContent("case-low")
+  expect(rows[0]).toHaveTextContent("重大")
+  expect(rows[1]).toHaveTextContent("低")
 })
