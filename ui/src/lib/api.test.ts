@@ -125,6 +125,21 @@ test("listAllPages follows the next cursor and keeps the envelope", async () => 
   expect(String(fetchMock.mock.calls[1][0])).toContain("search=needle")
 })
 
+test("alert and case mutations send the observed updated_at token", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ id: "updated" }), { status: 200 }),
+  )
+  const expectedUpdatedAt = "2026-08-02T00:00:00.000000Z"
+
+  await api.alerts.updateStatus("a1", "investigating", expectedUpdatedAt)
+  await api.cases.update("case1", { status: "investigating", expected_updated_at: expectedUpdatedAt })
+
+  const alertBody = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+  const caseBody = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)
+  expect(alertBody).toEqual({ status: "investigating", expected_updated_at: expectedUpdatedAt })
+  expect(caseBody).toEqual({ status: "investigating", expected_updated_at: expectedUpdatedAt })
+})
+
 // The counterpart: these are served with writeJSON, not writePaginatedJSON, so
 // declaring them as envelopes would break them the same way in reverse.
 test.each([

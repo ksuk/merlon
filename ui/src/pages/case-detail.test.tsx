@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react"
+import { fireEvent, screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
@@ -128,4 +128,35 @@ test("hides note form for closed case", async () => {
 
   expect(await screen.findByText("ケース詳細")).toBeDefined()
   expect(screen.queryByPlaceholderText("ノートを追加...")).toBeNull()
+})
+
+test("shows a reload path when a case update conflicts", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input)
+    if (init?.method === "PATCH") {
+      return new Response(JSON.stringify({ error: "conflict", error_code: "conflict" }), { status: 409 })
+    }
+    if (url.includes("/related")) return new Response(JSON.stringify([]))
+    if (url.includes("/customers/")) return new Response(JSON.stringify({ id: "c1", external_id: "EXT1" }))
+    return new Response(JSON.stringify({
+      id: "case3",
+      customer_id: "c1",
+      alert_ids: [],
+      status: "investigating",
+      priority: "high",
+      summary: "競合テストケース",
+      notes: [],
+      created_at: "2025-01-15T10:00:00Z",
+      updated_at: "2025-01-15T10:00:00Z",
+    }))
+  })
+
+  await renderWithRoute("case3")
+  await screen.findByText("競合テストケース")
+  fireEvent.click(screen.getByText("クローズ"))
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("別のセッションでケースが更新されました")
+  expect(screen.getByRole("button", { name: "現在のケースを再読み込み" })).toBeDefined()
+  const patchCall = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")
+  expect(JSON.parse((patchCall?.[1] as RequestInit).body as string).expected_updated_at).toBe("2025-01-15T10:00:00Z")
 })

@@ -591,10 +591,10 @@ export const api = {
     listAll: (params?: { customerId?: string }) =>
       listAllPages((page) => api.alerts.list({ ...params, ...page })),
     get: (id: string) => request<Alert>(`/alerts/${encodeURIComponent(id)}`),
-    updateStatus: (id: string, status: AlertStatus) =>
+    updateStatus: (id: string, status: AlertStatus, expectedUpdatedAt?: string) =>
       request<Alert>(`/alerts/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}) }),
       }),
     bulkClose: (data: { scenario_id?: string; period_from?: string; period_to?: string; severity?: AlertSeverity; reason: string }) =>
       request<{ closed_count: number; alert_ids: string[] }>("/alerts/bulk-close", {
@@ -619,7 +619,7 @@ export const api = {
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
     create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
       request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string; reason?: string }) =>
+    update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string; reason?: string; expected_updated_at?: string }) =>
       request<Case>(`/cases/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify(data),

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react"
+import { fireEvent, screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
@@ -70,4 +70,34 @@ test("hides transitions for closed alert", async () => {
 
   expect(await screen.findByText("アラート詳細")).toBeDefined()
   expect(screen.queryByText("ステータス変更")).toBeNull()
+})
+
+test("shows a reload path when a status update conflicts", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+    if (init?.method === "PATCH") {
+      return new Response(JSON.stringify({ error: "conflict", error_code: "conflict" }), { status: 409 })
+    }
+    return new Response(JSON.stringify({
+      id: "a3",
+      customer_id: "c1",
+      scenario_id: "large_tx",
+      severity: "high",
+      status: "open",
+      score: 88.5,
+      description: "競合テスト",
+      transaction_ids: [],
+      detected_at: "2025-01-15T10:00:00Z",
+      created_at: "2025-01-15T10:00:00Z",
+      updated_at: "2025-01-15T10:00:00Z",
+    }))
+  })
+
+  await renderWithRoute("a3")
+  await screen.findByText("競合テスト")
+  fireEvent.click(screen.getByText("調査開始"))
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("別のセッションでアラートが更新されました")
+  expect(screen.getByRole("button", { name: "現在のアラートを再読み込み" })).toBeDefined()
+  const patchCall = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")
+  expect(JSON.parse((patchCall?.[1] as RequestInit).body as string).expected_updated_at).toBe("2025-01-15T10:00:00Z")
 })
