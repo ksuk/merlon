@@ -648,12 +648,26 @@
       "stats": {
         "total": "合計",
         "succeeded": "成功",
+        "failed": "失敗",
+        "queuedForReview": "要確認キュー",
         "alertsTotal": "生成アラート",
         "duration": "実行時間"
+      },
+      "duration": "実行時間: {{duration}}",
+      "reviewRequired": {
+        "badge": "要確認",
+        "title": "モニタリングは正常完了していません",
+        "description": "{{count}}件の顧客がPENDING_REVIEWにキューされました。この実行を成功扱いにせず、エンジン復旧後に再処理してください。"
+      },
+      "row": {
+        "pendingReview": "PENDING_REVIEW",
+        "completed": "完了",
+        "pendingReason": "評価が保留されています。復旧処理が必要です。"
       },
       "table": {
         "header": {
           "customerId": "顧客ID",
+          "status": "状態",
           "alertsRaised": "生成アラート数",
           "error": "エラー"
         }

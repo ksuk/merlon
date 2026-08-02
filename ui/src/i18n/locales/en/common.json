@@ -648,12 +648,26 @@
       "stats": {
         "total": "Total",
         "succeeded": "Succeeded",
+        "failed": "Failed",
+        "queuedForReview": "Queued for review",
         "alertsTotal": "Alerts generated",
         "duration": "Duration"
+      },
+      "duration": "Duration: {{duration}}",
+      "reviewRequired": {
+        "badge": "Review required",
+        "title": "Monitoring did not complete cleanly",
+        "description": "{{count}} customer(s) were queued as PENDING_REVIEW. Stop treating this run as successful and recover them after the engine is available."
+      },
+      "row": {
+        "pendingReview": "PENDING_REVIEW",
+        "completed": "Completed",
+        "pendingReason": "Evaluation was deferred; recovery is required."
       },
       "table": {
         "header": {
           "customerId": "Customer ID",
+          "status": "Status",
           "alertsRaised": "Alerts raised",
           "error": "Error"
         }

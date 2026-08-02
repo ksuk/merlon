@@ -406,6 +406,7 @@ export interface BatchScoreResponse {
 export interface BatchMonitorResult {
   customer_id: string
   alerts_raised: number
+  pending_review?: boolean
   error?: string
 }
 
@@ -413,6 +414,7 @@ export interface BatchMonitorResponse {
   total: number
   succeeded: number
   failed: number
+  queued_for_review: number
   alerts_total: number
   results: BatchMonitorResult[]
   duration: string

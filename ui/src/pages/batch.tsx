@@ -166,34 +166,53 @@ export function BatchPage() {
             <CardTitle className="flex items-center gap-2 text-base">
               <Shield className="h-4 w-4" />
               {t("batch.monitorResult.title")}
+              {monitorResult.queued_for_review > 0 && (
+                <Badge variant="critical">{t("batch.monitorResult.reviewRequired.badge")}</Badge>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-4 gap-4">
+            {monitorResult.queued_for_review > 0 && (
+              <div role="alert" className="rounded-md border border-orange-300 bg-orange-50 p-3 text-sm text-orange-900">
+                <p className="font-semibold">{t("batch.monitorResult.reviewRequired.title")}</p>
+                <p>{t("batch.monitorResult.reviewRequired.description", { count: monitorResult.queued_for_review })}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-5 gap-4">
               <Stat label={t("batch.monitorResult.stats.total")} value={monitorResult.total} />
               <Stat label={t("batch.monitorResult.stats.succeeded")} value={monitorResult.succeeded} />
+              <Stat label={t("batch.monitorResult.stats.failed")} value={monitorResult.failed} />
+              <Stat label={t("batch.monitorResult.stats.queuedForReview")} value={monitorResult.queued_for_review} />
               <Stat label={t("batch.monitorResult.stats.alertsTotal")} value={monitorResult.alerts_total} />
-              <Stat label={t("batch.monitorResult.stats.duration")} value={monitorResult.duration} />
             </div>
+            <p className="text-xs text-muted-foreground">{t("batch.monitorResult.duration", { duration: monitorResult.duration })}</p>
             {monitorResult.results.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("batch.monitorResult.table.header.customerId")}</TableHead>
+                    <TableHead>{t("batch.monitorResult.table.header.status")}</TableHead>
                     <TableHead>{t("batch.monitorResult.table.header.alertsRaised")}</TableHead>
                     <TableHead>{t("batch.monitorResult.table.header.error")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {monitorResult.results.map((r) => (
-                    <TableRow key={r.customer_id}>
+                    <TableRow key={r.customer_id} className={r.pending_review ? "bg-orange-50" : undefined}>
                       <TableCell className="font-mono text-xs">{r.customer_id}</TableCell>
                       <TableCell>
-                        {r.alerts_raised > 0 ? (
+                        {r.pending_review ? (
+                          <Badge variant="critical">{t("batch.monitorResult.row.pendingReview")}</Badge>
+                        ) : t("batch.monitorResult.row.completed")}
+                      </TableCell>
+                      <TableCell>
+                        {r.pending_review ? "-" : r.alerts_raised > 0 ? (
                           <Badge variant="high">{r.alerts_raised}</Badge>
                         ) : "0"}
                       </TableCell>
-                      <TableCell className="text-xs text-destructive">{r.error || ""}</TableCell>
+                      <TableCell className="text-xs text-destructive">
+                        {r.pending_review ? t("batch.monitorResult.row.pendingReason") : r.error || ""}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
