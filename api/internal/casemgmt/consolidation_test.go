@@ -93,6 +93,38 @@ func TestConsolidateAlert_CreatesNewCaseWhenNoOpenCase(t *testing.T) {
 	}
 }
 
+func TestConsolidateAlert_DoesNotReuseStrFiledCase(t *testing.T) {
+	cases := store.NewMemoryCaseRepo()
+	alerts := store.NewMemoryAlertRepo()
+	lifecycle := store.NewMemoryCaseAlertLifecycleRepo(cases, alerts)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+
+	filed := newTestCase("case-filed", "cust-1", domain.CaseStatusStrFiled, now.Add(-time.Hour))
+	if err := cases.Create(ctx, filed); err != nil {
+		t.Fatalf("seed filed case: %v", err)
+	}
+	alert := newTestAlert("alert-new", "cust-1", now)
+	if err := alerts.Create(ctx, alert); err != nil {
+		t.Fatalf("seed alert: %v", err)
+	}
+
+	got, err := ConsolidateAlertWithLifecycle(ctx, cases, lifecycle, alert, DefaultConsolidationWindow)
+	if err != nil {
+		t.Fatalf("ConsolidateAlert: %v", err)
+	}
+	if got.ID == filed.ID {
+		t.Fatal("str_filed case received a new alert")
+	}
+	stored, err := cases.Get(ctx, filed.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.AlertIDs) != 0 {
+		t.Fatalf("filed case alert_ids = %v, want unchanged", stored.AlertIDs)
+	}
+}
+
 func TestConsolidateAlert_WindowBoundary(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)

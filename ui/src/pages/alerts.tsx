@@ -8,12 +8,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { useApi } from "@/hooks/use-api"
 import { api, type Alert, type AlertSeverity, type AlertStatus } from "@/lib/api"
 import { translateApiError } from "@/lib/errors"
 import { compareRiskValues } from "@/lib/risk"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router"
+import { Link, useSearchParams } from "react-router"
 
 const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "critical"> = {
   low: "low",
@@ -26,8 +27,20 @@ function formatDateTime(iso: string, locale: string) {
   return new Date(iso).toLocaleString(locale)
 }
 
+function formatAge(iso: string, locale: string, label: (key: string, options?: Record<string, unknown>) => string, now: number) {
+  const days = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 86400000))
+  return label("alerts.queue.ageValue", { days, locale })
+}
+
+function slaState(dueAt: string | undefined, label: (key: string) => string, now: number) {
+  if (!dueAt) return label("alerts.queue.slaUnassigned")
+  return new Date(dueAt).getTime() < now ? label("alerts.queue.slaOverdue") : label("alerts.queue.slaOnTrack")
+}
+
 export function AlertsPage() {
   const { t, i18n } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [now, setNow] = useState(() => Date.now())
   const severityLabels: Record<string, string> = {
     low: t("alertSeverity.low"),
     medium: t("alertSeverity.medium"),
@@ -46,6 +59,50 @@ export function AlertsPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get("status") ?? "")
+  const [severityFilter, setSeverityFilter] = useState<AlertSeverity | "">(() => (searchParams.get("severity") as AlertSeverity | "") || "")
+  const [scenarioFilter, setScenarioFilter] = useState(() => searchParams.get("scenario_id") ?? "")
+  const [assigneeFilter, setAssigneeFilter] = useState(() => searchParams.get("assignee") ?? "")
+  const [mine, setMine] = useState(() => searchParams.get("mine") === "true")
+  const [teamFilter, setTeamFilter] = useState(() => searchParams.get("team") ?? "")
+  const [unassigned, setUnassigned] = useState(() => searchParams.get("unassigned") === "true")
+  const [overdue, setOverdue] = useState(() => searchParams.get("overdue") === "true")
+	const [search, setSearch] = useState(() => searchParams.get("search") ?? "")
+	const [minAgeDays, setMinAgeDays] = useState(() => searchParams.get("min_age_days") ?? "")
+	const [maxAgeDays, setMaxAgeDays] = useState(() => searchParams.get("max_age_days") ?? "")
+	const [pageCursor, setPageCursor] = useState(() => searchParams.get("cursor") ?? "")
+	const [cursorHistory, setCursorHistory] = useState<string[]>([])
+	const [nextCursor, setNextCursor] = useState<string | null>(null)
+	const filterKey = `${statusFilter}|${severityFilter}|${scenarioFilter}|${assigneeFilter}|${mine}|${teamFilter}|${unassigned}|${overdue}|${search}|${minAgeDays}|${maxAgeDays}`
+	const previousFilterKey = useRef(filterKey)
+	const requestGeneration = useRef(0)
+  const { data: directory } = useApi(api.operators.directory)
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (statusFilter) next.set("status", statusFilter)
+    if (severityFilter) next.set("severity", severityFilter)
+    if (scenarioFilter) next.set("scenario_id", scenarioFilter)
+    if (assigneeFilter) next.set("assignee", assigneeFilter)
+    if (mine) next.set("mine", "true")
+    if (teamFilter) next.set("team", teamFilter)
+    if (unassigned) next.set("unassigned", "true")
+    if (overdue) next.set("overdue", "true")
+		if (search) next.set("search", search)
+		if (minAgeDays) next.set("min_age_days", minAgeDays)
+		if (maxAgeDays) next.set("max_age_days", maxAgeDays)
+		if (pageCursor) next.set("cursor", pageCursor)
+		setSearchParams(next, { replace: true })
+	}, [statusFilter, severityFilter, scenarioFilter, assigneeFilter, mine, teamFilter, unassigned, overdue, search, minAgeDays, maxAgeDays, pageCursor, setSearchParams])
+	useEffect(() => {
+		if (previousFilterKey.current === filterKey) return
+		previousFilterKey.current = filterKey
+		setPageCursor("")
+		setCursorHistory([])
+	}, [filterKey])
 
   // 一括ケース統合（the case-management workflow §アラートの一括処理）: 選択済みアラート
   // の ID をそのまま bulk-case へ渡す（既存ケースに追加、または新規ケースと
@@ -61,15 +118,21 @@ export function AlertsPage() {
   const [closeReason, setCloseReason] = useState("")
 
   async function reload() {
-    setLoading(true)
-    try {
-      const { data } = await api.alerts.listAll({ sort: "risk" })
-      setAlerts([...data].sort((left, right) => compareRiskValues({ risk: left.severity, created_at: left.created_at, id: left.id }, { risk: right.severity, created_at: right.created_at, id: right.id })))
-      setError(null)
-    } catch (err) {
-      setError(translateApiError(err, t))
-    } finally {
-      setLoading(false)
+		const generation = ++requestGeneration.current
+		setLoading(true)
+		try {
+			const age = Number.parseInt(minAgeDays, 10)
+			const maxAge = Number.parseInt(maxAgeDays, 10)
+			const page = await api.alerts.list({ sort: "risk", cursor: pageCursor || undefined, limit: 200, status: statusFilter || undefined, severity: severityFilter || undefined, scenarioId: scenarioFilter || undefined, assignee: assigneeFilter || undefined, mine: mine || undefined, team: teamFilter || undefined, unassigned: unassigned || undefined, overdue: overdue || undefined, search: search || undefined, minAgeDays: Number.isFinite(age) && age > 0 ? age : undefined, maxAgeDays: Number.isFinite(maxAge) && maxAge > 0 ? maxAge : undefined })
+			if (generation !== requestGeneration.current) return
+			setAlerts([...page.data].sort((left, right) => compareRiskValues({ risk: left.severity, created_at: left.updated_at, id: left.id }, { risk: right.severity, created_at: right.updated_at, id: right.id })))
+			setNextCursor(page.pagination.next_cursor ?? null)
+			setError(null)
+		} catch (err) {
+			if (generation !== requestGeneration.current) return
+			setError(translateApiError(err, t))
+		} finally {
+			if (generation === requestGeneration.current) setLoading(false)
     }
   }
 
@@ -78,8 +141,8 @@ export function AlertsPage() {
     // the head of reload() would otherwise be a synchronous setState in an
     // effect, which cascades an extra render.
     void Promise.resolve().then(reload)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when alert filters change
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload is intentionally scoped to queue filters
+	}, [statusFilter, severityFilter, scenarioFilter, assigneeFilter, mine, teamFilter, unassigned, overdue, search, minAgeDays, maxAgeDays, pageCursor])
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -137,8 +200,8 @@ export function AlertsPage() {
     return <TableSkeleton />
   }
 
-  if (error) {
-    return <p className="p-12 text-center text-destructive">{t("alerts.error")}</p>
+	if (error) {
+		return <div role="alert" className="space-y-3 p-12 text-center text-destructive"><p>{t("alerts.error")}</p><Button type="button" variant="outline" onClick={() => void reload()}>{t("alertDetail.retry")}</Button></div>
   }
 
   return (
@@ -148,16 +211,48 @@ export function AlertsPage() {
         <p className="text-sm text-muted-foreground">{t("alerts.count", { count: alerts?.length ?? 0 })}</p>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-3" aria-label={t("alerts.queue.title")}>
+        <span className="text-sm font-medium">{t("alerts.queue.title")}</span>
+        <select aria-label={t("alerts.queue.status")} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm">
+          <option value="">{t("alerts.queue.allStatuses")}</option>
+          <option value="open">{t("alertStatus.open")}</option>
+          <option value="investigating">{t("alertStatus.investigating")}</option>
+          <option value="escalated">{t("alertStatus.escalated")}</option>
+          <option value="closed_true_positive">{t("alertStatus.closed_true_positive")}</option>
+          <option value="closed_false_positive">{t("alertStatus.closed_false_positive")}</option>
+        </select>
+        <select aria-label={t("alerts.queue.severity")} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value as AlertSeverity | "")} className="h-9 rounded-md border bg-background px-2 text-sm">
+          <option value="">{t("alerts.queue.severity")}</option>
+          <option value="low">{t("alertSeverity.low")}</option>
+          <option value="medium">{t("alertSeverity.medium")}</option>
+          <option value="high">{t("alertSeverity.high")}</option>
+          <option value="critical">{t("alertSeverity.critical")}</option>
+        </select>
+        <input aria-label={t("alerts.queue.scenario")} value={scenarioFilter} onChange={(e) => setScenarioFilter(e.target.value)} placeholder={t("alerts.queue.scenario")} className="h-9 w-32 rounded-md border bg-background px-2 text-sm" />
+        <input list="alert-directory-users" aria-label={t("alerts.queue.assignee")} value={assigneeFilter} onChange={(e) => { setAssigneeFilter(e.target.value); setMine(false) }} placeholder={t("alerts.queue.assignee")} className="h-9 w-32 rounded-md border bg-background px-2 text-sm" />
+        <input list="alert-directory-teams" aria-label={t("alerts.queue.team")} value={teamFilter} onChange={(e) => setTeamFilter(e.target.value)} placeholder={t("alerts.queue.team")} className="h-9 w-32 rounded-md border bg-background px-2 text-sm" />
+        <input aria-label={t("alerts.queue.search")} value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("alerts.queue.search")} className="h-9 w-40 rounded-md border bg-background px-2 text-sm" />
+		<input aria-label={t("alerts.queue.age")} type="number" min={1} value={minAgeDays} onChange={(e) => setMinAgeDays(e.target.value)} placeholder={t("alerts.queue.age")} className="h-9 w-24 rounded-md border bg-background px-2 text-sm" />
+		<input aria-label={t("alerts.queue.maxAge")} type="number" min={1} value={maxAgeDays} onChange={(e) => setMaxAgeDays(e.target.value)} placeholder={t("alerts.queue.maxAge")} className="h-9 w-24 rounded-md border bg-background px-2 text-sm" />
+        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={mine} onChange={(e) => { setMine(e.target.checked); if (e.target.checked) setAssigneeFilter("") }} />{t("alerts.queue.myWork")}</label>
+        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={unassigned} onChange={(e) => setUnassigned(e.target.checked)} />{t("alerts.queue.unassigned")}</label>
+        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={overdue} onChange={(e) => setOverdue(e.target.checked)} />{t("alerts.queue.overdue")}</label>
+      </div>
+      <datalist id="alert-directory-users">{(directory?.users ?? []).map((user) => <option key={user.id} value={user.id}>{user.email}</option>)}</datalist>
+      <datalist id="alert-directory-teams">{(directory?.teams ?? []).map((team) => <option key={team} value={team} />)}</datalist>
+
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-muted/40 p-4">
         <span className="text-sm font-medium">{t("alerts.bulkClose.label")}</span>
-        <input
-          type="text"
+		<input
+		  type="text"
+		  aria-label={t("alerts.bulkClose.scenarioIdPlaceholder")}
           placeholder={t("alerts.bulkClose.scenarioIdPlaceholder")}
           value={closeScenarioId}
           onChange={(e) => setCloseScenarioId(e.target.value)}
           className="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
         />
-        <select
+		<select
+		  aria-label={t("alerts.bulkClose.severityPlaceholder")}
           value={closeSeverity}
           onChange={(e) => setCloseSeverity(e.target.value as AlertSeverity | "")}
           className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -168,8 +263,9 @@ export function AlertsPage() {
           <option value="high">{t("alertSeverity.high")}</option>
           <option value="critical">{t("alertSeverity.critical")}</option>
         </select>
-        <input
-          type="text"
+		<input
+		  type="text"
+		  aria-label={t("alerts.bulkClose.reasonPlaceholder")}
           placeholder={t("alerts.bulkClose.reasonPlaceholder")}
           value={closeReason}
           onChange={(e) => setCloseReason(e.target.value)}
@@ -194,7 +290,7 @@ export function AlertsPage() {
         </div>
       )}
 
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+	  {actionError && <p role="alert" className="text-sm text-destructive">{actionError}</p>}
 
       <div className="rounded-xl border">
         <Table>
@@ -208,6 +304,11 @@ export function AlertsPage() {
               <TableHead>{t("alerts.table.header.score")}</TableHead>
               <TableHead>{t("alerts.table.header.description")}</TableHead>
               <TableHead>{t("alerts.table.header.detectedAt")}</TableHead>
+              <TableHead>{t("alerts.queue.age")}</TableHead>
+              <TableHead>{t("alerts.table.header.assignedTo")}</TableHead>
+              <TableHead>{t("alerts.table.header.dueAt")}</TableHead>
+              <TableHead>{t("alerts.queue.sla")}</TableHead>
+              <TableHead>{t("alerts.table.header.updatedAt")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -239,11 +340,16 @@ export function AlertsPage() {
                   <TableCell>{a.score.toFixed(1)}</TableCell>
                   <TableCell className="max-w-[300px] truncate">{a.description}</TableCell>
                   <TableCell className="whitespace-nowrap">{formatDateTime(a.detected_at, i18n.language)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{formatAge(a.detected_at, i18n.language, t, now)}</TableCell>
+                  <TableCell>{a.assigned_to || a.assigned_team || "-"}</TableCell>
+                  <TableCell className="whitespace-nowrap">{a.due_at ? formatDateTime(a.due_at, i18n.language) : "-"}</TableCell>
+                  <TableCell><Badge variant={a.due_at && new Date(a.due_at).getTime() < now ? "destructive" : "outline"}>{slaState(a.due_at, t, now)}</Badge></TableCell>
+                  <TableCell className="whitespace-nowrap">{formatDateTime(a.updated_at, i18n.language)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={13} className="h-24 text-center text-muted-foreground">
                   {t("alerts.table.empty")}
                 </TableCell>
               </TableRow>
@@ -251,7 +357,11 @@ export function AlertsPage() {
           </TableBody>
         </Table>
       </div>
-      {alerts && <p className="text-center text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
+      {alerts && (pageCursor || nextCursor) && <div className="flex items-center justify-center gap-3 text-sm">
+        <Button type="button" variant="outline" size="sm" disabled={cursorHistory.length === 0 || loading} onClick={() => { const previous = cursorHistory[cursorHistory.length - 1] ?? ""; setPageCursor(previous); setCursorHistory(cursorHistory.slice(0, -1)) }}>{t("list.previous")}</Button>
+        <span className="text-muted-foreground">{t("alerts.queue.page")}</span>
+        <Button type="button" variant="outline" size="sm" disabled={!nextCursor || loading} onClick={() => { if (!nextCursor) return; setCursorHistory([...cursorHistory, pageCursor]); setPageCursor(nextCursor) }}>{t("list.next")}</Button>
+      </div>}
     </div>
   )
 }

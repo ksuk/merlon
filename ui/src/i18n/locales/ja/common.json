@@ -8,7 +8,9 @@
     "demoDataBadge": "合成デモデータ"
   },
   "list": {
-    "allLoaded": "すべてのレコードを読み込みました"
+    "allLoaded": "すべてのレコードを読み込みました",
+    "previous": "前へ",
+    "next": "次へ"
   },
   "nav": {
     "dashboard": "ダッシュボード",
@@ -137,13 +139,42 @@
     "escalated": "エスカレーション",
     "closed": "完了",
     "reopened": "再オープン",
-    "str_filed": "STR対象"
+    "str_filed": "STR届出済み",
+    "str_candidate": "STR対象"
   },
   "cases": {
     "title": "ケース一覧",
     "count": "{{count}} 件",
     "createButton": "新規作成",
     "error": "ケースデータの取得に失敗しました",
+    "queue": {
+      "title": "担当キュー",
+      "status": "ステータス",
+      "allStatuses": "対応中すべて",
+      "priority": "優先度",
+      "allPriorities": "優先度すべて",
+      "assignee": "担当者",
+      "myWork": "自分の担当",
+      "team": "チーム",
+      "search": "検索",
+      "disposition": "処分",
+      "strCandidate": "STR候補",
+      "allCandidates": "STR候補すべて",
+      "candidatesOnly": "STR候補のみ",
+      "nonCandidates": "STR候補以外",
+      "unassigned": "未割当",
+      "overdue": "期限超過",
+      "ageValue": "{{days}}日",
+	  "maxAge": "最長経過日数",
+      "dueAt": "期限",
+      "sla": "SLA",
+      "slaUnassigned": "期限未設定",
+      "slaOverdue": "期限超過",
+      "slaOnTrack": "期限内",
+      "updatedAt": "最終更新",
+      "age": "経過時間",
+      "page": "ページ"
+    },
     "form": {
       "title": "ケース作成",
       "customerId": "顧客ID",
@@ -172,13 +203,25 @@
     "error": "ケースデータの取得に失敗しました",
     "conflict": "別のセッションでケースが更新されました。現在の内容を確認してから再試行してください。",
     "reload": "現在のケースを再読み込み",
+    "retry": "再試行",
+    "loading": "読み込み中…",
     "title": "ケース詳細",
     "info": {
       "title": "ケース情報",
       "customerId": "顧客ID",
       "assignedTo": "担当者",
+      "assignedTeam": "チーム",
       "createdAt": "作成日時",
-      "closedAt": "クローズ日時"
+      "closedAt": "クローズ日時",
+      "dueAt": "期限",
+      "disposition": "処分",
+      "rationale": "根拠",
+      "strReport": "STRレポート",
+      "strSubmittedAt": "提出日時",
+      "filingChannel": "届出経路",
+      "filingDestination": "届出先",
+      "externalReference": "外部参照番号",
+      "saveAssignment": "キュー項目を保存"
     },
     "summary": {
       "title": "概要",
@@ -190,6 +233,12 @@
       "escalate": "エスカレーション",
       "close": "クローズ",
       "fileStr": "STR対象として届出",
+      "markCandidate": "STR対象に指定",
+      "closeRationale": "クローズ理由",
+      "closeRationaleRequired": "クローズ理由を入力してください。",
+      "confirmClose": "ケースクローズの確認",
+      "confirmCloseText": "{{outcome}}としてクローズしますか？判定と根拠は調査ファイルに保持されます。",
+      "confirm": "確定",
       "rollback": "差し戻し（調査中に戻す）",
       "reinvestigate": "調査再開"
     },
@@ -205,12 +254,77 @@
       "title": "関連ケース",
       "empty": "関連ケースはありません",
       "auto": "自動抽出（同一顧客）",
-      "manual": "手動リンク"
+      "manual": "手動リンク",
+      "add": "関連ケースを追加",
+      "caseId": "ケースID",
+	  "search": "関連ケースを検索",
+	  "results": "リンク可能なアクティブケース",
+	  "directedNote": "手動リンクはこのケースから相手ケースへの一方向リンクです。自動表示は同一顧客の履歴です。",
+      "type": "関連種別",
+      "rationale": "リンク理由",
+      "submit": "リンクを追加",
+      "cancel": "キャンセル",
+      "remove": "リンクを削除",
+      "correct": "リンクを訂正",
+      "correctionReason": "訂正理由",
+      "correctionRequired": "訂正理由を入力してください。",
+      "saveCorrection": "訂正を保存",
+      "removeReason": "削除理由",
+      "removePrompt": "この関連付けを削除する理由",
+      "removeTitle": "関連付けの削除を確認",
+      "removeConfirm": "関連付けを削除",
+      "removeReasonRequired": "削除理由を入力してください。",
+      "typeLabel": "種別",
+      "rationaleLabel": "理由",
+      "createdByAt": "作成者: {{actor}} / 作成日時: {{at}}",
+      "error": "関連ケースを更新できませんでした",
+      "more": "リンク可能なケースが200件を超えています。検索条件を絞るか、ケースIDを直接入力してください。"
     },
     "notes": {
       "title": "ノート",
       "empty": "ノートがありません",
       "placeholder": "ノートを追加..."
+    },
+    "filing": {
+      "title": "STR届出",
+      "report": "提出済みSTRレポート",
+      "reportPlaceholder": "レポートIDを選択または入力",
+      "channel": "届出経路",
+      "destination": "届出先",
+      "externalReference": "外部届出番号",
+      "submit": "届出を確定",
+      "cancel": "キャンセル",
+      "required": "提出済みレポートと届出メタデータをすべて入力してください。",
+      "loadError": "提出済みSTRレポートを読み込めませんでした",
+      "more": "提出済みレポートが200件を超えています。一覧にない場合はレポートIDを直接入力してください。"
+    },
+    "caseFile": {
+      "title": "調査ファイル",
+      "export": "ケースファイルを出力",
+      "exportError": "ケースファイルを出力できませんでした。再試行してください。",
+      "timeline": "タイムライン",
+      "timelineEmpty": "調査イベントはありません",
+      "evidence": "証跡",
+      "evidenceEmpty": "証跡はありません",
+      "evidenceDescription": "説明",
+      "evidenceSource": "出典",
+      "evidenceType": "種別",
+      "evidenceCollector": "収集者",
+      "evidenceHash": "完全性ハッシュ（任意）",
+      "evidenceAdd": "証跡を追加",
+      "evidenceCorrect": "証跡を訂正",
+      "evidenceCorrectionReason": "訂正理由",
+      "evidenceCorrectionRequired": "訂正理由を入力してください。",
+      "evidenceCorrectionCancel": "訂正をキャンセル",
+      "checklist": "チェックリスト",
+      "checklistEmpty": "チェック項目はありません",
+      "workItems": "作業項目",
+      "workItemsEmpty": "作業項目はありません",
+      "workTitle": "作業項目名",
+      "workAdd": "作業項目を追加",
+      "eventReason": "理由"
+      ,"changeDetails": "変更内容を表示"
+      ,"workStatus": "作業項目の状態"
     },
     "edd": {
       "stage3": "ステージ3: 取引謝絶推奨済み",
@@ -233,6 +347,29 @@
     "closed_false_positive": "完了(偽陽性)"
   },
   "alerts": {
+    "queue": {
+      "title": "担当キュー",
+      "status": "ステータス",
+      "allStatuses": "対応中すべて",
+      "severity": "深刻度",
+      "scenario": "シナリオ",
+      "assignee": "担当者",
+      "myWork": "自分の担当",
+      "team": "チーム",
+      "search": "検索",
+      "unassigned": "未割当",
+      "overdue": "期限超過",
+      "ageValue": "{{days}}日",
+	  "maxAge": "最長経過日数",
+      "dueAt": "期限",
+      "sla": "SLA",
+      "slaUnassigned": "期限未設定",
+      "slaOverdue": "期限超過",
+      "slaOnTrack": "期限内",
+      "updatedAt": "最終更新",
+      "age": "経過時間",
+      "page": "ページ"
+    },
     "title": "アラート一覧",
     "count": "{{count}} 件",
     "error": "アラートデータの取得に失敗しました",
@@ -255,7 +392,10 @@
         "scenario": "シナリオ",
         "score": "スコア",
         "description": "説明",
-        "detectedAt": "検出日時"
+        "detectedAt": "検出日時",
+        "assignedTo": "担当者",
+        "dueAt": "期限",
+        "updatedAt": "最終更新"
       },
       "empty": "アラートがありません"
     }
@@ -266,6 +406,7 @@
     "error": "アラートデータの取得に失敗しました",
     "conflict": "別のセッションでアラートが更新されました。現在の内容を確認してから再試行してください。",
     "reload": "現在のアラートを再読み込み",
+    "retry": "再試行",
     "title": "アラート詳細",
     "info": {
       "title": "アラート情報",
@@ -274,7 +415,11 @@
       "score": "スコア",
       "detectedAt": "検出日時",
       "resolvedAt": "解決日時",
-      "resolvedBy": "解決者"
+      "resolvedBy": "解決者",
+      "assignedTo": "担当者",
+      "assignedTeam": "チーム",
+      "dueAt": "期限",
+      "saveAssignment": "キュー項目を保存"
     },
     "description": {
       "title": "説明",
@@ -285,13 +430,24 @@
       "startInvestigation": "調査開始",
       "escalate": "エスカレーション",
       "closeTruePositive": "真陽性として完了",
-      "closeFalsePositive": "偽陽性として完了"
+      "closeFalsePositive": "偽陽性として完了",
+      "reopen": "調査を再開"
+    },
+    "decision": {
+      "title": "アラート判定の確認",
+      "confirm": "このアラートに{{outcome}}を適用しますか？判定と根拠は履歴として保持されます。",
+      "rationale": "判定理由",
+      "rationaleRequired": "判定理由を入力してください。",
+      "confirmButton": "判定を確定",
+      "cancel": "キャンセル",
+      "noHistory": "判定履歴はありません"
     }
   },
   "audit": {
     "title": "監査ログ",
     "count": "{{count}} 件",
     "error": "監査ログの取得に失敗しました",
+    "retry": "再試行",
     "action": {
       "create": "作成",
       "update": "更新",
@@ -721,19 +877,36 @@
       "title": "STRレポートを作成しました",
       "idLabel": "ID: {{id}}"
     },
+    "saved": {
+      "title": "保存済みSTRレポート",
+      "source": "アラート: {{alert}}",
+      "open": "下書きを開く",
+      "empty": "保存済みのSTRレポートはありません"
+    },
+    "status": {
+      "draft": "下書き",
+      "submitted": "提出済み"
+    },
     "export": {
       "csv": "CSV",
       "json": "JSON"
     },
     "form": {
       "title": "STRレポート作成",
-      "targetAlert": "対象アラート",
+      "targetAlert": "対象アラートとSTR候補ケース",
+      "caseLabel": "ケース {{id}}",
       "noAlerts": "対象となるアラートがありません",
       "pointLabel": "疑わしい取引のポイント",
       "pointPlaceholder": "疑わしい取引の理由を記述...",
       "createdByLabel": "作成者",
       "createdByPlaceholder": "担当者名",
-      "submit": "STRレポート作成"
+      "submit": "STRレポート作成",
+      "draftTitle": "STR下書きの確認",
+      "draftId": "下書きID: {{id}}",
+      "evidenceLabel": "提出証跡",
+      "evidencePlaceholder": "届出受付番号または確認ID",
+      "submitDraft": "STRレポートを提出",
+      "cancel": "キャンセル"
     }
   },
   "system": {

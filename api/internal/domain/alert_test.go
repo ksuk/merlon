@@ -16,7 +16,7 @@ func TestValidAlertStatusTransition(t *testing.T) {
 		{"investigating to true positive", AlertStatusInvestigating, AlertStatusClosedTruePositive, true},
 		{"escalated to investigating", AlertStatusEscalated, AlertStatusInvestigating, true},
 		{"escalated to false positive", AlertStatusEscalated, AlertStatusClosedFalsePositive, true},
-		{"terminal is immutable", AlertStatusClosedTruePositive, AlertStatusInvestigating, false},
+		{"terminal requires explicit reopen", AlertStatusClosedTruePositive, AlertStatusInvestigating, true},
 		{"suppressed is system-only", AlertStatusSuppressed, AlertStatusOpen, false},
 	}
 	for _, tt := range tests {
@@ -41,5 +41,16 @@ func TestAlertQueueLifecycleSets(t *testing.T) {
 		if IsAlertUnresolved(status) {
 			t.Errorf("IsAlertUnresolved(%q) = true", status)
 		}
+	}
+}
+
+func TestCaseFilingCanCloseAnUnresolvedLinkedAlert(t *testing.T) {
+	for _, from := range []AlertStatus{AlertStatusOpen, AlertStatusInvestigating, AlertStatusEscalated} {
+		if !ValidAlertStatusTransitionForCaseFiling(from, AlertStatusClosedTruePositive) {
+			t.Errorf("case filing transition %q -> closed_true_positive was rejected", from)
+		}
+	}
+	if ValidAlertStatusTransitionForCaseFiling(AlertStatusOpen, AlertStatusClosedFalsePositive) {
+		t.Error("case filing must not create a false-positive disposition")
 	}
 }

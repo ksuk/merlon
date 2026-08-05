@@ -1,14 +1,15 @@
 import { cn } from "@/lib/utils"
-import type { HTMLAttributes } from "react"
+import { forwardRef, type HTMLAttributes } from "react"
 
-function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(function Card({ className, ...props }, ref) {
   return (
     <div
+      ref={ref}
       className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", className)}
       {...props}
     />
   )
-}
+})
 
 function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />

@@ -82,6 +82,14 @@ func writeDemoDatasetFixture(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+func copyDemoDatasetFixture() map[string]string {
+	copy := make(map[string]string, len(demoDatasetFixture))
+	for name, content := range demoDatasetFixture {
+		copy[name] = content
+	}
+	return copy
+}
+
 func newFullMemoryRepos() (Repos, *store.MemoryCustomerRepo) {
 	customers := store.NewMemoryCustomerRepo()
 	return Repos{
@@ -187,6 +195,29 @@ func TestRunLoadsDemoDatasetWhenEnvPointsAtCompleteDataset(t *testing.T) {
 	linked, err := repos.Accounts.ListCustomers(ctx, acct.ID)
 	if err != nil || len(linked) != 1 || linked[0].CustomerID != "demo-cust-01" {
 		t.Fatalf("expected demo-acct-01 linked to demo-cust-01, got %+v (err=%v)", linked, err)
+	}
+}
+
+func TestRunRejectsContradictoryDemoLifecycleBeforeWriting(t *testing.T) {
+	fixture := copyDemoDatasetFixture()
+	fixture["cases.json"] = `[
+		{"id":"demo-case-01","customer_id":"demo-cust-01","alert_ids":["demo-alert-01"],"status":"closed",
+		 "priority":"medium","summary":"contradictory case","created_at":"2026-06-28T06:00:00Z",
+		 "updated_at":"2026-06-29T00:00:00Z","closed_at":"2026-06-29T00:00:00Z"}
+	]`
+	dir := writeDemoDatasetFixture(t, fixture)
+	t.Setenv(demoDataDirEnv, dir)
+	repos, customers := newFullMemoryRepos()
+
+	if _, err := Run(context.Background(), repos); err == nil {
+		t.Fatal("contradictory demo lifecycle was accepted")
+	}
+	got, err := customers.List(context.Background(), 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("validation failure wrote %d customer rows", len(got))
 	}
 }
 

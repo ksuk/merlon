@@ -25,6 +25,9 @@ DECLARE
     executor_is_superuser boolean;
     table_name text;
     privilege_name text;
+    forbidden_dml_privileges text[];
+    forbidden_append_only_privileges text[];
+    forbidden_ledger_privileges text[];
     dml_tables text[] := ARRAY[
         'account_customers',
         'accounts',
@@ -34,10 +37,14 @@ DECLARE
         'backtest_job_customers',
         'backtest_jobs',
         'batch_runs',
-        'case_notes',
-        'cases',
+		'case_checklist_items',
+		'case_notes',
+		'case_relationships',
+		'cases',
+		'case_work_items',
         'customer_score_history',
         'customers',
+        'domain_event_outbox',
         'pending_evaluations',
         'refresh_tokens',
         'retention_policies',
@@ -46,6 +53,7 @@ DECLARE
         'screening_list_snapshots',
         'screening_results',
         'seed_state',
+        'str_reports',
         'transactions',
         'users',
         'webhook_deliveries',
@@ -55,10 +63,32 @@ DECLARE
         'whitelist_reviews'
     ];
     append_only_tables text[] := ARRAY[
+        'alert_decision_events',
         'audit_logs',
-        'rule_activation_events'
+        'case_events',
+        'case_evidence',
+        'case_relationship_events',
+        'rule_activation_events',
+        'str_report_events'
     ];
 BEGIN
+    -- PostgreSQL 18 introduced the MAINTAIN table privilege. Keep this
+    -- procedure runnable on the PostgreSQL 16/17 versions supported by the
+    -- application while still rejecting it where the privilege exists.
+    forbidden_dml_privileges := ARRAY['TRUNCATE', 'REFERENCES', 'TRIGGER'];
+    forbidden_append_only_privileges := ARRAY[
+        'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'
+    ];
+    forbidden_ledger_privileges := ARRAY[
+        'SELECT', 'INSERT', 'UPDATE', 'DELETE',
+        'TRUNCATE', 'REFERENCES', 'TRIGGER'
+    ];
+    IF current_setting('server_version_num')::integer >= 180000 THEN
+        forbidden_dml_privileges := forbidden_dml_privileges || ARRAY['MAINTAIN'];
+        forbidden_append_only_privileges := forbidden_append_only_privileges || ARRAY['MAINTAIN'];
+        forbidden_ledger_privileges := forbidden_ledger_privileges || ARRAY['MAINTAIN'];
+    END IF;
+
     SELECT rolsuper
       INTO app_is_superuser
       FROM pg_catalog.pg_roles
@@ -187,9 +217,7 @@ BEGIN
         IF to_regclass(format('%I.%I', 'public', table_name)) IS NULL THEN
             CONTINUE;
         END IF;
-        FOREACH privilege_name IN ARRAY ARRAY[
-            'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'
-        ] LOOP
+        FOREACH privilege_name IN ARRAY forbidden_dml_privileges LOOP
             IF has_table_privilege(
                 app_role,
                 format('%I.%I', 'public', table_name),
@@ -205,9 +233,7 @@ BEGIN
         IF to_regclass(format('%I.%I', 'public', table_name)) IS NULL THEN
             CONTINUE;
         END IF;
-        FOREACH privilege_name IN ARRAY ARRAY[
-            'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'
-        ] LOOP
+        FOREACH privilege_name IN ARRAY forbidden_append_only_privileges LOOP
             IF has_table_privilege(
                 app_role,
                 format('%I.%I', 'public', table_name),
@@ -220,10 +246,7 @@ BEGIN
         END LOOP;
     END LOOP;
     IF to_regclass('public.schema_migrations') IS NOT NULL THEN
-        FOREACH privilege_name IN ARRAY ARRAY[
-            'SELECT', 'INSERT', 'UPDATE', 'DELETE',
-            'TRUNCATE', 'REFERENCES', 'TRIGGER', 'MAINTAIN'
-        ] LOOP
+        FOREACH privilege_name IN ARRAY forbidden_ledger_privileges LOOP
             IF has_table_privilege(
                 app_role,
                 'public.schema_migrations',

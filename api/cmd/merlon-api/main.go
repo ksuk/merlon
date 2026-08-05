@@ -16,6 +16,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/auth"
 	backtestworker "github.com/ksuk/merlon/api/internal/backtest"
 	"github.com/ksuk/merlon/api/internal/batch"
+	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/config"
 	"github.com/ksuk/merlon/api/internal/crypto"
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -23,7 +24,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/events/handlers"
 	_ "github.com/ksuk/merlon/api/internal/events/nats"
-	_ "github.com/ksuk/merlon/api/internal/events/pgnotify"
+	pgnotifypkg "github.com/ksuk/merlon/api/internal/events/pgnotify"
 	"github.com/ksuk/merlon/api/internal/logging"
 	"github.com/ksuk/merlon/api/internal/notify"
 	"github.com/ksuk/merlon/api/internal/retention"
@@ -40,6 +41,8 @@ const whitelistExpiryCheckInterval = time.Hour
 // shortest possible backoff (attempt 1) so a due retry isn't delayed further
 // than necessary.
 const webhookRetryCheckInterval = 30 * time.Second
+
+const eventOutboxCheckInterval = time.Second
 
 const (
 	httpReadHeaderTimeout = 10 * time.Second
@@ -154,12 +157,19 @@ func main() {
 
 	deps := server.Deps{}
 	deps.ConfigDigests = make(map[string]string)
+	priorityPolicy, err := casemgmt.LoadPriorityPolicy(cfg.CasePriorityPath)
+	if err != nil {
+		slog.Error("case priority policy", "error", err)
+		os.Exit(1)
+	}
+	deps.CasePriorityPolicy = priorityPolicy
 	for name, path := range map[string]string{
 		"application":     cfg.ConfigPath,
 		"adapter":         cfg.AdapterConfigPath,
 		"country_risk":    cfg.CountryRiskPath,
 		"tm_scenarios":    os.Getenv("MERLON_TM_SCENARIOS_PATH"),
 		"screening_lists": os.Getenv("MERLON_SCREENING_LISTS_PATH"),
+		"case_priority":   cfg.CasePriorityPath,
 	} {
 		if path == "" {
 			continue
@@ -199,6 +209,7 @@ func main() {
 		deps.RoutingRules = notify.DefaultRoutingRules()
 	}
 	deps.PublicURL = cfg.PublicURL
+	deps.OperatorTeams = append([]string(nil), cfg.OperatorTeams...)
 
 	// PII field encryption (security.md §2.1, WS-11 Task 7). An unset key
 	// ring leaves customers.attributes' direct PII fields in plaintext --
@@ -240,10 +251,15 @@ func main() {
 		deps.Customers = store.NewPgCustomerRepo(pool, encryptor)
 		deps.Transactions = store.NewPgTransactionRepo(pool)
 		deps.Alerts = store.NewPgAlertRepo(pool)
+		deps.Reports = store.NewPgSTRReportRepo(pool)
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.CaseAlertLifecycle = store.NewPgCaseAlertLifecycleRepo(pool)
-		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.CaseInvestigation = store.NewPgCaseInvestigationRepo(pool)
+		deps.AlertDecisions = store.NewPgAlertDecisionRepo(pool)
+		deps.Atomic = store.NewPgAtomicMutationRepo(pool)
+		deps.EventOutbox = store.NewPgEventOutboxRepo(pool)
+		deps.Webhooks = store.NewPgWebhookRepo(pool, encryptor)
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
@@ -261,9 +277,24 @@ func main() {
 		deps.Customers = memCustomers
 		deps.Transactions = store.NewMemoryTransactionRepo()
 		deps.Alerts = memAlerts
+		deps.Reports = store.NewMemorySTRReportRepo()
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = memCases
 		deps.CaseAlertLifecycle = store.NewMemoryCaseAlertLifecycleRepo(memCases, memAlerts)
+		deps.CaseInvestigation = store.NewMemoryCaseInvestigationRepo()
+		deps.AlertDecisions = store.NewMemoryAlertDecisionRepo()
+		deps.EventOutbox = store.NewMemoryEventOutboxRepo()
+		memoryAtomic, atomicErr := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
+			Customers: deps.Customers, Transactions: deps.Transactions, Alerts: deps.Alerts,
+			Reports: deps.Reports, Audit: deps.Audit, Cases: deps.Cases,
+			CaseAlertLifecycle: deps.CaseAlertLifecycle, Investigation: deps.CaseInvestigation,
+			AlertDecisions: deps.AlertDecisions, EventOutbox: deps.EventOutbox,
+		})
+		if atomicErr != nil {
+			slog.Error("memory atomic mutation repository initialization failed", "error", atomicErr)
+			os.Exit(1)
+		}
+		deps.Atomic = memoryAtomic
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
@@ -353,18 +384,36 @@ func main() {
 	defer cancelJobs()
 
 	// Event bus (Task 6/7, EVENT_BUS driver selection): pg_notify requires a
-	// real PostgreSQL connection, so it's only wired in the Postgres-backed
-	// deployment mode. The in-memory dev mode has no event bus (tier-change
-	// propagation, Task 8, is a no-op then, same as any other Postgres-only
-	// background job in this file).
-	if runWorkerJobs && pool != nil {
+	// real PostgreSQL connection, so it's wired in every PostgreSQL deployment
+	// mode. API processes must consume the outbox too: otherwise an API-only
+	// deployment would commit durable event intents that no process publishes.
+	// The in-memory dev mode has no event bus.
+	if pool != nil && (runAPIJobs || runWorkerJobs) {
 		bus, err := events.NewBus(events.Config{Driver: cfg.EventBus, Pool: pool})
 		if err != nil {
 			slog.Error("event bus", "error", err)
 			os.Exit(1)
 		}
 		deps.Events = bus
-		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases)
+		if pgBus, ok := bus.(*pgnotifypkg.Bus); ok && deps.EventOutbox != nil {
+			pgBus.Requery = func(ctx context.Context, topic string, afterSeq int64) ([]events.Event, error) {
+				durable, err := deps.EventOutbox.ListAfter(ctx, topic, afterSeq, 0)
+				if err != nil {
+					return nil, err
+				}
+				out := make([]events.Event, 0, len(durable))
+				for _, item := range durable {
+					out = append(out, events.Event{
+						ID: item.ID, Topic: item.Topic, Payload: item.Payload,
+						SequenceNum: item.SequenceNum, ChainID: item.ChainID,
+						ChainHopCount: item.ChainHopCount, CreatedAt: item.CreatedAt,
+					})
+				}
+				return out, nil
+			}
+		}
+		go server.RunEventOutboxWorker(jobsCtx, deps.EventOutbox, bus, eventOutboxCheckInterval)
+		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases, deps.CaseAlertLifecycle)
 		subscriptionErrors, err := startEventSubscription(jobsCtx, bus, "cdd.tier_changed", tierChangeHandler)
 		if err != nil {
 			slog.Error("event bus subscription initialization failed", "topic", "cdd.tier_changed", "error", err)
@@ -551,6 +600,7 @@ func main() {
 				Monitoring:    deps.Monitoring,
 				Alerts:        deps.Alerts,
 				Cases:         deps.Cases,
+				CaseLifecycle: deps.CaseAlertLifecycle,
 				ConfigDigests: deps.ConfigDigests,
 			}, runID)
 		})

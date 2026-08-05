@@ -53,6 +53,7 @@ func NewTierChangeHandler(
 	monitoring engine.MonitoringEngine,
 	alerts domain.AlertRepository,
 	cases domain.CaseRepository,
+	caseLifecycle ...domain.CaseAlertLifecycleRepository,
 ) func(events.Event) {
 	return func(e events.Event) {
 		if e.ChainHopCount >= maxChainHops {
@@ -105,7 +106,13 @@ func NewTierChangeHandler(
 				continue
 			}
 			if cases != nil {
-				if _, err := casemgmt.ConsolidateAlert(ctx, cases, &a, casemgmt.DefaultConsolidationWindow); err != nil {
+				var err error
+				if len(caseLifecycle) > 0 && caseLifecycle[0] != nil {
+					_, err = casemgmt.ConsolidateAlertWithLifecycle(ctx, cases, caseLifecycle[0], &a, casemgmt.DefaultConsolidationWindow)
+				} else {
+					_, err = casemgmt.ConsolidateAlert(ctx, cases, &a, casemgmt.DefaultConsolidationWindow)
+				}
+				if err != nil {
 					slog.Error("failed to consolidate tier-change alert into case",
 						"alert_id", a.ID, "customer_id", a.CustomerID, "error", err)
 				}

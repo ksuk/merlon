@@ -40,9 +40,10 @@ func IsAlertUnresolved(status AlertStatus) bool {
 	}
 }
 
-// IsAlertTerminal reports whether an alert has an immutable operator
-// disposition. Terminal alerts cannot be moved to another status; a later
-// correction is represented by a new decision event in the lifecycle work.
+// IsAlertTerminal reports whether an alert has an operator disposition. The
+// disposition itself is immutable history, but an explicit, reasoned reopen
+// may move the current alert back into investigation. The decision event
+// repository retains the terminal decision that was superseded.
 func IsAlertTerminal(status AlertStatus) bool {
 	switch status {
 	case AlertStatusClosedTruePositive, AlertStatusClosedFalsePositive:
@@ -52,10 +53,10 @@ func IsAlertTerminal(status AlertStatus) bool {
 	}
 }
 
-// ValidAlertStatusTransition encodes the Wave 1 operator lifecycle. Direct
-// open -> terminal close remains deliberately disabled until DR-02 is
-// resolved; terminal rationale/confirmation is added by the later
-// disposition-event work.
+// ValidAlertStatusTransition encodes the operator lifecycle. Direct open ->
+// terminal close remains deliberately disabled. A terminal alert may be
+// reopened only into investigating; the API requires a new rationale and
+// confirmation for that reversal.
 func ValidAlertStatusTransition(from, to AlertStatus) bool {
 	switch from {
 	case AlertStatusOpen:
@@ -64,9 +65,19 @@ func ValidAlertStatusTransition(from, to AlertStatus) bool {
 		return to == AlertStatusEscalated || IsAlertTerminal(to)
 	case AlertStatusEscalated:
 		return to == AlertStatusInvestigating || IsAlertTerminal(to)
+	case AlertStatusClosedTruePositive, AlertStatusClosedFalsePositive:
+		return to == AlertStatusInvestigating
 	default:
 		return false
 	}
+}
+
+// ValidAlertStatusTransitionForCaseFiling is the explicit workflow exception
+// for a submitted STR being filed. Filing is an audited case disposition, not
+// an operator's ordinary alert queue transition; it may close an unresolved
+// linked alert directly, while all other callers retain the normal lifecycle.
+func ValidAlertStatusTransitionForCaseFiling(from, to AlertStatus) bool {
+	return IsAlertUnresolved(from) && to == AlertStatusClosedTruePositive
 }
 
 type Alert struct {
@@ -95,6 +106,14 @@ type Alert struct {
 	AggregationWindowStart *time.Time `json:"aggregation_window_start,omitempty"`
 	BatchRunID             string     `json:"batch_run_id,omitempty"`
 	BatchReviewedAt        *time.Time `json:"batch_reviewed_at,omitempty"`
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	// Queue ownership and disposition evidence are first-class operator data.
+	// Empty ownership means unassigned; terminal decisions retain their latest
+	// rationale while the append-only decision repository keeps the full history.
+	AssignedTo           string     `json:"assigned_to,omitempty"`
+	AssignedTeam         string     `json:"assigned_team,omitempty"`
+	DueAt                *time.Time `json:"due_at,omitempty"`
+	Disposition          string     `json:"disposition,omitempty"`
+	DispositionRationale string     `json:"disposition_rationale,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }

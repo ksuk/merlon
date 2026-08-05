@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,6 +113,72 @@ func TestCustomerStatusChangeRecordsAuditLog(t *testing.T) {
 	}
 	if found.Details["reason"] != "sanctions asset freeze" {
 		t.Errorf("reason = %q, want %q", found.Details["reason"], "sanctions asset freeze")
+	}
+}
+
+func TestCustomerStatusAuditFailureRollsBackCustomer(t *testing.T) {
+	s, customers, _ := newCustomerStatusTestServer(&engine.MockMonitoringEngine{})
+	c := newStatusTestCustomer(t, customers, "EXT-STATUS-AUDIT-FAIL")
+	audit := s.audit.(*store.MemoryAuditRepo)
+	audit.SetCreateFailure(errors.New("audit unavailable"))
+
+	rec := postCustomerStatusWebhook(s, `{"external_id":"EXT-STATUS-AUDIT-FAIL","status":"dormant","reason":"test"}`)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	updated, err := customers.Get(t.Context(), c.ID)
+	if err != nil {
+		t.Fatalf("get customer: %v", err)
+	}
+	if updated.Status != domain.CustomerStatusActive {
+		t.Fatalf("customer status = %q after audit failure, want active", updated.Status)
+	}
+}
+
+func TestCustomerDeathEscalationEventFailureRollsBackAllRows(t *testing.T) {
+	s, customers, alerts := newCustomerStatusTestServer(&engine.MockMonitoringEngine{})
+	c := newStatusTestCustomer(t, customers, "EXT-STATUS-EVENT-FAIL")
+	a := &domain.Alert{
+		ID: generateID(), CustomerID: c.ID, ScenarioID: "death-escalation",
+		Severity: domain.AlertSeverityLow, Status: domain.AlertStatusOpen,
+		DetectedAt: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := alerts.Create(t.Context(), a); err != nil {
+		t.Fatalf("create alert: %v", err)
+	}
+	s.caseInvestigation.(*store.MemoryCaseInvestigationRepo).SetAppendEventFailure(errors.New("timeline unavailable"))
+
+	rec := postCustomerStatusWebhook(s, `{"external_id":"EXT-STATUS-EVENT-FAIL","status":"frozen","reason":"customer death confirmed"}`)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want failure when required timeline append fails", rec.Code)
+	}
+	updatedCustomer, err := customers.Get(t.Context(), c.ID)
+	if err != nil {
+		t.Fatalf("get customer: %v", err)
+	}
+	if updatedCustomer.Status != domain.CustomerStatusActive {
+		t.Fatalf("customer status = %q after timeline failure, want active", updatedCustomer.Status)
+	}
+	updatedAlert, err := alerts.Get(t.Context(), a.ID)
+	if err != nil {
+		t.Fatalf("get alert: %v", err)
+	}
+	if updatedAlert.Severity != domain.AlertSeverityLow {
+		t.Fatalf("alert severity = %q after timeline failure, want low", updatedAlert.Severity)
+	}
+	cases, err := s.cases.ListByCustomer(t.Context(), c.ID)
+	if err != nil {
+		t.Fatalf("list cases: %v", err)
+	}
+	if len(cases) != 0 {
+		t.Fatalf("cases after timeline failure = %d, want 0", len(cases))
+	}
+	entries, err := s.audit.List(t.Context(), domain.AuditListFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("list audit entries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("audit entries after rollback = %d, want 0", len(entries))
 	}
 }
 

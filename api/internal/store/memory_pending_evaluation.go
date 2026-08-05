@@ -66,7 +66,7 @@ func (r *MemoryPendingEvaluationRepo) ListPendingByCustomer(_ context.Context, c
 	defer r.mu.RUnlock()
 	var out []domain.PendingEvaluation
 	for _, pe := range r.data {
-		if pe.CustomerID == customerID && pe.Status == status {
+		if domain.SameIdentifier(pe.CustomerID, customerID) && pe.Status == status {
 			out = append(out, *pe)
 		}
 	}
@@ -78,11 +78,11 @@ func (r *MemoryPendingEvaluationRepo) ListPendingByCustomers(_ context.Context, 
 	defer r.mu.RUnlock()
 	wanted := make(map[string]struct{}, len(customerIDs))
 	for _, id := range customerIDs {
-		wanted[id] = struct{}{}
+		wanted[domain.CanonicalUUID(id)] = struct{}{}
 	}
 	var out []domain.PendingEvaluation
 	for _, pe := range r.data {
-		if _, ok := wanted[pe.CustomerID]; ok && pe.Status == status {
+		if _, ok := wanted[domain.CanonicalUUID(pe.CustomerID)]; ok && pe.Status == status {
 			out = append(out, *pe)
 		}
 	}

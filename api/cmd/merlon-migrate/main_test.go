@@ -23,6 +23,40 @@ func writeMigration(t *testing.T, dir, name, sql string) {
 	}
 }
 
+func migrationTestDirThrough(t *testing.T, through string) string {
+	t.Helper()
+	dir := t.TempDir()
+	entries, err := os.ReadDir("../../../migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") || entry.Name() > through {
+			continue
+		}
+		source, err := filepath.Abs(filepath.Join("../../../migrations", entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(source, filepath.Join(dir, entry.Name())); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func addMigration037(t *testing.T, dir string) string {
+	t.Helper()
+	source, err := filepath.Abs("../../../migrations/037_repair_case_alert_links.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(source, filepath.Join(dir, "037_repair_case_alert_links.sql")); err != nil {
+		t.Fatal(err)
+	}
+	return source
+}
+
 func TestLoadMigrationsSortsAndValidatesNames(t *testing.T) {
 	dir := t.TempDir()
 	writeMigration(t, dir, "002_second.sql", "SELECT 2;")
@@ -74,8 +108,192 @@ func TestMigrationRunnerAppliesAllMigrationsAndIsIdempotent(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 36 {
-		t.Fatalf("schema_migrations count = %d, want 36", count)
+	if count != 44 {
+		t.Fatalf("schema_migrations count = %d, want 44", count)
+	}
+}
+
+func TestMigration037RepairsLifecycleAndIsDataIdempotent(t *testing.T) {
+	dsn := newMigrationTestDatabase(t)
+	ctx := context.Background()
+	dir := migrationTestDirThrough(t, "036_alert_case_lifecycle.sql")
+	if err := runWithOptions(ctx, options{databaseURL: dsn, migrationsDir: dir}); err != nil {
+		t.Fatalf("apply through 036: %v", err)
+	}
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	var customerID string
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO customers (external_id, customer_type, country_code, product_types, attributes)
+		 VALUES ('migration-037-customer', 'individual', 'JP', '{}', '{}') RETURNING id`,
+	).Scan(&customerID); err != nil {
+		t.Fatal(err)
+	}
+	var strAlertID, closedAlertID string
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO alerts (customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at)
+		 VALUES ($1, 'migration_037_str', 'high', 'investigating', 1, '', '{}', NOW(), NOW(), NOW()) RETURNING id::text`, customerID,
+	).Scan(&strAlertID); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO alerts (customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at)
+		 VALUES ($1, 'migration_037_closed', 'medium', 'open', 1, '', '{}', NOW(), NOW(), NOW()) RETURNING id::text`, customerID,
+	).Scan(&closedAlertID); err != nil {
+		t.Fatal(err)
+	}
+	// The API generates compact UUIDs and stores those strings in the legacy
+	// text[] link column. PostgreSQL returns hyphenated text for uuid, so this
+	// conversion is the production-shaped fixture.
+	compactSTRAlertID := strings.ReplaceAll(strAlertID, "-", "")
+	if _, err := conn.Exec(ctx,
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, summary, created_at, updated_at, closed_at)
+			 VALUES ('migration-037-str-case', $1, ARRAY[$2, $4], 'str_filed', 'high', 'filed', NOW(), NOW(), NOW()),
+			        ('migration-037-closed-case', $1, ARRAY[$3], 'closed', 'medium', 'closed', NOW(), NOW(), NOW())`,
+		customerID, compactSTRAlertID, closedAlertID, strAlertID); err != nil {
+		t.Fatal(err)
+	}
+
+	source037 := addMigration037(t, dir)
+	if err := runWithOptions(ctx, options{databaseURL: dsn, migrationsDir: dir}); err != nil {
+		t.Fatalf("apply 037: %v", err)
+	}
+
+	var strStatus, resolvedBy string
+	if err := conn.QueryRow(ctx, `SELECT status::text, resolved_by FROM alerts WHERE id::text = $1`, strAlertID).Scan(&strStatus, &resolvedBy); err != nil {
+		t.Fatal(err)
+	}
+	if strStatus != "closed_true_positive" || resolvedBy != "migration-037" {
+		t.Fatalf("STR alert repair = (%q, %q), want closed_true_positive/migration-037", strStatus, resolvedBy)
+	}
+	var strAlertIDs []string
+	if err := conn.QueryRow(ctx, `SELECT alert_ids FROM cases WHERE id = 'migration-037-str-case'`).Scan(&strAlertIDs); err != nil {
+		t.Fatal(err)
+	}
+	if len(strAlertIDs) != 1 || strAlertIDs[0] != compactSTRAlertID {
+		t.Fatalf("deduplicated alert_ids = %v, want [%s]", strAlertIDs, compactSTRAlertID)
+	}
+	var caseStatus, reopenReason string
+	var closedAt any
+	if err := conn.QueryRow(ctx, `SELECT status, reopen_reason, closed_at FROM cases WHERE id = 'migration-037-closed-case'`).Scan(&caseStatus, &reopenReason, &closedAt); err != nil {
+		t.Fatal(err)
+	}
+	if caseStatus != "reopened" || !strings.Contains(reopenReason, "migration-037") || closedAt != nil {
+		t.Fatalf("closed case repair = (%q, %q, %v), want reopened/reason/nil", caseStatus, reopenReason, closedAt)
+	}
+	var auditsBefore int
+	if err := conn.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs WHERE user_id = 'migration-037'`).Scan(&auditsBefore); err != nil {
+		t.Fatal(err)
+	}
+	if auditsBefore != 4 {
+		t.Fatalf("repair audit count = %d, want 4", auditsBefore)
+	}
+	var closedAlertIDs []string
+	if err := conn.QueryRow(ctx, `SELECT alert_ids FROM cases WHERE id = 'migration-037-closed-case'`).Scan(&closedAlertIDs); err != nil {
+		t.Fatal(err)
+	}
+	if len(closedAlertIDs) != 1 || closedAlertIDs[0] != strings.ReplaceAll(closedAlertID, "-", "") {
+		t.Fatalf("normalized closed-case alert_ids = %v, want compact alert ID", closedAlertIDs)
+	}
+	sql037, err := os.ReadFile(source037)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx, string(sql037)); err != nil {
+		t.Fatalf("direct second repair run: %v", err)
+	}
+	var auditsAfter int
+	if err := conn.QueryRow(ctx, `SELECT COUNT(*) FROM audit_logs WHERE user_id = 'migration-037'`).Scan(&auditsAfter); err != nil {
+		t.Fatal(err)
+	}
+	if auditsAfter != auditsBefore {
+		t.Fatalf("second repair run added audit rows: before=%d after=%d", auditsBefore, auditsAfter)
+	}
+}
+
+func TestMigration037BlocksMissingAndCrossCustomerLinks(t *testing.T) {
+	dsn := newMigrationTestDatabase(t)
+	ctx := context.Background()
+	dir := migrationTestDirThrough(t, "036_alert_case_lifecycle.sql")
+	if err := runWithOptions(ctx, options{databaseURL: dsn, migrationsDir: dir}); err != nil {
+		t.Fatalf("apply through 036: %v", err)
+	}
+
+	conn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	var firstCustomerID, secondCustomerID, secondCustomerAlertID string
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO customers (external_id, customer_type, country_code, product_types, attributes)
+		 VALUES ('migration-037-owner', 'individual', 'JP', '{}', '{}') RETURNING id`,
+	).Scan(&firstCustomerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO customers (external_id, customer_type, country_code, product_types, attributes)
+		 VALUES ('migration-037-other', 'individual', 'JP', '{}', '{}') RETURNING id`,
+	).Scan(&secondCustomerID); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO alerts (customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at)
+		 VALUES ($1, 'migration_037_cross', 'high', 'open', 1, '', '{}', NOW(), NOW(), NOW()) RETURNING id::text`, secondCustomerID,
+	).Scan(&secondCustomerAlertID); err != nil {
+		t.Fatal(err)
+	}
+	missingAlertID := "00000000-0000-0000-0000-000000000037"
+	if _, err := conn.Exec(ctx,
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, summary, created_at, updated_at)
+		 VALUES ('migration-037-a-missing', $1, ARRAY[$2], 'new', 'medium', 'missing', NOW(), NOW()),
+		        ('migration-037-b-cross', $1, ARRAY[$3], 'new', 'medium', 'cross', NOW(), NOW())`,
+		firstCustomerID, missingAlertID, secondCustomerAlertID); err != nil {
+		t.Fatal(err)
+	}
+	addMigration037(t, dir)
+
+	err = runWithOptions(ctx, options{databaseURL: dsn, migrationsDir: dir})
+	if err == nil || !strings.Contains(err.Error(), "missing alert") {
+		t.Fatalf("missing-link migration error = %v", err)
+	}
+	if _, err := conn.Exec(ctx, `DELETE FROM cases WHERE id = 'migration-037-a-missing'`); err != nil {
+		t.Fatal(err)
+	}
+	err = runWithOptions(ctx, options{databaseURL: dsn, migrationsDir: dir})
+	if err == nil || !strings.Contains(err.Error(), "different customer") {
+		t.Fatalf("cross-customer migration error = %v", err)
+	}
+	if _, err := conn.Exec(ctx, `DELETE FROM cases WHERE id = 'migration-037-b-cross'`); err != nil {
+		t.Fatal(err)
+	}
+	var inactiveAlertID string
+	if err := conn.QueryRow(ctx,
+		`INSERT INTO alerts (customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, resolved_at, resolved_by)
+		 VALUES ($1, 'migration_037_inactive', 'medium', 'closed_false_positive', 1, '', '{}', NOW(), NOW(), NOW(), NOW(), 'fixture') RETURNING id::text`, firstCustomerID,
+	).Scan(&inactiveAlertID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx,
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, summary, created_at, updated_at)
+		 VALUES ('migration-037-c-inactive', $1, ARRAY[$2], 'new', 'medium', 'inactive', NOW(), NOW())`,
+		firstCustomerID, strings.ReplaceAll(inactiveAlertID, "-", "")); err != nil {
+		t.Fatal(err)
+	}
+	err = runWithOptions(ctx, options{databaseURL: dsn, migrationsDir: dir})
+	if err == nil || !strings.Contains(err.Error(), "inactive alert") {
+		t.Fatalf("inactive-link migration error = %v", err)
+	}
+	var applied037 int
+	if err := conn.QueryRow(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = '037'`).Scan(&applied037); err != nil {
+		t.Fatal(err)
+	}
+	if applied037 != 0 {
+		t.Fatal("blocked migration was recorded as applied")
 	}
 }
 
@@ -89,9 +307,13 @@ var appRoleDMLTables = []string{
 	"backtest_jobs",
 	"batch_runs",
 	"case_notes",
+	"case_checklist_items",
+	"case_relationships",
+	"case_work_items",
 	"cases",
 	"customer_score_history",
 	"customers",
+	"domain_event_outbox",
 	"pending_evaluations",
 	"refresh_tokens",
 	"retention_policies",
@@ -100,6 +322,7 @@ var appRoleDMLTables = []string{
 	"screening_list_snapshots",
 	"screening_results",
 	"seed_state",
+	"str_reports",
 	"transactions",
 	"users",
 	"webhook_deliveries",
@@ -109,7 +332,7 @@ var appRoleDMLTables = []string{
 	"whitelist_reviews",
 }
 
-var appRoleAppendOnlyTables = []string{"audit_logs", "rule_activation_events"}
+var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "case_evidence", "case_relationship_events", "rule_activation_events", "str_report_events"}
 
 func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 	migrations, err := loadMigrations("../../../migrations")
@@ -128,7 +351,7 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 		}
 	}
 	classified := append(append([]string{}, appRoleDMLTables...), appRoleAppendOnlyTables...)
-	const expectedApplicationTableCount = 29
+	const expectedApplicationTableCount = 39
 	if len(migrationTables) != expectedApplicationTableCount {
 		t.Fatalf("extracted %d migration tables, want %d: %v", len(migrationTables), expectedApplicationTableCount, migrationTables)
 	}
@@ -147,8 +370,8 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 	if !strings.Contains(string(grantsSQL), `\set MERLON_APP_ROLE merlon_app`) {
 		t.Error("direct psql execution has no safe MERLON_APP_ROLE default")
 	}
-	if got := strings.Count(string(grantsSQL), "'MAINTAIN'"); got != 3 {
-		t.Errorf("application-role grant procedure classifies MAINTAIN %d times, want 3 (ordinary, append-only, ledger)", got)
+	if !strings.Contains(string(grantsSQL), "server_version_num") || !strings.Contains(string(grantsSQL), "ARRAY['MAINTAIN']") {
+		t.Error("application-role grant procedure does not version-gate PostgreSQL's MAINTAIN privilege")
 	}
 	extractArray := func(name string) []string {
 		t.Helper()
@@ -194,6 +417,11 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer owner.Close(ctx)
+	var serverVersionNum int
+	if err := owner.QueryRow(ctx, `SELECT current_setting('server_version_num')::integer`).Scan(&serverVersionNum); err != nil {
+		t.Fatal(err)
+	}
+	supportsMaintain := serverVersionNum >= 180000
 
 	random := make([]byte, 8)
 	if _, err := rand.Read(random); err != nil {
@@ -247,7 +475,7 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 	}
 
 	for _, table := range appRoleDMLTables {
-		for _, test := range []struct {
+		privileges := []struct {
 			privilege string
 			want      bool
 		}{
@@ -258,8 +486,14 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 			{privilege: "TRUNCATE", want: false},
 			{privilege: "REFERENCES", want: false},
 			{privilege: "TRIGGER", want: false},
-			{privilege: "MAINTAIN", want: false},
-		} {
+		}
+		if supportsMaintain {
+			privileges = append(privileges, struct {
+				privilege string
+				want      bool
+			}{privilege: "MAINTAIN", want: false})
+		}
+		for _, test := range privileges {
 			var allowed bool
 			if err := owner.QueryRow(ctx, `SELECT has_table_privilege($1, $2, $3)`, role, "public."+table, test.privilege).Scan(&allowed); err != nil {
 				t.Fatal(err)
@@ -270,7 +504,7 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 		}
 	}
 	for _, table := range appRoleAppendOnlyTables {
-		for _, test := range []struct {
+		privileges := []struct {
 			privilege string
 			want      bool
 		}{
@@ -281,8 +515,14 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 			{privilege: "TRUNCATE", want: false},
 			{privilege: "REFERENCES", want: false},
 			{privilege: "TRIGGER", want: false},
-			{privilege: "MAINTAIN", want: false},
-		} {
+		}
+		if supportsMaintain {
+			privileges = append(privileges, struct {
+				privilege string
+				want      bool
+			}{privilege: "MAINTAIN", want: false})
+		}
+		for _, test := range privileges {
 			var allowed bool
 			if err := owner.QueryRow(ctx, `SELECT has_table_privilege($1, $2, $3)`, role, "public."+table, test.privilege).Scan(&allowed); err != nil {
 				t.Fatal(err)
@@ -293,7 +533,11 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 		}
 	}
 
-	for _, privilege := range []string{"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER", "MAINTAIN"} {
+	ledgerPrivileges := []string{"SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"}
+	if supportsMaintain {
+		ledgerPrivileges = append(ledgerPrivileges, "MAINTAIN")
+	}
+	for _, privilege := range ledgerPrivileges {
 		var allowed bool
 		if err := owner.QueryRow(ctx, `SELECT has_table_privilege($1, 'public.schema_migrations', $2)`, role, privilege).Scan(&allowed); err != nil {
 			t.Fatal(err)
@@ -342,10 +586,12 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 	}
 
 	extraRole := role + "_extra"
-	if _, err := owner.Exec(ctx,
-		"CREATE ROLE "+pgx.Identifier{extraRole}.Sanitize()+"; "+
-			"GRANT MAINTAIN ON TABLE public.customers TO "+pgx.Identifier{extraRole}.Sanitize()+"; "+
-			"GRANT "+pgx.Identifier{extraRole}.Sanitize()+" TO "+pgx.Identifier{role}.Sanitize()); err != nil {
+	extraRoleSetup := "CREATE ROLE " + pgx.Identifier{extraRole}.Sanitize() + "; "
+	if supportsMaintain {
+		extraRoleSetup += "GRANT MAINTAIN ON TABLE public.customers TO " + pgx.Identifier{extraRole}.Sanitize() + "; "
+	}
+	extraRoleSetup += "GRANT " + pgx.Identifier{extraRole}.Sanitize() + " TO " + pgx.Identifier{role}.Sanitize()
+	if _, err := owner.Exec(ctx, extraRoleSetup); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -359,14 +605,21 @@ func TestApplicationRoleGrantsAreIdempotentAndLeastPrivilege(t *testing.T) {
 		_, _ = cleanup.Exec(context.Background(), "DROP OWNED BY "+pgx.Identifier{extraRole}.Sanitize())
 		_, _ = cleanup.Exec(context.Background(), "DROP ROLE IF EXISTS "+pgx.Identifier{extraRole}.Sanitize())
 	})
-	if _, err := owner.Exec(ctx, sql); err == nil || !strings.Contains(err.Error(), "inherits forbidden MAINTAIN") {
-		t.Fatalf("membership-derived MAINTAIN was not rejected: %v", err)
-	}
-	if _, err := owner.Exec(ctx, "ROLLBACK"); err != nil {
-		t.Fatalf("rollback after expected MAINTAIN rejection: %v", err)
+	if supportsMaintain {
+		if _, err := owner.Exec(ctx, sql); err == nil || !strings.Contains(err.Error(), "inherits forbidden MAINTAIN") {
+			t.Fatalf("membership-derived MAINTAIN was not rejected: %v", err)
+		}
+		if _, err := owner.Exec(ctx, "ROLLBACK"); err != nil {
+			t.Fatalf("rollback after expected MAINTAIN rejection: %v", err)
+		}
 	}
 	if _, err := owner.Exec(ctx,
-		"REVOKE MAINTAIN ON TABLE public.customers FROM "+pgx.Identifier{extraRole}.Sanitize()+"; "+
+		func() string {
+			if supportsMaintain {
+				return "REVOKE MAINTAIN ON TABLE public.customers FROM " + pgx.Identifier{extraRole}.Sanitize() + "; "
+			}
+			return ""
+		}()+
 			"GRANT UPDATE ON SEQUENCE public.audit_logs_id_seq TO "+pgx.Identifier{extraRole}.Sanitize()); err != nil {
 		t.Fatal(err)
 	}

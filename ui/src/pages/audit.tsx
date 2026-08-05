@@ -127,7 +127,14 @@ export function AuditPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">{t("audit.error")}</p>
+    return (
+      <div role="alert" className="space-y-3 p-12 text-center text-destructive">
+        <p>{t("audit.error")}</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+          {t("audit.retry")}
+        </Button>
+      </div>
+    )
   }
 
   return (
@@ -206,7 +213,7 @@ export function AuditPage() {
           />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {exportError && <p className="text-xs text-destructive">{exportError}</p>}
+          {exportError && <p role="alert" className="text-xs text-destructive">{exportError}</p>}
           <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport("csv")}>
             <Download className="h-4 w-4" />
             CSV

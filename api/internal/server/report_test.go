@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -55,8 +56,13 @@ func createTestCustomerAndAlert(t *testing.T, s *Server) (domain.Customer, domai
 func TestCreateSTR(t *testing.T) {
 	s := testServer()
 	_, alert := createTestCustomerAndAlert(t, s)
+	caseID := "str-create-case"
+	now := time.Now().UTC()
+	if err := s.cases.Create(context.Background(), &domain.Case{ID: caseID, CustomerID: alert.CustomerID, AlertIDs: []string{alert.ID}, Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityHigh, STRCandidate: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("create STR candidate case: %v", err)
+	}
 
-	body := `{"alert_id":"` + alert.ID + `","suspicious_point":"分割取引の疑い","created_by":"analyst01"}`
+	body := `{"alert_id":"` + alert.ID + `","case_id":"` + caseID + `","suspicious_point":"分割取引の疑い","created_by":"analyst01"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/reports/str", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -123,6 +129,9 @@ func TestExportSTRCSV(t *testing.T) {
 	ct := rec.Header().Get("Content-Type")
 	if !strings.Contains(ct, "text/csv") {
 		t.Errorf("Content-Type = %q, want text/csv", ct)
+	}
+	if rec.Header().Get("Deprecation") != "true" || rec.Header().Get("Sunset") == "" || !strings.Contains(rec.Header().Get("Link"), "successor-version") {
+		t.Fatalf("legacy export headers = Deprecation=%q Sunset=%q Link=%q, want deprecation and successor metadata", rec.Header().Get("Deprecation"), rec.Header().Get("Sunset"), rec.Header().Get("Link"))
 	}
 
 	body := rec.Body.String()
