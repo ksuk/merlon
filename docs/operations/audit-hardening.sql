@@ -49,11 +49,14 @@ DECLARE
         'refresh_tokens',
         'retention_policies',
         'rule_definitions',
+        'screening_runs',
         'screening_list_failures',
         'screening_list_snapshots',
         'screening_results',
         'seed_state',
         'str_reports',
+        'backtest_job_metadata',
+        'target_manifests',
         'transactions',
         'users',
         'webhook_deliveries',
@@ -68,7 +71,10 @@ DECLARE
         'case_events',
         'case_evidence',
         'case_relationship_events',
+        'customer_identity_history',
+        'pending_evaluation_history',
         'rule_activation_events',
+        'screening_result_history',
         'str_report_events'
     ];
 BEGIN
