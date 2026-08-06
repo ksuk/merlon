@@ -13,6 +13,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/store"
 )
@@ -105,6 +106,9 @@ type Server struct {
 	publicURL      string
 	operatorTeams  []string
 	priorityPolicy *casemgmt.PriorityPolicy
+	// policies is nil-tolerant: every accessor on *policy.Set returns the
+	// in-code default for a nil receiver.
+	policies *policy.Set
 }
 
 type Deps struct {
@@ -175,6 +179,10 @@ type Deps struct {
 	// CasePriorityPolicy is the versioned CDD-tier/score to case-priority
 	// mapping. A nil value uses the built-in development-safe policy.
 	CasePriorityPolicy *casemgmt.PriorityPolicy
+	// Policies is the Wave 3 policy bundle (ADR-0016). A nil value is valid
+	// and yields the in-code default for every policy, so a Server built
+	// without it behaves exactly as it did before the bundle existed.
+	Policies *policy.Set
 }
 
 func New(addr string, deps Deps) *Server {
@@ -235,6 +243,7 @@ func New(addr string, deps Deps) *Server {
 		publicURL:      deps.PublicURL,
 		operatorTeams:  append([]string(nil), deps.OperatorTeams...),
 		priorityPolicy: deps.CasePriorityPolicy,
+		policies:       deps.Policies,
 	}
 	if s.priorityPolicy == nil {
 		s.priorityPolicy = casemgmt.DefaultPriorityPolicy()
@@ -505,6 +514,11 @@ func (s *Server) routes() {
 	// System info
 	s.route("GET /api/v1/system/info", s.handleSystemInfo)
 	s.route("GET /api/v1/system/config-digests", s.handleConfigDigests)
+
+	// Policy documents (ADR-0016). Read-only: policies are edited as files
+	// and reloaded on restart, never mutated through the API.
+	s.route("GET /api/v1/policies", s.handleListPolicies)
+	s.route("GET /api/v1/policies/{policy}", s.handleGetPolicy)
 
 	// OpenAPI
 	s.route("GET /api/v1/openapi.json", s.handleOpenAPI)

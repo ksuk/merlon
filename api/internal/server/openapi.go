@@ -119,6 +119,8 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/audit":                                       pathAuditLogs(),
 			"/api/v1/audit/export":                                pathExportAuditLogs(),
 			"/api/v1/system/config-digests":                       pathGET("Get loaded configuration digests"),
+			"/api/v1/policies":                                    pathPolicies(),
+			"/api/v1/policies/{policy}":                           pathPolicy(),
 			"/api/v1/accounts":                                    pathAccountCreate(),
 			"/api/v1/accounts/{id}":                               pathAccountGet(),
 			"/api/v1/accounts/{id}/customers":                     pathAccountCustomers(),
@@ -777,8 +779,24 @@ func wave3Schemas() map[string]any {
 			"status": map[string]any{"type": "string", "enum": []string{"NEW", "REVIEWING", "TRUE_POSITIVE", "FALSE_POSITIVE"}}, "false_positive_reason": map[string]any{"type": "string"}, "reviewed_by": map[string]any{"type": "string"}, "reviewed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "screened_at": map[string]any{"type": "string", "format": "date-time"}, "created_at": map[string]any{"type": "string", "format": "date-time"},
 			"run_id": map[string]any{"type": "string"}, "suppressed": map[string]any{"type": "boolean"}, "suppression_reason": map[string]any{"type": "string"}, "match_evidence": map[string]any{"type": "object", "additionalProperties": true}, "case_id": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
 		}, "id", "customer_id", "list_id", "status", "screened_at", "created_at", "suppressed", "version", "updated_at"),
-		"ScreeningResultHistory":      objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "screening_result_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "screening_result_id", "from_status", "to_status", "rationale", "actor", "version", "created_at"),
-		"ScreeningSourceStatus":       objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "configured": map[string]any{"type": "boolean"}, "operational_state": map[string]any{"type": "string", "enum": []string{"never_imported", "ready", "stale", "unreadable", "failed", "unavailable"}}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_failure_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_success_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "age_seconds": map[string]any{"type": "integer", "nullable": true}, "freshness_threshold_seconds": map[string]any{"type": "integer"}, "consecutive_failures": map[string]any{"type": "integer"}, "diagnostic": map[string]any{"type": "string"}}, "list_id", "list_type", "configured", "operational_state", "freshness_threshold_seconds", "consecutive_failures"),
+		"ScreeningResultHistory": objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "screening_result_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "screening_result_id", "from_status", "to_status", "rationale", "actor", "version", "created_at"),
+		"ScreeningSourceStatus":  objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "configured": map[string]any{"type": "boolean"}, "operational_state": map[string]any{"type": "string", "enum": []string{"never_imported", "ready", "stale", "unreadable", "failed", "unavailable"}}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_failure_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_success_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "age_seconds": map[string]any{"type": "integer", "nullable": true}, "freshness_threshold_seconds": map[string]any{"type": "integer"}, "consecutive_failures": map[string]any{"type": "integer"}, "diagnostic": map[string]any{"type": "string"}}, "list_id", "list_type", "configured", "operational_state", "freshness_threshold_seconds", "consecutive_failures"),
+		"PolicyDescriptor": objectSchema(map[string]any{
+			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness"}},
+			"schema_version": map[string]any{"type": "string"},
+			"policy_version": map[string]any{"type": "string"},
+			"digest":         map[string]any{"type": "string", "description": "SHA-256 of the policy document, pinned onto the decisions it produced"},
+			"source":         map[string]any{"type": "string", "enum": []string{"file", "default"}},
+		}, "name", "schema_version", "policy_version", "digest", "source"),
+		"PolicyList": objectSchema(map[string]any{"data": arraySchema(schemaRef("PolicyDescriptor"))}, "data"),
+		"PolicyDocument": objectSchema(map[string]any{
+			"name":           map[string]any{"type": "string"},
+			"schema_version": map[string]any{"type": "string"},
+			"policy_version": map[string]any{"type": "string"},
+			"digest":         map[string]any{"type": "string"},
+			"source":         map[string]any{"type": "string", "enum": []string{"file", "default"}},
+			"document":       map[string]any{"type": "object", "description": "The policy document as authored; its shape is governed by schema_version", "additionalProperties": true},
+		}, "name", "schema_version", "policy_version", "digest", "source", "document"),
 		"ScreeningSourceDirectory":    objectSchema(map[string]any{"data": arraySchema(schemaRef("ScreeningSourceStatus")), "configured_count": map[string]any{"type": "integer"}, "ready_count": map[string]any{"type": "integer"}, "unready_count": map[string]any{"type": "integer"}}, "data", "configured_count", "ready_count", "unready_count"),
 		"ScreeningReviewRequest":      objectSchema(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"REVIEWING", "TRUE_POSITIVE", "FALSE_POSITIVE"}}, "false_positive_reason": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "status", "expected_version"),
 		"ScreeningReviewOutcome":      objectSchema(map[string]any{"result": schemaRef("ScreeningResult"), "case_id": map[string]any{"type": "string"}, "case_created": map[string]any{"type": "boolean"}}, "result", "case_created"),
@@ -873,6 +891,18 @@ func pathScreeningResults() map[string]any {
 
 func pathScreeningResultHistory() map[string]any {
 	return map[string]any{"get": documentedJSONOperation("List screening result decision history", []map[string]any{pathIDParameter("id", "Screening result identifier"), {"name": "limit", "in": "query", "schema": map[string]any{"type": "integer", "default": 50, "maximum": 200}}}, nil, "200", "Screening result history", arraySchema(schemaRef("ScreeningResultHistory")), "400", "401", "404", "500", "503")}
+}
+
+func pathPolicies() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("List the loaded AML policy documents", nil, nil, "200", "Policy descriptors", schemaRef("PolicyList"), "401", "500")}
+}
+
+func pathPolicy() map[string]any {
+	params := []map[string]any{{
+		"name": "policy", "in": "path", "required": true, "description": "Policy document name",
+		"schema": map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness"}},
+	}}
+	return map[string]any{"get": documentedJSONOperation("Get one AML policy document", params, nil, "200", "Policy document", schemaRef("PolicyDocument"), "401", "404", "500")}
 }
 
 func pathScreeningSources() map[string]any {

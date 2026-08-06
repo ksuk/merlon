@@ -27,6 +27,7 @@ import (
 	pgnotifypkg "github.com/ksuk/merlon/api/internal/events/pgnotify"
 	"github.com/ksuk/merlon/api/internal/logging"
 	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/retention"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/seed"
@@ -165,6 +166,38 @@ func main() {
 		os.Exit(1)
 	}
 	deps.CasePriorityPolicy = priorityPolicy
+
+	// The Wave 3 policy documents (ADR-0016). A policy the operator meant to
+	// apply but that cannot be parsed is a configuration error: exiting is
+	// safer than scoring customers under rules nobody chose.
+	policies, err := policy.Load(policy.Paths{
+		KYCRequiredFields:  cfg.KYCRequiredFieldsPath,
+		EDD:                cfg.EDDPolicyPath,
+		CDDRuleSelection:   cfg.CDDRuleSelectionPath,
+		TravelRule:         cfg.TravelRulePolicyPath,
+		ScreeningReadiness: cfg.ScreeningReadinessPath,
+	})
+	if err != nil {
+		slog.Error("policy", "error", err)
+		os.Exit(1)
+	}
+	deps.Policies = policies
+	// The EDD policy file is the single source for the stage schedule. The
+	// legacy environment variables still parse so an existing deployment
+	// starts, but a non-default value that the file overrides is announced
+	// rather than silently ignored.
+	if stage2, ok := policies.EDD().StageDays("stage2"); ok && cfg.EDDStage2Days != stage2 {
+		slog.Warn("MERLON_EDD_STAGE2_DAYS is superseded by the EDD policy file",
+			"env", cfg.EDDStage2Days, "policy", stage2, "path", cfg.EDDPolicyPath)
+	}
+	if stage3, ok := policies.EDD().StageDays("stage3"); ok && cfg.EDDStage3Days != stage3 {
+		slog.Warn("MERLON_EDD_STAGE3_DAYS is superseded by the EDD policy file",
+			"env", cfg.EDDStage3Days, "policy", stage3, "path", cfg.EDDPolicyPath)
+	}
+	for name, digest := range policies.Digests() {
+		deps.ConfigDigests[name] = digest
+	}
+
 	for name, path := range map[string]string{
 		"application":     cfg.ConfigPath,
 		"adapter":         cfg.AdapterConfigPath,
