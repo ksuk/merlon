@@ -7,13 +7,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-type PgBacktestJobRepo struct{ pool *pgxpool.Pool }
+type PgBacktestJobRepo struct{ pool DBTX }
 
-func NewPgBacktestJobRepo(pool *pgxpool.Pool) *PgBacktestJobRepo {
+func NewPgBacktestJobRepo(pool DBTX) *PgBacktestJobRepo {
 	return &PgBacktestJobRepo{pool: pool}
 }
 

@@ -53,6 +53,8 @@ func cloneBacktestResult(in *domain.BacktestResult) *domain.BacktestResult {
 	for i, scenario := range in.ScenarioResults {
 		out.ScenarioResults[i] = scenario
 		out.ScenarioResults[i].AffectedCustomerIDs = append([]string(nil), scenario.AffectedCustomerIDs...)
+		out.ScenarioResults[i].AddedCustomerIDs = append([]string(nil), scenario.AddedCustomerIDs...)
+		out.ScenarioResults[i].RemovedCustomerIDs = append([]string(nil), scenario.RemovedCustomerIDs...)
 	}
 	return &out
 }

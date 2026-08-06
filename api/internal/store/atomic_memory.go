@@ -17,12 +17,17 @@ type MemoryAtomicMutationRepo struct {
 	repos         domain.AtomicMutationRepositories
 	cases         *MemoryCaseRepo
 	customers     *MemoryCustomerRepo
+	transactions  *MemoryTransactionRepo
 	alerts        *MemoryAlertRepo
 	reports       *MemorySTRReportRepo
 	audit         *MemoryAuditRepo
 	investigation *MemoryCaseInvestigationRepo
 	decisions     *MemoryAlertDecisionRepo
 	outbox        *MemoryEventOutboxRepo
+	wave3         *MemoryWave3Repo
+	pending       *MemoryPendingEvaluationRepo
+	batch         *MemoryBatchRunRepo
+	backtest      *MemoryBacktestJobRepo
 }
 
 func NewMemoryAtomicMutationRepo(repos domain.AtomicMutationRepositories) (*MemoryAtomicMutationRepo, error) {
@@ -30,6 +35,11 @@ func NewMemoryAtomicMutationRepo(repos domain.AtomicMutationRepositories) (*Memo
 	var ok bool
 	if atomic.customers, ok = repos.Customers.(*MemoryCustomerRepo); !ok || atomic.customers == nil {
 		return nil, fmt.Errorf("memory atomic repository requires MemoryCustomerRepo")
+	}
+	if repos.Transactions != nil {
+		if atomic.transactions, ok = repos.Transactions.(*MemoryTransactionRepo); !ok || atomic.transactions == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryTransactionRepo")
+		}
 	}
 	if repos.Cases != nil {
 		if atomic.cases, ok = repos.Cases.(*MemoryCaseRepo); !ok || atomic.cases == nil {
@@ -64,6 +74,31 @@ func NewMemoryAtomicMutationRepo(repos domain.AtomicMutationRepositories) (*Memo
 			return nil, fmt.Errorf("memory atomic repository requires MemoryEventOutboxRepo")
 		}
 	}
+	if repos.IdentityHistory != nil {
+		if atomic.wave3, ok = repos.IdentityHistory.(*MemoryWave3Repo); !ok || atomic.wave3 == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryWave3Repo for identity history")
+		}
+	}
+	if repos.Wave3 != nil && atomic.wave3 == nil {
+		if atomic.wave3, ok = repos.Wave3.(*MemoryWave3Repo); !ok || atomic.wave3 == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryWave3Repo for Wave 3 workflows")
+		}
+	}
+	if repos.PendingEvaluations != nil {
+		if atomic.pending, ok = repos.PendingEvaluations.(*MemoryPendingEvaluationRepo); !ok || atomic.pending == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryPendingEvaluationRepo")
+		}
+	}
+	if repos.BatchRuns != nil {
+		if atomic.batch, ok = repos.BatchRuns.(*MemoryBatchRunRepo); !ok || atomic.batch == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryBatchRunRepo")
+		}
+	}
+	if repos.BacktestJobs != nil {
+		if atomic.backtest, ok = repos.BacktestJobs.(*MemoryBacktestJobRepo); !ok || atomic.backtest == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryBacktestJobRepo")
+		}
+	}
 	return atomic, nil
 }
 
@@ -71,6 +106,9 @@ type memoryAtomicSnapshot struct {
 	customers          map[string]*domain.Customer
 	customerExternal   map[string]string
 	customerScores     map[string][]domain.ScoreRecord
+	transactions       map[string]*domain.Transaction
+	transactionByCust  map[string][]string
+	transactionIdem    map[string]string
 	cases              map[string]*domain.Case
 	alerts             map[string]*domain.Alert
 	alertByCustomer    map[string][]string
@@ -87,6 +125,18 @@ type memoryAtomicSnapshot struct {
 	decisions          map[string][]domain.AlertDecisionEvent
 	outboxEvents       []domain.DurableEvent
 	outboxNextSequence int64
+	identity           map[string][]domain.CustomerIdentityHistoryEntry
+	wave3Runs          map[string]*domain.ScreeningRun
+	wave3Results       map[string]*domain.ScreeningResultRecord
+	wave3History       map[string][]domain.ScreeningResultHistoryEntry
+	wave3Sources       map[string]domain.ScreeningSourceStatus
+	wave3Metadata      map[string]*domain.BacktestMetadata
+	wave3Manifests     map[string]*domain.TargetManifest
+	pendingData        map[string]*domain.PendingEvaluation
+	pendingHistory     map[string][]domain.PendingEvaluationHistoryEntry
+	batchData          map[string]*domain.BatchRun
+	backtestData       map[string]*domain.BacktestJob
+	backtestSnapshots  map[string][]string
 }
 
 func (r *MemoryAtomicMutationRepo) RunAtomic(ctx context.Context, fn func(domain.AtomicMutationRepositories) error) error {
@@ -109,6 +159,17 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 	customerExternal := cloneStringMap(r.customers.external)
 	customerScores := cloneScoreRecords(r.customers.scores)
 	r.customers.mu.RUnlock()
+
+	var transactions map[string]*domain.Transaction
+	var transactionByCust map[string][]string
+	var transactionIdem map[string]string
+	if r.transactions != nil {
+		r.transactions.mu.RLock()
+		transactions = cloneMemoryTransactions(r.transactions.data)
+		transactionByCust = cloneStringSlices(r.transactions.byCustomer)
+		transactionIdem = cloneStringMap(r.transactions.idempotencyKey)
+		r.transactions.mu.RUnlock()
+	}
 
 	var cases map[string]*domain.Case
 	if r.cases != nil {
@@ -179,11 +240,57 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 		r.outbox.mu.RUnlock()
 	}
 
+	var identity map[string][]domain.CustomerIdentityHistoryEntry
+	var wave3Runs map[string]*domain.ScreeningRun
+	var wave3Results map[string]*domain.ScreeningResultRecord
+	var wave3History map[string][]domain.ScreeningResultHistoryEntry
+	var wave3Sources map[string]domain.ScreeningSourceStatus
+	var wave3Metadata map[string]*domain.BacktestMetadata
+	var wave3Manifests map[string]*domain.TargetManifest
+	var pendingData map[string]*domain.PendingEvaluation
+	var pendingHistory map[string][]domain.PendingEvaluationHistoryEntry
+	var batchData map[string]*domain.BatchRun
+	var backtestData map[string]*domain.BacktestJob
+	var backtestSnapshots map[string][]string
+	if r.wave3 != nil {
+		r.wave3.mu.RLock()
+		identity = cloneIdentityHistory(r.wave3.identity)
+		wave3Runs = cloneScreeningRuns(r.wave3.runs)
+		wave3Results = cloneScreeningResults(r.wave3.results)
+		wave3History = cloneScreeningHistory(r.wave3.history)
+		wave3Sources = cloneScreeningSources(r.wave3.sources)
+		wave3Metadata = cloneBacktestMetadata(r.wave3.metadata)
+		wave3Manifests = cloneTargetManifests(r.wave3.manifests)
+		r.wave3.mu.RUnlock()
+	}
+	if r.pending != nil {
+		r.pending.mu.RLock()
+		pendingData = clonePendingEvaluations(r.pending.data)
+		pendingHistory = clonePendingHistory(r.pending.history)
+		r.pending.mu.RUnlock()
+	}
+	if r.batch != nil {
+		r.batch.mu.RLock()
+		batchData = cloneBatchRuns(r.batch.data)
+		r.batch.mu.RUnlock()
+	}
+	if r.backtest != nil {
+		r.backtest.mu.Lock()
+		backtestData = cloneBacktestJobs(r.backtest.data)
+		backtestSnapshots = cloneStringSlices(r.backtest.snapshots)
+		r.backtest.mu.Unlock()
+	}
+
 	return memoryAtomicSnapshot{customers: customers, customerExternal: customerExternal, customerScores: customerScores,
+		transactions: transactions, transactionByCust: transactionByCust, transactionIdem: transactionIdem,
 		cases: cases, alerts: alerts, alertByCustomer: alertByCustomer, reports: reports, reportEvents: reportEvents,
 		auditEntries: auditEntries, auditNextID: auditNextID, events: events, evidence: evidence,
 		checklist: checklist, work: work, relationship: relationship, relationshipEvents: relationshipEvents, decisions: decisions,
-		outboxEvents: outboxEvents, outboxNextSequence: outboxNextSequence}
+		outboxEvents: outboxEvents, outboxNextSequence: outboxNextSequence, identity: identity,
+		wave3Runs: wave3Runs, wave3Results: wave3Results, wave3History: wave3History,
+		wave3Sources: wave3Sources, wave3Metadata: wave3Metadata, wave3Manifests: wave3Manifests,
+		pendingData: pendingData, pendingHistory: pendingHistory, batchData: batchData,
+		backtestData: backtestData, backtestSnapshots: backtestSnapshots}
 }
 
 func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
@@ -192,6 +299,14 @@ func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
 	r.customers.external = snapshot.customerExternal
 	r.customers.scores = snapshot.customerScores
 	r.customers.mu.Unlock()
+
+	if r.transactions != nil {
+		r.transactions.mu.Lock()
+		r.transactions.data = snapshot.transactions
+		r.transactions.byCustomer = snapshot.transactionByCust
+		r.transactions.idempotencyKey = snapshot.transactionIdem
+		r.transactions.mu.Unlock()
+	}
 
 	if r.cases != nil {
 		r.cases.mu.Lock()
@@ -234,6 +349,34 @@ func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
 		r.outbox.events = snapshot.outboxEvents
 		r.outbox.nextSequence = snapshot.outboxNextSequence
 		r.outbox.mu.Unlock()
+	}
+	if r.wave3 != nil {
+		r.wave3.mu.Lock()
+		r.wave3.identity = snapshot.identity
+		r.wave3.runs = snapshot.wave3Runs
+		r.wave3.results = snapshot.wave3Results
+		r.wave3.history = snapshot.wave3History
+		r.wave3.sources = snapshot.wave3Sources
+		r.wave3.metadata = snapshot.wave3Metadata
+		r.wave3.manifests = snapshot.wave3Manifests
+		r.wave3.mu.Unlock()
+	}
+	if r.pending != nil {
+		r.pending.mu.Lock()
+		r.pending.data = snapshot.pendingData
+		r.pending.history = snapshot.pendingHistory
+		r.pending.mu.Unlock()
+	}
+	if r.batch != nil {
+		r.batch.mu.Lock()
+		r.batch.data = snapshot.batchData
+		r.batch.mu.Unlock()
+	}
+	if r.backtest != nil {
+		r.backtest.mu.Lock()
+		r.backtest.data = snapshot.backtestData
+		r.backtest.snapshots = snapshot.backtestSnapshots
+		r.backtest.mu.Unlock()
 	}
 }
 
@@ -324,6 +467,163 @@ func cloneStringSlices(input map[string][]string) map[string][]string {
 	output := make(map[string][]string, len(input))
 	for key, values := range input {
 		output[key] = append([]string(nil), values...)
+	}
+	return output
+}
+
+func cloneMemoryTransactions(input map[string]*domain.Transaction) map[string]*domain.Transaction {
+	output := make(map[string]*domain.Transaction, len(input))
+	for id, value := range input {
+		if value == nil {
+			continue
+		}
+		copy := *value
+		if value.AccountID != nil {
+			accountID := *value.AccountID
+			copy.AccountID = &accountID
+		}
+		if value.Counterparty != nil {
+			counterparty := *value.Counterparty
+			copy.Counterparty = &counterparty
+		}
+		copy.Metadata = copyAnyMap(value.Metadata)
+		copy.TravelRuleEvidence = copyAnyMap(value.TravelRuleEvidence)
+		if value.IdempotencyKey != nil {
+			key := *value.IdempotencyKey
+			copy.IdempotencyKey = &key
+		}
+		if value.TravelRuleApplicable != nil {
+			applicable := *value.TravelRuleApplicable
+			copy.TravelRuleApplicable = &applicable
+		}
+		output[id] = &copy
+	}
+	return output
+}
+
+func cloneIdentityHistory(input map[string][]domain.CustomerIdentityHistoryEntry) map[string][]domain.CustomerIdentityHistoryEntry {
+	output := make(map[string][]domain.CustomerIdentityHistoryEntry, len(input))
+	for key, values := range input {
+		output[key] = make([]domain.CustomerIdentityHistoryEntry, len(values))
+		for i, value := range values {
+			output[key][i] = value
+			if value.ChangedFields != nil {
+				output[key][i].ChangedFields = copyAnyMap(value.ChangedFields)
+			}
+		}
+	}
+	return output
+}
+
+func cloneScreeningRuns(input map[string]*domain.ScreeningRun) map[string]*domain.ScreeningRun {
+	output := make(map[string]*domain.ScreeningRun, len(input))
+	for key, value := range input {
+		output[key] = cloneRun(value)
+	}
+	return output
+}
+
+func cloneScreeningResults(input map[string]*domain.ScreeningResultRecord) map[string]*domain.ScreeningResultRecord {
+	output := make(map[string]*domain.ScreeningResultRecord, len(input))
+	for key, value := range input {
+		output[key] = cloneScreeningRecord(value)
+	}
+	return output
+}
+
+func cloneScreeningHistory(input map[string][]domain.ScreeningResultHistoryEntry) map[string][]domain.ScreeningResultHistoryEntry {
+	output := make(map[string][]domain.ScreeningResultHistoryEntry, len(input))
+	for key, values := range input {
+		output[key] = append([]domain.ScreeningResultHistoryEntry(nil), values...)
+	}
+	return output
+}
+
+func cloneScreeningSources(input map[string]domain.ScreeningSourceStatus) map[string]domain.ScreeningSourceStatus {
+	output := make(map[string]domain.ScreeningSourceStatus, len(input))
+	for key, value := range input {
+		copy := value
+		if value.LastAttemptAt != nil {
+			at := *value.LastAttemptAt
+			copy.LastAttemptAt = &at
+		}
+		if value.LastFailureAt != nil {
+			at := *value.LastFailureAt
+			copy.LastFailureAt = &at
+		}
+		if value.LastSuccessAt != nil {
+			at := *value.LastSuccessAt
+			copy.LastSuccessAt = &at
+		}
+		if value.AgeSeconds != nil {
+			age := *value.AgeSeconds
+			copy.AgeSeconds = &age
+		}
+		output[key] = copy
+	}
+	return output
+}
+
+func cloneBacktestMetadata(input map[string]*domain.BacktestMetadata) map[string]*domain.BacktestMetadata {
+	output := make(map[string]*domain.BacktestMetadata, len(input))
+	for key, value := range input {
+		if value == nil {
+			continue
+		}
+		copy := *value
+		copy.CohortPreview = copyAnyMap(value.CohortPreview)
+		copy.BaselineSnapshot = copyAnyMap(value.BaselineSnapshot)
+		copy.CandidateSnapshot = copyAnyMap(value.CandidateSnapshot)
+		output[key] = &copy
+	}
+	return output
+}
+
+func cloneTargetManifests(input map[string]*domain.TargetManifest) map[string]*domain.TargetManifest {
+	output := make(map[string]*domain.TargetManifest, len(input))
+	for key, value := range input {
+		output[key] = cloneManifest(value)
+	}
+	return output
+}
+
+func clonePendingEvaluations(input map[string]*domain.PendingEvaluation) map[string]*domain.PendingEvaluation {
+	output := make(map[string]*domain.PendingEvaluation, len(input))
+	for key, value := range input {
+		output[key] = clonePending(value)
+	}
+	return output
+}
+
+func clonePendingHistory(input map[string][]domain.PendingEvaluationHistoryEntry) map[string][]domain.PendingEvaluationHistoryEntry {
+	output := make(map[string][]domain.PendingEvaluationHistoryEntry, len(input))
+	for key, values := range input {
+		output[key] = append([]domain.PendingEvaluationHistoryEntry(nil), values...)
+	}
+	return output
+}
+
+func cloneBatchRuns(input map[string]*domain.BatchRun) map[string]*domain.BatchRun {
+	output := make(map[string]*domain.BatchRun, len(input))
+	for key, value := range input {
+		if value == nil {
+			continue
+		}
+		copy := *value
+		copy.ProcessedCustomerIDs = append([]string(nil), value.ProcessedCustomerIDs...)
+		copy.Parameters = copyAnyMap(value.Parameters)
+		copy.ConfigDigests = copyStringMap(value.ConfigDigests)
+		copy.ResultCounts = copyIntMap(value.ResultCounts)
+		copy.CustomerOutcomes = cloneBatchCustomerOutcomes(value.CustomerOutcomes)
+		output[key] = &copy
+	}
+	return output
+}
+
+func cloneBacktestJobs(input map[string]*domain.BacktestJob) map[string]*domain.BacktestJob {
+	output := make(map[string]*domain.BacktestJob, len(input))
+	for key, value := range input {
+		output[key] = cloneBacktestJob(value)
 	}
 	return output
 }

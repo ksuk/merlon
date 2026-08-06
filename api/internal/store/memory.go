@@ -267,6 +267,22 @@ func (r *MemoryCustomerRepo) Update(_ context.Context, c *domain.Customer) error
 	return nil
 }
 
+func (r *MemoryCustomerRepo) UpdateIfUnmodified(_ context.Context, c *domain.Customer, expectedUpdatedAt time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c.ID = domain.CanonicalUUID(c.ID)
+	current, ok := r.data[c.ID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
+	}
+	if !current.UpdatedAt.Equal(expectedUpdatedAt) {
+		return &domain.ErrConflict{Entity: "customer", ID: c.ID, Reason: "updated_at does not match the version read by the client"}
+	}
+	c.UpdatedAt = time.Now().UTC()
+	r.data[c.ID] = c
+	return nil
+}
+
 func (r *MemoryCustomerRepo) UpdateStatus(_ context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -312,6 +328,37 @@ func (r *MemoryCustomerRepo) ListScoreHistory(_ context.Context, customerID stri
 	return records, nil
 }
 
+func (r *MemoryCustomerRepo) CountScoreHistory(_ context.Context, customerID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.scores[domain.CanonicalUUID(customerID)]), nil
+}
+
+func (r *MemoryCustomerRepo) ListScoreHistoryCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.ScoreRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	records := append([]domain.ScoreRecord(nil), r.scores[domain.CanonicalUUID(customerID)]...)
+	sort.Slice(records, func(i, j int) bool {
+		if !records[i].ScoredAt.Equal(records[j].ScoredAt) {
+			return records[i].ScoredAt.After(records[j].ScoredAt)
+		}
+		return records[i].ID > records[j].ID
+	})
+	if after != nil {
+		filtered := records[:0]
+		for _, record := range records {
+			if record.ScoredAt.Before(after.CreatedAt) || (record.ScoredAt.Equal(after.CreatedAt) && record.ID < after.ID) {
+				filtered = append(filtered, record)
+			}
+		}
+		records = filtered
+	}
+	if limit > 0 && len(records) > limit {
+		records = records[:limit]
+	}
+	return records, nil
+}
+
 type MemoryTransactionRepo struct {
 	mu             sync.RWMutex
 	data           map[string]*domain.Transaction
@@ -336,6 +383,33 @@ func (r *MemoryTransactionRepo) Get(_ context.Context, id string) (*domain.Trans
 		return nil, &domain.ErrNotFound{Entity: "transaction", ID: id}
 	}
 	cp := *t
+	if t.Counterparty != nil {
+		counterparty := *t.Counterparty
+		cp.Counterparty = &counterparty
+	}
+	cp.Metadata = copyAnyMap(t.Metadata)
+	cp.TravelRuleEvidence = copyAnyMap(t.TravelRuleEvidence)
+	return &cp, nil
+}
+
+func (r *MemoryTransactionRepo) GetByIdempotencyKey(_ context.Context, key string) (*domain.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	id, ok := r.idempotencyKey[key]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "transaction", ID: key}
+	}
+	t, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "transaction", ID: key}
+	}
+	cp := *t
+	if t.Counterparty != nil {
+		c := *t.Counterparty
+		cp.Counterparty = &c
+	}
+	cp.Metadata = copyAnyMap(t.Metadata)
+	cp.TravelRuleEvidence = copyAnyMap(t.TravelRuleEvidence)
 	return &cp, nil
 }
 
@@ -352,6 +426,12 @@ func (r *MemoryTransactionRepo) ListByCustomer(_ context.Context, customerID str
 		func(t domain.Transaction) string { return t.ID },
 	)
 	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryTransactionRepo) CountByCustomer(_ context.Context, customerID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.byCustomer[domain.CanonicalUUID(customerID)]), nil
 }
 
 func (r *MemoryTransactionRepo) ListByCustomerCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Transaction, error) {
@@ -464,6 +544,12 @@ func (r *MemoryAlertRepo) ListByCustomer(_ context.Context, customerID string, l
 		func(a domain.Alert) string { return a.ID },
 	)
 	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryAlertRepo) CountByCustomer(_ context.Context, customerID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.byCustomer[domain.CanonicalUUID(customerID)]), nil
 }
 
 func (r *MemoryAlertRepo) ListByCustomerRisk(_ context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
@@ -981,6 +1067,19 @@ func (r *MemoryCaseRepo) ListByCustomer(_ context.Context, customerID string) ([
 		func(c domain.Case) string { return c.ID },
 	)
 	return result, nil
+}
+
+func (r *MemoryCaseRepo) CountByCustomer(_ context.Context, customerID string) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	customerID = domain.CanonicalUUID(customerID)
+	count := 0
+	for _, c := range r.data {
+		if domain.SameIdentifier(c.CustomerID, customerID) {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (r *MemoryCaseRepo) ListByCustomerOffset(_ context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
