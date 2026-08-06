@@ -22,6 +22,32 @@ const (
 	CustomerTypeForeignLegalArrangement CustomerType = "foreign_legal_arrangement"
 )
 
+// AllCustomerTypes lists every accepted customer type in a stable order. It
+// is the single source for validation and for the operator-facing error
+// message, so the two can no longer drift apart.
+func AllCustomerTypes() []CustomerType {
+	return []CustomerType{
+		CustomerTypeIndividual,
+		CustomerTypeCorporateDomestic,
+		CustomerTypeCorporateForeign,
+		CustomerTypeTrust,
+		CustomerTypePartnership,
+		CustomerTypeNPO,
+		CustomerTypeGovernment,
+		CustomerTypeForeignLegalArrangement,
+	}
+}
+
+// IsValidCustomerType reports whether ct is an accepted customer type.
+func IsValidCustomerType(ct CustomerType) bool {
+	for _, candidate := range AllCustomerTypes() {
+		if candidate == ct {
+			return true
+		}
+	}
+	return false
+}
+
 type RiskTier string
 
 const (
