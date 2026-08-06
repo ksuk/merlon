@@ -94,20 +94,29 @@ func (c *Customer) EffectiveStatus() CustomerStatus {
 }
 
 type ScoreRecord struct {
-	ID             string    `json:"id"`
-	CustomerID     string    `json:"customer_id"`
-	Score          float64   `json:"score"`
-	Tier           RiskTier  `json:"tier"`
-	Factors        []Factor  `json:"factors"`
-	RuleSetID      string    `json:"rule_set_id"`
-	RuleSetSHA256  string    `json:"rule_set_sha256,omitempty"`
-	RuleSetVersion int       `json:"rule_set_version"`
-	ScoredAt       time.Time `json:"scored_at"`
+	ID               string         `json:"id"`
+	CustomerID       string         `json:"customer_id"`
+	Score            float64        `json:"score"`
+	Tier             RiskTier       `json:"tier"`
+	Factors          []Factor       `json:"factors"`
+	RuleSetID        string         `json:"rule_set_id"`
+	RuleSetSHA256    string         `json:"rule_set_sha256,omitempty"`
+	RuleSetVersion   int            `json:"rule_set_version"`
+	ScoredAt         time.Time      `json:"scored_at"`
+	Rationale        string         `json:"rationale,omitempty"`
+	Actor            string         `json:"actor,omitempty"`
+	OverrideEvidence map[string]any `json:"override_evidence,omitempty"`
 }
 
 type Factor struct {
-	Name        string  `json:"name"`
-	Axis        string  `json:"axis"`
-	Score       float64 `json:"score"`
-	Description string  `json:"description"`
+	Name            string  `json:"name"`
+	Axis            string  `json:"axis"`
+	Score           float64 `json:"score"`
+	Description     string  `json:"description"`
+	BusinessMeaning string  `json:"business_meaning,omitempty"`
+	Weight          float64 `json:"weight,omitempty"`
+	Contribution    float64 `json:"contribution,omitempty"`
+	ObservedValue   string  `json:"observed_value,omitempty"`
+	Rule            string  `json:"rule,omitempty"`
+	Fallback        bool    `json:"fallback,omitempty"`
 }

@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type DashboardStats struct {
 	CustomersByRiskTier map[string]int `json:"customers_by_risk_tier"`
 	TotalCustomers      int            `json:"total_customers"`
@@ -23,8 +25,13 @@ type DashboardStats struct {
 // ScreeningListFreshnessStat is one sanctions/PEP list's dashboard
 // freshness display row.
 type ScreeningListFreshnessStat struct {
-	ListID                string `json:"list_id"`
-	ListType              string `json:"list_type"`
-	StaleDays             int    `json:"stale_days"`
-	NeedsOperationalAlert bool   `json:"needs_operational_alert"`
+	ListID                string               `json:"list_id"`
+	ListType              string               `json:"list_type"`
+	StaleDays             int                  `json:"stale_days"`
+	NeedsOperationalAlert bool                 `json:"needs_operational_alert"`
+	OperationalState      ScreeningSourceState `json:"operational_state,omitempty"`
+	LastAttemptAt         *time.Time           `json:"last_attempt_at,omitempty"`
+	LastSuccessAt         *time.Time           `json:"last_success_at,omitempty"`
+	AgeSeconds            *int64               `json:"age_seconds,omitempty"`
+	Diagnostic            string               `json:"diagnostic,omitempty"`
 }

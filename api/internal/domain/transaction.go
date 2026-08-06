@@ -38,9 +38,12 @@ type Transaction struct {
 	// required). A resend using an already-used key must be rejected with
 	// 409 rather than creating a second transaction, even if external_id
 	// differs.
-	IdempotencyKey *string   `json:"idempotency_key,omitempty"`
-	ExecutedAt     time.Time `json:"executed_at"`
-	CreatedAt      time.Time `json:"created_at"`
+	IdempotencyKey                *string        `json:"idempotency_key,omitempty"`
+	ExecutedAt                    time.Time      `json:"executed_at"`
+	CreatedAt                     time.Time      `json:"created_at"`
+	TravelRuleApplicable          *bool          `json:"travel_rule_applicable,omitempty"`
+	TravelRuleEvidence            map[string]any `json:"travel_rule_evidence,omitempty"`
+	TravelRuleNotApplicableReason string         `json:"travel_rule_not_applicable_reason,omitempty"`
 }
 
 // CounterpartyType classifies the counterparty side of a virtual-asset

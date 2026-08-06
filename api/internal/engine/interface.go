@@ -11,6 +11,14 @@ type ScoringEngine interface {
 	ScoreCustomer(ctx context.Context, customer *domain.Customer, ruleSetID string) (*domain.ScoreRecord, error)
 }
 
+// VersionedScoringEngine evaluates an explicitly selected, immutable CDD rule
+// definition.  The optional interface keeps legacy adapters source-compatible
+// while preventing the native path from merely relabelling a score produced by
+// a different configuration.
+type VersionedScoringEngine interface {
+	ScoreCustomerWithRuleSet(ctx context.Context, customer *domain.Customer, ruleSetID string, definition []byte) (*domain.ScoreRecord, error)
+}
+
 type MonitoringEngine interface {
 	// EvaluateTransactions runs the realtime evaluation pass (mode_filter
 	// unset on the wire, which the engine treats as REALTIME;

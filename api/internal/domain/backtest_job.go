@@ -56,6 +56,7 @@ type BacktestJob struct {
 	StartedAt               *time.Time        `json:"started_at,omitempty"`
 	CompletedAt             *time.Time        `json:"completed_at,omitempty"`
 	UpdatedAt               time.Time         `json:"updated_at"`
+	Metadata                *BacktestMetadata `json:"metadata,omitempty"`
 }
 
 // MarshalJSON keeps empty backtest result collections as arrays. This applies

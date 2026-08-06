@@ -57,6 +57,13 @@ type ScreeningResultRecord struct {
 	ReviewedAt          *time.Time            `json:"reviewed_at,omitempty"`
 	ScreenedAt          time.Time             `json:"screened_at"`
 	CreatedAt           time.Time             `json:"created_at"`
+	RunID               string                `json:"run_id,omitempty"`
+	Suppressed          bool                  `json:"suppressed"`
+	SuppressionReason   string                `json:"suppression_reason,omitempty"`
+	MatchEvidence       map[string]any        `json:"match_evidence,omitempty"`
+	CaseID              string                `json:"case_id,omitempty"`
+	Version             int                   `json:"version"`
+	UpdatedAt           time.Time             `json:"updated_at"`
 }
 
 // ApplyStatusTransition validates and applies a status change in place. For
