@@ -571,6 +571,11 @@ func main() {
 				"alert_case_data":   purger.AlertCaseData,
 				"cdd_score_history": purger.ScoreHistory,
 				"audit_log":         purger.AuditLogs,
+				// Wave 3 evidence streams. Without these two, pending
+				// evaluations and backtest job history grew without bound and
+				// no policy governed them.
+				"pending_evaluation_data": purger.PendingEvaluationData,
+				"backtest_data":           purger.BacktestData,
 			}
 		}
 		purgeJob := &retention.PurgeJob{

@@ -108,8 +108,19 @@ func TestMigrationRunnerAppliesAllMigrationsAndIsIdempotent(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 48 {
-		t.Fatalf("schema_migrations count = %d, want 48", count)
+	// The ledger must account for every migration on disk. Deriving the
+	// expectation from the directory keeps the property that a migration which
+	// silently failed to apply is caught, without a hand-maintained constant
+	// that every new migration has to remember to bump.
+	onDisk, err := loadMigrations(opts.migrationsDir)
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	if len(onDisk) == 0 {
+		t.Fatal("found no migrations on disk; this guard cannot compare anything")
+	}
+	if count != len(onDisk) {
+		t.Fatalf("schema_migrations count = %d, want %d (one per migration on disk)", count, len(onDisk))
 	}
 }
 
