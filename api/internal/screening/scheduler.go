@@ -98,8 +98,15 @@ type SchedulerDeps struct {
 	Screening interface {
 		ScreenCustomer(ctx context.Context, customer *domain.Customer, listIDs []string) (*domain.ScreenResult, error)
 	}
-	Results domain.ScreeningResultRepository
-	ListIDs []string
+	Results  domain.ScreeningResultRepository
+	Workflow domain.ScreeningWorkflowRepository
+	// PersistWorkflow lets an API composition supply the same transaction
+	// boundary used for audit/outbox evidence. Tests and older package-level
+	// callers can continue to use Workflow directly.
+	PersistWorkflow func(context.Context, *domain.ScreeningRun, []domain.ScreeningResultRecord) error
+	ConfigDigests   map[string]string
+	Actor           string
+	ListIDs         []string
 
 	// TargetCustomerID restricts the batch to a single customer, used for
 	// the tier_promoted/customer_changed/account_opened/api_request
@@ -134,17 +141,17 @@ func (d SchedulerDeps) batchLimit() int {
 // CustomerScreenOutcome records what RunRescreeningBatch did for one
 // customer in the batch.
 type CustomerScreenOutcome struct {
-	CustomerID string
-	Screened   bool
-	Skipped    bool
-	SkipReason string
-	Err        error
+	CustomerID string `json:"customer_id"`
+	Screened   bool   `json:"screened"`
+	Skipped    bool   `json:"skipped"`
+	SkipReason string `json:"skip_reason,omitempty"`
+	Err        error  `json:"error,omitempty"`
 }
 
 // BatchResult is the aggregate outcome of one RunRescreeningBatch call.
 type BatchResult struct {
-	Trigger  TriggerType
-	Outcomes []CustomerScreenOutcome
+	Trigger  TriggerType             `json:"trigger"`
+	Outcomes []CustomerScreenOutcome `json:"outcomes"`
 }
 
 // RunRescreeningBatch screens either a single targeted customer
@@ -240,42 +247,80 @@ func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Custom
 	}
 
 	if deps.Screening == nil {
-		return CustomerScreenOutcome{CustomerID: c.ID, Err: errors.New("screening engine not configured")}
+		return persistScreeningFailure(ctx, deps, c, errors.New("screening engine not configured"))
 	}
 
 	screenResult, err := deps.Screening.ScreenCustomer(ctx, c, deps.ListIDs)
 	if err != nil {
-		return CustomerScreenOutcome{CustomerID: c.ID, Err: err}
+		return persistScreeningFailure(ctx, deps, c, err)
 	}
 
-	if deps.Results != nil {
-		for _, m := range screenResult.Matches {
-			rec := &domain.ScreeningResultRecord{
-				ID:          newScreeningResultID(),
-				CustomerID:  c.ID,
-				ListID:      m.ListID,
-				ListType:    m.ListType,
-				EntryID:     m.EntryID,
-				MatchedName: m.MatchedName,
-				Similarity:  m.Similarity,
-				Status:      domain.ScreeningResultStatusNew,
-				ScreenedAt:  screenResult.ScreenedAt,
-				CreatedAt:   screenResult.ScreenedAt,
-			}
-			if err := deps.Results.Create(ctx, rec); err != nil {
-				slog.Error("rescreening batch: failed to persist screening result",
-					"customer_id", c.ID, "list_id", m.ListID, "entry_id", m.EntryID, "error", err)
+	records := make([]domain.ScreeningResultRecord, 0, len(screenResult.Matches))
+	for _, m := range screenResult.Matches {
+		records = append(records, domain.ScreeningResultRecord{
+			ID: newScreeningResultID(), CustomerID: c.ID, ListID: m.ListID, ListType: m.ListType,
+			EntryID: m.EntryID, MatchedName: m.MatchedName, Similarity: m.Similarity,
+			Status: domain.ScreeningResultStatusNew, ScreenedAt: screenResult.ScreenedAt, CreatedAt: screenResult.ScreenedAt,
+			MatchEvidence: map[string]any{"source": m.Source},
+		})
+	}
+	if deps.PersistWorkflow != nil || deps.Workflow != nil {
+		runAt := screenResult.ScreenedAt
+		run := &domain.ScreeningRun{ID: newScreeningResultID(), CustomerID: c.ID, ListIDs: append([]string(nil), deps.ListIDs...), ConfigDigests: copyStringMap(deps.ConfigDigests), Status: domain.ScreeningRunCompleted, StartedAt: runAt, CreatedAt: runAt, Actor: deps.Actor}
+		persist := deps.PersistWorkflow
+		if persist == nil {
+			persist = deps.Workflow.PersistScreeningRun
+		}
+		if err := persist(ctx, run, records); err != nil {
+			return CustomerScreenOutcome{CustomerID: c.ID, Err: fmt.Errorf("persist screening run: %w", err)}
+		}
+	} else if deps.Results != nil {
+		for i := range records {
+			rec := records[i]
+			if err := deps.Results.Create(ctx, &rec); err != nil {
+				slog.Error("rescreening batch: failed to persist screening result", "customer_id", c.ID, "list_id", rec.ListID, "entry_id", rec.EntryID, "error", err)
 			}
 		}
 	}
-
 	return CustomerScreenOutcome{CustomerID: c.ID, Screened: true}
+}
+
+func persistScreeningFailure(ctx context.Context, deps SchedulerDeps, c *domain.Customer, cause error) CustomerScreenOutcome {
+	outcome := CustomerScreenOutcome{CustomerID: c.ID, Err: cause}
+	persist := deps.PersistWorkflow
+	if persist == nil && deps.Workflow != nil {
+		persist = deps.Workflow.PersistScreeningRun
+	}
+	if persist == nil {
+		return outcome
+	}
+	now := deps.now().UTC()
+	run := &domain.ScreeningRun{
+		ID: newScreeningResultID(), CustomerID: c.ID, ListIDs: append([]string(nil), deps.ListIDs...),
+		ConfigDigests: copyStringMap(deps.ConfigDigests), Status: domain.ScreeningRunFailed,
+		Error: cause.Error(), Actor: deps.Actor, StartedAt: now, CompletedAt: &now, CreatedAt: now,
+	}
+	if err := persist(ctx, run, nil); err != nil {
+		outcome.Err = fmt.Errorf("%w (failed-run persistence: %v)", cause, err)
+	}
+	return outcome
 }
 
 func newScreeningResultID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 // runFunc matches RunRescreeningBatch's signature; Scheduler depends on

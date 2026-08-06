@@ -183,11 +183,8 @@ func TestHandleUpdateScreeningResult_TruePositiveCreatesCriticalCase(t *testing.
 	if len(cases) != 1 {
 		t.Fatalf("cases = %+v, want exactly 1 auto-created case", cases)
 	}
-	// TODO(WS-7): domain.CasePriority has no CRITICAL level yet
-	// (the screening workflow wants severity = CRITICAL); High is the closest
-	// available priority until CasePriority is extended.
-	if cases[0].Priority != domain.CasePriorityHigh {
-		t.Errorf("case priority = %q, want %q (highest available pending CRITICAL support)", cases[0].Priority, domain.CasePriorityHigh)
+	if cases[0].Priority != domain.CasePriorityCritical {
+		t.Errorf("case priority = %q, want %q", cases[0].Priority, domain.CasePriorityCritical)
 	}
 }
 
