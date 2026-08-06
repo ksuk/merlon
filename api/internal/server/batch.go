@@ -18,7 +18,9 @@ import (
 const maxBatchCustomers = 1000
 
 type batchScoreRequest struct {
-	CustomerIDs []string `json:"customer_ids,omitempty"`
+	CustomerIDs      []string `json:"customer_ids,omitempty"`
+	TargetMode       string   `json:"target_mode,omitempty"`
+	TargetManifestID string   `json:"target_manifest_id,omitempty"`
 }
 
 type batchScoreResult struct {
@@ -34,6 +36,41 @@ type batchScoreResponse struct {
 	Failed    int                `json:"failed"`
 	Results   []batchScoreResult `json:"results"`
 	Duration  string             `json:"duration"`
+}
+
+func (s *Server) resolveBatchTarget(ctx context.Context, customerIDs []string, targetMode, manifestID string) ([]domain.Customer, error) {
+	if manifestID != "" {
+		repo, ok := s.wave3.(domain.TargetManifestRepository)
+		if !ok {
+			return nil, fmt.Errorf("target manifest store not configured")
+		}
+		manifest, err := repo.GetTargetManifest(ctx, manifestID)
+		if err != nil {
+			return nil, err
+		}
+		if manifest.Status != "confirmed" && manifest.Status != "consumed" {
+			return nil, fmt.Errorf("target manifest must be confirmed")
+		}
+		if len(manifest.CustomerIDs) > maxBatchCustomers {
+			return nil, fmt.Errorf("target manifest exceeds the maximum of %d customers", maxBatchCustomers)
+		}
+		customerIDs = manifest.CustomerIDs
+	}
+	if targetMode == "all" {
+		return s.customers.List(ctx, maxBatchCustomers, 0)
+	}
+	if len(customerIDs) == 0 {
+		return nil, fmt.Errorf("customer_ids or an explicit target_mode=all is required; an empty selection is not all customers")
+	}
+	customers := make([]domain.Customer, 0, len(customerIDs))
+	for _, id := range customerIDs {
+		c, err := s.customers.Get(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("customer %s not found", id)
+		}
+		customers = append(customers, *c)
+	}
+	return customers, nil
 }
 
 func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
@@ -57,22 +94,10 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var customers []domain.Customer
-	if len(req.CustomerIDs) > 0 {
-		for _, id := range req.CustomerIDs {
-			c, err := s.customers.Get(ctx, id)
-			if err != nil {
-				continue
-			}
-			customers = append(customers, *c)
-		}
-	} else {
-		var err error
-		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
-		if err != nil {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-			return
-		}
+	customers, err := s.resolveBatchTarget(ctx, req.CustomerIDs, req.TargetMode, req.TargetManifestID)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+		return
 	}
 
 	resp := batchScoreResponse{
@@ -213,7 +238,9 @@ func (s *Server) evaluateMonitoring(ctx context.Context, c *domain.Customer, txn
 }
 
 type batchMonitorRequest struct {
-	CustomerIDs []string `json:"customer_ids,omitempty"`
+	CustomerIDs      []string `json:"customer_ids,omitempty"`
+	TargetMode       string   `json:"target_mode,omitempty"`
+	TargetManifestID string   `json:"target_manifest_id,omitempty"`
 	// Mode selects the scenario set to evaluate. Absent means realtime, which
 	// is what this endpoint has always done.
 	Mode string `json:"mode,omitempty"`
@@ -356,22 +383,10 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var customers []domain.Customer
-	if len(req.CustomerIDs) > 0 {
-		for _, id := range req.CustomerIDs {
-			c, err := s.customers.Get(ctx, id)
-			if err != nil {
-				continue
-			}
-			customers = append(customers, *c)
-		}
-	} else {
-		var err error
-		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
-		if err != nil {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-			return
-		}
+	customers, err := s.resolveBatchTarget(ctx, req.CustomerIDs, req.TargetMode, req.TargetManifestID)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+		return
 	}
 
 	resp := batchMonitorResponse{
