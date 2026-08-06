@@ -10,7 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type RiskTier, type ScreenResult } from "@/lib/api"
+import { api, type Customer, type RiskTier, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -26,57 +26,159 @@ const CUSTOMER_TYPE_KEYS: Record<string, string> = {
   individual: "individual",
   corporate_domestic: "corporateDomestic",
   corporate_foreign: "corporateForeign",
+  trust: "trust",
+  partnership: "partnership",
+  npo: "npo",
+  government: "government",
+  foreign_legal_arrangement: "foreignLegalArrangement",
 }
 
 function formatDateTime(iso: string, locale: string) {
   return new Date(iso).toLocaleString(locale)
 }
 
+function identityValue(customer: { attributes: Record<string, unknown> }, key: string) {
+  const value = customer.attributes?.[key]
+  return typeof value === "string" ? value : ""
+}
+
+function formatCountry(code: string, locale: string) {
+  try { return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code } catch { return code }
+}
+
 export function CustomerDetailPage() {
   const { t, i18n } = useTranslation()
   const { id } = useParams<{ id: string }>()
+  const [refreshVersion, setRefreshVersion] = useState(0)
+  const requestKey = `${id ?? ""}:${refreshVersion}`
   const { data: customer, loading, error } = useApi(
     useCallback(() => api.customers.get(id!), [id]),
+    requestKey,
   )
   const { data: scores, loading: scoresLoading } = useApi(
     useCallback(() => api.customers.scoreHistory(id!), [id]),
+    requestKey,
+  )
+  const { data: durableScreening, loading: durableScreeningLoading, error: durableScreeningError } = useApi(
+    useCallback(() => api.customers.screeningResults(id!), [id]),
+    requestKey,
+  )
+  const { data: screeningRuns } = useApi(
+    useCallback(() => api.customers.screeningRuns(id!), [id]),
+    requestKey,
+  )
+  const { data: investigation, loading: investigationLoading, error: investigationError } = useApi(
+    useCallback(() => api.customers.investigation(id!), [id]),
+    requestKey,
+  )
+  const { data: cddRules } = useApi(
+    useCallback(() => api.rules.list({ type: "CDD_WEIGHT", activeOnly: true }), []),
   )
   const [scoring, setScoring] = useState(false)
   const [screening, setScreening] = useState(false)
   const [screenResult, setScreenResult] = useState<ScreenResult | null>(null)
+  const [screenError, setScreenError] = useState<string | null>(null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
+  const [selectedRuleSet, setSelectedRuleSet] = useState("")
+  const [scoreRationale, setScoreRationale] = useState("")
+  const [scoreConfirmation, setScoreConfirmation] = useState(false)
+  const [reviewingResult, setReviewingResult] = useState<string | null>(null)
+  const [reviewReason, setReviewReason] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const countryRef = useRef<HTMLInputElement>(null)
+  const statusRef = useRef<HTMLSelectElement>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const nameJaRef = useRef<HTMLInputElement>(null)
+  const nameKanaRef = useRef<HTMLInputElement>(null)
+  const addressRef = useRef<HTMLInputElement>(null)
+
+  const effectiveRuleSet = selectedRuleSet || cddRules?.data?.[0]?.name || ""
 
   async function handleScore() {
     if (!id) return
+    if (!effectiveRuleSet) {
+      setMutationError(t("customerDetail.riskAssessment.ruleRequired"))
+      return
+    }
+    if (!scoreRationale.trim()) {
+      setMutationError(t("customerDetail.riskAssessment.rationaleRequired"))
+      return
+    }
+    if (!scoreConfirmation) {
+      setScoreConfirmation(true)
+      return
+    }
     setScoring(true)
+    setMutationError(null)
     try {
-      await api.customers.score(id, "default")
-      window.location.reload()
-    } catch {
+      await api.customers.score(id, effectiveRuleSet, { rationale: scoreRationale.trim(), confirmed: true })
+      setScoreConfirmation(false)
+      setRefreshVersion((version) => version + 1)
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : String(err))
+    } finally {
       setScoring(false)
+    }
+  }
+
+  async function handleReview(result: ScreeningResultRecord, status: ScreeningResultStatus) {
+    if (status === "FALSE_POSITIVE" && !reviewReason[result.id]?.trim()) {
+      setScreenError(t("customerDetail.screening.table.reasonRequired"))
+      return
+    }
+    setReviewingResult(result.id)
+    setScreenError(null)
+    try {
+      await api.customers.reviewScreeningResult(result.id, {
+        status,
+        false_positive_reason: reviewReason[result.id]?.trim(),
+        rationale: reviewReason[result.id]?.trim(),
+        expected_version: result.version,
+      })
+      setRefreshVersion((version) => version + 1)
+    } catch (err) {
+      setScreenError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReviewingResult(null)
     }
   }
 
   async function handleScreen() {
     if (!id) return
     setScreening(true)
-    setScreenResult(null)
+    setScreenError(null)
     try {
       const result = await api.customers.screen(id, [])
       setScreenResult(result)
+    } catch (err) {
+      setScreenError(err instanceof Error ? err.message : String(err))
     } finally {
       setScreening(false)
     }
   }
 
   async function handleSave() {
-    if (!id || !countryRef.current) return
+    if (!id || !customer || !countryRef.current) return
     setSaving(true)
+    setMutationError(null)
     try {
-      await api.customers.update(id, { country_code: countryRef.current.value.trim() })
-      window.location.reload()
+      await api.customers.update(id, {
+        country_code: countryRef.current.value.trim().toUpperCase(),
+        status: statusRef.current?.value as Customer["status"],
+        identity: {
+          name: nameRef.current?.value.trim() || null,
+          name_ja: nameJaRef.current?.value.trim() || null,
+          name_kana: nameKanaRef.current?.value.trim() || null,
+          address: addressRef.current?.value.trim() || null,
+        },
+        rationale: t("customerDetail.basicInfo.identityRationale"),
+        expected_updated_at: customer.updated_at,
+      })
+      setEditing(false)
+      setRefreshVersion((version) => version + 1)
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : String(err))
     } finally {
       setSaving(false)
     }
@@ -97,12 +199,15 @@ export function CustomerDetailPage() {
         <Link to="/customers" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> {t("customerDetail.backToList")}
         </Link>
-        <p className="text-destructive">{t("customerDetail.error")}</p>
+        <p role="alert" className="text-destructive">{t("customerDetail.error")}</p>
       </div>
     )
   }
 
   const matches = screenResult?.matches ?? []
+  const durableMatches = durableScreening?.data ?? []
+  const latestRun = screeningRuns?.data?.[0]
+  const hasScreeningHit = Boolean(screenResult?.hit || durableMatches.length > 0)
 
   return (
     <div className="space-y-6">
@@ -110,7 +215,7 @@ export function CustomerDetailPage() {
         <Link to="/customers" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> {t("customerDetail.back")}
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight">{customer.external_id}</h1>
+        {identityValue(customer, "name_ja") || identityValue(customer, "name") ? <><h1 className="text-2xl font-bold tracking-tight">{identityValue(customer, "name_ja") || identityValue(customer, "name")}</h1><span className="text-sm text-muted-foreground">{customer.external_id}</span></> : <h1 className="text-2xl font-bold tracking-tight">{customer.external_id}</h1>}
         {customer.risk_tier && (
           <Badge variant={TIER_VARIANT[customer.risk_tier]}>
             {t(`customers.tier.${customer.risk_tier}`)}
@@ -122,7 +227,7 @@ export function CustomerDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">{t("customerDetail.basicInfo.title")}</CardTitle>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(!editing)}>
+            <Button size="sm" variant="ghost" aria-label={editing ? t("customerDetail.basicInfo.cancel") : t("customerDetail.basicInfo.edit")} onClick={() => setEditing(!editing)}>
               <Pencil className="h-4 w-4" />
             </Button>
           </CardHeader>
@@ -140,20 +245,37 @@ export function CustomerDetailPage() {
                   })}
                 </dd>
               </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.name")}</dt>
+                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.name")} ref={nameRef} defaultValue={identityValue(customer, "name")} className="w-48 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "name") || "-"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.nameJa")}</dt>
+                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.nameJa")} ref={nameJaRef} defaultValue={identityValue(customer, "name_ja")} className="w-48 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "name_ja") || "-"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.nameKana")}</dt>
+                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.nameKana")} ref={nameKanaRef} defaultValue={identityValue(customer, "name_kana")} className="w-48 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "name_kana") || "-"}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.address")}</dt>
+                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.address")} ref={addressRef} defaultValue={identityValue(customer, "address")} className="w-64 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "address") || "-"}</dd>
+              </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("customerDetail.basicInfo.countryCode")}</dt>
                 <dd>
                   {editing ? (
                     <div className="flex gap-2">
-                      <input ref={countryRef} defaultValue={customer.country_code} maxLength={2}
+                        <input aria-label={t("customerDetail.basicInfo.countryCode")} ref={countryRef} defaultValue={customer.country_code} maxLength={2}
                         className="w-16 rounded-md border bg-background px-2 py-1 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                       <Button size="sm" variant="outline" onClick={handleSave} disabled={saving}>
                         {t("customerDetail.basicInfo.save")}
                       </Button>
                     </div>
-                  ) : customer.country_code}
+                  ) : <span title={customer.country_code}>{formatCountry(customer.country_code, i18n.language)}</span>}
                 </dd>
               </div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">{t("customerDetail.basicInfo.status")}</dt><dd>{editing ? <select aria-label={t("customerDetail.basicInfo.status")} ref={statusRef} defaultValue={customer.status ?? "active"} className="rounded-md border bg-background px-2 py-1 text-sm"><option value="active">{t("customers.status.active")}</option><option value="dormant">{t("customers.status.dormant")}</option><option value="frozen">{t("customers.status.frozen")}</option><option value="closed">{t("customers.status.closed")}</option></select> : <Badge variant="outline">{t(`customers.status.${customer.status ?? "active"}`, { defaultValue: customer.status ?? "active" })}</Badge>}</dd></div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("customerDetail.basicInfo.products")}</dt>
                 <dd>{customer.product_types?.join(", ") || "-"}</dd>
@@ -180,7 +302,7 @@ export function CustomerDetailPage() {
               </Button>
               <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
                 <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
-                {t("customerDetail.riskAssessment.scoreButton")}
+                {scoreConfirmation ? t("customerDetail.riskAssessment.confirmScore") : t("customerDetail.riskAssessment.scoreButton")}
               </Button>
             </div>
           </CardHeader>
@@ -191,6 +313,17 @@ export function CustomerDetailPage() {
                 <dd className="text-2xl font-bold">
                   {customer.risk_score != null ? customer.risk_score.toFixed(1) : "-"}
                 </dd>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="cdd-rule-set" className="text-muted-foreground">{t("customerDetail.riskAssessment.ruleSet")}</label>
+                <select id="cdd-rule-set" aria-label={t("customerDetail.riskAssessment.ruleSet")} value={effectiveRuleSet} onChange={(event) => { setSelectedRuleSet(event.target.value); setScoreConfirmation(false) }} className="w-full rounded-md border bg-background px-2 py-1">
+                  <option value="">{t("customerDetail.riskAssessment.selectRuleSet")}</option>
+                  {(cddRules?.data ?? []).map((rule) => <option key={`${rule.name}-${rule.version}`} value={rule.name}>{rule.name} v{rule.version} · {rule.description ?? rule.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="score-rationale" className="text-muted-foreground">{t("customerDetail.riskAssessment.rationale")}</label>
+                <input id="score-rationale" aria-label={t("customerDetail.riskAssessment.rationale")} value={scoreRationale} onChange={(event) => { setScoreRationale(event.target.value); setScoreConfirmation(false) }} className="w-full rounded-md border bg-background px-2 py-1" />
               </div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.riskTier")}</dt>
@@ -211,24 +344,83 @@ export function CustomerDetailPage() {
         </Card>
       </div>
 
-      {screenResult && (
-        <Card className={screenResult.hit ? "border-red-200" : "border-green-200"}>
+      {mutationError && <p role="alert" className="text-sm text-destructive">{mutationError}</p>}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t("customerDetail.investigation.title")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {investigationLoading ? (
+            <p role="status" className="text-sm text-muted-foreground">{t("customerDetail.investigation.loading")}</p>
+          ) : investigationError ? (
+            <p role="alert" className="text-sm text-destructive">{t("customerDetail.investigation.error", { error: investigationError })}</p>
+          ) : investigation ? (
+            <div className="space-y-4">
+              <div className="grid gap-2 text-sm sm:grid-cols-3">
+                {Object.entries(investigation.counts ?? {}).map(([key, count]) => (
+                  <div key={key} className="rounded-md bg-muted/50 px-3 py-2">
+                    <div className="text-muted-foreground">{t(`customerDetail.investigation.count.${key}`, { defaultValue: key })}</div>
+                    <div className="text-lg font-semibold">{count}</div>
+                  </div>
+                ))}
+              </div>
+              {investigation.edd?.required && (
+                <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                  <div className="font-semibold">{t("customerDetail.investigation.eddRequired")}</div>
+                  <div>{t("customerDetail.investigation.eddStage", { stage: investigation.edd.current_stage })}</div>
+                  <div>{t("customerDetail.investigation.eddElapsed", { days: investigation.edd.elapsed_days })}</div>
+                  <div>{t("customerDetail.investigation.eddNext", { stage: investigation.edd.next_stage, days: investigation.edd.remaining_days })}</div>
+                  <div>{t("customerDetail.investigation.eddCompletion", { status: investigation.edd.completion_status })}</div>
+                </div>
+              )}
+              {(investigation.timeline?.length ?? 0) > 0 && (
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold">{t("customerDetail.investigation.timeline")}</h3>
+                  <ul className="space-y-1 text-sm">
+                    {investigation.timeline?.slice(0, 8).map((event) => (
+                      <li key={event.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                        <span><Badge variant="secondary" className="mr-2">{event.kind}</Badge>{event.summary || event.entity_id}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{formatDateTime(event.created_at, i18n.language)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {investigation.partial_failures?.length > 0 && (
+                <p role="alert" className="text-sm text-destructive">{t("customerDetail.investigation.partial", { sources: investigation.partial_failures.join(", ") })}</p>
+              )}
+              <p className="text-xs text-muted-foreground">{t("customerDetail.investigation.freshness", { time: formatDateTime(investigation.freshness, i18n.language) })}</p>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {(screenResult || latestRun || durableScreening) && (
+        <Card className={screenResult?.hit || durableMatches.length > 0 ? "border-red-200" : "border-green-200"}>
           <CardHeader>
             <CardTitle className="text-base">
               {t("customerDetail.screening.title")}
-              <Badge variant={screenResult.hit ? "destructive" : "low"} className="ml-2">
-                {screenResult.hit ? t("customerDetail.screening.hit") : t("customerDetail.screening.noHit")}
+              <Badge variant={hasScreeningHit ? "destructive" : "low"} className="ml-2">
+                {hasScreeningHit ? t("customerDetail.screening.hit") : t("customerDetail.screening.noHit")}
               </Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              {t("customerDetail.screening.summary", {
-                count: screenResult.lists_checked,
-                time: formatDateTime(screenResult.screened_at, i18n.language),
-              })}
+              {screenResult
+                ? t("customerDetail.screening.summary", {
+                    count: screenResult.lists_checked,
+                    time: formatDateTime(screenResult.screened_at, i18n.language),
+                  })
+                : latestRun
+                  ? t("customerDetail.screening.durableSummary", { count: latestRun.result_count, time: formatDateTime(latestRun.created_at, i18n.language) })
+                  : t("customerDetail.screening.loading")}
             </p>
-            {matches.length > 0 && (
+            {screenError && <p role="alert" className="mt-2 text-sm text-destructive">{t("customerDetail.screening.error", { error: screenError })}</p>}
+            {durableScreeningError && <p role="alert" className="mt-2 text-sm text-destructive">{t("customerDetail.screening.durableError", { error: durableScreeningError })}</p>}
+            {durableScreeningLoading && !screenResult && <p role="status" className="mt-2 text-sm text-muted-foreground">{t("customerDetail.screening.loading")}</p>}
+            {(matches.length > 0 || durableMatches.length > 0) && (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -237,16 +429,31 @@ export function CustomerDetailPage() {
                     <TableHead>{t("customerDetail.screening.table.similarity")}</TableHead>
                     <TableHead>{t("customerDetail.screening.table.type")}</TableHead>
                     <TableHead>{t("customerDetail.screening.table.source")}</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.status")}</TableHead>
+                    <TableHead>{t("customerDetail.screening.table.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {matches.map((m, i) => (
-                    <TableRow key={i}>
+                  {(matches.length > 0 ? matches : durableMatches).map((m, i) => (
+                    <TableRow key={"id" in m ? m.id : i}>
                       <TableCell className="font-mono text-xs">{m.list_id}</TableCell>
                       <TableCell>{m.matched_name}</TableCell>
                       <TableCell>{(m.similarity * 100).toFixed(1)}%</TableCell>
                       <TableCell>{m.list_type}</TableCell>
-                      <TableCell>{m.source}</TableCell>
+                      <TableCell>{"source" in m ? m.source : m.run_id ?? "durable"}</TableCell>
+                      <TableCell>{"status" in m ? m.status : t("customerDetail.screening.transient")}</TableCell>
+                      <TableCell>
+                        {"status" in m && (m.status === "NEW" || m.status === "REVIEWING") ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <input aria-label={t("customerDetail.screening.reasonLabel")} value={reviewReason[m.id] ?? ""} onChange={(event) => setReviewReason((current) => ({ ...current, [m.id]: event.target.value }))} placeholder={t("customerDetail.screening.reasonPlaceholder")} className="w-36 rounded border px-1 py-0.5 text-xs" />
+                            {m.status === "NEW" && <Button size="sm" variant="outline" onClick={() => handleReview(m, "REVIEWING")} disabled={reviewingResult === m.id}>{t("customerDetail.screening.startReview")}</Button>}
+                            {m.status === "REVIEWING" && <>
+                              <Button size="sm" variant="outline" onClick={() => handleReview(m, "TRUE_POSITIVE")} disabled={reviewingResult === m.id}>{t("customerDetail.screening.truePositive")}</Button>
+                              <Button size="sm" variant="outline" onClick={() => handleReview(m, "FALSE_POSITIVE")} disabled={reviewingResult === m.id}>{t("customerDetail.screening.falsePositive")}</Button>
+                            </>}
+                          </div>
+                        ) : "-"}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -266,7 +473,7 @@ export function CustomerDetailPage() {
               {Object.entries(customer.attributes).map(([key, value]) => (
                 <div key={key} className="flex justify-between rounded-md bg-muted/50 px-3 py-2">
                   <dt className="text-muted-foreground">{key}</dt>
-                  <dd>{value}</dd>
+                  <dd>{typeof value === "string" ? value : JSON.stringify(value)}</dd>
                 </div>
               ))}
             </dl>
@@ -323,8 +530,13 @@ export function CustomerDetailPage() {
                 <TableRow>
                   <TableHead>{t("customerDetail.scoreFactors.table.axis")}</TableHead>
                   <TableHead>{t("customerDetail.scoreFactors.table.name")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.observed")}</TableHead>
                   <TableHead>{t("customerDetail.scoreFactors.table.score")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.weight")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.contribution")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.rule")}</TableHead>
                   <TableHead>{t("customerDetail.scoreFactors.table.description")}</TableHead>
+                  <TableHead>{t("customerDetail.scoreFactors.table.businessMeaning")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -332,12 +544,18 @@ export function CustomerDetailPage() {
                   <TableRow key={`${factor.axis}-${factor.name}`}>
                     <TableCell>{factor.axis}</TableCell>
                     <TableCell>{factor.name}</TableCell>
+                    <TableCell>{factor.observed_value ?? "-"}</TableCell>
                     <TableCell>{factor.score.toFixed(1)}</TableCell>
+                    <TableCell>{factor.weight == null ? "-" : factor.weight.toFixed(2)}</TableCell>
+                    <TableCell>{factor.contribution == null ? "-" : factor.contribution.toFixed(2)}</TableCell>
+                    <TableCell>{factor.rule ?? (factor.fallback ? t("customerDetail.scoreFactors.fallback") : "-")}</TableCell>
                     <TableCell>{factor.description}</TableCell>
+                    <TableCell>{factor.business_meaning ?? "-"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
+            <p className="mt-2 text-xs text-muted-foreground">{t("customerDetail.scoreFactors.total", { score: scores[0].score.toFixed(2) })}</p>
           </CardContent>
         </Card>
       )}

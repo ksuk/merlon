@@ -22,18 +22,28 @@ function isAbortError(error: unknown) {
 
 export function BacktestPage() {
   const { t } = useTranslation()
-  const { data: page, loading, error } = useApi(api.customers.listAll)
+  const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
+  const { data: page, loading, error } = useApi(() => api.customers.listAll(), customerRefreshKey)
+  const { data: discoveredRulesPage, error: rulesError } = useApi(() => api.rules.listAll({ type: "TM_SCENARIO", activeOnly: true }))
+  const [historyKey, setHistoryKey] = useState(0)
+  const { data: jobHistory } = useApi(() => api.backtest.list({ limit: 20 }), historyKey)
   const customers = page?.data
+  const discoveredRules = discoveredRulesPage?.data ?? []
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [job, setJob] = useState<BacktestJob | null>(null)
+  const { data: affectedCustomers } = useApi(
+    () => job?.id && job.status === "completed" ? api.backtest.affectedCustomers(job.id) : Promise.resolve({ data: [], pagination: { has_more: false } }),
+    job?.id && job.status === "completed" ? job.id : "no-completed-job",
+  )
   const [pollMessage, setPollMessage] = useState<PollMessage | null>(null)
   const [from, setFrom] = useState(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10))
   const descRef = useRef<HTMLInputElement>(null)
-  const candidateRef = useRef<HTMLInputElement>(null)
+  const [baselineRuleSet, setBaselineRuleSet] = useState("active")
+  const [candidateRuleSet, setCandidateRuleSet] = useState("")
   const pollAbortRef = useRef<AbortController | null>(null)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mountedRef = useRef(false)
@@ -103,6 +113,7 @@ export function BacktestPage() {
     try {
       const current = await pollUntilTerminal(initial, controller)
       if (!mountedRef.current || pollAbortRef.current !== controller) return
+      setHistoryKey((key) => key + 1)
       if (current.status === "completed" && current.candidate) {
         setResult(current.candidate)
       } else if (current.status === "completed") {
@@ -135,9 +146,13 @@ export function BacktestPage() {
 
   async function handleRun() {
     if (selectedIds.length === 0) return
-    const candidate = candidateRef.current?.value.trim() || ""
+    const candidate = candidateRuleSet.trim()
     if (!candidate) {
       setPollMessage({ key: "backtest.polling.candidateRequired" })
+      return
+    }
+    if (candidate === baselineRuleSet) {
+      setPollMessage({ key: "backtest.polling.rulesMustDiffer" })
       return
     }
     setResult(null)
@@ -150,13 +165,15 @@ export function BacktestPage() {
           to: `${to}T00:00:00Z`,
           customer_ids: selectedIds,
           scenario_ids: [],
-          baseline_rule_set_id: "active",
+          baseline_rule_set_id: baselineRuleSet,
           candidate_rule_set_id: candidate,
+          rationale: descRef.current?.value.trim() || "",
         },
         controller.signal,
       )
       if (!mountedRef.current || pollAbortRef.current !== controller) return
       setJob(created)
+      setHistoryKey((key) => key + 1)
       await runPolling(created, controller)
     } catch (error) {
       if (isAbortError(error) || !mountedRef.current || pollAbortRef.current !== controller) return
@@ -211,7 +228,7 @@ export function BacktestPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">{t("backtest.error")}</p>
+    return <div role="alert" className="space-y-3 p-12 text-center text-destructive"><p>{t("backtest.error")}</p><Button variant="outline" onClick={() => setCustomerRefreshKey((key) => key + 1)}>{t("errorBoundary.retry")}</Button></div>
   }
 
   return (
@@ -227,8 +244,9 @@ export function BacktestPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium">{t("backtest.form.descriptionLabel")}</label>
+            <label htmlFor="backtest-rationale" className="mb-1 block text-sm font-medium">{t("backtest.form.descriptionLabel")}</label>
             <input
+              id="backtest-rationale"
               ref={descRef}
               placeholder={t("backtest.form.descriptionPlaceholder")}
               className="w-full rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -245,10 +263,21 @@ export function BacktestPage() {
             </label>
           </div>
           <div>
-            <label htmlFor="backtest-candidate" className="mb-1 block text-sm font-medium">
+              <label htmlFor="backtest-baseline" className="mb-1 block text-sm font-medium">
+                {t("backtest.form.baselineRuleSet")}
+              </label>
+              <select id="backtest-baseline" value={baselineRuleSet} onChange={(event) => setBaselineRuleSet(event.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm">
+                <option value="active">active</option>
+                {(discoveredRules ?? []).map((rule) => <option key={`${rule.name}-${rule.version}`} value={rule.name}>{rule.name} v{rule.version}</option>)}
+              </select>
+              <label htmlFor="backtest-candidate" className="mb-1 mt-3 block text-sm font-medium">
               {t("backtest.form.candidateRuleSet")}
             </label>
-            <input id="backtest-candidate" ref={candidateRef} placeholder={t("backtest.form.candidatePlaceholder")} required className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            <input id="backtest-candidate" list="backtest-rule-discovery" value={candidateRuleSet} onChange={(event) => setCandidateRuleSet(event.target.value)} placeholder={t("backtest.form.candidatePlaceholder")} required className="w-full rounded-md border bg-background px-3 py-2 text-sm" />
+            <datalist id="backtest-rule-discovery">
+              {(discoveredRules ?? []).map((rule) => <option key={`${rule.name}-${rule.version}`} value={rule.name}>{rule.description ?? rule.name}</option>)}
+            </datalist>
+            {rulesError ? <p aria-live="polite" className="mt-1 text-xs text-destructive">{t("backtest.form.ruleDiscoveryError", { error: rulesError })}</p> : <p className="mt-1 text-xs text-muted-foreground">{t("backtest.form.ruleDiscovery", { count: discoveredRules?.length ?? 0 })}</p>}
           </div>
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -261,9 +290,10 @@ export function BacktestPage() {
               {customers?.length === 0 ? (
                 <p role="status" className="text-sm text-muted-foreground">{t("backtest.form.noCustomers")}</p>
               ) : customers?.map((c: Customer) => (
-                  <button
-                    key={c.id}
-                    type="button"
+                    <button
+                      key={c.id}
+                      type="button"
+                      aria-pressed={selectedIds.includes(c.id)}
                     onClick={() => toggleCustomer(c.id)}
                     className={`flex w-full items-center gap-3 rounded-md border p-2 text-left text-sm transition-colors ${selectedIds.includes(c.id) ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
                   >
@@ -294,13 +324,16 @@ export function BacktestPage() {
             )}
           </div>
           {job && (
-            <p className="text-xs text-muted-foreground">
+            <div className="space-y-1 text-xs text-muted-foreground">
               {t("backtest.job.summary", {
                 id: job.id,
                 status: t(`backtest.job.status.${job.status}`),
                 progress: Math.round(job.progress * 100),
               })}
-            </p>
+              <p>{t("backtest.job.comparison", { baseline: job.baseline_rule_set_id, candidate: job.candidate_rule_set_id })}</p>
+              {job.metadata?.rationale && <p>{t("backtest.job.rationale", { rationale: job.metadata.rationale })}</p>}
+              {job.metadata?.cohort_preview && <div className="mt-2 rounded-md border p-2"><p className="font-medium text-foreground">{t("backtest.job.cohortPreview")}</p><p>{t("backtest.job.cohortCustomers", { count: Number(job.metadata.cohort_preview.count ?? selectedIds.length) })}</p><p>{t("backtest.job.cohortTransactions", { count: Number(job.metadata.cohort_preview.transaction_count ?? 0) })}</p>{Number(job.metadata.cohort_preview.transaction_count ?? 0) === 0 && <p role="alert" className="text-destructive">{t("backtest.job.emptyCohort")}</p>}</div>}
+            </div>
           )}
           {pollMessage && (
             <p role="alert" className="text-sm text-destructive">
@@ -310,6 +343,12 @@ export function BacktestPage() {
           )}
         </CardContent>
       </Card>
+
+      {job && (job.baseline || job.candidate || job.delta) && <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.sideBySide")}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-3"><ComparisonColumn label={t("backtest.job.baseline")} result={job.baseline} /><ComparisonColumn label={t("backtest.job.candidate")} result={job.candidate} /><ComparisonColumn label={t("backtest.job.delta")} result={job.delta} /></CardContent></Card>}
+
+      {job && job.status === "completed" && <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.affectedCustomers")}</CardTitle></CardHeader><CardContent>{affectedCustomers?.data.length ? <p className="font-mono text-xs">{affectedCustomers.data.join(", ")}</p> : <p className="text-sm text-muted-foreground">{t("backtest.job.noAffectedCustomers")}</p>}</CardContent></Card>}
+
+      <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.history")}</CardTitle></CardHeader><CardContent>{jobHistory?.data.length ? <Table><TableHeader><TableRow><TableHead>{t("backtest.job.historyId")}</TableHead><TableHead>{t("backtest.job.historyStatus")}</TableHead><TableHead>{t("backtest.job.historyComparison")}</TableHead></TableRow></TableHeader><TableBody>{jobHistory.data.map((item) => <TableRow key={item.id}><TableCell className="font-mono text-xs">{item.id}</TableCell><TableCell><Badge variant={item.status === "failed" ? "critical" : "outline"}>{t(`backtest.job.status.${item.status}`)}</Badge></TableCell><TableCell className="text-xs">{item.baseline_rule_set_id} → {item.candidate_rule_set_id}{item.metadata?.rerun_of ? ` (${item.metadata.rerun_of})` : ""}</TableCell></TableRow>)}</TableBody></Table> : <p className="text-sm text-muted-foreground">{t("backtest.job.historyEmpty")}</p>}</CardContent></Card>
 
       {result && (
         <Card>
@@ -377,4 +416,8 @@ export function BacktestPage() {
       )}
     </div>
   )
+}
+
+function ComparisonColumn({ label, result }: { label: string; result?: BacktestResult }) {
+  return <div className="rounded-md border p-3"><h3 className="text-sm font-semibold">{label}</h3><dl className="mt-2 space-y-1 text-sm"><div className="flex justify-between"><dt className="text-muted-foreground">Customers</dt><dd>{result?.total_customers ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">Transactions</dt><dd>{result?.total_transactions ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">Alerts</dt><dd>{result?.total_alerts ?? "-"}</dd></div></dl></div>
 }

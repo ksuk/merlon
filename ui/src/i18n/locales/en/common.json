@@ -19,6 +19,8 @@
     "cases": "Cases",
     "transactions": "Transactions",
     "batch": "Batch",
+    "screeningQueue": "Screening review queue",
+    "pendingEvaluations": "Pending evaluations",
     "reports": "STR reports",
     "backtest": "Backtest",
     "webhooks": "Webhooks",
@@ -77,7 +79,15 @@
     },
     "freshness": {
       "upToDate": "Up to date",
-      "staleDays": "{{days}} days stale"
+      "staleDays": "{{days}} days stale",
+      "state": {
+        "never_imported": "Never imported",
+        "ready": "Ready",
+        "stale": "Stale",
+        "unreadable": "Unreadable",
+        "failed": "Failed",
+        "unavailable": "Status unavailable"
+      }
     }
   },
   "customers": {
@@ -90,6 +100,12 @@
       "externalId": "External ID",
       "type": "Type",
       "countryCode": "Country code",
+      "name": "Name",
+      "nameJa": "Japanese name",
+      "nameKana": "Kana",
+      "address": "Address",
+      "addressPlaceholder": "Registered address",
+      "products": "Products (comma separated)",
       "submit": "Create"
     },
     "search": {
@@ -111,13 +127,26 @@
     "type": {
       "individual": "Individual",
       "corporateDomestic": "Domestic corporate",
-      "corporateForeign": "Foreign corporate"
+      "corporateForeign": "Foreign corporate",
+      "trust": "Trust",
+      "partnership": "Partnership",
+      "npo": "NPO",
+      "government": "Government",
+      "foreignLegalArrangement": "Foreign legal arrangement"
+    },
+    "status": {
+      "active": "Active",
+      "dormant": "Dormant",
+      "frozen": "Frozen",
+      "closed": "Closed"
     },
     "table": {
       "header": {
         "externalId": "External ID",
+        "name": "Name",
         "type": "Type",
         "country": "Country",
+        "status": "Lifecycle",
         "riskScore": "Risk score",
         "riskTier": "Risk tier",
         "lastScored": "Last scored"
@@ -529,6 +558,22 @@
       "direction": "Direction",
       "counterpartyCountry": "Counterparty country",
       "channel": "Channel",
+      "accountId": "Account ID",
+      "counterpartyName": "Counterparty name",
+      "counterpartyType": "Counterparty type",
+      "unhostedWallet": "Unhosted wallet",
+      "unknown": "Unknown",
+      "travelStatus": "Travel Rule status",
+      "notSpecified": "Not specified",
+      "complete": "Complete",
+      "incomplete": "Incomplete",
+      "notApplicable": "Not applicable",
+      "travelReason": "Not-applicable reason",
+      "travelReasonPlaceholder": "Required when not applicable",
+      "idempotencyKey": "Idempotency key",
+      "metadata": "Metadata JSON",
+      "travelEvidence": "Travel Rule evidence JSON",
+      "invalidJson": "Metadata and evidence must be valid JSON.",
       "submit": "Register"
     },
     "direction": {
@@ -557,6 +602,7 @@
       "internalId": "Internal ID",
       "externalId": "External ID",
       "customerId": "Customer ID",
+      "accountId": "Account ID",
       "direction": "Direction"
     },
     "amountRoute": {
@@ -567,6 +613,22 @@
       "channel": "Channel",
       "executedAt": "Executed at",
       "createdAt": "Registered at"
+    },
+    "travelRule": {
+      "title": "Travel Rule",
+      "applicable": "Applicable",
+      "yes": "Applicable",
+      "no": "Not applicable",
+      "legacy": "Legacy data (unset)",
+      "reason": "Not-applicable reason",
+      "counterparty": "Counterparty",
+      "metadata": "Metadata",
+      "evidence": "Travel Rule evidence"
+    },
+    "related": {
+      "title": "Related investigation records",
+      "alerts": "Related alerts",
+      "cases": "Related cases"
     }
   },
   "customerDetail": {
@@ -577,8 +639,16 @@
       "title": "Basic information",
       "internalId": "Internal ID",
       "type": "Type",
+      "name": "Name",
+      "nameJa": "Japanese name",
+      "nameKana": "Kana",
+      "address": "Address",
       "countryCode": "Country code",
+      "status": "Lifecycle",
+      "identityRationale": "Operator updated KYC identity fields",
       "save": "Save",
+      "edit": "Edit",
+      "cancel": "Close edit",
       "products": "Products",
       "createdAt": "Created at",
       "updatedAt": "Updated at"
@@ -587,6 +657,12 @@
       "title": "Risk assessment",
       "screenButton": "Screen",
       "scoreButton": "Score",
+      "confirmScore": "Confirm score",
+      "ruleSet": "CDD rule set",
+      "selectRuleSet": "Select a rule set",
+      "rationale": "Reassessment rationale",
+      "rationaleRequired": "Enter a rationale before scoring.",
+      "ruleRequired": "Select an applicable CDD rule set before scoring.",
       "riskScore": "Risk score",
       "riskTier": "Risk tier",
       "unscored": "Unscored",
@@ -597,13 +673,46 @@
       "hit": "Hit",
       "noHit": "No hit",
       "summary": "Lists checked: {{count}} | Run at: {{time}}",
+      "durableSummary": "Persisted results: {{count}} | Run at: {{time}}",
+      "loading": "Loading persisted screening results…",
+      "error": "Screening failed: {{error}}",
+      "durableError": "Failed to load persisted results: {{error}}",
       "table": {
         "list": "List",
         "matchedName": "Matched name",
         "similarity": "Similarity",
         "type": "Type",
-        "source": "Source"
+        "source": "Source",
+        "status": "Status",
+        "action": "Review",
+        "transient": "Transient result",
+        "reasonLabel": "Disposition rationale",
+        "reasonPlaceholder": "Reason",
+        "reasonRequired": "Enter a disposition rationale.",
+        "startReview": "Start review",
+        "truePositive": "True positive",
+        "falsePositive": "False positive"
       }
+    },
+    "investigation": {
+      "title": "Customer 360",
+      "loading": "Loading the investigation view…",
+      "error": "Failed to load Customer 360: {{error}}",
+      "count": {
+        "transactions": "Transactions",
+        "alerts": "Alerts",
+        "cases": "Cases",
+        "screening_results": "Screening results",
+        "score_history": "Score evaluations"
+      },
+      "eddRequired": "Enhanced due diligence is required",
+      "eddStage": "Current EDD stage: {{stage}}",
+      "eddElapsed": "Elapsed: {{days}} day(s)",
+      "eddNext": "Next escalation: {{stage}} ({{days}} day(s) remaining)",
+      "eddCompletion": "Completion status: {{status}}",
+      "timeline": "Recent activity",
+      "partial": "Some sources could not be loaded: {{sources}}",
+      "freshness": "Read model refreshed: {{time}}"
     },
     "attributes": {
       "title": "Attributes"
@@ -624,9 +733,16 @@
       "table": {
         "axis": "Axis",
         "name": "Name",
+        "observed": "Observed input",
         "score": "Score",
-        "description": "Description"
-      }
+        "weight": "Weight",
+        "contribution": "Contribution",
+        "rule": "Rule / fallback",
+        "description": "Description",
+        "businessMeaning": "Business meaning"
+      },
+      "total": "Reconciled total: {{score}}",
+      "fallback": "Fallback / unresolved"
     }
   },
   "notFound": {
@@ -730,13 +846,33 @@
       "deselectAll": "Deselect all",
       "from": "From (UTC)",
       "to": "To (UTC, exclusive)",
+      "baselineRuleSet": "Baseline rule set",
       "candidateRuleSet": "Candidate rule set",
       "candidatePlaceholder": "Active TM rule name",
+      "ruleDiscovery": "{{count}} active TM rule set(s) discovered.",
+      "ruleDiscoveryError": "Rule discovery failed: {{error}}",
       "running": "Running...",
       "submit": "Run backtest"
     },
     "job": {
       "summary": "Job {{id}}: {{status}} ({{progress}}%)",
+      "comparison": "Comparison: {{baseline}} → {{candidate}}",
+      "rationale": "Rationale: {{rationale}}",
+      "cohortPreview": "Cohort preview",
+      "cohortCustomers": "Customers: {{count}}",
+      "cohortTransactions": "Transactions: {{count}}",
+      "emptyCohort": "No transactions are in this cohort; review or block the run before relying on an empty result.",
+      "sideBySide": "Baseline / candidate / delta",
+      "baseline": "Baseline",
+      "candidate": "Candidate",
+      "delta": "Delta",
+      "affectedCustomers": "Affected customers",
+      "noAffectedCustomers": "No affected customers",
+      "history": "Durable job history",
+      "historyId": "Job ID",
+      "historyStatus": "Status",
+      "historyComparison": "Comparison",
+      "historyEmpty": "No previous backtest jobs",
       "status": {
         "queued": "queued",
         "running": "running",
@@ -779,10 +915,17 @@
   "batch": {
     "title": "Batch",
     "error": "Failed to fetch data",
+    "retry": "Retry",
+    "operationError": "Batch operation failed: {{error}}",
     "targetCustomers": {
       "title": "Target customers",
       "selectedCount": "{{count}} selected",
       "allTargeted": "All customers targeted (none selected)",
+      "mode": "Target mode",
+      "selectedMode": "Selected customers",
+      "allMode": "All customers (explicit)",
+      "explicitAll": "All customers selected explicitly",
+      "selectionRequired": "Select at least one customer or choose the explicit all-customers mode.",
       "noCustomers": "No customers available",
       "selectAll": "Select all",
       "deselectAll": "Deselect all"
@@ -790,6 +933,34 @@
     "actions": {
       "score": "Bulk scoring",
       "monitor": "Bulk monitoring"
+    },
+    "confirmation": {
+      "title": "Confirm target manifest",
+      "summary": "This will run {{operation}} for {{count}} customer(s).",
+      "mode": "Mode",
+      "criteria": "Criteria",
+      "expires": "Manifest expires",
+      "rationale": "Operation rationale",
+      "rationalePlaceholder": "Explain why this batch should run...",
+      "rationaleRequired": "A rationale is required before confirmation.",
+      "warning": "The server-pinned target snapshot is the source of truth. A stale or reused token is rejected.",
+      "confirm": "Confirm and start durable run"
+    },
+    "run": {
+      "title": "Durable batch run",
+      "status": "Run {{id}}: {{status}}",
+      "noCounts": "No result counts yet",
+      "history": "Run history",
+      "id": "Run ID",
+      "operation": "Operation",
+      "statusLabel": "Status",
+      "customerOutcomes": "Per-customer outcomes",
+      "customer": "Customer",
+      "outcome": "Outcome",
+      "alerts": "Alerts",
+      "errorLabel": "Error",
+      "startedAt": "Started at",
+      "empty": "No batch runs yet"
     },
     "scoreResult": {
       "title": "Scoring result",
@@ -838,6 +1009,70 @@
         }
       }
     }
+  },
+  "screeningQueue": {
+    "title": "Screening review queue",
+    "description": "Durable screening hits remain available after navigation and restart.",
+    "error": "Failed to load screening results",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "filter": "Status",
+    "customerFilter": "Customer ID",
+    "runFilter": "Batch run ID",
+    "createdFrom": "Created from",
+    "createdTo": "Created to",
+    "minAgeDays": "Min age (days)",
+    "maxAgeDays": "Max age (days)",
+    "all": "All",
+    "empty": "No screening results",
+    "customer": "Customer",
+    "match": "Match",
+    "statusLabel": "Status",
+    "screenedAt": "Screened at",
+    "action": "Action",
+    "case": "Case",
+    "suppressed": "Suppressed",
+    "rationale": "Decision rationale",
+    "rationalePlaceholder": "Record why this result is being reviewed...",
+    "rationaleRequired": "A decision rationale is required.",
+    "startReview": "Start review",
+    "truePositive": "True positive",
+    "falsePositive": "False positive",
+    "status": {
+      "NEW": "New",
+      "REVIEWING": "Reviewing",
+      "TRUE_POSITIVE": "True positive",
+      "FALSE_POSITIVE": "False positive"
+    }
+  },
+  "pendingEvaluations": {
+    "title": "Pending evaluation recovery",
+    "description": "Failures remain visible until an operator records retry, resolution, or escalation.",
+    "error": "Failed to load pending evaluations",
+    "retry": "Retry",
+    "refresh": "Refresh",
+    "queue": "Recovery queue",
+    "filter": "Status",
+    "all": "All",
+    "empty": "No pending evaluations",
+    "customer": "Customer",
+    "statusLabel": "Status",
+    "reason": "Reason",
+    "retryCount": "Attempts",
+    "createdAt": "Created at",
+    "transactions": "transactions",
+    "alerts": "Related alerts",
+    "batchRun": "Batch run",
+    "detail": "Evaluation detail",
+    "close": "Close",
+    "nextRetry": "Next retry",
+    "actionReason": "Action rationale",
+    "actionReasonPlaceholder": "Record the operational reason for this action...",
+    "rationaleRequired": "An action rationale is required.",
+    "retryAction": "Retry",
+    "resolveAction": "Resolve",
+    "escalateAction": "Escalate",
+    "history": "History"
   },
   "apikeys": {
     "title": "API keys",

@@ -27,6 +27,11 @@ export function TransactionDetailPage() {
   const { data: txn, loading, error } = useApi(
     useCallback(() => api.transactions.get(id!), [id]),
   )
+  const investigationCustomerID = txn?.customer_id
+  const { data: investigation } = useApi(
+    useCallback(() => investigationCustomerID ? api.customers.investigation(investigationCustomerID) : Promise.resolve(null), [investigationCustomerID]),
+    investigationCustomerID,
+  )
 
   if (loading) {
     return (
@@ -43,10 +48,14 @@ export function TransactionDetailPage() {
         <Link to="/transactions" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> {t("transactionDetail.backToList")}
         </Link>
-        <p className="text-destructive">{t("transactionDetail.error")}</p>
+        <p role="alert" className="text-destructive">{t("transactionDetail.error")}</p>
       </div>
     )
   }
+
+  const relatedAlerts = investigation?.alerts?.filter((alert) => alert.transaction_ids?.includes(txn.id)) ?? []
+  const relatedAlertIDs = new Set(relatedAlerts.map((alert) => alert.id))
+  const relatedCases = investigation?.cases?.filter((item) => item.alert_ids?.some((alertID) => relatedAlertIDs.has(alertID))) ?? []
 
   return (
     <div className="space-y-6">
@@ -79,10 +88,16 @@ export function TransactionDetailPage() {
                 <dt className="text-muted-foreground">{t("transactionDetail.info.customerId")}</dt>
                 <dd>
                   <Link to={`/customers/${txn.customer_id}`} className="text-primary hover:underline font-mono">
-                    {txn.customer_id}
+                    {investigation?.customer?.external_id ?? txn.customer_id}
                   </Link>
                 </dd>
               </div>
+              {txn.account_id && (
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">{t("transactionDetail.info.accountId")}</dt>
+                  <dd><Link to={`/accounts/${txn.account_id}`} className="text-primary hover:underline font-mono">{txn.account_id}</Link></dd>
+                </div>
+              )}
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("transactionDetail.info.direction")}</dt>
                 <dd>
@@ -132,7 +147,71 @@ export function TransactionDetailPage() {
             </dl>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("transactionDetail.travelRule.title")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">{t("transactionDetail.travelRule.applicable")}</dt>
+                <dd>{txn.travel_rule_applicable == null ? t("transactionDetail.travelRule.legacy") : txn.travel_rule_applicable ? t("transactionDetail.travelRule.yes") : t("transactionDetail.travelRule.no")}</dd>
+              </div>
+              {txn.travel_rule_not_applicable_reason && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("transactionDetail.travelRule.reason")}</dt>
+                  <dd className="text-right">{txn.travel_rule_not_applicable_reason}</dd>
+                </div>
+              )}
+              {txn.counterparty && (
+                <div>
+                  <dt className="mb-1 text-muted-foreground">{t("transactionDetail.travelRule.counterparty")}</dt>
+                  <dd><pre className="overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(txn.counterparty, null, 2)}</pre></dd>
+                </div>
+              )}
+              {txn.travel_rule_evidence && (
+                <div>
+                  <dt className="mb-1 text-muted-foreground">{t("transactionDetail.travelRule.evidence")}</dt>
+                  <dd><pre className="overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(txn.travel_rule_evidence, null, 2)}</pre></dd>
+                </div>
+              )}
+              {txn.metadata && (
+                <div>
+                  <dt className="mb-1 text-muted-foreground">{t("transactionDetail.travelRule.metadata")}</dt>
+                  <dd><pre className="overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(txn.metadata, null, 2)}</pre></dd>
+                </div>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
       </div>
+
+      {(investigation && (relatedAlerts.length > 0 || relatedCases.length > 0)) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("transactionDetail.related.title")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {relatedAlerts.length > 0 && (
+              <div>
+                <h3 className="mb-1 font-semibold">{t("transactionDetail.related.alerts")}</h3>
+                <ul className="list-inside list-disc">
+                  {relatedAlerts.map((alert) => <li key={alert.id}><Link to={`/alerts/${alert.id}`} className="text-primary hover:underline">{alert.id}</Link> · {alert.description}</li>)}
+                </ul>
+              </div>
+            )}
+            {relatedCases.length > 0 && (
+              <div>
+                <h3 className="mb-1 font-semibold">{t("transactionDetail.related.cases")}</h3>
+                <ul className="list-inside list-disc">
+                  {relatedCases.map((item) => <li key={item.id}><Link to={`/cases/${item.id}`} className="text-primary hover:underline">{item.id}</Link> · {item.summary}</li>)}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

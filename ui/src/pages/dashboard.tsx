@@ -203,10 +203,13 @@ export function DashboardPage() {
                   </Badge>
                   <span className="text-sm text-muted-foreground">{list.list_id}</span>
                   <Badge variant={list.needs_operational_alert ? "destructive" : "secondary"}>
-                    {list.stale_days === 0
+                    {list.operational_state && list.operational_state !== "ready"
+                      ? t(`dashboard.freshness.state.${list.operational_state}`, { defaultValue: list.operational_state })
+                      : list.stale_days === 0
                       ? t("dashboard.freshness.upToDate")
                       : t("dashboard.freshness.staleDays", { days: list.stale_days })}
                   </Badge>
+                  {list.diagnostic && <span role="status" className="text-xs text-muted-foreground">{list.diagnostic}</span>}
                 </div>
               ))}
             </div>

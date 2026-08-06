@@ -38,6 +38,12 @@ const TransactionDetailPage = lazy(() =>
 const BatchPage = lazy(() =>
   import("@/pages/batch").then((m) => ({ default: m.BatchPage })),
 );
+const ScreeningQueuePage = lazy(() =>
+  import("@/pages/screening-queue").then((m) => ({ default: m.ScreeningQueuePage })),
+);
+const PendingEvaluationsPage = lazy(() =>
+  import("@/pages/pending-evaluations").then((m) => ({ default: m.PendingEvaluationsPage })),
+);
 const ReportsPage = lazy(() =>
   import("@/pages/reports").then((m) => ({ default: m.ReportsPage })),
 );
@@ -100,6 +106,8 @@ function App() {
                 element={<TransactionDetailPage />}
               />
               <Route path="batch" element={<BatchPage />} />
+              <Route path="screening-queue" element={<ScreeningQueuePage />} />
+              <Route path="pending-evaluations" element={<PendingEvaluationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="backtest" element={<BacktestPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />

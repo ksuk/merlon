@@ -19,6 +19,8 @@
     "cases": "ケース",
     "transactions": "取引",
     "batch": "一括処理",
+    "screeningQueue": "スクリーニング確認キュー",
+    "pendingEvaluations": "保留評価キュー",
     "reports": "STRレポート",
     "backtest": "バックテスト",
     "webhooks": "Webhook",
@@ -77,7 +79,15 @@
     },
     "freshness": {
       "upToDate": "最新",
-      "staleDays": "{{days}}日経過"
+      "staleDays": "{{days}}日経過",
+      "state": {
+        "never_imported": "未取込",
+        "ready": "稼働中",
+        "stale": "古いデータ",
+        "unreadable": "読取不可",
+        "failed": "取込失敗",
+        "unavailable": "状態取得不可"
+      }
     }
   },
   "customers": {
@@ -90,6 +100,12 @@
       "externalId": "外部ID",
       "type": "種別",
       "countryCode": "国コード",
+      "name": "氏名・名称",
+      "nameJa": "日本語氏名・名称",
+      "nameKana": "カナ",
+      "address": "住所",
+      "addressPlaceholder": "登録住所",
+      "products": "商品（カンマ区切り）",
       "submit": "作成"
     },
     "search": {
@@ -111,13 +127,26 @@
     "type": {
       "individual": "個人",
       "corporateDomestic": "国内法人",
-      "corporateForeign": "海外法人"
+      "corporateForeign": "海外法人",
+      "trust": "信託",
+      "partnership": "パートナーシップ",
+      "npo": "NPO",
+      "government": "政府機関",
+      "foreignLegalArrangement": "外国法上の法的取極め"
+    },
+    "status": {
+      "active": "有効",
+      "dormant": "休眠",
+      "frozen": "凍結",
+      "closed": "終了"
     },
     "table": {
       "header": {
         "externalId": "外部ID",
+        "name": "氏名・名称",
         "type": "種別",
         "country": "国",
+        "status": "ライフサイクル",
         "riskScore": "リスクスコア",
         "riskTier": "リスクティア",
         "lastScored": "最終スコアリング"
@@ -529,6 +558,22 @@
       "direction": "方向",
       "counterpartyCountry": "相手先国",
       "channel": "チャネル",
+      "accountId": "口座ID",
+      "counterpartyName": "相手方名称",
+      "counterpartyType": "相手方種別",
+      "unhostedWallet": "アンホステッドウォレット",
+      "unknown": "不明",
+      "travelStatus": "トラベルルール状態",
+      "notSpecified": "未指定",
+      "complete": "完全",
+      "incomplete": "不完全",
+      "notApplicable": "非該当",
+      "travelReason": "非該当理由",
+      "travelReasonPlaceholder": "非該当の場合は必須",
+      "idempotencyKey": "冪等性キー",
+      "metadata": "メタデータJSON",
+      "travelEvidence": "トラベルルール証跡JSON",
+      "invalidJson": "メタデータと証跡は正しいJSONで入力してください。",
       "submit": "登録"
     },
     "direction": {
@@ -557,6 +602,7 @@
       "internalId": "内部ID",
       "externalId": "外部ID",
       "customerId": "顧客ID",
+      "accountId": "口座ID",
       "direction": "方向"
     },
     "amountRoute": {
@@ -567,6 +613,22 @@
       "channel": "チャネル",
       "executedAt": "実行日時",
       "createdAt": "登録日時"
+    },
+    "travelRule": {
+      "title": "トラベルルール",
+      "applicable": "適用対象",
+      "yes": "適用",
+      "no": "対象外",
+      "legacy": "旧データ（未設定）",
+      "reason": "対象外理由",
+      "counterparty": "カウンターパーティ",
+      "metadata": "メタデータ",
+      "evidence": "トラベルルール証跡"
+    },
+    "related": {
+      "title": "関連する調査記録",
+      "alerts": "関連アラート",
+      "cases": "関連ケース"
     }
   },
   "customerDetail": {
@@ -577,8 +639,16 @@
       "title": "基本情報",
       "internalId": "内部ID",
       "type": "種別",
+      "name": "氏名・名称",
+      "nameJa": "日本語氏名・名称",
+      "nameKana": "カナ",
+      "address": "住所",
       "countryCode": "国コード",
+      "status": "ライフサイクル",
+      "identityRationale": "オペレーターがKYC本人情報を更新",
       "save": "保存",
+      "edit": "編集",
+      "cancel": "編集を閉じる",
       "products": "プロダクト",
       "createdAt": "作成日",
       "updatedAt": "更新日"
@@ -587,6 +657,12 @@
       "title": "リスク評価",
       "screenButton": "スクリーニング",
       "scoreButton": "スコアリング",
+      "confirmScore": "スコアリングを確定",
+      "ruleSet": "CDDルールセット",
+      "selectRuleSet": "ルールセットを選択",
+      "rationale": "再評価理由",
+      "rationaleRequired": "スコアリング理由を入力してください。",
+      "ruleRequired": "CDDルールセットを選択してください。",
       "riskScore": "リスクスコア",
       "riskTier": "リスクティア",
       "unscored": "未スコア",
@@ -597,13 +673,46 @@
       "hit": "ヒットあり",
       "noHit": "ヒットなし",
       "summary": "チェック済みリスト: {{count}}件 | 実行日時: {{time}}",
+      "durableSummary": "永続化済み結果: {{count}}件 | 実行日時: {{time}}",
+      "loading": "永続化されたスクリーニング結果を取得中…",
+      "error": "スクリーニングに失敗しました: {{error}}",
+      "durableError": "永続化結果の取得に失敗しました: {{error}}",
       "table": {
         "list": "リスト",
         "matchedName": "一致名",
         "similarity": "類似度",
         "type": "種別",
-        "source": "ソース"
+        "source": "ソース",
+        "status": "ステータス",
+        "action": "レビュー",
+        "transient": "一時的な結果",
+        "reasonLabel": "判定理由",
+        "reasonPlaceholder": "理由",
+        "reasonRequired": "判定理由を入力してください。",
+        "startReview": "レビュー開始",
+        "truePositive": "真陽性",
+        "falsePositive": "偽陽性"
       }
+    },
+    "investigation": {
+      "title": "顧客360",
+      "loading": "顧客360を取得中…",
+      "error": "顧客360の取得に失敗しました: {{error}}",
+      "count": {
+        "transactions": "取引",
+        "alerts": "アラート",
+        "cases": "ケース",
+        "screening_results": "スクリーニング結果",
+        "score_history": "スコア評価"
+      },
+      "eddRequired": "継続的顧客管理（EDD）が必要です",
+      "eddStage": "EDDステージ: {{stage}}",
+      "eddElapsed": "経過: {{days}}日",
+      "eddNext": "次のエスカレーション: {{stage}}（残り{{days}}日）",
+      "eddCompletion": "完了状態: {{status}}",
+      "timeline": "最近のアクティビティ",
+      "partial": "一部のデータソースを取得できませんでした: {{sources}}",
+      "freshness": "読取モデル更新日時: {{time}}"
     },
     "attributes": {
       "title": "属性"
@@ -624,9 +733,16 @@
       "table": {
         "axis": "軸",
         "name": "名称",
+        "observed": "観測値",
         "score": "スコア",
-        "description": "説明"
-      }
+        "weight": "重み",
+        "contribution": "寄与",
+        "rule": "適用ルール / フォールバック",
+        "description": "説明",
+        "businessMeaning": "業務上の意味"
+      },
+      "total": "整合した合計: {{score}}",
+      "fallback": "フォールバック / 未解決"
     }
   },
   "notFound": {
@@ -730,13 +846,33 @@
       "deselectAll": "全解除",
       "from": "開始日時（UTC）",
       "to": "終了日時（UTC、この日時を含まない）",
+      "baselineRuleSet": "ベースラインルールセット",
       "candidateRuleSet": "候補ルールセット",
       "candidatePlaceholder": "有効なTMルール名",
+      "ruleDiscovery": "有効なTMルールセットを{{count}}件検出しました。",
+      "ruleDiscoveryError": "ルール検出に失敗しました: {{error}}",
       "running": "実行中...",
       "submit": "バックテスト実行"
     },
     "job": {
       "summary": "ジョブ {{id}}: {{status}}（{{progress}}%）",
+      "comparison": "比較: {{baseline}} → {{candidate}}",
+      "rationale": "理由: {{rationale}}",
+      "cohortPreview": "コホートプレビュー",
+      "cohortCustomers": "顧客数: {{count}}",
+      "cohortTransactions": "取引数: {{count}}",
+      "emptyCohort": "このコホートに取引がありません。空の結果に依存する前に実行を確認または停止してください。",
+      "sideBySide": "ベースライン / 候補 / 差分",
+      "baseline": "ベースライン",
+      "candidate": "候補",
+      "delta": "差分",
+      "affectedCustomers": "影響顧客",
+      "noAffectedCustomers": "影響顧客はありません",
+      "history": "永続ジョブ履歴",
+      "historyId": "ジョブID",
+      "historyStatus": "状態",
+      "historyComparison": "比較",
+      "historyEmpty": "過去のバックテストジョブはありません",
       "status": {
         "queued": "待機中",
         "running": "実行中",
@@ -779,10 +915,17 @@
   "batch": {
     "title": "一括処理",
     "error": "データの取得に失敗しました",
+    "retry": "再試行",
+    "operationError": "一括処理に失敗しました: {{error}}",
     "targetCustomers": {
       "title": "対象顧客",
       "selectedCount": "{{count}}件選択中",
       "allTargeted": "全顧客が対象（未選択時）",
+      "mode": "対象モード",
+      "selectedMode": "選択した顧客",
+      "allMode": "全顧客（明示）",
+      "explicitAll": "全顧客を明示的に選択中",
+      "selectionRequired": "顧客を1件以上選択するか、全顧客モードを明示してください。",
       "noCustomers": "利用可能な顧客がありません",
       "selectAll": "全選択",
       "deselectAll": "全解除"
@@ -790,6 +933,34 @@
     "actions": {
       "score": "一括スコアリング",
       "monitor": "一括モニタリング"
+    },
+    "confirmation": {
+      "title": "対象マニフェストの確認",
+      "summary": "{{count}}件の顧客に{{operation}}を実行します。",
+      "mode": "モード",
+      "criteria": "条件",
+      "expires": "マニフェスト有効期限",
+      "rationale": "操作理由",
+      "rationalePlaceholder": "この一括処理を実行する理由を記録してください...",
+      "rationaleRequired": "確認前に操作理由を入力してください。",
+      "warning": "サーバーが固定した対象スナップショットを使用します。期限切れ・再利用トークンは拒否されます。",
+      "confirm": "確認して永続実行を開始"
+    },
+    "run": {
+      "title": "永続化された一括実行",
+      "status": "実行 {{id}}: {{status}}",
+      "noCounts": "結果件数はまだありません",
+      "history": "実行履歴",
+      "id": "実行ID",
+      "operation": "操作",
+      "statusLabel": "状態",
+      "customerOutcomes": "顧客ごとの結果",
+      "customer": "顧客",
+      "outcome": "結果",
+      "alerts": "アラート",
+      "errorLabel": "エラー",
+      "startedAt": "開始日時",
+      "empty": "一括実行はまだありません"
     },
     "scoreResult": {
       "title": "スコアリング結果",
@@ -838,6 +1009,70 @@
         }
       }
     }
+  },
+  "screeningQueue": {
+    "title": "スクリーニング確認キュー",
+    "description": "永続化されたヒットは画面遷移・再起動後も確認できます。",
+    "error": "スクリーニング結果の取得に失敗しました",
+    "retry": "再試行",
+    "refresh": "更新",
+    "filter": "状態",
+    "customerFilter": "顧客ID",
+    "runFilter": "バッチ実行ID",
+    "createdFrom": "作成日（開始）",
+    "createdTo": "作成日（終了）",
+    "minAgeDays": "最小経過日数",
+    "maxAgeDays": "最大経過日数",
+    "all": "すべて",
+    "empty": "スクリーニング結果はありません",
+    "customer": "顧客",
+    "match": "一致",
+    "statusLabel": "状態",
+    "screenedAt": "実行日時",
+    "action": "操作",
+    "case": "ケース",
+    "suppressed": "抑制済み",
+    "rationale": "判定理由",
+    "rationalePlaceholder": "この結果を判定した理由を記録してください...",
+    "rationaleRequired": "判定理由は必須です。",
+    "startReview": "確認開始",
+    "truePositive": "真陽性",
+    "falsePositive": "偽陽性",
+    "status": {
+      "NEW": "未確認",
+      "REVIEWING": "確認中",
+      "TRUE_POSITIVE": "真陽性",
+      "FALSE_POSITIVE": "偽陽性"
+    }
+  },
+  "pendingEvaluations": {
+    "title": "保留評価の復旧",
+    "description": "再試行・解決・エスカレーションが記録されるまで失敗を表示します。",
+    "error": "保留評価の取得に失敗しました",
+    "retry": "再試行",
+    "refresh": "更新",
+    "queue": "復旧キュー",
+    "filter": "状態",
+    "all": "すべて",
+    "empty": "保留評価はありません",
+    "customer": "顧客",
+    "statusLabel": "状態",
+    "reason": "理由",
+    "retryCount": "試行回数",
+    "createdAt": "作成日時",
+    "transactions": "件の取引",
+    "alerts": "関連アラート",
+    "batchRun": "バッチ実行",
+    "detail": "評価詳細",
+    "close": "閉じる",
+    "nextRetry": "次回再試行",
+    "actionReason": "操作理由",
+    "actionReasonPlaceholder": "操作の運用上の理由を記録してください...",
+    "rationaleRequired": "操作理由は必須です。",
+    "retryAction": "再試行",
+    "resolveAction": "解決",
+    "escalateAction": "エスカレーション",
+    "history": "履歴"
   },
   "apikeys": {
     "title": "APIキー管理",

@@ -60,23 +60,28 @@ test("marks queued PENDING_REVIEW results as requiring operator review", async (
         updated_at: "2025-01-01T00:00:00Z",
       }])
     }
-    if (url.endsWith("/batch/monitor")) {
-      return new Response(JSON.stringify({
-        total: 1,
-        succeeded: 0,
-        failed: 0,
-        queued_for_review: 1,
-        alerts_total: 0,
-        results: [{ customer_id: "c1", alerts_raised: 0, pending_review: true }],
-        duration: "10ms",
-      }), { status: 200, headers: { "Content-Type": "application/json" } })
+    if (url.includes("/batch/runs?")) {
+      return paginatedResponse([])
+    }
+    if (url.endsWith("/batch/targets/preview")) {
+      return new Response(JSON.stringify({ id: "manifest-1", operation: "batch_monitor", target_mode: "selected", customer_ids: ["c1"], sample_customer_ids: ["c1"], target_count: 1, criteria: "selected customers", token: "token-1", status: "preview", version: 1, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" }), { status: 200, headers: { "Content-Type": "application/json" } })
+    }
+    if (url.endsWith("/batch/targets/manifest-1/confirm")) {
+      return new Response(JSON.stringify({ id: "manifest-1", operation: "batch_monitor", target_mode: "selected", customer_ids: ["c1"], sample_customer_ids: ["c1"], target_count: 1, criteria: "selected customers", status: "confirmed", version: 2, expires_at: "2099-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" }), { status: 200, headers: { "Content-Type": "application/json" } })
+    }
+    if (url.endsWith("/batch/runs")) {
+      return new Response(JSON.stringify({ id: "run-1", job_type: "batch_monitor", operation: "batch_monitor", status: "partial", parameters: {}, target_manifest_id: "manifest-1", result_counts: { queued_for_review: 1 }, started_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }), { status: 201, headers: { "Content-Type": "application/json" } })
     }
     throw new Error(`unexpected request: ${url}`)
   })
 
   await renderWithRouter(<BatchPage />)
   await screen.findByText("EXT-001")
+  fireEvent.click(screen.getByText("EXT-001"))
+  fireEvent.change(screen.getByLabelText("操作理由"), { target: { value: "recover monitor queue" } })
   fireEvent.click(screen.getByRole("button", { name: "一括モニタリング" }))
+  await screen.findByText("対象マニフェストの確認")
+  fireEvent.click(screen.getByRole("button", { name: "確認して永続実行を開始" }))
 
   expect(await screen.findByRole("alert")).toBeDefined()
   expect(screen.getByText("要確認")).toBeDefined()

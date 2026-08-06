@@ -57,6 +57,15 @@ export function TransactionsPage() {
   const currencyRef = useRef<HTMLInputElement>(null)
   const countryRef = useRef<HTMLInputElement>(null)
   const channelRef = useRef<HTMLInputElement>(null)
+  const accountRef = useRef<HTMLInputElement>(null)
+  const counterpartyNameRef = useRef<HTMLInputElement>(null)
+  const counterpartyTypeRef = useRef<HTMLSelectElement>(null)
+  const travelStatusRef = useRef<HTMLSelectElement>(null)
+  const travelReasonRef = useRef<HTMLInputElement>(null)
+  const travelEvidenceRef = useRef<HTMLInputElement>(null)
+  const metadataRef = useRef<HTMLInputElement>(null)
+  const idempotencyRef = useRef<HTMLInputElement>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -66,7 +75,19 @@ export function TransactionsPage() {
     const currency = currencyRef.current?.value.trim() || "JPY"
     if (!customerId || !externalId || !amount) return
     setCreating(true)
+    setCreateError(null)
     try {
+      const travelStatus = travelStatusRef.current?.value || ""
+      const counterpartyName = counterpartyNameRef.current?.value.trim() || ""
+      let metadata: Record<string, unknown> | undefined
+      let travelEvidence: Record<string, unknown> | undefined
+      try {
+        metadata = metadataRef.current?.value.trim() ? JSON.parse(metadataRef.current.value) as Record<string, unknown> : undefined
+        travelEvidence = travelEvidenceRef.current?.value.trim() ? JSON.parse(travelEvidenceRef.current.value) as Record<string, unknown> : undefined
+      } catch {
+        setCreateError(t("transactions.form.invalidJson"))
+        return
+      }
       await api.transactions.create({
         customer_id: customerId,
         external_id: externalId,
@@ -75,9 +96,22 @@ export function TransactionsPage() {
         direction,
         counterparty_country: countryRef.current?.value.trim() || undefined,
         channel: channelRef.current?.value.trim() || undefined,
+        account_id: accountRef.current?.value.trim() || undefined,
+        counterparty: counterpartyName || travelStatus ? {
+          counterparty_type: counterpartyTypeRef.current?.value || "unknown",
+          originator: { name: counterpartyName, account_number: "" },
+          beneficiary: { name: counterpartyName, account_number: "" },
+          travel_rule_status: travelStatus || "incomplete",
+        } : undefined,
+        metadata,
+        travel_rule_applicable: travelStatus === "" ? undefined : travelStatus !== "not_applicable",
+        travel_rule_evidence: travelEvidence,
+        travel_rule_not_applicable_reason: travelReasonRef.current?.value.trim() || undefined,
         executed_at: new Date().toISOString(),
-      })
+      }, idempotencyRef.current?.value.trim() || undefined)
       window.location.reload()
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : String(err))
     } finally {
       setCreating(false)
     }
@@ -124,7 +158,7 @@ export function TransactionsPage() {
           ))}
         </select>
         {customersError && (
-          <p className="mt-2 text-sm text-destructive">{t("transactions.customerSelectorError")}</p>
+          <p role="alert" className="mt-2 text-sm text-destructive">{t("transactions.customerSelectorError")}</p>
         )}
         {!selectedCustomerId && !customersError && (
           <p className="mt-2 text-sm text-muted-foreground">{t("transactions.customerSelectorPrompt")}</p>
@@ -143,25 +177,26 @@ export function TransactionsPage() {
             <CardTitle className="text-base">{t("transactions.form.title")}</CardTitle>
           </CardHeader>
           <CardContent>
+            {createError && <p role="alert" className="mb-3 text-sm text-destructive">{createError}</p>}
             <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium">{t("transactions.form.customerId")}</label>
-                <input key={selectedCustomerId} ref={custRef} required defaultValue={selectedCustomerId} placeholder="cust-001"
+                <label htmlFor="transaction-customer" className="mb-1 block text-xs font-medium">{t("transactions.form.customerId")}</label>
+                <input id="transaction-customer" key={selectedCustomerId} ref={custRef} required defaultValue={selectedCustomerId} placeholder="cust-001"
                   className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">{t("transactions.form.externalId")}</label>
-                <input ref={extRef} required placeholder="TXN-001"
+                <label htmlFor="transaction-external" className="mb-1 block text-xs font-medium">{t("transactions.form.externalId")}</label>
+                <input id="transaction-external" ref={extRef} required placeholder="TXN-001"
                   className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">{t("transactions.form.amount")}</label>
-                <input ref={amountRef} type="number" required placeholder="100000" min="1"
+                <label htmlFor="transaction-amount" className="mb-1 block text-xs font-medium">{t("transactions.form.amount")}</label>
+                <input id="transaction-amount" ref={amountRef} type="number" required placeholder="100000" min="1"
                   className="w-28 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">{t("transactions.form.currency")}</label>
-                <input ref={currencyRef} defaultValue="JPY" maxLength={3}
+                <label htmlFor="transaction-currency" className="mb-1 block text-xs font-medium">{t("transactions.form.currency")}</label>
+                <input id="transaction-currency" ref={currencyRef} defaultValue="JPY" maxLength={3}
                   className="w-16 rounded-md border bg-background px-2 py-2 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
@@ -176,14 +211,46 @@ export function TransactionsPage() {
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">{t("transactions.form.counterpartyCountry")}</label>
-                <input ref={countryRef} placeholder="JP" maxLength={2}
+                <label htmlFor="transaction-counterparty-country" className="mb-1 block text-xs font-medium">{t("transactions.form.counterpartyCountry")}</label>
+                <input id="transaction-counterparty-country" ref={countryRef} placeholder="JP" maxLength={2}
                   className="w-16 rounded-md border bg-background px-2 py-2 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium">{t("transactions.form.channel")}</label>
-                <input ref={channelRef} placeholder="online"
+                <label htmlFor="transaction-channel" className="mb-1 block text-xs font-medium">{t("transactions.form.channel")}</label>
+                <input id="transaction-channel" ref={channelRef} placeholder="online"
                   className="w-24 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+              </div>
+              <div>
+                <label htmlFor="transaction-account" className="mb-1 block text-xs font-medium">{t("transactions.form.accountId")}</label>
+                <input id="transaction-account" ref={accountRef} placeholder="account-001" className="w-28 rounded-md border bg-background px-2 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="transaction-counterparty-name" className="mb-1 block text-xs font-medium">{t("transactions.form.counterpartyName")}</label>
+                <input id="transaction-counterparty-name" ref={counterpartyNameRef} placeholder="Counterparty" className="w-32 rounded-md border bg-background px-2 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="transaction-counterparty-type" className="mb-1 block text-xs font-medium">{t("transactions.form.counterpartyType")}</label>
+                <select id="transaction-counterparty-type" ref={counterpartyTypeRef} defaultValue="unknown" className="w-32 rounded-md border bg-background px-2 py-2 text-sm"><option value="vasp">VASP</option><option value="unhosted_wallet">{t("transactions.form.unhostedWallet")}</option><option value="unknown">{t("transactions.form.unknown")}</option></select>
+              </div>
+              <div>
+                <label htmlFor="transaction-travel-status" className="mb-1 block text-xs font-medium">{t("transactions.form.travelStatus")}</label>
+                <select id="transaction-travel-status" ref={travelStatusRef} defaultValue="" className="w-36 rounded-md border bg-background px-2 py-2 text-sm"><option value="">{t("transactions.form.notSpecified")}</option><option value="complete">{t("transactions.form.complete")}</option><option value="incomplete">{t("transactions.form.incomplete")}</option><option value="not_applicable">{t("transactions.form.notApplicable")}</option></select>
+              </div>
+              <div>
+                <label htmlFor="transaction-travel-reason" className="mb-1 block text-xs font-medium">{t("transactions.form.travelReason")}</label>
+                <input id="transaction-travel-reason" ref={travelReasonRef} placeholder={t("transactions.form.travelReasonPlaceholder")} className="w-44 rounded-md border bg-background px-2 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="transaction-idempotency" className="mb-1 block text-xs font-medium">{t("transactions.form.idempotencyKey")}</label>
+                <input id="transaction-idempotency" ref={idempotencyRef} placeholder="retry-key" className="w-32 rounded-md border bg-background px-2 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="transaction-metadata" className="mb-1 block text-xs font-medium">{t("transactions.form.metadata")}</label>
+                <input id="transaction-metadata" ref={metadataRef} placeholder='{"source":"vendor"}' className="w-44 rounded-md border bg-background px-2 py-2 text-sm" />
+              </div>
+              <div>
+                <label htmlFor="transaction-evidence" className="mb-1 block text-xs font-medium">{t("transactions.form.travelEvidence")}</label>
+                <input id="transaction-evidence" ref={travelEvidenceRef} placeholder='{"provider":"..."}' className="w-44 rounded-md border bg-background px-2 py-2 text-sm" />
               </div>
               <Button type="submit" size="sm" disabled={creating}>{t("transactions.form.submit")}</Button>
             </form>
