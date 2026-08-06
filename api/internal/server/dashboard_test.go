@@ -169,11 +169,18 @@ func TestDashboard_ReportsScreeningListFreshness(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	if len(stats.ScreeningListFreshness) != 1 {
-		t.Fatalf("ScreeningListFreshness = %+v, want exactly 1 entry (pep_provider never imported is omitted)", stats.ScreeningListFreshness)
+	if len(stats.ScreeningListFreshness) != 2 {
+		t.Fatalf("ScreeningListFreshness = %+v, want one entry for every configured source", stats.ScreeningListFreshness)
 	}
-	got := stats.ScreeningListFreshness[0]
+	byID := make(map[string]domain.ScreeningListFreshnessStat, len(stats.ScreeningListFreshness))
+	for _, item := range stats.ScreeningListFreshness {
+		byID[item.ListID] = item
+	}
+	got := byID["ofac_sdn"]
 	if got.ListID != "ofac_sdn" || got.ListType != "sanctions" || got.StaleDays != 0 {
 		t.Errorf("entry = %+v, want fresh ofac_sdn", got)
+	}
+	if missing := byID["pep_provider"]; missing.ListID != "pep_provider" || missing.OperationalState != "never_imported" {
+		t.Errorf("missing-source entry = %+v, want never_imported pep_provider", missing)
 	}
 }

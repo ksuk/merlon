@@ -65,6 +65,54 @@ func TestCreateCustomer(t *testing.T) {
 	}
 }
 
+func TestCustomerIdentityHistoryIncludesLifecycleAndCountryUpdates(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	wave3 := store.NewMemoryWave3Repo()
+	s := New(":0", Deps{
+		Customers: customers,
+		Audit:     store.NewMemoryAuditRepo(),
+		Wave3:     wave3,
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"IDENTITY-HISTORY","customer_type":"individual","country_code":"JP","identity":{"name":"Before"}}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var customer domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&customer); err != nil {
+		t.Fatal(err)
+	}
+
+	updateBody := fmt.Sprintf(`{"country_code":"US","status":"frozen","identity":{"name":"After"},"expected_updated_at":%q}`, customer.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+customer.ID, strings.NewReader(updateBody))
+	updatedResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(updatedResponse, update)
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+
+	entries, err := wave3.ListCustomerIdentityHistory(context.Background(), customer.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("identity history entries = %d, want creation and update", len(entries))
+	}
+	latest := entries[0]
+	if latest.ChangedFields["after_status"] != domain.CustomerStatusFrozen || latest.ChangedFields["after_country_code"] != "US" {
+		t.Fatalf("latest identity history = %+v", latest.ChangedFields)
+	}
+	stored, err := customers.Get(context.Background(), customer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != domain.CustomerStatusFrozen || stored.CountryCode != "US" {
+		t.Fatalf("stored lifecycle identity = %+v", stored)
+	}
+}
+
 func TestCreateCustomerAuditFailureRollsBackCustomer(t *testing.T) {
 	s := testServer()
 	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
@@ -458,6 +506,76 @@ func TestUpdateCustomer(t *testing.T) {
 	}
 	if updated.Attributes["pep"] != "true" {
 		t.Errorf("attributes[pep] = %q, want %q", updated.Attributes["pep"], "true")
+	}
+}
+
+func TestUpdateCustomerRejectsStaleVersion(t *testing.T) {
+	s := testServer()
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"EXT-CAS","customer_type":"individual","country_code":"JP"}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body: %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	stale := created.UpdatedAt.Format(time.RFC3339Nano)
+
+	first := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+created.ID, strings.NewReader(`{"country_code":"US","expected_updated_at":"`+stale+`"}`))
+	firstResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(firstResponse, first)
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first CAS update status = %d, body: %s", firstResponse.Code, firstResponse.Body.String())
+	}
+
+	second := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+created.ID, strings.NewReader(`{"country_code":"GB","expected_updated_at":"`+stale+`"}`))
+	secondResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(secondResponse, second)
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("stale CAS update status = %d, want %d, body: %s", secondResponse.Code, http.StatusConflict, secondResponse.Body.String())
+	}
+	stored, err := s.customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.CountryCode != "US" {
+		t.Fatalf("stale update changed country_code to %q", stored.CountryCode)
+	}
+}
+
+func TestScoreCustomerConfirmationRequiresRationale(t *testing.T) {
+	s := testServer()
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"SCORE-CONFIRM","customer_type":"individual","country_code":"JP"}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, body := range []string{`{"rule_set_id":"test","confirmed":false}`, `{"rule_set_id":"test","confirmed":true}`} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body %s status = %d, want %d", body, response.Code, http.StatusBadRequest)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(`{"rule_set_id":"test","confirmed":true,"rationale":"periodic KYC review"}`))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("confirmed score status = %d, body: %s", response.Code, response.Body.String())
+	}
+	var record domain.ScoreRecord
+	if err := json.NewDecoder(response.Body).Decode(&record); err != nil {
+		t.Fatal(err)
+	}
+	if record.RuleSetID != "test" || record.Rationale != "periodic KYC review" {
+		t.Fatalf("score snapshot = %+v", record)
 	}
 }
 

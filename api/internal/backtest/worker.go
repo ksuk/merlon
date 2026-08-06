@@ -3,6 +3,7 @@ package backtest
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -262,6 +263,24 @@ func diffResult(base, cand *domain.BacktestResult) *domain.BacktestResult {
 			x.HighSeverityCount -= b.HighSeverityCount
 			x.MediumSeverityCount -= b.MediumSeverityCount
 			x.LowSeverityCount -= b.LowSeverityCount
+			baselineIDs := make(map[string]struct{}, len(b.AffectedCustomerIDs))
+			for _, id := range b.AffectedCustomerIDs {
+				baselineIDs[id] = struct{}{}
+			}
+			candidateIDs := make(map[string]struct{}, len(c.AffectedCustomerIDs))
+			for _, id := range c.AffectedCustomerIDs {
+				candidateIDs[id] = struct{}{}
+				if _, exists := baselineIDs[id]; !exists {
+					x.AddedCustomerIDs = append(x.AddedCustomerIDs, id)
+				}
+			}
+			for _, id := range b.AffectedCustomerIDs {
+				if _, exists := candidateIDs[id]; !exists {
+					x.RemovedCustomerIDs = append(x.RemovedCustomerIDs, id)
+				}
+			}
+			sort.Strings(x.AddedCustomerIDs)
+			sort.Strings(x.RemovedCustomerIDs)
 		}
 		d.ScenarioResults = append(d.ScenarioResults, x)
 	}

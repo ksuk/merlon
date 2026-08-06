@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
-	"github.com/ksuk/merlon/api/internal/screening"
 )
 
 const dashboardRecentTransactionWindow = 24 * time.Hour
@@ -79,8 +78,19 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if s.screeningListStore != nil && s.screeningFailureTracker != nil {
-		stats.ScreeningListFreshness = s.screeningListFreshness(ctx)
+	if s.wave3 != nil || s.screeningListStore != nil || s.screeningFailureTracker != nil || len(s.screeningListIDs) > 0 {
+		sources, sourceErr := s.screeningSourceStatuses(ctx, s.screeningListIDs, defaultScreeningSourceThreshold)
+		if sourceErr != nil {
+			sources = unavailableSourceStatuses(configuredScreeningSourceIDs(s.screeningListIDs), defaultScreeningSourceThreshold, "source status unavailable")
+		}
+		for _, source := range sources {
+			stat := domain.ScreeningListFreshnessStat{ListID: source.ListID, ListType: source.ListType, OperationalState: source.OperationalState, LastAttemptAt: source.LastAttemptAt, LastSuccessAt: source.LastSuccessAt, AgeSeconds: source.AgeSeconds, Diagnostic: source.Diagnostic}
+			if source.AgeSeconds != nil {
+				stat.StaleDays = int(*source.AgeSeconds / 86400)
+			}
+			stat.NeedsOperationalAlert = source.OperationalState != domain.ScreeningSourceReady
+			stats.ScreeningListFreshness = append(stats.ScreeningListFreshness, stat)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, stats)
@@ -88,26 +98,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 // screeningListFreshness reports each configured list's staleness
 // (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示する"). A list
-// that has never completed an import yet is omitted rather than shown as
-// freshly imported.
+// that has never completed an import yet is retained as an explicit
+// never_imported row so source cardinality cannot be mistaken for queue size.
 func (s *Server) screeningListFreshness(ctx context.Context) []domain.ScreeningListFreshnessStat {
-	statuses := make([]screening.ListImportStatus, 0, len(s.screeningListIDs))
-	for _, listID := range s.screeningListIDs {
-		data, err := s.screeningListStore.GetList(ctx, listID)
-		if err != nil {
-			continue
-		}
-		lastSuccess, err := s.screeningFailureTracker.LastSuccessAt(ctx, listID)
-		if err != nil {
-			continue
-		}
-		statuses = append(statuses, screening.ListImportStatus{
-			ListID: listID, ListType: data.ListType, LastSuccessAt: lastSuccess,
-		})
+	out := make([]domain.ScreeningListFreshnessStat, 0, len(s.screeningListIDs))
+	sources, err := s.screeningSourceStatuses(ctx, s.screeningListIDs, defaultScreeningSourceThreshold)
+	if err != nil {
+		sources = unavailableSourceStatuses(configuredScreeningSourceIDs(s.screeningListIDs), defaultScreeningSourceThreshold, "source status unavailable")
 	}
-
-	out := make([]domain.ScreeningListFreshnessStat, 0, len(statuses))
-	for _, f := range screening.ComputeListFreshness(statuses) {
+	for _, source := range sources {
+		f := domain.ScreeningListFreshnessStat{ListID: source.ListID, ListType: source.ListType, OperationalState: source.OperationalState, LastAttemptAt: source.LastAttemptAt, LastSuccessAt: source.LastSuccessAt, AgeSeconds: source.AgeSeconds, Diagnostic: source.Diagnostic}
+		if source.AgeSeconds != nil {
+			f.StaleDays = int(*source.AgeSeconds / 86400)
+		}
+		f.NeedsOperationalAlert = source.OperationalState != domain.ScreeningSourceReady
 		out = append(out, domain.ScreeningListFreshnessStat{
 			ListID:                f.ListID,
 			ListType:              f.ListType,

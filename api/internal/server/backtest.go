@@ -22,6 +22,8 @@ type createBacktestJobRequest struct {
 	ScenarioIDs        []string                       `json:"scenario_ids,omitempty"`
 	BaselineRuleSetID  string                         `json:"baseline_rule_set_id"`
 	CandidateRuleSetID string                         `json:"candidate_rule_set_id"`
+	Rationale          string                         `json:"rationale"`
+	RerunOf            string                         `json:"rerun_of,omitempty"`
 }
 
 func parseBacktestUTC(value string) (time.Time, error) {
@@ -96,6 +98,10 @@ func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request)
 	if req.BaselineRuleSetID == "" {
 		req.BaselineRuleSetID = "active"
 	}
+	if req.BaselineRuleSetID == req.CandidateRuleSetID {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "baseline_rule_set_id and candidate_rule_set_id must differ")
+		return
+	}
 	resolveRule := func(id string) (json.RawMessage, int, error) {
 		if id == "" || id == "active" {
 			return nil, 0, nil
@@ -128,8 +134,55 @@ func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request)
 	}
 	now := time.Now().UTC()
 	job := &domain.BacktestJob{ID: generateID(), Status: domain.BacktestJobQueued, From: from, To: to, CustomerIDs: req.CustomerIDs, CustomerFilter: req.CustomerFilter, ScenarioIDs: req.ScenarioIDs, BaselineRuleSetID: req.BaselineRuleSetID, CandidateRuleSetID: req.CandidateRuleSetID, BaselineRuleVersion: baselineVersion, CandidateRuleVersion: candidateVersion, BaselineRuleDefinition: baselineDefinition, CandidateRuleDefinition: candidateDefinition, ConfigDigests: copyStringMap(s.configDigests), SnapshotAt: now, CreatedAt: now, UpdatedAt: now}
-	if err := s.backtestJobs.Create(r.Context(), job); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+	_, hasMetadata := s.wave3.(domain.BacktestMetadataRepository)
+	var metadata *domain.BacktestMetadata
+	if _, ok := s.wave3.(domain.BacktestMetadataRepository); ok {
+		preview := map[string]any{"count": len(req.CustomerIDs), "sample_customer_ids": append([]string(nil), req.CustomerIDs...)}
+		// Keep the cohort preview useful to an operator: the customer count alone
+		// cannot distinguish an intentionally empty result from a cohort with no
+		// transactions.  This is additive and remains best-effort for adapters
+		// that do not expose the transaction repository.
+		if s.transactions != nil && len(req.CustomerIDs) > 0 {
+			transactionCount := 0
+			for _, customerID := range req.CustomerIDs {
+				if transactions, transactionErr := s.transactions.ListByCustomer(r.Context(), customerID, 1001, 0); transactionErr == nil {
+					transactionCount += len(transactions)
+				}
+			}
+			preview["transaction_count"] = transactionCount
+		}
+		if len(req.CustomerIDs) > 20 {
+			preview["sample_customer_ids"] = req.CustomerIDs[:20]
+		}
+		metadata = &domain.BacktestMetadata{JobID: job.ID, Rationale: req.Rationale, CohortPreview: preview, BaselineSnapshot: map[string]any{"rule_set_id": job.BaselineRuleSetID, "version": job.BaselineRuleVersion, "digest": stableDigest(baselineDefinition)}, CandidateSnapshot: map[string]any{"rule_set_id": job.CandidateRuleSetID, "version": job.CandidateRuleVersion, "digest": stableDigest(candidateDefinition)}, RerunOf: req.RerunOf, CreatedAt: now}
+	}
+	persist := func(repos domain.AtomicMutationRepositories) error {
+		jobRepo := s.backtestJobs
+		if repos.BacktestJobs != nil {
+			jobRepo = repos.BacktestJobs
+		}
+		if err := jobRepo.Create(r.Context(), job); err != nil {
+			return err
+		}
+		if metadata != nil {
+			wave3Repo, ok := repos.Wave3.(domain.BacktestMetadataRepository)
+			if !ok {
+				return fmt.Errorf("backtest metadata repository is not transaction-bound")
+			}
+			if err := wave3Repo.SaveBacktestMetadata(r.Context(), metadata); err != nil {
+				return fmt.Errorf("backtest metadata persistence failed: %w", err)
+			}
+		}
+		return nil
+	}
+	var persistErr error
+	if s.atomic != nil && (hasMetadata || s.backtestJobs != nil) {
+		persistErr = s.runAtomic(r.Context(), persist)
+	} else {
+		persistErr = persist(domain.AtomicMutationRepositories{})
+	}
+	if persistErr != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, persistErr.Error())
 		return
 	}
 	w.Header().Set("Location", "/api/v1/backtests/"+job.ID)
@@ -172,6 +225,11 @@ func (s *Server) handleGetBacktestJob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeBacktestRepositoryError(w, err)
 		return
+	}
+	if metadataRepo, ok := s.wave3.(domain.BacktestMetadataRepository); ok {
+		if metadata, metadataErr := metadataRepo.GetBacktestMetadata(r.Context(), job.ID); metadataErr == nil {
+			job.Metadata = metadata
+		}
 	}
 	writeJSON(w, http.StatusOK, job)
 }
