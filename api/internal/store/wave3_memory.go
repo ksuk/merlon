@@ -25,6 +25,8 @@ type MemoryWave3Repo struct {
 	manifests map[string]*domain.TargetManifest
 	identity  map[string][]domain.CustomerIdentityHistoryEntry
 	cases     *MemoryCaseRepo
+
+	persistFailure error
 }
 
 func NewMemoryWave3Repo() *MemoryWave3Repo {
@@ -50,6 +52,7 @@ func cloneRun(in *domain.ScreeningRun) *domain.ScreeningRun {
 	}
 	out := *in
 	out.ListIDs = append([]string(nil), in.ListIDs...)
+	out.DegradedSources = append([]string(nil), in.DegradedSources...)
 	out.ConfigDigests = copyStringMap(in.ConfigDigests)
 	return &out
 }
@@ -59,6 +62,7 @@ func cloneScreeningRecord(in *domain.ScreeningResultRecord) *domain.ScreeningRes
 		return nil
 	}
 	out := *in
+	out.DegradedSources = append([]string(nil), in.DegradedSources...)
 	if in.MatchEvidence != nil {
 		out.MatchEvidence = copyAnyMap(in.MatchEvidence)
 	}
@@ -90,6 +94,9 @@ func copyAnyMap(in map[string]any) map[string]any {
 func (r *MemoryWave3Repo) PersistScreeningRun(_ context.Context, run *domain.ScreeningRun, results []domain.ScreeningResultRecord) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.persistFailure != nil {
+		return r.persistFailure
+	}
 	if run == nil || run.ID == "" {
 		return &domain.ErrConflict{Entity: "screening_run", Reason: "id is required"}
 	}
@@ -199,6 +206,9 @@ func (r *MemoryWave3Repo) ListScreeningResults(_ context.Context, filter domain.
 			continue
 		}
 		if filter.To != nil && result.CreatedAt.After(*filter.To) {
+			continue
+		}
+		if filter.Suppressed != nil && result.Suppressed != *filter.Suppressed {
 			continue
 		}
 		if filter.Cursor != nil && !beforeCursor(result.CreatedAt, result.ID, filter.Cursor) {
@@ -489,6 +499,15 @@ func (r *MemoryWave3Repo) SetCaseRepository(cases *MemoryCaseRepo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cases = cases
+}
+
+// SetPersistFailure makes PersistScreeningRun fail, the way MemoryAuditRepo's
+// SetCreateFailure does, so callers can be tested against a durable store that
+// is refusing writes.
+func (r *MemoryWave3Repo) SetPersistFailure(err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.persistFailure = err
 }
 
 func (r *MemoryWave3Repo) AppendCustomerIdentityHistory(_ context.Context, entry *domain.CustomerIdentityHistoryEntry) error {

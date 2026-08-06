@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -152,6 +153,105 @@ func TestHandleScreeningCheck_NoEngineConfigured(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+// screeningCheckServer wires the durable workflow store so the check route
+// takes the same persistence path production does.
+func screeningCheckServer(t *testing.T) (*Server, *store.MemoryWave3Repo, string) {
+	t.Helper()
+	customers := store.NewMemoryCustomerRepo()
+	wave3 := store.NewMemoryWave3Repo()
+	s := New(":0", Deps{
+		Customers: customers, Wave3: wave3, Audit: store.NewMemoryAuditRepo(),
+		Screening: &engine.MockScreeningEngine{Result: &domain.ScreenResult{ListsChecked: 1, ScreenedAt: time.Now()}},
+		Scoring:   &engine.MockScoringEngine{}, Monitoring: &engine.MockMonitoringEngine{},
+	})
+	customerID := "0000000000000000000000000000c001"
+	if err := customers.Create(context.Background(), &domain.Customer{ID: customerID, ExternalID: "screening-check", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	return s, wave3, customerID
+}
+
+func postScreeningCheck(t *testing.T, s *Server, customerID string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/screening/check", strings.NewReader(`{"customer_id":"`+customerID+`"}`)))
+	return rec
+}
+
+func TestHandleScreeningCheck_RecordsDegradationWhenRequiredSourcesUnready(t *testing.T) {
+	s, wave3, customerID := screeningCheckServer(t)
+	// No source has ever been imported, so every required list is unready.
+
+	rec := postScreeningCheck(t, s, customerID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Degraded        bool     `json:"degraded"`
+		DegradedSources []string `json:"degraded_sources"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Degraded || len(response.DegradedSources) == 0 {
+		t.Fatalf("response = %+v, want the unready required sources reported", response)
+	}
+	// Fail-Alert: the run is executed, not blocked -- and the caveat is durable.
+	runs, err := wave3.ListScreeningRuns(context.Background(), customerID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("runs = %d, want the screening to have gone ahead", len(runs))
+	}
+	if !runs[0].Degraded || len(runs[0].DegradedSources) != len(response.DegradedSources) {
+		t.Fatalf("persisted run = %+v, want the degradation recorded on the run", runs[0])
+	}
+}
+
+func TestHandleScreeningCheck_NoDegradationWhenSourcesFresh(t *testing.T) {
+	s, wave3, customerID := screeningCheckServer(t)
+	for _, id := range configuredScreeningSourceIDs(nil) {
+		wave3.RecordScreeningSource(id, "sanctions", true, "")
+	}
+
+	rec := postScreeningCheck(t, s, customerID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Degraded bool `json:"degraded"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Degraded {
+		t.Fatal("freshly imported sources were reported as degraded")
+	}
+	runs, err := wave3.ListScreeningRuns(context.Background(), customerID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 || runs[0].Degraded {
+		t.Fatalf("persisted runs = %+v, want one undegraded run", runs)
+	}
+}
+
+func TestHandleScreeningCheck_TotalPersistenceFailureIsReportedAsServerError(t *testing.T) {
+	s, wave3, customerID := screeningCheckServer(t)
+	for _, id := range configuredScreeningSourceIDs(nil) {
+		wave3.RecordScreeningSource(id, "sanctions", true, "")
+	}
+	// A run already occupying the id is the memory store's conflict path;
+	// what matters is that the only customer in the request fails to persist.
+	wave3.SetPersistFailure(errors.New("screening run store unavailable"))
+
+	rec := postScreeningCheck(t, s, customerID)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 when nothing at all was persisted", rec.Code)
 	}
 }
 

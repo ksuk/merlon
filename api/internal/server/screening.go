@@ -24,8 +24,10 @@ type ScreeningCheckRequest struct {
 }
 
 type screeningBatchResponse struct {
-	Trigger  screening.TriggerType   `json:"trigger"`
-	Outcomes []screeningBatchOutcome `json:"outcomes"`
+	Trigger         screening.TriggerType   `json:"trigger"`
+	Outcomes        []screeningBatchOutcome `json:"outcomes"`
+	Degraded        bool                    `json:"degraded"`
+	DegradedSources []string                `json:"degraded_sources,omitempty"`
 }
 
 type screeningBatchOutcome struct {
@@ -37,7 +39,12 @@ type screeningBatchOutcome struct {
 }
 
 func screeningBatchResponseFrom(result screening.BatchResult) screeningBatchResponse {
-	out := screeningBatchResponse{Trigger: result.Trigger, Outcomes: make([]screeningBatchOutcome, 0, len(result.Outcomes))}
+	out := screeningBatchResponse{
+		Trigger:         result.Trigger,
+		Outcomes:        make([]screeningBatchOutcome, 0, len(result.Outcomes)),
+		Degraded:        result.Degradation.Degraded,
+		DegradedSources: result.Degradation.Sources,
+	}
 	for _, outcome := range result.Outcomes {
 		item := screeningBatchOutcome{CustomerID: outcome.CustomerID, Screened: outcome.Screened, Skipped: outcome.Skipped, SkipReason: outcome.SkipReason}
 		if outcome.Err != nil {
@@ -134,6 +141,7 @@ func (s *Server) handleScreeningCheck(w http.ResponseWriter, r *http.Request) {
 		Actor:            resolveAuditUserID(r),
 		ListIDs:          req.ListIDs,
 		TargetCustomerID: req.CustomerID,
+		Readiness:        s.screeningDegradation,
 	}
 	if s.wave3 != nil {
 		deps.PersistWorkflow = func(ctx context.Context, run *domain.ScreeningRun, results []domain.ScreeningResultRecord) error {
@@ -151,11 +159,22 @@ func (s *Server) handleScreeningCheck(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
+	// One customer's persistence failure used to fail the whole request, which
+	// threw away every result that did persist and left the caller unable to
+	// tell which customers were screened. Report per-customer outcomes instead
+	// and reserve 500 for the case where nothing succeeded at all.
+	failed := 0
 	for _, outcome := range result.Outcomes {
 		if outcome.Err != nil {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeEngineError, "screening run failed: "+outcome.Err.Error())
-			return
+			failed++
 		}
+	}
+	if failed > 0 && failed == len(result.Outcomes) {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeEngineError, "screening run failed: "+result.Outcomes[0].Err.Error())
+		return
+	}
+	if failed > 0 {
+		w.Header().Set("Warning", "299 - partial screening failure")
 	}
 
 	writeJSON(w, http.StatusOK, screeningBatchResponseFrom(result))

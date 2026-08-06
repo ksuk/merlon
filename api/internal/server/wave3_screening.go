@@ -51,6 +51,17 @@ func (s *Server) handleListScreeningResults(w http.ResponseWriter, r *http.Reque
 		}
 		filter.To = &parsed
 	}
+	// Absent suppressed= returns both, so the queue keeps its historical
+	// contents; the UI asks for suppressed=false explicitly to hide repeat
+	// false positives, and suppressed=true to audit what was hidden.
+	if raw := r.URL.Query().Get("suppressed"); raw != "" {
+		parsed, parseErr := strconv.ParseBool(raw)
+		if parseErr != nil {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "suppressed must be true or false")
+			return
+		}
+		filter.Suppressed = &parsed
+	}
 	filter.Cursor = toDomainCursor(pageReq.Cursor)
 	items, err := workflow.ListScreeningResults(r.Context(), filter, pageReq.Limit+1)
 	if err != nil {

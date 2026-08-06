@@ -257,3 +257,76 @@ func TestPostgresWave3AppendOnlyHistoryRejectsUpdateAndDelete(t *testing.T) {
 		}
 	}
 }
+
+// Suppression and degradation are the two facts a screening result carries
+// beyond the hit itself. Both are new columns, so this pins their round trip
+// and the server-side filter that reads them.
+func TestPostgresWave3SuppressionAndDegradationRoundTrip(t *testing.T) {
+	pool := newTestPgPool(t)
+	ctx := context.Background()
+	customerID := seedTestCustomer(t, pool)
+	runID, suppressedID, plainID := newTestUUID(), newTestUUID(), newTestUUID()
+	repo := NewPgWave3Repo(pool)
+	if err := repo.PersistScreeningRun(ctx, &domain.ScreeningRun{
+		ID: runID, CustomerID: customerID, ListIDs: []string{"ofac_sdn"},
+		Status: domain.ScreeningRunCompleted, Actor: "scheduler", CreatedAt: time.Now().UTC(),
+		Degraded: true, DegradedSources: []string{"un_sc", "mof_japan"},
+	}, []domain.ScreeningResultRecord{
+		{
+			ID: suppressedID, CustomerID: customerID, ListID: "ofac_sdn", ListType: "sanctions",
+			EntryID: "OFAC-1", MatchedName: "Example", Status: domain.ScreeningResultStatusNew,
+			Suppressed: true, SuppressionReason: "prior_false_positive:" + plainID,
+			Degraded: true, DegradedSources: []string{"un_sc", "mof_japan"},
+		},
+		{
+			ID: plainID, CustomerID: customerID, ListID: "ofac_sdn", ListType: "sanctions",
+			EntryID: "OFAC-2", MatchedName: "Example", Status: domain.ScreeningResultStatusNew,
+			Degraded: true, DegradedSources: []string{"un_sc", "mof_japan"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM screening_results WHERE run_id=$1`, runID)
+		_, _ = pool.Exec(ctx, `DELETE FROM screening_runs WHERE id=$1`, runID)
+	})
+
+	run, err := repo.GetScreeningRun(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run.Degraded || len(run.DegradedSources) != 2 || run.DegradedSources[0] != "un_sc" {
+		t.Fatalf("run = %+v, want the degradation and its sources preserved in order", run)
+	}
+
+	stored, err := repo.GetScreeningResult(ctx, suppressedID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.Suppressed || stored.SuppressionReason == "" || !stored.Degraded || len(stored.DegradedSources) != 2 {
+		t.Fatalf("result = %+v, want suppression and degradation preserved", stored)
+	}
+
+	suppressed, unsuppressed := true, false
+	onlySuppressed, err := repo.ListScreeningResults(ctx, domain.ScreeningResultFilter{CustomerID: customerID, Suppressed: &suppressed}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onlySuppressed) != 1 || onlySuppressed[0].ID != suppressedID {
+		t.Fatalf("suppressed=true returned %d rows, want only %s", len(onlySuppressed), suppressedID)
+	}
+	onlyVisible, err := repo.ListScreeningResults(ctx, domain.ScreeningResultFilter{CustomerID: customerID, Suppressed: &unsuppressed}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onlyVisible) != 1 || onlyVisible[0].ID != plainID {
+		t.Fatalf("suppressed=false returned %d rows, want only %s", len(onlyVisible), plainID)
+	}
+	both, err := repo.ListScreeningResults(ctx, domain.ScreeningResultFilter{CustomerID: customerID}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(both) != 2 {
+		t.Fatalf("unfiltered returned %d rows, want both: an absent filter must not hide anything", len(both))
+	}
+}

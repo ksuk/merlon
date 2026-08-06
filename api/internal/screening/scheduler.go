@@ -108,6 +108,13 @@ type SchedulerDeps struct {
 	Actor           string
 	ListIDs         []string
 
+	// Readiness reports whether the watchlist sources this batch screens
+	// against are usable. It is consulted once per batch, not once per
+	// customer, so every run in one batch carries the same verdict. A nil
+	// Readiness means the caller cannot assess sources and runs are recorded
+	// without a degradation claim either way.
+	Readiness func(context.Context) domain.ScreeningDegradation
+
 	// TargetCustomerID restricts the batch to a single customer, used for
 	// the tier_promoted/customer_changed/account_opened/api_request
 	// immediate triggers, which concern one specific customer rather than
@@ -150,8 +157,9 @@ type CustomerScreenOutcome struct {
 
 // BatchResult is the aggregate outcome of one RunRescreeningBatch call.
 type BatchResult struct {
-	Trigger  TriggerType             `json:"trigger"`
-	Outcomes []CustomerScreenOutcome `json:"outcomes"`
+	Trigger     TriggerType                 `json:"trigger"`
+	Outcomes    []CustomerScreenOutcome     `json:"outcomes"`
+	Degradation domain.ScreeningDegradation `json:"degradation"`
 }
 
 // RunRescreeningBatch screens either a single targeted customer
@@ -163,13 +171,15 @@ type BatchResult struct {
 func RunRescreeningBatch(ctx context.Context, deps SchedulerDeps, trigger TriggerType) (BatchResult, error) {
 	batchStart := deps.now()
 	result := BatchResult{Trigger: trigger}
+	degradation := batchDegradation(ctx, deps)
+	result.Degradation = degradation
 
 	if deps.TargetCustomerID != "" {
 		c, err := deps.Customers.Get(ctx, deps.TargetCustomerID)
 		if err != nil {
 			return result, fmt.Errorf("get target customer %q: %w", deps.TargetCustomerID, err)
 		}
-		result.Outcomes = append(result.Outcomes, screenOneForBatch(ctx, deps, c, batchStart))
+		result.Outcomes = append(result.Outcomes, screenOneForBatch(ctx, deps, c, batchStart, degradation))
 		return result, nil
 	}
 
@@ -181,9 +191,25 @@ func RunRescreeningBatch(ctx context.Context, deps SchedulerDeps, trigger Trigge
 	snapshot := selectCustomersForTrigger(ctx, deps, all, trigger)
 
 	for i := range snapshot {
-		result.Outcomes = append(result.Outcomes, screenOneForBatch(ctx, deps, &snapshot[i], batchStart))
+		result.Outcomes = append(result.Outcomes, screenOneForBatch(ctx, deps, &snapshot[i], batchStart, degradation))
 	}
 	return result, nil
+}
+
+// batchDegradation asks the readiness assessor once per batch. It is
+// deliberately evaluated before any customer is screened: a source that goes
+// stale mid-batch would otherwise mark only the tail of the batch, leaving the
+// head silently unmarked.
+func batchDegradation(ctx context.Context, deps SchedulerDeps) domain.ScreeningDegradation {
+	if deps.Readiness == nil {
+		return domain.ScreeningDegradation{}
+	}
+	degradation := deps.Readiness(ctx)
+	if degradation.Degraded {
+		slog.Warn("screening batch running against unready sources",
+			"degraded_sources", degradation.Sources)
+	}
+	return degradation
 }
 
 // selectCustomersForTrigger filters and orders the batch snapshot: a
@@ -236,7 +262,7 @@ func isDueByLastScreening(ctx context.Context, deps SchedulerDeps, customerID st
 // after batchStart; if so, the batch defers to it instead of duplicating
 // the work (the screening workflow "氏名変更との排他制御...判定は screening_results.screened_at
 // のタイムスタンプ比較で行う").
-func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Customer, batchStart time.Time) CustomerScreenOutcome {
+func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Customer, batchStart time.Time, degradation domain.ScreeningDegradation) CustomerScreenOutcome {
 	if deps.Results != nil {
 		recent, err := deps.Results.ListByCustomer(ctx, c.ID, 1, 0)
 		if err == nil && len(recent) > 0 && recent[0].ScreenedAt.After(batchStart) {
@@ -247,12 +273,12 @@ func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Custom
 	}
 
 	if deps.Screening == nil {
-		return persistScreeningFailure(ctx, deps, c, errors.New("screening engine not configured"))
+		return persistScreeningFailure(ctx, deps, c, degradation, errors.New("screening engine not configured"))
 	}
 
 	screenResult, err := deps.Screening.ScreenCustomer(ctx, c, deps.ListIDs)
 	if err != nil {
-		return persistScreeningFailure(ctx, deps, c, err)
+		return persistScreeningFailure(ctx, deps, c, degradation, err)
 	}
 
 	records := make([]domain.ScreeningResultRecord, 0, len(screenResult.Matches))
@@ -261,12 +287,14 @@ func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Custom
 			ID: newScreeningResultID(), CustomerID: c.ID, ListID: m.ListID, ListType: m.ListType,
 			EntryID: m.EntryID, MatchedName: m.MatchedName, Similarity: m.Similarity,
 			Status: domain.ScreeningResultStatusNew, ScreenedAt: screenResult.ScreenedAt, CreatedAt: screenResult.ScreenedAt,
+			Degraded: degradation.Degraded, DegradedSources: append([]string(nil), degradation.Sources...),
 			MatchEvidence: map[string]any{"source": m.Source},
 		})
 	}
+	suppressRepeatFalsePositives(ctx, deps, c.ID, records)
 	if deps.PersistWorkflow != nil || deps.Workflow != nil {
 		runAt := screenResult.ScreenedAt
-		run := &domain.ScreeningRun{ID: newScreeningResultID(), CustomerID: c.ID, ListIDs: append([]string(nil), deps.ListIDs...), ConfigDigests: copyStringMap(deps.ConfigDigests), Status: domain.ScreeningRunCompleted, StartedAt: runAt, CreatedAt: runAt, Actor: deps.Actor}
+		run := &domain.ScreeningRun{ID: newScreeningResultID(), CustomerID: c.ID, ListIDs: append([]string(nil), deps.ListIDs...), ConfigDigests: copyStringMap(deps.ConfigDigests), Status: domain.ScreeningRunCompleted, StartedAt: runAt, CreatedAt: runAt, Actor: deps.Actor, Degraded: degradation.Degraded, DegradedSources: append([]string(nil), degradation.Sources...)}
 		persist := deps.PersistWorkflow
 		if persist == nil {
 			persist = deps.Workflow.PersistScreeningRun
@@ -285,7 +313,54 @@ func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Custom
 	return CustomerScreenOutcome{CustomerID: c.ID, Screened: true}
 }
 
-func persistScreeningFailure(ctx context.Context, deps SchedulerDeps, c *domain.Customer, cause error) CustomerScreenOutcome {
+// suppressRepeatFalsePositives marks a hit the same customer has already ruled
+// a false positive against the same list entry (the screening workflow
+// "同一リストエントリへの再ヒット時に過去の False Positive 判定を参照可能とする").
+// Suppression is scoped to one customer: the same sanctions entry ruled
+// irrelevant to customer A says nothing about customer B, whose name may match
+// it for an entirely different reason.
+//
+// A suppressed result is still persisted and still reviewable. Only the queue
+// default hides it, so the decision remains visible and reversible rather than
+// being a silent drop.
+func suppressRepeatFalsePositives(ctx context.Context, deps SchedulerDeps, customerID string, records []domain.ScreeningResultRecord) {
+	if deps.Results == nil {
+		return
+	}
+	for i := range records {
+		record := &records[i]
+		if record.EntryID == "" {
+			continue
+		}
+		past, err := deps.Results.ListPastFalsePositives(ctx, record.EntryID)
+		if err != nil {
+			// Fail-Alert: an unreadable suppression history means the hit is
+			// reviewed again, never that it is hidden.
+			slog.Warn("screening: could not read prior false positives; leaving hit unsuppressed",
+				"customer_id", customerID, "entry_id", record.EntryID, "error", err)
+			continue
+		}
+		for _, prior := range past {
+			if !domain.SameIdentifier(prior.CustomerID, customerID) {
+				continue
+			}
+			record.Suppressed = true
+			record.SuppressionReason = "prior_false_positive:" + prior.ID
+			if record.MatchEvidence == nil {
+				record.MatchEvidence = map[string]any{}
+			}
+			record.MatchEvidence["prior_false_positive"] = map[string]any{
+				"screening_result_id": prior.ID,
+				"reason":              prior.FalsePositiveReason,
+				"reviewed_by":         prior.ReviewedBy,
+				"reviewed_at":         prior.ReviewedAt,
+			}
+			break // ListPastFalsePositives is newest-first; the latest ruling governs.
+		}
+	}
+}
+
+func persistScreeningFailure(ctx context.Context, deps SchedulerDeps, c *domain.Customer, degradation domain.ScreeningDegradation, cause error) CustomerScreenOutcome {
 	outcome := CustomerScreenOutcome{CustomerID: c.ID, Err: cause}
 	persist := deps.PersistWorkflow
 	if persist == nil && deps.Workflow != nil {
@@ -299,6 +374,7 @@ func persistScreeningFailure(ctx context.Context, deps SchedulerDeps, c *domain.
 		ID: newScreeningResultID(), CustomerID: c.ID, ListIDs: append([]string(nil), deps.ListIDs...),
 		ConfigDigests: copyStringMap(deps.ConfigDigests), Status: domain.ScreeningRunFailed,
 		Error: cause.Error(), Actor: deps.Actor, StartedAt: now, CompletedAt: &now, CreatedAt: now,
+		Degraded: degradation.Degraded, DegradedSources: append([]string(nil), degradation.Sources...),
 	}
 	if err := persist(ctx, run, nil); err != nil {
 		outcome.Err = fmt.Errorf("%w (failed-run persistence: %v)", cause, err)

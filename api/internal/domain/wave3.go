@@ -26,9 +26,22 @@ type ScreeningRun struct {
 	ResultCount   int                `json:"result_count"`
 	Error         string             `json:"error,omitempty"`
 	Actor         string             `json:"actor"`
-	StartedAt     time.Time          `json:"started_at"`
-	CompletedAt   *time.Time         `json:"completed_at,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
+	// Degraded records that at least one required watchlist source was not
+	// ready when the run started, so a clear result cannot be read as
+	// evidence that the customer is absent from every list.
+	Degraded        bool       `json:"degraded"`
+	DegradedSources []string   `json:"degraded_sources,omitempty"`
+	StartedAt       time.Time  `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+// ScreeningDegradation is the readiness verdict applied to a screening run:
+// which required sources were unusable, and therefore what the run's results
+// cannot be taken to prove.
+type ScreeningDegradation struct {
+	Degraded bool     `json:"degraded"`
+	Sources  []string `json:"sources,omitempty"`
 }
 
 type ScreeningResultFilter struct {
@@ -37,6 +50,10 @@ type ScreeningResultFilter struct {
 	ListID     string
 	From       *time.Time
 	To         *time.Time
+	// Suppressed selects only suppressed (true) or only unsuppressed (false)
+	// results. Nil, the zero value, returns both, which keeps every caller
+	// that predates suppression filtering unchanged.
+	Suppressed *bool
 	Cursor     *Cursor
 }
 

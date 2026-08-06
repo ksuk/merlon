@@ -26,15 +26,25 @@ func wave3JSON(v any) []byte { b, _ := json.Marshal(v); return b }
 
 const screeningWorkflowResultColumns = `id, customer_id, list_id, list_type, entry_id, matched_name, similarity, status,
  false_positive_reason, reviewed_by, reviewed_at, screened_at, created_at, COALESCE(run_id::text,''),
- suppressed, COALESCE(suppression_reason,''), match_evidence, COALESCE(case_id,''), version, updated_at`
+ suppressed, COALESCE(suppression_reason,''), degraded, degraded_sources, match_evidence,
+ COALESCE(case_id,''), version, updated_at`
 
-func scanWorkflowResult(row pgx.Row) (*domain.ScreeningResultRecord, error) {
+// scanWorkflowResult and scanWorkflowResultRows differ only in the row type
+// pgx hands back, so both delegate the column order to one place: a column
+// added to screeningWorkflowResultColumns cannot be wired into one scanner and
+// forgotten in the other.
+type workflowResultScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanWorkflowResultFrom(src workflowResultScanner) (*domain.ScreeningResultRecord, error) {
 	var out domain.ScreeningResultRecord
 	var reason, reviewedBy, runID, suppressionReason, caseID *string
 	var evidence []byte
-	if err := row.Scan(&out.ID, &out.CustomerID, &out.ListID, &out.ListType, &out.EntryID, &out.MatchedName,
+	if err := src.Scan(&out.ID, &out.CustomerID, &out.ListID, &out.ListType, &out.EntryID, &out.MatchedName,
 		&out.Similarity, &out.Status, &reason, &reviewedBy, &out.ReviewedAt, &out.ScreenedAt, &out.CreatedAt,
-		&runID, &out.Suppressed, &suppressionReason, &evidence, &caseID, &out.Version, &out.UpdatedAt); err != nil {
+		&runID, &out.Suppressed, &suppressionReason, &out.Degraded, &out.DegradedSources, &evidence,
+		&caseID, &out.Version, &out.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if reason != nil {
@@ -59,35 +69,36 @@ func scanWorkflowResult(row pgx.Row) (*domain.ScreeningResultRecord, error) {
 	return &out, nil
 }
 
-func scanWorkflowResultRows(rows pgx.Rows) (*domain.ScreeningResultRecord, error) {
-	var out domain.ScreeningResultRecord
-	var reason, reviewedBy, runID, suppressionReason, caseID *string
-	var evidence []byte
-	if err := rows.Scan(&out.ID, &out.CustomerID, &out.ListID, &out.ListType, &out.EntryID, &out.MatchedName, &out.Similarity,
-		&out.Status, &reason, &reviewedBy, &out.ReviewedAt, &out.ScreenedAt, &out.CreatedAt, &runID, &out.Suppressed,
-		&suppressionReason, &evidence, &caseID, &out.Version, &out.UpdatedAt); err != nil {
+const screeningRunColumns = `id::text, customer_id::text, list_ids, config_digests, status, result_count,
+ COALESCE(error,''), actor, degraded, degraded_sources, started_at, completed_at, created_at`
+
+func scanScreeningRun(src workflowResultScanner) (*domain.ScreeningRun, error) {
+	var run domain.ScreeningRun
+	var id, customerID string
+	var ids, digests []byte
+	if err := src.Scan(&id, &customerID, &ids, &digests, &run.Status, &run.ResultCount, &run.Error,
+		&run.Actor, &run.Degraded, &run.DegradedSources, &run.StartedAt, &run.CompletedAt, &run.CreatedAt); err != nil {
 		return nil, err
 	}
-	if reason != nil {
-		out.FalsePositiveReason = *reason
+	run.ID = domain.CanonicalUUID(id)
+	run.CustomerID = domain.CanonicalUUID(customerID)
+	_ = json.Unmarshal(ids, &run.ListIDs)
+	_ = json.Unmarshal(digests, &run.ConfigDigests)
+	if run.ListIDs == nil {
+		run.ListIDs = []string{}
 	}
-	if reviewedBy != nil {
-		out.ReviewedBy = *reviewedBy
+	if run.ConfigDigests == nil {
+		run.ConfigDigests = map[string]string{}
 	}
-	if runID != nil {
-		out.RunID = domain.CanonicalUUID(*runID)
-	}
-	if suppressionReason != nil {
-		out.SuppressionReason = *suppressionReason
-	}
-	if caseID != nil {
-		out.CaseID = *caseID
-	}
-	out.MatchEvidence = map[string]any{}
-	if len(evidence) > 0 {
-		_ = json.Unmarshal(evidence, &out.MatchEvidence)
-	}
-	return &out, nil
+	return &run, nil
+}
+
+func scanWorkflowResult(row pgx.Row) (*domain.ScreeningResultRecord, error) {
+	return scanWorkflowResultFrom(row)
+}
+
+func scanWorkflowResultRows(rows pgx.Rows) (*domain.ScreeningResultRecord, error) {
+	return scanWorkflowResultFrom(rows)
 }
 
 func (r *PgWave3Repo) PersistScreeningRun(ctx context.Context, run *domain.ScreeningRun, results []domain.ScreeningResultRecord) error {
@@ -113,7 +124,7 @@ func (r *PgWave3Repo) PersistScreeningRun(ctx context.Context, run *domain.Scree
 		run.Status = domain.ScreeningRunCompleted
 	}
 	run.ResultCount = len(results)
-	if _, err := tx.Exec(ctx, `INSERT INTO screening_runs(id,customer_id,list_ids,config_digests,status,result_count,error,actor,started_at,completed_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, run.ID, domain.CanonicalUUID(run.CustomerID), wave3JSON(run.ListIDs), wave3JSON(run.ConfigDigests), run.Status, run.ResultCount, nullableString(run.Error), run.Actor, run.StartedAt, run.CompletedAt, run.CreatedAt); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO screening_runs(id,customer_id,list_ids,config_digests,status,result_count,error,actor,degraded,degraded_sources,started_at,completed_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, run.ID, domain.CanonicalUUID(run.CustomerID), wave3JSON(run.ListIDs), wave3JSON(run.ConfigDigests), run.Status, run.ResultCount, nullableString(run.Error), run.Actor, run.Degraded, nonNilStrings(run.DegradedSources), run.StartedAt, run.CompletedAt, run.CreatedAt); err != nil {
 		return err
 	}
 	for i := range results {
@@ -134,7 +145,7 @@ func (r *PgWave3Repo) PersistScreeningRun(ctx context.Context, run *domain.Scree
 		if result.MatchEvidence == nil {
 			result.MatchEvidence = map[string]any{}
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO screening_results(id,customer_id,list_id,list_type,entry_id,matched_name,similarity,status,false_positive_reason,reviewed_by,reviewed_at,screened_at,created_at,run_id,suppressed,suppression_reason,match_evidence,case_id,version,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`, result.ID, domain.CanonicalUUID(result.CustomerID), result.ListID, result.ListType, result.EntryID, result.MatchedName, result.Similarity, result.Status, nullableString(result.FalsePositiveReason), nullableString(result.ReviewedBy), result.ReviewedAt, result.ScreenedAt, result.CreatedAt, run.ID, result.Suppressed, result.SuppressionReason, wave3JSON(result.MatchEvidence), nullableString(result.CaseID), result.Version, result.UpdatedAt); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO screening_results(id,customer_id,list_id,list_type,entry_id,matched_name,similarity,status,false_positive_reason,reviewed_by,reviewed_at,screened_at,created_at,run_id,suppressed,suppression_reason,degraded,degraded_sources,match_evidence,case_id,version,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`, result.ID, domain.CanonicalUUID(result.CustomerID), result.ListID, result.ListType, result.EntryID, result.MatchedName, result.Similarity, result.Status, nullableString(result.FalsePositiveReason), nullableString(result.ReviewedBy), result.ReviewedAt, result.ScreenedAt, result.CreatedAt, run.ID, result.Suppressed, result.SuppressionReason, result.Degraded, nonNilStrings(result.DegradedSources), wave3JSON(result.MatchEvidence), nullableString(result.CaseID), result.Version, result.UpdatedAt); err != nil {
 			return err
 		}
 	}
@@ -142,27 +153,11 @@ func (r *PgWave3Repo) PersistScreeningRun(ctx context.Context, run *domain.Scree
 }
 
 func (r *PgWave3Repo) GetScreeningRun(ctx context.Context, id string) (*domain.ScreeningRun, error) {
-	var run domain.ScreeningRun
-	var ids, digests []byte
-	var runID, customerID string
-	err := r.pool.QueryRow(ctx, `SELECT id::text,customer_id::text,list_ids,config_digests,status,result_count,COALESCE(error,''),actor,started_at,completed_at,created_at FROM screening_runs WHERE id=$1`, id).Scan(&runID, &customerID, &ids, &digests, &run.Status, &run.ResultCount, &run.Error, &run.Actor, &run.StartedAt, &run.CompletedAt, &run.CreatedAt)
+	run, err := scanScreeningRun(r.pool.QueryRow(ctx, `SELECT `+screeningRunColumns+` FROM screening_runs WHERE id=$1 AND purge_marked_at IS NULL`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &domain.ErrNotFound{Entity: "screening_run", ID: id}
 	}
-	if err != nil {
-		return nil, err
-	}
-	run.ID = domain.CanonicalUUID(runID)
-	run.CustomerID = domain.CanonicalUUID(customerID)
-	_ = json.Unmarshal(ids, &run.ListIDs)
-	_ = json.Unmarshal(digests, &run.ConfigDigests)
-	if run.ListIDs == nil {
-		run.ListIDs = []string{}
-	}
-	if run.ConfigDigests == nil {
-		run.ConfigDigests = map[string]string{}
-	}
-	return &run, nil
+	return run, err
 }
 
 func (r *PgWave3Repo) GetScreeningResult(ctx context.Context, id string) (*domain.ScreeningResultRecord, error) {
@@ -174,7 +169,7 @@ func (r *PgWave3Repo) GetScreeningResult(ctx context.Context, id string) (*domai
 }
 
 func (r *PgWave3Repo) ListScreeningRuns(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.ScreeningRun, error) {
-	query := `SELECT id::text,customer_id::text,list_ids,config_digests,status,result_count,COALESCE(error,''),actor,started_at,completed_at,created_at FROM screening_runs WHERE 1=1`
+	query := `SELECT ` + screeningRunColumns + ` FROM screening_runs WHERE purge_marked_at IS NULL`
 	args := []any{}
 	n := 1
 	if customerID != "" {
@@ -196,23 +191,11 @@ func (r *PgWave3Repo) ListScreeningRuns(ctx context.Context, customerID string, 
 	defer rows.Close()
 	out := []domain.ScreeningRun{}
 	for rows.Next() {
-		var run domain.ScreeningRun
-		var id, cid string
-		var ids, digests []byte
-		if err := rows.Scan(&id, &cid, &ids, &digests, &run.Status, &run.ResultCount, &run.Error, &run.Actor, &run.StartedAt, &run.CompletedAt, &run.CreatedAt); err != nil {
+		run, err := scanScreeningRun(rows)
+		if err != nil {
 			return nil, err
 		}
-		run.ID = domain.CanonicalUUID(id)
-		run.CustomerID = domain.CanonicalUUID(cid)
-		_ = json.Unmarshal(ids, &run.ListIDs)
-		_ = json.Unmarshal(digests, &run.ConfigDigests)
-		if run.ListIDs == nil {
-			run.ListIDs = []string{}
-		}
-		if run.ConfigDigests == nil {
-			run.ConfigDigests = map[string]string{}
-		}
-		out = append(out, run)
+		out = append(out, *run)
 	}
 	return out, rows.Err()
 }
@@ -244,6 +227,11 @@ func (r *PgWave3Repo) ListScreeningResults(ctx context.Context, filter domain.Sc
 	if filter.To != nil {
 		query += fmt.Sprintf(" AND created_at <= $%d", n)
 		args = append(args, *filter.To)
+		n++
+	}
+	if filter.Suppressed != nil {
+		query += fmt.Sprintf(" AND suppressed = $%d", n)
+		args = append(args, *filter.Suppressed)
 		n++
 	}
 	if filter.Cursor != nil {

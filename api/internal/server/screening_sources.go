@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -43,6 +44,40 @@ func (s *Server) screeningSourceStatuses(ctx context.Context, ids []string, thre
 		return unavailableSourceStatuses(ids, threshold, "source status unavailable"), nil
 	}
 	return nil, fmt.Errorf("screening source directory not configured")
+}
+
+// screeningDegradation reports whether the required watchlist sources are
+// usable right now. A run made while one is stale, failed or never imported is
+// still executed -- blocking screening during a provider outage trades a
+// missed detection for a halted operation -- but it is recorded as degraded so
+// a clear result is not later mistaken for evidence of absence.
+func (s *Server) screeningDegradation(ctx context.Context) domain.ScreeningDegradation {
+	readiness := s.policies.ScreeningReadiness()
+	if !readiness.MarksDegraded() {
+		return domain.ScreeningDegradation{}
+	}
+	statuses, err := s.screeningSourceStatuses(ctx, nil, 0)
+	if err != nil {
+		// No source directory means no readiness signal at all, which is not
+		// the same as a failing source. Marking every run degraded here would
+		// leave the flag meaning nothing on the deployments that do report.
+		slog.Warn("screening: source readiness could not be assessed; run recorded without a degradation claim", "error", err)
+		return domain.ScreeningDegradation{}
+	}
+	var degraded []string
+	for _, status := range statuses {
+		if status.OperationalState == domain.ScreeningSourceReady {
+			continue
+		}
+		if !readiness.Required(status.ListID) {
+			continue
+		}
+		degraded = append(degraded, status.ListID)
+	}
+	if len(degraded) == 0 {
+		return domain.ScreeningDegradation{}
+	}
+	return domain.ScreeningDegradation{Degraded: true, Sources: degraded}
 }
 
 func readImporterSourceStatuses(ctx context.Context, ids []string, threshold time.Duration, listStore screening.ListStore, tracker screening.FailureTracker) []domain.ScreeningSourceStatus {

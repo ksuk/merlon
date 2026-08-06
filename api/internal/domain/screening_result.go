@@ -60,10 +60,14 @@ type ScreeningResultRecord struct {
 	RunID               string                `json:"run_id,omitempty"`
 	Suppressed          bool                  `json:"suppressed"`
 	SuppressionReason   string                `json:"suppression_reason,omitempty"`
-	MatchEvidence       map[string]any        `json:"match_evidence,omitempty"`
-	CaseID              string                `json:"case_id,omitempty"`
-	Version             int                   `json:"version"`
-	UpdatedAt           time.Time             `json:"updated_at"`
+	// Degraded copies the producing run's readiness verdict onto the result,
+	// because results are listed, reviewed and exported without their run.
+	Degraded        bool           `json:"degraded"`
+	DegradedSources []string       `json:"degraded_sources,omitempty"`
+	MatchEvidence   map[string]any `json:"match_evidence,omitempty"`
+	CaseID          string         `json:"case_id,omitempty"`
+	Version         int            `json:"version"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
 // ApplyStatusTransition validates and applies a status change in place. For

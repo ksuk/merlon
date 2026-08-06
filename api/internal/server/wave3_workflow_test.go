@@ -96,6 +96,66 @@ func TestScreeningReviewRequiredAuditFailureRollsBackWave3Workflow(t *testing.T)
 	}
 }
 
+// A repeated confirmation must not create a second critical case for the same
+// hit. The version CAS is what stops it, so this exercises the whole route
+// rather than the store method alone.
+func TestScreeningReviewSecondTruePositiveConflictsAndCreatesNoSecondCase(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	cases := store.NewMemoryCaseRepo()
+	wave3 := store.NewMemoryWave3Repo()
+	wave3.SetCaseRepository(cases)
+	s := New(":0", Deps{
+		Customers: customers, Cases: cases, Audit: store.NewMemoryAuditRepo(),
+		EventOutbox: store.NewMemoryEventOutboxRepo(), Wave3: wave3,
+	})
+	ctx := context.Background()
+	customerID := "00000000000000000000000000000061"
+	if err := customers.Create(ctx, &domain.Customer{ID: customerID, ExternalID: "double-confirm", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	resultID := "00000000000000000000000000000062"
+	if err := wave3.PersistScreeningRun(ctx, &domain.ScreeningRun{ID: "00000000000000000000000000000063", CustomerID: customerID, Status: domain.ScreeningRunCompleted}, []domain.ScreeningResultRecord{{ID: resultID, CustomerID: customerID, ListID: "ofac_sdn", ListType: "sanctions", EntryID: "OFAC-1", MatchedName: "Example", Status: domain.ScreeningResultStatusReviewing}}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"status":"TRUE_POSITIVE","rationale":"confirmed sanctions match","expected_version":1}`
+	first := httptest.NewRecorder()
+	s.Handler().ServeHTTP(first, httptest.NewRequest(http.MethodPatch, "/api/v1/screening/results/"+resultID, strings.NewReader(body)))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first confirmation = %d, body=%s", first.Code, first.Body.String())
+	}
+
+	// Same expected_version: a retry of a request the caller believes did not land.
+	second := httptest.NewRecorder()
+	s.Handler().ServeHTTP(second, httptest.NewRequest(http.MethodPatch, "/api/v1/screening/results/"+resultID, strings.NewReader(body)))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second confirmation = %d, want 409", second.Code)
+	}
+
+	// Even at the now-current version the transition is illegal: the state
+	// machine has no TRUE_POSITIVE -> TRUE_POSITIVE edge.
+	third := httptest.NewRecorder()
+	s.Handler().ServeHTTP(third, httptest.NewRequest(http.MethodPatch, "/api/v1/screening/results/"+resultID, strings.NewReader(`{"status":"TRUE_POSITIVE","rationale":"confirmed again","expected_version":2}`)))
+	if third.Code == http.StatusOK {
+		t.Fatalf("re-confirming an already confirmed hit = %d, want a rejection", third.Code)
+	}
+
+	stored, err := cases.ListByCustomer(ctx, customerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("cases = %d, want exactly 1 for one confirmed hit", len(stored))
+	}
+	history, err := wave3.ListScreeningResultHistory(ctx, resultID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history entries = %d, want 1: rejected attempts must leave no trail of transitions", len(history))
+	}
+}
+
 func TestTargetConfirmationRequiresRationale(t *testing.T) {
 	customers := store.NewMemoryCustomerRepo()
 	wave3 := store.NewMemoryWave3Repo()
