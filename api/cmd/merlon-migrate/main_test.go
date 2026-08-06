@@ -108,8 +108,8 @@ func TestMigrationRunnerAppliesAllMigrationsAndIsIdempotent(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 44 {
-		t.Fatalf("schema_migrations count = %d, want 44", count)
+	if count != 48 {
+		t.Fatalf("schema_migrations count = %d, want 48", count)
 	}
 }
 
@@ -321,8 +321,11 @@ var appRoleDMLTables = []string{
 	"screening_list_failures",
 	"screening_list_snapshots",
 	"screening_results",
+	"screening_runs",
 	"seed_state",
 	"str_reports",
+	"backtest_job_metadata",
+	"target_manifests",
 	"transactions",
 	"users",
 	"webhook_deliveries",
@@ -332,7 +335,7 @@ var appRoleDMLTables = []string{
 	"whitelist_reviews",
 }
 
-var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "case_evidence", "case_relationship_events", "rule_activation_events", "str_report_events"}
+var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "case_evidence", "case_relationship_events", "customer_identity_history", "pending_evaluation_history", "rule_activation_events", "screening_result_history", "str_report_events"}
 
 func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 	migrations, err := loadMigrations("../../../migrations")
@@ -351,7 +354,7 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 		}
 	}
 	classified := append(append([]string{}, appRoleDMLTables...), appRoleAppendOnlyTables...)
-	const expectedApplicationTableCount = 39
+	const expectedApplicationTableCount = 45
 	if len(migrationTables) != expectedApplicationTableCount {
 		t.Fatalf("extracted %d migration tables, want %d: %v", len(migrationTables), expectedApplicationTableCount, migrationTables)
 	}

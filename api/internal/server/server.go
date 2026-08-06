@@ -70,6 +70,8 @@ type Server struct {
 	// remain a PH10 gate.
 	tmBaseCurrency         string
 	realtimeMonitorTimeout time.Duration
+	eddStage2Days          int
+	eddStage3Days          int
 	screeningResults       domain.ScreeningResultRepository
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
@@ -90,6 +92,8 @@ type Server struct {
 
 	db           DBPinger
 	pendingEvals domain.PendingEvaluationRepository
+	batchRuns    domain.BatchRunRepository
+	wave3        domain.Wave3Repository
 	events       events.Bus
 	eventOutbox  domain.EventOutboxRepository
 
@@ -137,6 +141,8 @@ type Deps struct {
 	WhitelistMaxValidDays  int
 	TMBaseCurrency         string
 	RealtimeMonitorTimeout time.Duration
+	EDDStage2Days          int
+	EDDStage3Days          int
 	ScreeningResults       domain.ScreeningResultRepository
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
@@ -151,6 +157,8 @@ type Deps struct {
 
 	DB                 DBPinger
 	PendingEvaluations domain.PendingEvaluationRepository
+	BatchRuns          domain.BatchRunRepository
+	Wave3              domain.Wave3Repository
 	Events             events.Bus
 	EventOutbox        domain.EventOutboxRepository
 
@@ -203,6 +211,8 @@ func New(addr string, deps Deps) *Server {
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		tmBaseCurrency:           deps.TMBaseCurrency,
 		realtimeMonitorTimeout:   deps.RealtimeMonitorTimeout,
+		eddStage2Days:            deps.EDDStage2Days,
+		eddStage3Days:            deps.EDDStage3Days,
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
@@ -215,6 +225,8 @@ func New(addr string, deps Deps) *Server {
 
 		db:           deps.DB,
 		pendingEvals: deps.PendingEvaluations,
+		batchRuns:    deps.BatchRuns,
+		wave3:        deps.Wave3,
 		events:       deps.Events,
 		eventOutbox:  deps.EventOutbox,
 
@@ -259,12 +271,29 @@ func New(addr string, deps Deps) *Server {
 			}
 		}
 	}
+	if memoryWave3, ok := s.wave3.(*store.MemoryWave3Repo); ok {
+		if memoryCases, ok := s.cases.(*store.MemoryCaseRepo); ok {
+			memoryWave3.SetCaseRepository(memoryCases)
+		}
+	}
 	if s.atomic == nil {
+		var identityHistory domain.CustomerIdentityHistoryRepository
+		if memoryWave3, ok := s.wave3.(*store.MemoryWave3Repo); ok {
+			identityHistory = memoryWave3
+		}
 		memoryRepos := domain.AtomicMutationRepositories{
 			Customers: s.customers, Transactions: s.transactions, Alerts: s.alerts,
 			Reports: s.reports, Audit: s.audit, Cases: s.cases,
 			CaseAlertLifecycle: s.caseAlertLifecycle, Investigation: s.caseInvestigation,
-			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox,
+			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox, IdentityHistory: identityHistory, Wave3: s.wave3,
+			PendingEvaluations: func() domain.PendingEvaluationWorkflowRepository {
+				if workflow, ok := s.pendingEvals.(domain.PendingEvaluationWorkflowRepository); ok {
+					return workflow
+				}
+				return nil
+			}(),
+			BatchRuns:    s.batchRuns,
+			BacktestJobs: s.backtestJobs,
 		}
 		if atomic, err := store.NewMemoryAtomicMutationRepo(memoryRepos); err == nil {
 			s.atomic = atomic
@@ -308,12 +337,23 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/customers", s.handleCreateCustomer)
 	s.route("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
 	s.route("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
+	s.route("GET /api/v1/customers/{id}/score-explanation", s.handleScoreExplanation)
+	s.route("GET /api/v1/customers/{id}/scores/{scoreID}/explanation", s.handleScoreExplanation)
+	s.route("GET /api/v1/customers/{id}/screening-results", s.handleListScreeningResults)
+	s.route("GET /api/v1/customers/{id}/investigation", s.handleCustomerInvestigation)
+	s.route("GET /api/v1/customers/{id}/identity-history", s.handleListCustomerIdentityHistory)
 	s.route("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
 	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
 	// Screening (WS-7)
 	s.route("POST /api/v1/screening/check", s.handleScreeningCheck)
+	s.route("GET /api/v1/screening/runs", s.handleListScreeningRuns)
+	s.route("GET /api/v1/screening/runs/{id}", s.handleGetScreeningRun)
+	s.route("GET /api/v1/screening/results", s.handleListScreeningResults)
+	s.route("GET /api/v1/screening/results/{id}", s.handleGetScreeningResult)
+	s.route("GET /api/v1/screening/results/{id}/history", s.handleListScreeningResultHistory)
 	s.route("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
+	s.route("GET /api/v1/screening/sources", s.handleListScreeningSources)
 
 	// Accounts (joint accounts, the data model §1.1.3)
 	s.route("POST /api/v1/accounts", s.handleCreateAccount)
@@ -338,6 +378,7 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/backtest", s.handleRunBacktest)
 	s.route("POST /api/v1/backtests", s.handleCreateBacktestJob)
 	s.route("GET /api/v1/backtests", s.handleListBacktestJobs)
+	s.route("GET /api/v1/backtests/rules", s.handleDiscoverBacktestRules)
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
@@ -375,6 +416,19 @@ func (s *Server) routes() {
 	// Batch
 	s.route("POST /api/v1/batch/score", s.handleBatchScore)
 	s.route("POST /api/v1/batch/monitor", s.handleBatchMonitor)
+	s.route("POST /api/v1/batch/targets/preview", s.handlePreviewTargetManifest)
+	s.route("GET /api/v1/batch/targets/{id}", s.handleGetTargetManifest)
+	s.route("POST /api/v1/batch/targets/{id}/confirm", s.handleConfirmTargetManifest)
+	s.route("POST /api/v1/batch/runs", s.handleCreateBatchRun)
+	s.route("GET /api/v1/batch/runs", s.handleListBatchRuns)
+	s.route("GET /api/v1/batch/runs/{id}", s.handleGetBatchRun)
+	s.route("POST /api/v1/batch/runs/{id}/rerun", s.handleRerunBatchRun)
+
+	// Pending engine evaluations (fail-alert recovery queue)
+	s.route("GET /api/v1/pending-evaluations", s.handleListPendingEvaluations)
+	s.route("GET /api/v1/pending-evaluations/{id}", s.handleGetPendingEvaluation)
+	s.route("GET /api/v1/pending-evaluations/{id}/history", s.handleListPendingHistory)
+	s.route("POST /api/v1/pending-evaluations/{id}/{action}", s.handleTransitionPending)
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)

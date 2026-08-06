@@ -254,6 +254,15 @@ func TestOpenAPI_PaginationFieldsPresent(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s response schema missing", path)
 		}
+		if ref, ok := schema["$ref"].(string); ok && strings.HasPrefix(ref, "#/components/schemas/") {
+			components := spec["components"].(map[string]any)["schemas"].(map[string]any)
+			name := strings.TrimPrefix(ref, "#/components/schemas/")
+			resolved, exists := components[name].(map[string]any)
+			if !exists {
+				t.Fatalf("%s response schema reference %q is missing", path, ref)
+			}
+			schema = resolved
+		}
 		schemaProps, ok := schema["properties"].(map[string]any)
 		if !ok {
 			t.Fatalf("%s response schema.properties missing", path)

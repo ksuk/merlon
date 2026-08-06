@@ -157,6 +157,8 @@ func main() {
 
 	deps := server.Deps{}
 	deps.ConfigDigests = make(map[string]string)
+	deps.EDDStage2Days = cfg.EDDStage2Days
+	deps.EDDStage3Days = cfg.EDDStage3Days
 	priorityPolicy, err := casemgmt.LoadPriorityPolicy(cfg.CasePriorityPath)
 	if err != nil {
 		slog.Error("case priority policy", "error", err)
@@ -269,6 +271,7 @@ func main() {
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		deps.BacktestJobs = store.NewPgBacktestJobRepo(pool)
+		deps.Wave3 = store.NewPgWave3Repo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
 		memCustomers := store.NewMemoryCustomerRepo()
@@ -284,11 +287,18 @@ func main() {
 		deps.CaseInvestigation = store.NewMemoryCaseInvestigationRepo()
 		deps.AlertDecisions = store.NewMemoryAlertDecisionRepo()
 		deps.EventOutbox = store.NewMemoryEventOutboxRepo()
+		memoryWave3 := store.NewMemoryWave3Repo()
+		memoryPending := store.NewMemoryPendingEvaluationRepo()
+		memoryBatch := store.NewMemoryBatchRunRepo()
+		memoryBacktest := store.NewMemoryBacktestJobRepo()
+		deps.BacktestJobs = memoryBacktest
 		memoryAtomic, atomicErr := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
 			Customers: deps.Customers, Transactions: deps.Transactions, Alerts: deps.Alerts,
 			Reports: deps.Reports, Audit: deps.Audit, Cases: deps.Cases,
 			CaseAlertLifecycle: deps.CaseAlertLifecycle, Investigation: deps.CaseInvestigation,
 			AlertDecisions: deps.AlertDecisions, EventOutbox: deps.EventOutbox,
+			IdentityHistory: memoryWave3, Wave3: memoryWave3,
+			PendingEvaluations: memoryPending, BatchRuns: memoryBatch, BacktestJobs: memoryBacktest,
 		})
 		if atomicErr != nil {
 			slog.Error("memory atomic mutation repository initialization failed", "error", atomicErr)
@@ -298,14 +308,16 @@ func main() {
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
-		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
+		deps.PendingEvaluations = memoryPending
 		deps.Retention = store.NewMemoryRetentionRepo()
 		deps.Accounts = store.NewMemoryAccountRepo(memCustomers)
 		deps.Rules = store.NewMemoryRuleRepo()
-		batchRuns = store.NewMemoryBatchRunRepo()
-		deps.BacktestJobs = store.NewMemoryBacktestJobRepo()
+		batchRuns = memoryBatch
+		deps.BacktestJobs = memoryBacktest
+		deps.Wave3 = memoryWave3
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
+	deps.BatchRuns = batchRuns
 
 	if cfg.AuthEnabled {
 		if pool != nil {
@@ -436,6 +448,11 @@ func main() {
 			}
 		})
 	}
+	listenAddr := cfg.HTTPAddr
+	if cfg.Mode == "worker" {
+		listenAddr = cfg.WorkerHTTPAddr
+	}
+	var srv *server.Server
 
 	if runAPIJobs && (cfg.ScreeningImportEnabled || cfg.ScreeningRescreenEnabled) {
 		var listStore screening.ListStore
@@ -450,6 +467,10 @@ func main() {
 		deps.ScreeningListStore = listStore
 		deps.ScreeningFailureTracker = failureTracker
 		deps.ScreeningListIDs = screeningListIDs
+		// Construct the server after the source directory dependencies are
+		// attached so dashboard reads and scheduled screening share the same
+		// composition.
+		srv = server.New(listenAddr, deps)
 
 		if cfg.ScreeningImportEnabled {
 			fetcher := screening.NewDefaultHTTPFetcher(30 * time.Second)
@@ -473,7 +494,13 @@ func main() {
 				Customers: deps.Customers,
 				Screening: deps.Screening,
 				Results:   deps.ScreeningResults,
-				ListIDs:   screeningListIDs,
+				Workflow:  deps.Wave3,
+				PersistWorkflow: func(ctx context.Context, run *domain.ScreeningRun, results []domain.ScreeningResultRecord) error {
+					return srv.PersistScreeningRun(ctx, run, results)
+				},
+				ConfigDigests: deps.ConfigDigests,
+				Actor:         "system:screening-scheduler",
+				ListIDs:       screeningListIDs,
 			})
 			go scheduler.RunPeriodic(jobsCtx, cfg.ScreeningCheckInterval)
 			slog.Info("screening rescreening scheduler enabled", "check_interval", cfg.ScreeningCheckInterval)
@@ -482,11 +509,13 @@ func main() {
 		}
 	}
 
-	listenAddr := cfg.HTTPAddr
-	if cfg.Mode == "worker" {
-		listenAddr = cfg.WorkerHTTPAddr
+	if srv == nil {
+		srv = server.New(listenAddr, deps)
 	}
-	srv := server.New(listenAddr, deps)
+	if runAPIJobs {
+		go srv.ResumeManualBatchRuns(jobsCtx)
+		slog.Info("manual batch recovery check enabled")
+	}
 
 	if runAPIJobs && deps.Customers != nil && deps.Cases != nil {
 		batch.StartEDDEscalationTicker(jobsCtx, batch.EDDEscalationDeps{
@@ -566,6 +595,7 @@ func main() {
 	if runWorkerJobs && deps.PendingEvaluations != nil && deps.Monitoring != nil {
 		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
 		recoveryJob.ConfigDigests = deps.ConfigDigests
+		recoveryJob.SetPersistence(deps.Atomic, deps.Audit, deps.EventOutbox)
 		go func() {
 			if err := recoveryJob.Run(recoveryCtx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("pending evaluation recovery job stopped", "error", err)

@@ -32,6 +32,9 @@ func BuildOpenAPISpec() map[string]any {
 	for name, schema := range compatibilitySchemas() {
 		schemas[name] = schema
 	}
+	for name, schema := range wave3Schemas() {
+		schemas[name] = schema
+	}
 	spec := map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -49,84 +52,105 @@ func BuildOpenAPISpec() map[string]any {
 			{"url": "/", "description": "This deployment"},
 		},
 		"paths": map[string]any{
-			"/healthz":                                           pathProbeGET("Health check", true),
-			"/healthz/live":                                      pathProbeGET("Liveness probe", false),
-			"/healthz/ready":                                     pathProbeGET("Readiness probe", true),
-			"/api/v1/customers":                                  pathListCreate("Customer"),
-			"/api/v1/customers/{id}":                             pathGetPut("Customer"),
-			"/api/v1/customers/{id}/score":                       pathScoreCustomer(),
-			"/api/v1/customers/{id}/screen":                      pathScreenCustomer(),
-			"/api/v1/customers/{id}/scores":                      pathScoreHistory(),
-			"/api/v1/transactions":                               pathTransactionListCreate(),
-			"/api/v1/transactions/{id}":                          pathGET("Get transaction"),
-			"/api/v1/alerts":                                     pathListRiskPaginated("List alerts"),
-			"/api/v1/alerts/{id}":                                pathAlert(),
-			"/api/v1/alerts/bulk-close":                          pathBulkCloseAlerts(),
-			"/api/v1/alerts/bulk-case":                           pathBulkCaseAssignment(),
-			"/api/v1/alerts/{id}/decisions":                      pathAlertDecisionHistory(),
-			"/api/v1/backtest":                                   pathPOST("Run backtest"),
-			"/api/v1/backtests":                                  pathListCreate("Durable backtest job"),
-			"/api/v1/backtests/{id}":                             pathGET("Get durable backtest job"),
-			"/api/v1/backtests/{id}/cancel":                      pathPOST("Cancel durable backtest job"),
-			"/api/v1/backtests/{id}/affected-customers":          pathGET("List affected backtest customers"),
-			"/api/v1/reports/str":                                pathSTRReports(),
-			"/api/v1/reports/str/{id}":                           pathSTRReport(),
-			"/api/v1/reports/str/{id}/submit":                    pathSubmitSTRReport(),
-			"/api/v1/reports/str/export":                         pathExportSTRReport(),
-			"/api/v1/cases":                                      pathCases(),
-			"/api/v1/cases/{id}":                                 pathCase(),
-			"/api/v1/cases/{id}/notes":                           pathCaseNote(),
-			"/api/v1/cases/{id}/timeline":                        pathCaseTimeline(),
-			"/api/v1/cases/{id}/export":                          pathExportCaseFile(),
-			"/api/v1/cases/{id}/evidence":                        pathAddCaseEvidence(),
-			"/api/v1/cases/{id}/evidence/{evidence}/corrections": pathCorrectCaseEvidence(),
-			"/api/v1/cases/{id}/checklist/{item}":                pathUpdateCaseChecklist(),
-			"/api/v1/cases/{id}/work-items":                      pathCreateCaseWorkItem(),
-			"/api/v1/cases/{id}/work-items/{item}":               pathUpdateCaseWorkItem(),
-			"/api/v1/cases/{id}/related":                         pathRelatedCases(),
-			"/api/v1/cases/{id}/related/{relationship}":          pathRelatedCaseMutation(),
-			"/api/v1/dashboard":                                  pathGET("Dashboard statistics"),
-			"/api/v1/batch/score":                                pathPOST("Batch score customers"),
-			"/api/v1/batch/monitor":                              pathPOST("Batch monitor transactions"),
-			"/api/v1/webhooks/inbound/customer-status":           pathCustomerStatusWebhook(),
-			"/api/v1/webhooks":                                   pathWebhooks(),
-			"/api/v1/webhooks/{id}":                              pathWebhook(),
-			"/api/v1/webhooks/{id}/deliveries":                   pathWebhookDeliveries(),
-			"/api/v1/webhooks/dlq":                               pathWebhookDLQ(),
-			"/api/v1/webhooks/dlq/{id}/reprocess":                pathWebhookReprocess(),
-			"/api/v1/admin/apikeys":                              pathCRUD("API Key", "apikeys"),
-			"/api/v1/admin/apikeys/{id}":                         pathDELETE("Revoke API key"),
-			"/api/v1/operators":                                  pathOperatorDirectory(),
-			"/api/v1/audit":                                      pathAuditLogs(),
-			"/api/v1/audit/export":                               pathExportAuditLogs(),
-			"/api/v1/system/config-digests":                      pathGET("Get loaded configuration digests"),
-			"/api/v1/accounts":                                   pathAccountCreate(),
-			"/api/v1/accounts/{id}":                              pathAccountGet(),
-			"/api/v1/accounts/{id}/customers":                    pathAccountCustomers(),
-			"/api/v1/admin/retention-policies":                   pathRetentionPolicies(),
-			"/api/v1/admin/retention-policies/{category}":        pathRetentionPolicy(),
-			"/api/v1/admin/users":                                pathUsers(),
-			"/api/v1/auth/login":                                 pathLogin(),
-			"/api/v1/auth/logout":                                pathLogout(),
-			"/api/v1/auth/refresh":                               pathRefresh(),
-			"/api/v1/auth/me":                                    pathMe(),
-			"/api/v1/config/validate":                            pathValidateConfig(),
-			"/api/v1/openapi.json":                               pathOpenAPIDocument(),
-			"/api/v1/rules":                                      pathRules(),
-			"/api/v1/rules/{id}":                                 pathRule(),
-			"/api/v1/rules/{id}/export":                          pathRuleExport(),
-			"/api/v1/rules/{id}/activate":                        pathRuleActivation("activate"),
-			"/api/v1/rules/{id}/deactivate":                      pathRuleActivation("deactivate"),
-			"/api/v1/rules/import":                               pathRuleImport(),
-			"/api/v1/screening/check":                            pathScreeningCheck(),
-			"/api/v1/screening/results/{id}":                     pathScreeningResult(),
-			"/api/v1/setup":                                      pathSetup(),
-			"/api/v1/system/info":                                pathSystemInfo(),
-			"/api/v1/whitelist":                                  pathWhitelist(),
-			"/api/v1/whitelist/{id}":                             pathWhitelistEntry(),
-			"/api/v1/whitelist/{id}/approve":                     pathWhitelistApprove(),
-			"/api/v1/whitelist/{id}/reviews":                     pathWhitelistReview(),
-			"/api/v1/whitelist/{id}/revoke":                      pathWhitelistRevoke(),
+			"/healthz":                                            pathProbeGET("Health check", true),
+			"/healthz/live":                                       pathProbeGET("Liveness probe", false),
+			"/healthz/ready":                                      pathProbeGET("Readiness probe", true),
+			"/api/v1/customers":                                   pathCustomers(),
+			"/api/v1/customers/{id}":                              pathCustomer(),
+			"/api/v1/customers/{id}/score":                        pathScoreCustomer(),
+			"/api/v1/customers/{id}/screen":                       pathScreenCustomer(),
+			"/api/v1/customers/{id}/scores":                       pathScoreHistory(),
+			"/api/v1/customers/{id}/score-explanation":            pathCustomerScoreExplanation(),
+			"/api/v1/customers/{id}/scores/{scoreID}/explanation": pathCustomerScoreExplanationByID(),
+			"/api/v1/customers/{id}/screening-results":            pathCustomerScreeningResults(),
+			"/api/v1/customers/{id}/investigation":                pathCustomerInvestigation(),
+			"/api/v1/customers/{id}/identity-history":             pathCustomerIdentityHistory(),
+			"/api/v1/transactions":                                pathTransactionListCreate(),
+			"/api/v1/transactions/{id}":                           pathTransactionGet(),
+			"/api/v1/alerts":                                      pathListRiskPaginated("List alerts"),
+			"/api/v1/alerts/{id}":                                 pathAlert(),
+			"/api/v1/alerts/bulk-close":                           pathBulkCloseAlerts(),
+			"/api/v1/alerts/bulk-case":                            pathBulkCaseAssignment(),
+			"/api/v1/alerts/{id}/decisions":                       pathAlertDecisionHistory(),
+			"/api/v1/backtest":                                    pathPOST("Run backtest"),
+			"/api/v1/backtests":                                   pathBacktests(),
+			"/api/v1/backtests/{id}":                              pathBacktestJob(),
+			"/api/v1/backtests/{id}/cancel":                       pathPOST("Cancel durable backtest job"),
+			"/api/v1/backtests/{id}/affected-customers":           pathBacktestAffectedCustomers(),
+			"/api/v1/backtests/rules":                             pathBacktestRules(),
+			"/api/v1/reports/str":                                 pathSTRReports(),
+			"/api/v1/reports/str/{id}":                            pathSTRReport(),
+			"/api/v1/reports/str/{id}/submit":                     pathSubmitSTRReport(),
+			"/api/v1/reports/str/export":                          pathExportSTRReport(),
+			"/api/v1/cases":                                       pathCases(),
+			"/api/v1/cases/{id}":                                  pathCase(),
+			"/api/v1/cases/{id}/notes":                            pathCaseNote(),
+			"/api/v1/cases/{id}/timeline":                         pathCaseTimeline(),
+			"/api/v1/cases/{id}/export":                           pathExportCaseFile(),
+			"/api/v1/cases/{id}/evidence":                         pathAddCaseEvidence(),
+			"/api/v1/cases/{id}/evidence/{evidence}/corrections":  pathCorrectCaseEvidence(),
+			"/api/v1/cases/{id}/checklist/{item}":                 pathUpdateCaseChecklist(),
+			"/api/v1/cases/{id}/work-items":                       pathCreateCaseWorkItem(),
+			"/api/v1/cases/{id}/work-items/{item}":                pathUpdateCaseWorkItem(),
+			"/api/v1/cases/{id}/related":                          pathRelatedCases(),
+			"/api/v1/cases/{id}/related/{relationship}":           pathRelatedCaseMutation(),
+			"/api/v1/dashboard":                                   pathGET("Dashboard statistics"),
+			"/api/v1/batch/score":                                 pathPOST("Batch score customers"),
+			"/api/v1/batch/monitor":                               pathPOST("Batch monitor transactions"),
+			"/api/v1/batch/targets/preview":                       pathTargetPreview(),
+			"/api/v1/batch/targets/{id}":                          pathTargetManifest(),
+			"/api/v1/batch/targets/{id}/confirm":                  pathTargetConfirmation(),
+			"/api/v1/batch/runs":                                  pathBatchRuns(),
+			"/api/v1/batch/runs/{id}":                             pathBatchRun(),
+			"/api/v1/batch/runs/{id}/rerun":                       pathBatchRerun(),
+			"/api/v1/pending-evaluations":                         pathPendingEvaluations(),
+			"/api/v1/pending-evaluations/{id}":                    pathPendingEvaluation(),
+			"/api/v1/pending-evaluations/{id}/history":            pathPendingHistory(),
+			"/api/v1/pending-evaluations/{id}/{action}":           pathPendingTransition(),
+			"/api/v1/webhooks/inbound/customer-status":            pathCustomerStatusWebhook(),
+			"/api/v1/webhooks":                                    pathWebhooks(),
+			"/api/v1/webhooks/{id}":                               pathWebhook(),
+			"/api/v1/webhooks/{id}/deliveries":                    pathWebhookDeliveries(),
+			"/api/v1/webhooks/dlq":                                pathWebhookDLQ(),
+			"/api/v1/webhooks/dlq/{id}/reprocess":                 pathWebhookReprocess(),
+			"/api/v1/admin/apikeys":                               pathCRUD("API Key", "apikeys"),
+			"/api/v1/admin/apikeys/{id}":                          pathDELETE("Revoke API key"),
+			"/api/v1/operators":                                   pathOperatorDirectory(),
+			"/api/v1/audit":                                       pathAuditLogs(),
+			"/api/v1/audit/export":                                pathExportAuditLogs(),
+			"/api/v1/system/config-digests":                       pathGET("Get loaded configuration digests"),
+			"/api/v1/accounts":                                    pathAccountCreate(),
+			"/api/v1/accounts/{id}":                               pathAccountGet(),
+			"/api/v1/accounts/{id}/customers":                     pathAccountCustomers(),
+			"/api/v1/admin/retention-policies":                    pathRetentionPolicies(),
+			"/api/v1/admin/retention-policies/{category}":         pathRetentionPolicy(),
+			"/api/v1/admin/users":                                 pathUsers(),
+			"/api/v1/auth/login":                                  pathLogin(),
+			"/api/v1/auth/logout":                                 pathLogout(),
+			"/api/v1/auth/refresh":                                pathRefresh(),
+			"/api/v1/auth/me":                                     pathMe(),
+			"/api/v1/config/validate":                             pathValidateConfig(),
+			"/api/v1/openapi.json":                                pathOpenAPIDocument(),
+			"/api/v1/rules":                                       pathRules(),
+			"/api/v1/rules/{id}":                                  pathRule(),
+			"/api/v1/rules/{id}/export":                           pathRuleExport(),
+			"/api/v1/rules/{id}/activate":                         pathRuleActivation("activate"),
+			"/api/v1/rules/{id}/deactivate":                       pathRuleActivation("deactivate"),
+			"/api/v1/rules/import":                                pathRuleImport(),
+			"/api/v1/screening/check":                             pathScreeningCheck(),
+			"/api/v1/screening/runs":                              pathScreeningRuns(),
+			"/api/v1/screening/runs/{id}":                         pathScreeningRun(),
+			"/api/v1/screening/results":                           pathScreeningResults(),
+			"/api/v1/screening/results/{id}":                      pathScreeningResult(),
+			"/api/v1/screening/results/{id}/history":              pathScreeningResultHistory(),
+			"/api/v1/screening/sources":                           pathScreeningSources(),
+			"/api/v1/setup":                                       pathSetup(),
+			"/api/v1/system/info":                                 pathSystemInfo(),
+			"/api/v1/whitelist":                                   pathWhitelist(),
+			"/api/v1/whitelist/{id}":                              pathWhitelistEntry(),
+			"/api/v1/whitelist/{id}/approve":                      pathWhitelistApprove(),
+			"/api/v1/whitelist/{id}/reviews":                      pathWhitelistReview(),
+			"/api/v1/whitelist/{id}/revoke":                       pathWhitelistRevoke(),
 		},
 		"components": map[string]any{
 			"securitySchemes": map[string]any{
@@ -425,7 +449,7 @@ func wave2Schemas() map[string]any {
 		}),
 		"Customer": objectSchema(map[string]any{
 			"id": map[string]any{"type": "string"}, "external_id": map[string]any{"type": "string"},
-			"customer_type": map[string]any{"type": "string"}, "country_code": map[string]any{"type": "string"},
+			"customer_type": map[string]any{"type": "string", "enum": []string{"individual", "corporate_domestic", "corporate_foreign", "trust", "partnership", "npo", "government", "foreign_legal_arrangement"}}, "country_code": map[string]any{"type": "string"},
 			"product_types": arraySchema(map[string]any{"type": "string"}), "attributes": map[string]any{"type": "object", "additionalProperties": true},
 			"status":     map[string]any{"type": "string", "enum": []string{"active", "dormant", "frozen", "closed"}},
 			"risk_score": map[string]any{"type": "number", "nullable": true}, "risk_tier": map[string]any{"type": "string", "nullable": true},
@@ -702,9 +726,217 @@ func documentedJSONOperation(summary string, parameters []map[string]any, reques
 	return op
 }
 
+// wave3Schemas documents the durable workflow contracts added in Wave 3.
+func wave3Schemas() map[string]any {
+	return map[string]any{
+		"CustomerCreateRequest": objectSchema(map[string]any{
+			"external_id":   map[string]any{"type": "string"},
+			"customer_type": map[string]any{"type": "string", "enum": []string{"individual", "corporate_domestic", "corporate_foreign", "trust", "partnership", "npo", "government", "foreign_legal_arrangement"}},
+			"country_code":  map[string]any{"type": "string", "minLength": 2, "maxLength": 2},
+			"product_types": arraySchema(map[string]any{"type": "string"}),
+			"attributes":    map[string]any{"type": "object", "additionalProperties": true},
+			"identity":      map[string]any{"type": "object", "additionalProperties": true, "description": "Configured KYC identity fields; unspecified legacy attributes are preserved"},
+		}, "external_id", "customer_type", "country_code", "product_types", "attributes"),
+		"CustomerUpdateRequest": objectSchema(map[string]any{
+			"country_code":        map[string]any{"type": "string", "minLength": 2, "maxLength": 2},
+			"status":              map[string]any{"type": "string", "enum": []string{"active", "dormant", "frozen", "closed"}},
+			"product_types":       arraySchema(map[string]any{"type": "string"}),
+			"attributes":          map[string]any{"type": "object", "additionalProperties": true},
+			"identity":            map[string]any{"type": "object", "additionalProperties": true},
+			"rationale":           map[string]any{"type": "string"},
+			"expected_updated_at": map[string]any{"type": "string", "format": "date-time"},
+		}),
+		"PaginatedCustomers": objectSchema(map[string]any{"data": arraySchema(schemaRef("Customer")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"BacktestCreateRequest": objectSchema(map[string]any{
+			"from": map[string]any{"type": "string", "format": "date-time"}, "to": map[string]any{"type": "string", "format": "date-time"},
+			"customer_ids": arraySchema(map[string]any{"type": "string"}), "customer_filter": map[string]any{"type": "object", "additionalProperties": true},
+			"scenario_ids": arraySchema(map[string]any{"type": "string"}), "baseline_rule_set_id": map[string]any{"type": "string"}, "candidate_rule_set_id": map[string]any{"type": "string"},
+			"rationale": map[string]any{"type": "string"}, "rerun_of": map[string]any{"type": "string"},
+		}, "from", "to", "candidate_rule_set_id"),
+		"BacktestScenarioResult": objectSchema(map[string]any{
+			"scenario_id": map[string]any{"type": "string"}, "alerts_generated": map[string]any{"type": "integer"}, "high_severity_count": map[string]any{"type": "integer"}, "medium_severity_count": map[string]any{"type": "integer"}, "low_severity_count": map[string]any{"type": "integer"}, "affected_customer_ids": arraySchema(map[string]any{"type": "string"}), "added_customer_ids": arraySchema(map[string]any{"type": "string"}), "removed_customer_ids": arraySchema(map[string]any{"type": "string"}),
+		}, "scenario_id", "alerts_generated", "high_severity_count", "medium_severity_count", "low_severity_count", "affected_customer_ids"),
+		"BacktestResult": objectSchema(map[string]any{"backtest_id": map[string]any{"type": "string"}, "total_transactions": map[string]any{"type": "integer"}, "total_customers": map[string]any{"type": "integer"}, "total_alerts": map[string]any{"type": "integer"}, "scenario_results": arraySchema(schemaRef("BacktestScenarioResult")), "execution_time_ms": map[string]any{"type": "number"}}, "backtest_id", "total_transactions", "total_customers", "total_alerts", "scenario_results", "execution_time_ms"),
+		"BacktestJob": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"queued", "running", "completed", "failed", "cancelled"}}, "from": map[string]any{"type": "string", "format": "date-time"}, "to": map[string]any{"type": "string", "format": "date-time"}, "customer_ids": arraySchema(map[string]any{"type": "string"}), "customer_filter": map[string]any{"type": "object", "additionalProperties": true}, "scenario_ids": arraySchema(map[string]any{"type": "string"}), "baseline_rule_set_id": map[string]any{"type": "string"}, "candidate_rule_set_id": map[string]any{"type": "string"}, "baseline_rule_version": map[string]any{"type": "integer"}, "candidate_rule_version": map[string]any{"type": "integer"}, "config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "snapshot_at": map[string]any{"type": "string", "format": "date-time"}, "total_customers": map[string]any{"type": "integer"}, "processed_customers": map[string]any{"type": "integer"}, "progress": map[string]any{"type": "number"}, "baseline": schemaRef("BacktestResult"), "candidate": schemaRef("BacktestResult"), "delta": schemaRef("BacktestResult"), "error": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "started_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "updated_at": map[string]any{"type": "string", "format": "date-time"}, "metadata": schemaRef("BacktestMetadata"),
+		}, "id", "status", "from", "to", "baseline_rule_set_id", "candidate_rule_set_id", "snapshot_at", "progress", "created_at", "updated_at"),
+		"PaginatedBacktestJobs":              objectSchema(map[string]any{"data": arraySchema(schemaRef("BacktestJob")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"PaginatedAffectedBacktestCustomers": objectSchema(map[string]any{"data": arraySchema(map[string]any{"type": "string"}), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"ScreenMatch":                        objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "entry_id": map[string]any{"type": "string"}, "matched_name": map[string]any{"type": "string"}, "similarity": map[string]any{"type": "number"}, "list_type": map[string]any{"type": "string"}, "source": map[string]any{"type": "string"}}, "list_id", "entry_id", "matched_name", "similarity", "list_type", "source"),
+		"ScreenResult":                       objectSchema(map[string]any{"customer_id": map[string]any{"type": "string"}, "hit": map[string]any{"type": "boolean"}, "matches": arraySchema(schemaRef("ScreenMatch")), "lists_checked": map[string]any{"type": "integer"}, "screened_at": map[string]any{"type": "string", "format": "date-time"}, "run_id": map[string]any{"type": "string"}, "result_ids": arraySchema(map[string]any{"type": "string"})}, "customer_id", "hit", "matches", "lists_checked", "screened_at"),
+		"ScreeningBatchOutcome":              objectSchema(map[string]any{"customer_id": map[string]any{"type": "string"}, "screened": map[string]any{"type": "boolean"}, "skipped": map[string]any{"type": "boolean"}, "skip_reason": map[string]any{"type": "string"}, "error": map[string]any{"type": "string"}}, "customer_id", "screened", "skipped"),
+		"ScreeningBatchResponse":             objectSchema(map[string]any{"trigger": map[string]any{"type": "string"}, "outcomes": arraySchema(schemaRef("ScreeningBatchOutcome"))}, "trigger", "outcomes"),
+		"ScoreCustomerRequest":               objectSchema(map[string]any{"rule_set_id": map[string]any{"type": "string"}, "rule_set_version": map[string]any{"type": "integer", "minimum": 1}, "rationale": map[string]any{"type": "string"}, "override_evidence": map[string]any{"type": "object", "additionalProperties": true}, "confirmed": map[string]any{"type": "boolean"}}, "rule_set_id"),
+		"ScreeningRun": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "list_ids": arraySchema(map[string]any{"type": "string"}),
+			"config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "status": map[string]any{"type": "string", "enum": []string{"running", "completed", "failed", "partial"}}, "result_count": map[string]any{"type": "integer"},
+			"error": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "started_at": map[string]any{"type": "string", "format": "date-time"}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "created_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "id", "customer_id", "list_ids", "config_digests", "status", "result_count", "actor", "started_at", "created_at"),
+		"ScreeningResult": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "entry_id": map[string]any{"type": "string"}, "matched_name": map[string]any{"type": "string"}, "similarity": map[string]any{"type": "number"},
+			"status": map[string]any{"type": "string", "enum": []string{"NEW", "REVIEWING", "TRUE_POSITIVE", "FALSE_POSITIVE"}}, "false_positive_reason": map[string]any{"type": "string"}, "reviewed_by": map[string]any{"type": "string"}, "reviewed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "screened_at": map[string]any{"type": "string", "format": "date-time"}, "created_at": map[string]any{"type": "string", "format": "date-time"},
+			"run_id": map[string]any{"type": "string"}, "suppressed": map[string]any{"type": "boolean"}, "suppression_reason": map[string]any{"type": "string"}, "match_evidence": map[string]any{"type": "object", "additionalProperties": true}, "case_id": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "id", "customer_id", "list_id", "status", "screened_at", "created_at", "suppressed", "version", "updated_at"),
+		"ScreeningResultHistory":      objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "screening_result_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "screening_result_id", "from_status", "to_status", "rationale", "actor", "version", "created_at"),
+		"ScreeningSourceStatus":       objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "configured": map[string]any{"type": "boolean"}, "operational_state": map[string]any{"type": "string", "enum": []string{"never_imported", "ready", "stale", "unreadable", "failed", "unavailable"}}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_failure_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_success_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "age_seconds": map[string]any{"type": "integer", "nullable": true}, "freshness_threshold_seconds": map[string]any{"type": "integer"}, "consecutive_failures": map[string]any{"type": "integer"}, "diagnostic": map[string]any{"type": "string"}}, "list_id", "list_type", "configured", "operational_state", "freshness_threshold_seconds", "consecutive_failures"),
+		"ScreeningSourceDirectory":    objectSchema(map[string]any{"data": arraySchema(schemaRef("ScreeningSourceStatus")), "configured_count": map[string]any{"type": "integer"}, "ready_count": map[string]any{"type": "integer"}, "unready_count": map[string]any{"type": "integer"}}, "data", "configured_count", "ready_count", "unready_count"),
+		"ScreeningReviewRequest":      objectSchema(map[string]any{"status": map[string]any{"type": "string", "enum": []string{"REVIEWING", "TRUE_POSITIVE", "FALSE_POSITIVE"}}, "false_positive_reason": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "status", "expected_version"),
+		"ScreeningReviewOutcome":      objectSchema(map[string]any{"result": schemaRef("ScreeningResult"), "case_id": map[string]any{"type": "string"}, "case_created": map[string]any{"type": "boolean"}}, "result", "case_created"),
+		"BacktestMetadata":            objectSchema(map[string]any{"job_id": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "cohort_preview": map[string]any{"type": "object", "additionalProperties": true}, "baseline_snapshot": map[string]any{"type": "object", "additionalProperties": true}, "candidate_snapshot": map[string]any{"type": "object", "additionalProperties": true}, "rerun_of": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "job_id", "rationale", "cohort_preview", "baseline_snapshot", "candidate_snapshot", "created_at"),
+		"TargetManifest":              objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "operation": map[string]any{"type": "string"}, "target_mode": map[string]any{"type": "string", "enum": []string{"selected", "filter", "all"}}, "customer_ids": arraySchema(map[string]any{"type": "string"}), "filter": map[string]any{"type": "object", "additionalProperties": true}, "sample_customer_ids": arraySchema(map[string]any{"type": "string"}), "target_count": map[string]any{"type": "integer"}, "criteria": map[string]any{"type": "string"}, "rule_set_id": map[string]any{"type": "string"}, "rule_set_version": map[string]any{"type": "integer"}, "config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "token": map[string]any{"type": "string", "writeOnly": true}, "idempotency_key": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"preview", "confirmed", "consumed", "expired"}}, "version": map[string]any{"type": "integer"}, "expires_at": map[string]any{"type": "string", "format": "date-time"}, "created_by": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "confirmed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "run_id": map[string]any{"type": "string"}}, "id", "operation", "target_mode", "customer_ids", "sample_customer_ids", "target_count", "criteria", "status", "version", "expires_at", "created_by", "created_at"),
+		"TargetPreviewRequest":        objectSchema(map[string]any{"operation": map[string]any{"type": "string"}, "target_mode": map[string]any{"type": "string", "enum": []string{"selected", "filter", "all"}}, "customer_ids": arraySchema(map[string]any{"type": "string"}), "filter": map[string]any{"type": "object", "additionalProperties": true}, "criteria": map[string]any{"type": "string"}, "rule_set_id": map[string]any{"type": "string"}, "rule_set_version": map[string]any{"type": "integer"}, "rationale": map[string]any{"type": "string"}, "idempotency_key": map[string]any{"type": "string"}, "ttl_seconds": map[string]any{"type": "integer"}}, "target_mode"),
+		"TargetConfirmationRequest":   objectSchema(map[string]any{"token": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "idempotency_key": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "token", "rationale", "expected_version"),
+		"BatchRun":                    objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "job_type": map[string]any{"type": "string"}, "operation": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"running", "completed", "failed", "partial", "cancelled"}}, "parameters": map[string]any{"type": "object", "additionalProperties": true}, "target_manifest_id": map[string]any{"type": "string"}, "config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "actor": map[string]any{"type": "string"}, "result_counts": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "customer_outcomes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "object", "additionalProperties": true}}, "error": map[string]any{"type": "string"}, "rerun_of": map[string]any{"type": "string"}, "started_at": map[string]any{"type": "string", "format": "date-time"}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "updated_at": map[string]any{"type": "string", "format": "date-time"}, "processed_customer_ids": arraySchema(map[string]any{"type": "string"})}, "id", "job_type", "status", "started_at", "processed_customer_ids"),
+		"BatchRunCreateRequest":       objectSchema(map[string]any{"operation": map[string]any{"type": "string"}, "target_manifest_id": map[string]any{"type": "string"}, "parameters": map[string]any{"type": "object", "additionalProperties": true}, "rationale": map[string]any{"type": "string"}, "idempotency_key": map[string]any{"type": "string"}, "rerun_of": map[string]any{"type": "string"}}, "operation", "target_manifest_id"),
+		"PendingEvaluation":           objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "transaction_ids": arraySchema(map[string]any{"type": "string"}), "alert_ids": arraySchema(map[string]any{"type": "string"}), "status": map[string]any{"type": "string", "enum": []string{"PENDING_REVIEW", "PROCESSING", "RESOLVED", "FAILED"}}, "reason": map[string]any{"type": "string"}, "batch_run_id": map[string]any{"type": "string", "nullable": true}, "retry_count": map[string]any{"type": "integer"}, "resolved_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "next_retry_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "escalated_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "transaction_ids", "status", "reason", "retry_count", "version", "created_at", "updated_at"),
+		"PendingTransitionRequest":    objectSchema(map[string]any{"reason": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "expected_version"),
+		"PendingEvaluationHistory":    objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "pending_evaluation_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "action": map[string]any{"type": "string"}, "reason": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "retry_count": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "pending_evaluation_id", "from_status", "to_status", "action", "actor", "retry_count", "created_at"),
+		"CustomerIdentityHistory":     objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "changed_fields": map[string]any{"type": "object", "additionalProperties": true}, "actor": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "changed_fields", "actor", "rationale", "created_at"),
+		"Factor":                      objectSchema(map[string]any{"name": map[string]any{"type": "string"}, "axis": map[string]any{"type": "string"}, "score": map[string]any{"type": "number"}, "description": map[string]any{"type": "string"}, "business_meaning": map[string]any{"type": "string"}, "weight": map[string]any{"type": "number"}, "contribution": map[string]any{"type": "number"}, "observed_value": map[string]any{"type": "string"}, "rule": map[string]any{"type": "string"}, "fallback": map[string]any{"type": "boolean"}}, "name", "axis", "score", "description"),
+		"ScoreRecord":                 objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "rule_set_id": map[string]any{"type": "string"}, "rule_set_sha256": map[string]any{"type": "string"}, "score": map[string]any{"type": "number"}, "tier": map[string]any{"type": "string"}, "factors": arraySchema(schemaRef("Factor")), "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "override_evidence": map[string]any{"type": "object", "additionalProperties": true}, "scored_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "score", "factors", "scored_at"),
+		"ScoreExplanation":            objectSchema(map[string]any{"score": schemaRef("ScoreRecord"), "total_reconciled": map[string]any{"type": "number"}, "rule_set_id": map[string]any{"type": "string"}, "rule_set_sha256": map[string]any{"type": "string"}, "priority": map[string]any{"type": "string"}, "deterministic": map[string]any{"type": "boolean"}}, "score", "total_reconciled", "rule_set_id", "rule_set_sha256", "priority", "deterministic"),
+		"InvestigationTimelineEntry":  objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "kind": map[string]any{"type": "string", "enum": []string{"transaction", "alert", "case", "screening_result", "score"}}, "entity_id": map[string]any{"type": "string"}, "summary": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "kind", "entity_id", "summary", "created_at"),
+		"InvestigationEDD":            objectSchema(map[string]any{"required": map[string]any{"type": "boolean"}, "requested_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "stage1_last_sent_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "stage2_notified_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "stage3_notified_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "current_stage": map[string]any{"type": "string", "enum": []string{"none", "requested", "stage1", "stage2", "critical"}}, "elapsed_days": map[string]any{"type": "integer"}, "remaining_days": map[string]any{"type": "integer"}, "next_stage": map[string]any{"type": "string", "enum": []string{"none", "stage1", "stage2", "stage3"}}, "next_stage_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "completion_status": map[string]any{"type": "string", "enum": []string{"not_required", "open", "escalated"}}}, "required", "current_stage", "elapsed_days", "remaining_days", "next_stage", "completion_status"),
+		"CustomerIdentityHistoryPage": objectSchema(map[string]any{"data": arraySchema(schemaRef("CustomerIdentityHistory")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"CustomerInvestigation":       objectSchema(map[string]any{"customer": schemaRef("Customer"), "counts": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "pagination": map[string]any{"type": "object", "additionalProperties": schemaRef("PaginationMeta")}, "transactions": arraySchema(schemaRef("Transaction")), "alerts": arraySchema(schemaRef("Alert")), "cases": arraySchema(schemaRef("Case")), "screening_results": arraySchema(schemaRef("ScreeningResult")), "score_history": arraySchema(schemaRef("ScoreRecord")), "timeline": arraySchema(schemaRef("InvestigationTimelineEntry")), "edd": schemaRef("InvestigationEDD"), "freshness": map[string]any{"type": "string", "format": "date-time"}, "partial_failures": arraySchema(map[string]any{"type": "string"})}, "customer", "counts", "pagination", "transactions", "alerts", "cases", "screening_results", "score_history", "timeline", "edd", "freshness", "partial_failures"),
+		"Transaction":                 objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "external_id": map[string]any{"type": "string"}, "amount": map[string]any{"type": "number"}, "currency": map[string]any{"type": "string"}, "direction": map[string]any{"type": "string"}, "counterparty_id": map[string]any{"type": "string"}, "counterparty_country": map[string]any{"type": "string"}, "channel": map[string]any{"type": "string"}, "account_id": map[string]any{"type": "string", "nullable": true}, "counterparty": map[string]any{"type": "object", "additionalProperties": true, "nullable": true}, "metadata": map[string]any{"type": "object", "additionalProperties": true}, "idempotency_key": map[string]any{"type": "string", "nullable": true}, "travel_rule_applicable": map[string]any{"type": "boolean", "nullable": true}, "travel_rule_evidence": map[string]any{"type": "object", "additionalProperties": true}, "travel_rule_not_applicable_reason": map[string]any{"type": "string"}, "executed_at": map[string]any{"type": "string", "format": "date-time"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "external_id", "amount", "currency", "direction", "executed_at", "created_at"),
+		"CreateTransactionRequest":    objectSchema(map[string]any{"customer_id": map[string]any{"type": "string"}, "external_id": map[string]any{"type": "string"}, "amount": map[string]any{"type": "number"}, "currency": map[string]any{"type": "string"}, "direction": map[string]any{"type": "string"}, "counterparty_id": map[string]any{"type": "string"}, "counterparty_country": map[string]any{"type": "string"}, "channel": map[string]any{"type": "string"}, "account_id": map[string]any{"type": "string"}, "counterparty": map[string]any{"type": "object", "additionalProperties": true}, "metadata": map[string]any{"type": "object", "additionalProperties": true}, "travel_rule_applicable": map[string]any{"type": "boolean"}, "travel_rule_evidence": map[string]any{"type": "object", "additionalProperties": true}, "travel_rule_not_applicable_reason": map[string]any{"type": "string"}, "executed_at": map[string]any{"type": "string", "format": "date-time"}}, "customer_id", "external_id", "amount", "currency", "direction", "executed_at"),
+		"PaginatedScreeningRuns":      objectSchema(map[string]any{"data": arraySchema(schemaRef("ScreeningRun")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"PaginatedScreeningResults":   objectSchema(map[string]any{"data": arraySchema(schemaRef("ScreeningResult")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"PaginatedPendingEvaluations": objectSchema(map[string]any{"data": arraySchema(schemaRef("PendingEvaluation")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"PaginatedBatchRuns":          objectSchema(map[string]any{"data": arraySchema(schemaRef("BatchRun")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"PaginatedTransactions":       objectSchema(map[string]any{"data": arraySchema(schemaRef("Transaction")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+	}
+}
+
 func publicOperation(operation map[string]any) map[string]any {
 	operation["security"] = []map[string]any{}
 	return operation
+}
+
+func wave3PageParams(extra ...map[string]any) []map[string]any {
+	params := append([]map[string]any{}, paginationParams()...)
+	return append(params, extra...)
+}
+
+func wave3PaginatedResponses(description string, item any) map[string]any {
+	return successWithErrors("200", description, objectSchema(map[string]any{
+		"data": arraySchema(item), "pagination": schemaRef("PaginationMeta"),
+	}, "data", "pagination"), "400", "401", "404", "429", "500", "503")
+}
+
+func pathCustomerScoreExplanation() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Explain the latest CDD score", []map[string]any{pathIDParameter("id", "Customer identifier")}, nil, "200", "Explainable CDD score", schemaRef("ScoreExplanation"), "401", "404", "500", "503")}
+}
+
+func pathCustomerScoreExplanationByID() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Explain a selected CDD score", []map[string]any{pathIDParameter("id", "Customer identifier"), pathIDParameter("scoreID", "Score record identifier")}, nil, "200", "Explainable CDD score", schemaRef("ScoreExplanation"), "401", "404", "500", "503")}
+}
+
+func pathCustomerScreeningResults() map[string]any {
+	params := wave3PageParams(
+		map[string]any{"name": "list_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"NEW", "REVIEWING", "TRUE_POSITIVE", "FALSE_POSITIVE"}}},
+	)
+	return map[string]any{"get": map[string]any{"summary": "List durable screening results for a customer", "parameters": append([]map[string]any{pathIDParameter("id", "Customer identifier")}, params...), "responses": wave3PaginatedResponses("Screening results", schemaRef("ScreeningResult"))}}
+}
+
+func pathCustomerInvestigation() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get the customer 360 investigation read model", append([]map[string]any{pathIDParameter("id", "Customer identifier")}, paginationParams()...), nil, "200", "Customer investigation read model", schemaRef("CustomerInvestigation"), "400", "401", "404", "500", "503")}
+}
+
+func pathCustomerIdentityHistory() map[string]any {
+	return map[string]any{"get": map[string]any{"summary": "List customer identity change history", "parameters": append([]map[string]any{pathIDParameter("id", "Customer identifier")}, paginationParams()...), "responses": wave3PaginatedResponses("Customer identity history", schemaRef("CustomerIdentityHistory"))}}
+}
+
+func pathScreeningRuns() map[string]any {
+	return map[string]any{"get": map[string]any{"summary": "List durable screening runs", "parameters": append(paginationParams(), map[string]any{"name": "customer_id", "in": "query", "schema": map[string]any{"type": "string"}}), "responses": successWithErrors("200", "Screening runs", schemaRef("PaginatedScreeningRuns"), "400", "401", "429", "500", "503")}}
+}
+
+func pathScreeningRun() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get a durable screening run", []map[string]any{pathIDParameter("id", "Screening run identifier")}, nil, "200", "Screening run", schemaRef("ScreeningRun"), "401", "404", "500", "503")}
+}
+
+func screeningResultListParams() []map[string]any {
+	return wave3PageParams(
+		map[string]any{"name": "customer_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "list_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"NEW", "REVIEWING", "TRUE_POSITIVE", "FALSE_POSITIVE"}}},
+		map[string]any{"name": "from", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		map[string]any{"name": "to", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+	)
+}
+
+func pathScreeningResults() map[string]any {
+	return map[string]any{"get": map[string]any{"summary": "List durable screening results", "parameters": screeningResultListParams(), "responses": successWithErrors("200", "Screening results", schemaRef("PaginatedScreeningResults"), "400", "401", "429", "500", "503")}}
+}
+
+func pathScreeningResultHistory() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("List screening result decision history", []map[string]any{pathIDParameter("id", "Screening result identifier"), {"name": "limit", "in": "query", "schema": map[string]any{"type": "integer", "default": 50, "maximum": 200}}}, nil, "200", "Screening result history", arraySchema(schemaRef("ScreeningResultHistory")), "400", "401", "404", "500", "503")}
+}
+
+func pathScreeningSources() map[string]any {
+	params := []map[string]any{
+		{"name": "source_ids", "in": "query", "description": "Comma-separated configured source identifiers", "schema": map[string]any{"type": "string"}},
+		{"name": "freshness_threshold_seconds", "in": "query", "schema": map[string]any{"type": "integer", "minimum": 1}},
+	}
+	return map[string]any{"get": documentedJSONOperation("List the configured screening source directory", params, nil, "200", "Screening source readiness", schemaRef("ScreeningSourceDirectory"), "400", "401", "500", "503")}
+}
+
+func pathBacktestRules() map[string]any {
+	return map[string]any{"get": map[string]any{"summary": "Discover rule sets available for comparison", "parameters": paginationParams(), "responses": successWithErrors("200", "Backtest rule candidates", schemaRef("PaginatedRules"), "400", "401", "429", "500", "503")}}
+}
+
+func pathTargetPreview() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Preview and freeze a batch target manifest", nil, schemaRef("TargetPreviewRequest"), "201", "Target manifest preview", schemaRef("TargetManifest"), "400", "401", "409", "500", "503")}
+}
+
+func pathTargetManifest() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get a target manifest", []map[string]any{pathIDParameter("id", "Target manifest identifier")}, nil, "200", "Target manifest", schemaRef("TargetManifest"), "401", "404", "500", "503")}
+}
+
+func pathTargetConfirmation() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Confirm an immutable target manifest", []map[string]any{pathIDParameter("id", "Target manifest identifier")}, schemaRef("TargetConfirmationRequest"), "200", "Confirmed target manifest", schemaRef("TargetManifest"), "400", "401", "404", "409", "500", "503")}
+}
+
+func pathBatchRuns() map[string]any {
+	return map[string]any{
+		"get":  map[string]any{"summary": "List durable manual batch runs", "parameters": append([]map[string]any{}, paginationParams()...), "responses": successWithErrors("200", "Batch runs", schemaRef("PaginatedBatchRuns"), "400", "401", "429", "500", "503")},
+		"post": documentedJSONOperation("Create and execute a durable manual batch run", nil, schemaRef("BatchRunCreateRequest"), "201", "Batch run", schemaRef("BatchRun"), "400", "401", "404", "409", "500", "503"),
+	}
+}
+
+func pathBatchRun() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get a durable manual batch run", []map[string]any{pathIDParameter("id", "Batch run identifier")}, nil, "200", "Batch run", schemaRef("BatchRun"), "401", "404", "500", "503")}
+}
+
+func pathBatchRerun() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Rerun a durable manual batch run", []map[string]any{pathIDParameter("id", "Batch run identifier")}, nil, "201", "Rerun batch run", schemaRef("BatchRun"), "401", "404", "409", "500", "503")}
+}
+
+func pathPendingEvaluations() map[string]any {
+	params := wave3PageParams(
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "customer_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "batch_run_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "created_from", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		map[string]any{"name": "created_to", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		map[string]any{"name": "min_age_days", "in": "query", "schema": map[string]any{"type": "integer", "minimum": 0}},
+		map[string]any{"name": "max_age_days", "in": "query", "schema": map[string]any{"type": "integer", "minimum": 0}},
+	)
+	return map[string]any{"get": map[string]any{"summary": "List pending evaluation recovery items", "parameters": params, "responses": successWithErrors("200", "Pending evaluations", schemaRef("PaginatedPendingEvaluations"), "400", "401", "429", "500", "503")}}
+}
+
+func pathPendingEvaluation() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get a pending evaluation", []map[string]any{pathIDParameter("id", "Pending evaluation identifier")}, nil, "200", "Pending evaluation", schemaRef("PendingEvaluation"), "401", "404", "500", "503")}
+}
+
+func pathPendingHistory() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("List pending evaluation history", []map[string]any{pathIDParameter("id", "Pending evaluation identifier")}, nil, "200", "Pending evaluation history", arraySchema(schemaRef("PendingEvaluationHistory")), "401", "404", "500", "503")}
+}
+
+func pathPendingTransition() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Transition a pending evaluation", []map[string]any{pathIDParameter("id", "Pending evaluation identifier"), pathIDParameter("action", "retry, resolve, or escalate")}, schemaRef("PendingTransitionRequest"), "200", "Updated pending evaluation", schemaRef("PendingEvaluation"), "400", "401", "404", "409", "500", "503")}
 }
 
 func pathAccountCreate() map[string]any {
@@ -780,14 +1012,14 @@ func jsonOperationWithoutError(summary string, parameters []map[string]any, stat
 
 func pathScoreCustomer() map[string]any {
 	return map[string]any{"post": documentedJSONOperation("Score a customer's CDD risk", []map[string]any{pathIDParameter("id", "Customer identifier")},
-		objectSchema(map[string]any{"rule_set_id": map[string]any{"type": "string"}}),
+		schemaRef("ScoreCustomerRequest"),
 		"200", "Score record", schemaRef("ScoreRecord"), "400", "401", "404", "500", "502", "503")}
 }
 
 func pathScreenCustomer() map[string]any {
 	return map[string]any{"post": documentedJSONOperation("Screen a customer against configured lists", []map[string]any{pathIDParameter("id", "Customer identifier")},
 		objectSchema(map[string]any{"list_ids": arraySchema(map[string]any{"type": "string"})}),
-		"200", "Screening result", map[string]any{"type": "object", "additionalProperties": true}, "400", "401", "404", "500", "502", "503")}
+		"200", "Screening result", schemaRef("ScreenResult"), "400", "401", "404", "500", "502", "503")}
 }
 
 func pathScoreHistory() map[string]any {
@@ -851,13 +1083,15 @@ func pathRuleImport() map[string]any {
 func pathScreeningCheck() map[string]any {
 	return map[string]any{"post": documentedJSONOperation("Run an immediate screening check", nil,
 		objectSchema(map[string]any{"customer_id": map[string]any{"type": "string"}, "list_ids": arraySchema(map[string]any{"type": "string"})}, "customer_id"),
-		"200", "Screening batch result", map[string]any{"type": "object", "additionalProperties": true}, "400", "401", "404", "500", "503")}
+		"200", "Screening batch result", schemaRef("ScreeningBatchResponse"), "400", "401", "404", "500", "503")}
 }
 
 func pathScreeningResult() map[string]any {
-	return map[string]any{"patch": documentedJSONOperation("Review a screening result", []map[string]any{pathIDParameter("id", "Screening result identifier")},
-		objectSchema(map[string]any{"status": map[string]any{"type": "string"}, "false_positive_reason": map[string]any{"type": "string"}, "reviewed_by": map[string]any{"type": "string"}}, "status"),
-		"200", "Updated screening result", schemaRef("ScreeningResult"), "400", "401", "404", "500", "503")}
+	params := []map[string]any{pathIDParameter("id", "Screening result identifier")}
+	return map[string]any{
+		"get":   documentedJSONOperation("Get a durable screening result", params, nil, "200", "Screening result", schemaRef("ScreeningResult"), "401", "404", "500", "503"),
+		"patch": documentedJSONOperation("Review a screening result", params, schemaRef("ScreeningReviewRequest"), "200", "Updated screening result", schemaRef("ScreeningReviewOutcome"), "400", "401", "404", "409", "500", "503"),
+	}
 }
 
 func pathSetup() map[string]any {
@@ -1316,6 +1550,40 @@ func pathListCreate(resource string) map[string]any {
 	}
 }
 
+func pathCustomers() map[string]any {
+	parameters := append([]map[string]any{}, paginationParams()...)
+	parameters = append(parameters, map[string]any{"name": "search", "in": "query", "description": "Search external ID, identity name, kana, address, or country", "schema": map[string]any{"type": "string"}})
+	return map[string]any{
+		"get":  documentedJSONOperation("List customers", parameters, nil, "200", "Customers", schemaRef("PaginatedCustomers"), "400", "401", "429", "500", "503"),
+		"post": documentedJSONOperation("Create customer KYC identity", nil, schemaRef("CustomerCreateRequest"), "201", "Created customer", schemaRef("Customer"), "400", "401", "409", "500", "503"),
+	}
+}
+
+func pathCustomer() map[string]any {
+	parameters := []map[string]any{pathIDParameter("id", "Customer identifier")}
+	return map[string]any{
+		"get": documentedJSONOperation("Get customer", parameters, nil, "200", "Customer", schemaRef("Customer"), "401", "404", "500"),
+		"put": documentedJSONOperation("Partially update customer KYC identity", parameters, schemaRef("CustomerUpdateRequest"), "200", "Updated customer", schemaRef("Customer"), "400", "401", "404", "409", "500", "503"),
+	}
+}
+
+func pathBacktests() map[string]any {
+	return map[string]any{
+		"get":  documentedJSONOperation("List durable backtest jobs", paginationParams(), nil, "200", "Backtest jobs", schemaRef("PaginatedBacktestJobs"), "400", "401", "429", "500", "503"),
+		"post": documentedJSONOperation("Create a durable backtest comparison", nil, schemaRef("BacktestCreateRequest"), "202", "Queued backtest job", schemaRef("BacktestJob"), "400", "401", "409", "500", "503"),
+	}
+}
+
+func pathBacktestJob() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get durable backtest job", []map[string]any{pathIDParameter("id", "Backtest job identifier")}, nil, "200", "Backtest job", schemaRef("BacktestJob"), "401", "404", "500", "503")}
+}
+
+func pathBacktestAffectedCustomers() map[string]any {
+	params := append([]map[string]any{pathIDParameter("id", "Backtest job identifier")}, paginationParams()...)
+	params = append(params, map[string]any{"name": "scenario_id", "in": "query", "schema": map[string]any{"type": "string"}})
+	return map[string]any{"get": documentedJSONOperation("List affected customers for a backtest comparison", params, nil, "200", "Affected customer IDs", schemaRef("PaginatedAffectedBacktestCustomers"), "400", "401", "404", "429", "500", "503")}
+}
+
 // pathTransactionListCreate documents the customer-scoped transaction list
 // contract. The handler rejects requests without customer_id, so generated
 // clients must expose it as a required query parameter.
@@ -1328,14 +1596,23 @@ func pathTransactionListCreate() map[string]any {
 		"description": "Customer whose transactions are listed",
 		"schema":      map[string]any{"type": "string"},
 	})
+	postParams := []map[string]any{{
+		"name": "Idempotency-Key", "in": "header", "required": false,
+		"description": "Optional key used to make a retried transaction create exactly once",
+		"schema":      map[string]any{"type": "string"},
+	}}
 	return map[string]any{
 		"get": map[string]any{
 			"summary":    "List Transactions",
 			"parameters": params,
-			"responses":  paginatedListResponses(),
+			"responses":  successWithErrors("200", "Transactions", schemaRef("PaginatedTransactions"), "400", "401", "404", "429", "500", "503"),
 		},
-		"post": map[string]any{"summary": "Create Transaction", "responses": defaultResponses()},
+		"post": documentedJSONOperation("Create Transaction", postParams, schemaRef("CreateTransactionRequest"), "201", "Created transaction", schemaRef("Transaction"), "400", "401", "409", "422", "500", "503"),
 	}
+}
+
+func pathTransactionGet() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get transaction", []map[string]any{pathIDParameter("id", "Transaction identifier")}, nil, "200", "Transaction", schemaRef("Transaction"), "401", "404", "500", "503")}
 }
 
 func pathGetPut(resource string) map[string]any {
