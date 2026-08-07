@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/apierr"
+	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 )
@@ -100,19 +101,19 @@ func (s *Server) handlePreviewTargetManifest(w http.ResponseWriter, r *http.Requ
 			}
 		}
 	case domain.TargetModeFilter, domain.TargetModeAll:
-		customers, err := s.customers.List(r.Context(), 10001, 0)
+		resolved, err := s.resolveTargetPopulation(r.Context(), req.TargetMode, req.Filter)
 		if err != nil {
+			var tooLarge *errTargetPopulationTooLarge
+			if errors.As(err, &tooLarge) {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, tooLarge.Error())
+				return
+			}
 			writeWave3Error(w, err)
 			return
 		}
-		for _, c := range customers {
-			if req.TargetMode == domain.TargetModeFilter && !matchesCustomerFilter(c, req.Filter) {
-				continue
-			}
-			ids = append(ids, c.ID)
-		}
+		ids = resolved
 	}
-	if len(ids) > 10000 {
+	if len(ids) > maxTargetMatches {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "target exceeds the maximum of 10000 customers")
 		return
 	}
@@ -142,6 +143,72 @@ func (s *Server) handlePreviewTargetManifest(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusCreated, manifest)
 }
 
+const (
+	// targetResolutionPageSize is how many customers are read per page while
+	// resolving a filter. It is a memory bound, not a limit on the answer.
+	targetResolutionPageSize = 1000
+	// maxTargetMatches is the largest population one manifest may cover.
+	maxTargetMatches = 10000
+	// maxTargetScan bounds the work one preview request may do. Reaching it
+	// is reported as an error rather than answered with a partial population:
+	// a manifest is a promise about exactly who a batch will touch.
+	maxTargetScan = 200000
+)
+
+// errTargetPopulationTooLarge is returned when the book is too large to
+// resolve within maxTargetScan. It is deliberately distinct from "too many
+// matches": the operator's remedy is different (narrow the filter so fewer
+// rows must be examined, rather than so fewer match).
+type errTargetPopulationTooLarge struct{ scanned int }
+
+func (e *errTargetPopulationTooLarge) Error() string {
+	return fmt.Sprintf("customer population is too large to resolve in one manifest (scanned %d rows); narrow the filter", e.scanned)
+}
+
+// resolveTargetPopulation pages through the whole customer book applying the
+// filter.
+//
+// It previously read a single page of 10,001 customers and filtered that. On a
+// book of 50,000 customers, a filter matching 200 of them produced a manifest
+// holding only the matches that happened to fall in the first 10,001 rows --
+// with no error, no warning, and a target_count the operator would reasonably
+// read as "these are all of them". The batch then ran against a silently
+// truncated population.
+func (s *Server) resolveTargetPopulation(ctx context.Context, mode domain.TargetMode, filter map[string]any) ([]string, error) {
+	ids := []string{}
+	scanned := 0
+	var cursor *domain.Cursor
+	for {
+		page, err := s.customers.ListByCursor(ctx, targetResolutionPageSize, cursor)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			return ids, nil
+		}
+		for _, c := range page {
+			scanned++
+			if mode == domain.TargetModeFilter && !matchesCustomerFilter(c, filter) {
+				continue
+			}
+			ids = append(ids, c.ID)
+			if len(ids) > maxTargetMatches {
+				// The caller reports this as the match-count error; returning
+				// early keeps a runaway filter from reading the whole book.
+				return ids, nil
+			}
+		}
+		if scanned >= maxTargetScan {
+			return nil, &errTargetPopulationTooLarge{scanned: scanned}
+		}
+		if len(page) < targetResolutionPageSize {
+			return ids, nil
+		}
+		last := page[len(page)-1]
+		cursor = &domain.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+}
+
 func matchesCustomerFilter(c domain.Customer, filter map[string]any) bool {
 	for key, value := range filter {
 		switch key {
@@ -164,6 +231,33 @@ func matchesCustomerFilter(c domain.Customer, filter map[string]any) bool {
 		}
 	}
 	return true
+}
+
+// largeBatchThreshold is where a batch stops being an operator's routine
+// correction and becomes a change to the book. Above it, confirmation needs
+// both the batch:execute:large permission and a second person.
+const largeBatchThreshold = 1000
+
+// checkLargeBatchAuthorization returns a status and message when the caller may
+// not confirm this manifest, or 0 when they may. Small manifests are
+// unaffected, so the everyday workflow keeps working exactly as before.
+func checkLargeBatchAuthorization(r *http.Request, manifest *domain.TargetManifest) (int, string) {
+	if manifest == nil || manifest.TargetCount <= largeBatchThreshold {
+		return 0, ""
+	}
+	// An unauthenticated deployment has no roles to check. Failing closed here
+	// would break every single-tenant install that runs without auth, so the
+	// role check applies only where roles exist; the separation-of-duties check
+	// below still does.
+	if role, ok := auth.RoleFromContext(r.Context()); ok && !auth.HasPermission(role, auth.PermBatchExecuteLarge) {
+		return http.StatusForbidden, fmt.Sprintf("confirming a batch over %d customers requires the %s permission", largeBatchThreshold, auth.PermBatchExecuteLarge)
+	}
+	if manifest.CreatedBy != "" && resolveAuditUserID(r) == manifest.CreatedBy {
+		// The same rule whitelist approval already applies: the person who
+		// framed the target is not the person who authorises it.
+		return http.StatusForbidden, "the operator who previewed a large batch cannot confirm it"
+	}
+	return 0, ""
 }
 
 type confirmTargetRequest struct {
@@ -195,6 +289,14 @@ func (s *Server) handleConfirmTargetManifest(w http.ResponseWriter, r *http.Requ
 	if strings.TrimSpace(req.Rationale) == "" {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "rationale is required for target confirmation")
 		return
+	}
+	// The dual-control checks need the manifest's size and author, which route
+	// middleware cannot see, so they run here before the mutation opens.
+	if existing, err := repo.GetTargetManifest(r.Context(), r.PathValue("id")); err == nil {
+		if status, message := checkLargeBatchAuthorization(r, existing); status != 0 {
+			writeErrorCode(w, status, apierr.CodeForbidden, message)
+			return
+		}
 	}
 	idempotencyKey := firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key"))
 	var m *domain.TargetManifest

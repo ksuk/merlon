@@ -22,6 +22,12 @@ const (
 	// changes affect scoring/monitoring behavior system-wide, so the HTTP API contract
 	// restricts them to Admin specifically.
 	PermRuleWrite Permission = "rule:write"
+	// PermBatchExecuteLarge is required to confirm a target manifest covering
+	// more than largeBatchThreshold customers. A mis-scoped bulk rescore or
+	// re-evaluation is one of the few actions in the system an operator cannot
+	// undo by editing a record afterwards, so the scale of the blast radius,
+	// not just the operation, decides who may authorise it.
+	PermBatchExecuteLarge Permission = "batch:execute:large"
 )
 
 // RolePermissions maps each role to its granted permissions (the authentication model §3).
@@ -29,7 +35,7 @@ const (
 // may not approve them or read the audit log (segregation of duties);
 // Viewer holds none.
 var RolePermissions = map[domain.Role][]Permission{
-	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermRuleWrite},
+	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermRuleWrite, PermBatchExecuteLarge},
 	domain.RoleAnalyst: {PermWhitelistRequest},
 	domain.RoleViewer:  {},
 }
