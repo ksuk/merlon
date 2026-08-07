@@ -33,6 +33,7 @@ DECLARE
         'accounts',
         'alerts',
         'api_keys',
+        'backtest_job_affected_customers',
         'backtest_job_customer_snapshots',
         'backtest_job_customers',
         'backtest_jobs',

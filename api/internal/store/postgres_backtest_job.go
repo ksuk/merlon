@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -145,9 +146,81 @@ func (r *PgBacktestJobRepo) UpdateProgress(ctx context.Context, id string, proce
 	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET processed_customers=$2::integer,total_customers=$3::integer,progress=CASE WHEN $3::integer=0 THEN 0 ELSE $2::double precision/$3::double precision END,eta_seconds=$4,lease_expires_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1 AND status='running'`, id, processed, total, eta)
 	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
 }
+
+// Complete writes the results and the per-scenario affected-customer rows in
+// one transaction. Split across two writes, a crash between them would leave a
+// job that looks complete but pages an empty population.
 func (r *PgBacktestJobRepo) Complete(ctx context.Context, id string, b, c, d *domain.BacktestResult) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='completed',progress=1,baseline=$2,candidate=$3,delta=$4,completed_at=now(),updated_at=now() WHERE id=$1 AND status='running'`, id, nullableJSON(b), nullableJSON(c), nullableJSON(d))
-	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE backtest_jobs SET status='completed',progress=1,baseline=$2,candidate=$3,delta=$4,completed_at=now(),updated_at=now() WHERE id=$1 AND status='running'`, id, nullableJSON(b), nullableJSON(c), nullableJSON(d))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		// Already terminal, or unknown: leave it untouched and report through
+		// the same contract the single-statement version used.
+		return r.backtestMutationResult(ctx, id, 0, nil)
+	}
+	// A retried completion replaces the previous rows rather than accumulating
+	// duplicates under a different scenario set.
+	if _, err := tx.Exec(ctx, `DELETE FROM backtest_job_affected_customers WHERE job_id=$1`, id); err != nil {
+		return err
+	}
+	for _, row := range domain.BacktestAffectedCustomersFrom(id, c, d) {
+		if _, err := tx.Exec(ctx, `INSERT INTO backtest_job_affected_customers(job_id,scenario_id,customer_id,delta_kind) VALUES($1,$2,$3,$4) ON CONFLICT (job_id,scenario_id,customer_id) DO UPDATE SET delta_kind=EXCLUDED.delta_kind`,
+			id, row.ScenarioID, domain.CanonicalUUID(row.CustomerID), string(row.DeltaKind)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *PgBacktestJobRepo) ListBacktestAffectedCustomers(ctx context.Context, filter domain.BacktestAffectedCustomerFilter, limit int) ([]domain.BacktestAffectedCustomer, error) {
+	query := `SELECT job_id::text, scenario_id, customer_id::text, delta_kind FROM backtest_job_affected_customers WHERE job_id=$1`
+	args := []any{filter.JobID}
+	if filter.ScenarioID != "" {
+		query += fmt.Sprintf(" AND scenario_id=$%d", len(args)+1)
+		args = append(args, filter.ScenarioID)
+	}
+	if filter.AfterCustomerID != "" {
+		query += fmt.Sprintf(" AND customer_id > $%d::uuid", len(args)+1)
+		args = append(args, domain.CanonicalUUID(filter.AfterCustomerID))
+	}
+	query += fmt.Sprintf(" ORDER BY customer_id, scenario_id LIMIT $%d", len(args)+1)
+	args = append(args, limit)
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.BacktestAffectedCustomer{}
+	for rows.Next() {
+		var row domain.BacktestAffectedCustomer
+		var jobID, customerID string
+		if err := rows.Scan(&jobID, &row.ScenarioID, &customerID, &row.DeltaKind); err != nil {
+			return nil, err
+		}
+		row.JobID = domain.CanonicalUUID(jobID)
+		row.CustomerID = domain.CanonicalUUID(customerID)
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *PgBacktestJobRepo) CountBacktestAffectedCustomers(ctx context.Context, filter domain.BacktestAffectedCustomerFilter) (int, error) {
+	query := `SELECT count(DISTINCT customer_id) FROM backtest_job_affected_customers WHERE job_id=$1`
+	args := []any{filter.JobID}
+	if filter.ScenarioID != "" {
+		query += fmt.Sprintf(" AND scenario_id=$%d", len(args)+1)
+		args = append(args, filter.ScenarioID)
+	}
+	var count int
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&count)
+	return count, err
 }
 func (r *PgBacktestJobRepo) Fail(ctx context.Context, id, reason string) error {
 	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='failed',error=$2,updated_at=now() WHERE id=$1 AND status='running'`, id, reason)

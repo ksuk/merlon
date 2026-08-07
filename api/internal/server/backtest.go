@@ -1,12 +1,12 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -254,35 +254,121 @@ func (s *Server) handleBacktestAffectedCustomers(w http.ResponseWriter, r *http.
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "durable backtest jobs not configured")
 		return
 	}
-	job, err := s.backtestJobs.Get(r.Context(), r.PathValue("id"))
+	jobID := r.PathValue("id")
+	job, err := s.backtestJobs.Get(r.Context(), jobID)
 	if err != nil {
 		writeBacktestRepositoryError(w, err)
 		return
 	}
-	var ids []string
-	if job.Candidate != nil {
-		for _, sr := range job.Candidate.ScenarioResults {
-			ids = append(ids, sr.AffectedCustomerIDs...)
-		}
-	}
-	sort.Strings(ids)
-	ids = uniqueStrings(ids)
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if offset < 0 {
-		offset = 0
-	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	if offset > len(ids) {
-		offset = len(ids)
+	scenarioID := strings.TrimSpace(r.URL.Query().Get("scenario_id"))
+
+	rows, total, err := s.backtestAffectedCustomers(r.Context(), job, scenarioID, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
 	}
-	end := offset + limit
-	if end > len(ids) {
-		end = len(ids)
+
+	// data stays a plain id array: this route predates Wave 3 and clients read
+	// it that way. delta_kinds is the additive half, keyed by the ids in data.
+	ids := make([]string, 0, len(rows))
+	for _, id := range orderedCustomerIDs(rows) {
+		ids = append(ids, id)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": ids[offset:end], "pagination": map[string]any{"limit": limit, "offset": offset, "total": len(ids)}})
+	kinds := domain.AggregateBacktestDeltaKinds(rows)
+	response := map[string]any{
+		"data":        ids,
+		"delta_kinds": kinds,
+		"rows":        rows,
+		"pagination":  map[string]any{"limit": limit, "total": total, "has_more": len(ids) == limit && total > 0},
+	}
+	if len(ids) == limit {
+		response["pagination"].(map[string]any)["next_cursor"] = ids[len(ids)-1]
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// backtestAffectedCustomers reads one keyset page of durable outcome rows.
+// Jobs completed before migration 051 have no rows, so the pre-existing
+// derivation from the stored result is kept as a fallback: an old job must not
+// start reporting an empty population.
+func (s *Server) backtestAffectedCustomers(ctx context.Context, job *domain.BacktestJob, scenarioID, cursor string, limit int) ([]domain.BacktestAffectedCustomer, int, error) {
+	repo, ok := s.backtestJobs.(domain.BacktestAffectedCustomerRepository)
+	if ok {
+		filter := domain.BacktestAffectedCustomerFilter{JobID: job.ID, ScenarioID: scenarioID, AfterCustomerID: cursor}
+		total, err := repo.CountBacktestAffectedCustomers(ctx, filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		if total > 0 {
+			// A customer can hold several scenario rows, so read generously and
+			// trim on the customer boundary rather than the row boundary.
+			rows, err := repo.ListBacktestAffectedCustomers(ctx, filter, limit*maxScenariosPerCustomerPage)
+			if err != nil {
+				return nil, 0, err
+			}
+			return trimToCustomerLimit(rows, limit), total, nil
+		}
+	}
+	rows := domain.BacktestAffectedCustomersFrom(job.ID, job.Candidate, job.Delta)
+	if scenarioID != "" {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.ScenarioID == scenarioID {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
+	total := len(orderedCustomerIDs(rows))
+	if cursor != "" {
+		after := rows[:0]
+		for _, row := range rows {
+			if row.CustomerID > cursor {
+				after = append(after, row)
+			}
+		}
+		rows = after
+	}
+	return trimToCustomerLimit(rows, limit), total, nil
+}
+
+// maxScenariosPerCustomerPage bounds the over-read that keeps whole customers
+// on one page. A customer matching more scenarios than this still appears;
+// only some of its scenario rows spill to the next page.
+const maxScenariosPerCustomerPage = 8
+
+// trimToCustomerLimit cuts a row page at a customer boundary so a customer's
+// scenario rows are never split in a way that would let the cursor skip them.
+func trimToCustomerLimit(rows []domain.BacktestAffectedCustomer, limit int) []domain.BacktestAffectedCustomer {
+	seen := 0
+	var current string
+	for i, row := range rows {
+		if row.CustomerID != current {
+			if seen == limit {
+				return rows[:i]
+			}
+			current = row.CustomerID
+			seen++
+		}
+	}
+	return rows
+}
+
+// orderedCustomerIDs lists each customer once, in row order.
+func orderedCustomerIDs(rows []domain.BacktestAffectedCustomer) []string {
+	out := make([]string, 0, len(rows))
+	var current string
+	for _, row := range rows {
+		if row.CustomerID != current {
+			out = append(out, row.CustomerID)
+			current = row.CustomerID
+		}
+	}
+	return out
 }
 
 func writeBacktestRepositoryError(w http.ResponseWriter, err error) {
@@ -297,16 +383,6 @@ func writeBacktestRepositoryError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-}
-
-func uniqueStrings(in []string) []string {
-	out := []string{}
-	for _, v := range in {
-		if len(out) == 0 || out[len(out)-1] != v {
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 const maxBacktestCustomers = 100
