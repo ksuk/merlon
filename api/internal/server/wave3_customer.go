@@ -10,6 +10,7 @@ import (
 
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/policy"
 )
 
 func (s *Server) handleListCustomerIdentityHistory(w http.ResponseWriter, r *http.Request) {
@@ -43,10 +44,15 @@ type investigationResponse struct {
 	Cases            []domain.Case                  `json:"cases"`
 	ScreeningResults []domain.ScreeningResultRecord `json:"screening_results"`
 	ScoreHistory     []domain.ScoreRecord           `json:"score_history"`
-	Timeline         []investigationTimelineEntry   `json:"timeline"`
-	EDD              investigationEDDPanel          `json:"edd"`
-	Freshness        time.Time                      `json:"freshness"`
-	PartialFailures  []string                       `json:"partial_failures"`
+	// IdentityHistory and EDDEvents feed the timeline. Without them a 360 view
+	// could show that a customer's risk changed but not that their identity
+	// details did, nor that an EDD window was opened or closed.
+	IdentityHistory []domain.CustomerIdentityHistoryEntry `json:"identity_history"`
+	EDDEvents       []domain.CustomerEDDEvent             `json:"edd_events"`
+	Timeline        []investigationTimelineEntry          `json:"timeline"`
+	EDD             investigationEDDPanel                 `json:"edd"`
+	Freshness       time.Time                             `json:"freshness"`
+	PartialFailures []string                              `json:"partial_failures"`
 }
 
 // investigationTimelineEntry is a read-model event, not a second audit
@@ -66,23 +72,37 @@ type investigationEDDPanel struct {
 	Stage1LastSentAt *time.Time `json:"stage1_last_sent_at,omitempty"`
 	Stage2NotifiedAt *time.Time `json:"stage2_notified_at,omitempty"`
 	Stage3NotifiedAt *time.Time `json:"stage3_notified_at,omitempty"`
+	CompletedAt      *time.Time `json:"completed_at,omitempty"`
+	ClosedAt         *time.Time `json:"closed_at,omitempty"`
+	CloseReason      string     `json:"close_reason,omitempty"`
 	CurrentStage     string     `json:"current_stage"`
 	ElapsedDays      int        `json:"elapsed_days"`
-	RemainingDays    int        `json:"remaining_days"`
-	NextStage        string     `json:"next_stage"`
-	NextStageAt      *time.Time `json:"next_stage_at,omitempty"`
-	CompletionStatus string     `json:"completion_status"`
+	// RemainingDays is clamped at zero and therefore cannot express lateness.
+	// It is kept for one release for existing clients; overdue_days is the
+	// field that answers "how late".
+	RemainingDays int `json:"remaining_days"`
+	// OverdueDays is always >= 0 and counts whole days past the due boundary.
+	// Without it a window 200 days overdue looked identical to one due today.
+	OverdueDays int        `json:"overdue_days"`
+	DueAt       *time.Time `json:"due_at,omitempty"`
+	NextStage   string     `json:"next_stage"`
+	NextStageAt *time.Time `json:"next_stage_at,omitempty"`
+	// CompletionStatus is one of not_required, open, overdue, escalated,
+	// completed. The first three did not exist before: a window could only be
+	// reported as not_required, open or escalated, so a finished EDD and an
+	// overdue one both read as "open".
+	CompletionStatus string `json:"completion_status"`
+	CaseID           string `json:"case_id,omitempty"`
+	PolicyVersion    string `json:"policy_version,omitempty"`
 }
 
-func buildInvestigationEDDPanel(customer *domain.Customer, stage2Days, stage3Days int) investigationEDDPanel {
+// buildInvestigationEDDPanel derives the whole panel from the edd policy. The
+// 30/60/90 day schedule previously appeared as literals here, again in the
+// escalation job, and a third time in the process configuration, so the three
+// could disagree about when a customer was late.
+func buildInvestigationEDDPanel(customer *domain.Customer, edd *policy.EDDPolicy) investigationEDDPanel {
 	if customer == nil {
 		return investigationEDDPanel{}
-	}
-	if stage2Days <= 0 {
-		stage2Days = 60
-	}
-	if stage3Days <= 0 {
-		stage3Days = 90
 	}
 	panel := investigationEDDPanel{
 		Required:         customer.EddRequestedAt != nil,
@@ -90,9 +110,14 @@ func buildInvestigationEDDPanel(customer *domain.Customer, stage2Days, stage3Day
 		Stage1LastSentAt: customer.EddStage1LastSentAt,
 		Stage2NotifiedAt: customer.EddStage2NotifiedAt,
 		Stage3NotifiedAt: customer.EddStage3NotifiedAt,
+		CompletedAt:      customer.EddCompletedAt,
+		ClosedAt:         customer.EddClosedAt,
+		CloseReason:      customer.EddCloseReason,
+		CaseID:           customer.EddCaseID,
 		CurrentStage:     "none",
 		NextStage:        "none",
 		CompletionStatus: "not_required",
+		PolicyVersion:    edd.Version(),
 	}
 	if customer.EddRequestedAt == nil {
 		return panel
@@ -102,35 +127,40 @@ func buildInvestigationEDDPanel(customer *domain.Customer, stage2Days, stage3Day
 	if elapsed := now.Sub(requestedAt); elapsed > 0 {
 		panel.ElapsedDays = int(elapsed / (24 * time.Hour))
 	}
-	panel.CompletionStatus = "open"
-	panel.NextStage = "stage1"
-	panel.NextStageAt = timePtr(requestedAt.Add(30 * 24 * time.Hour))
-	if panel.ElapsedDays >= 30 {
-		panel.NextStage = "stage2"
-		panel.NextStageAt = timePtr(requestedAt.Add(time.Duration(stage2Days) * 24 * time.Hour))
+	panel.DueAt = timePtr(edd.DueAt(requestedAt))
+	panel.OverdueDays = edd.OverdueDays(requestedAt, now)
+
+	current, next := edd.Stage(panel.ElapsedDays)
+	if current != nil {
+		panel.CurrentStage = current.Name
+	} else {
+		panel.CurrentStage = "requested"
 	}
-	if panel.ElapsedDays >= stage2Days {
-		panel.NextStage = "stage3"
-		panel.NextStageAt = timePtr(requestedAt.Add(time.Duration(stage3Days) * 24 * time.Hour))
-	}
-	if customer.EddStage3NotifiedAt != nil {
-		panel.NextStage = "none"
-		panel.NextStageAt = nil
-		panel.CompletionStatus = "escalated"
-	}
-	if panel.NextStageAt != nil {
+	if next != nil {
+		panel.NextStage = next.Name
+		panel.NextStageAt = timePtr(requestedAt.AddDate(0, 0, next.AfterDays))
 		if remaining := int(panel.NextStageAt.Sub(now) / (24 * time.Hour)); remaining > 0 {
 			panel.RemainingDays = remaining
 		}
 	}
-	if customer.EddStage3NotifiedAt != nil {
-		panel.CurrentStage = "critical"
-	} else if customer.EddStage2NotifiedAt != nil {
-		panel.CurrentStage = "stage2"
-	} else if customer.EddStage1LastSentAt != nil {
-		panel.CurrentStage = "stage1"
-	} else if customer.EddRequestedAt != nil {
-		panel.CurrentStage = "requested"
+
+	switch {
+	case customer.EddCompletedAt != nil:
+		// A completed window is finished regardless of how late it ran; the
+		// lateness stays visible in overdue_days.
+		panel.CompletionStatus = "completed"
+		panel.NextStage = "none"
+		panel.NextStageAt = nil
+		panel.RemainingDays = 0
+	case customer.EddStage3NotifiedAt != nil:
+		panel.CompletionStatus = "escalated"
+		panel.NextStage = "none"
+		panel.NextStageAt = nil
+		panel.RemainingDays = 0
+	case panel.OverdueDays > 0:
+		panel.CompletionStatus = "overdue"
+	default:
+		panel.CompletionStatus = "open"
 	}
 	return panel
 }
@@ -151,6 +181,12 @@ func buildInvestigationTimeline(out investigationResponse, limit int) ([]investi
 	}
 	for _, item := range out.ScoreHistory {
 		items = append(items, investigationTimelineEntry{ID: "score:" + item.ID, Kind: "score", EntityID: item.ID, Summary: string(item.Tier), CreatedAt: item.ScoredAt})
+	}
+	for _, item := range out.IdentityHistory {
+		items = append(items, investigationTimelineEntry{ID: "identity_history:" + item.ID, Kind: "identity_history", EntityID: item.ID, Summary: item.Rationale, CreatedAt: item.CreatedAt})
+	}
+	for _, item := range out.EDDEvents {
+		items = append(items, investigationTimelineEntry{ID: "edd_event:" + item.ID, Kind: "edd_event", EntityID: item.ID, Summary: string(item.EventType), CreatedAt: item.CreatedAt})
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if !items[i].CreatedAt.Equal(items[j].CreatedAt) {
@@ -181,7 +217,7 @@ func (s *Server) handleCustomerInvestigation(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
-	out := investigationResponse{Customer: customer, Counts: map[string]int{}, Pagination: map[string]PaginationMeta{}, Transactions: []domain.Transaction{}, Alerts: []domain.Alert{}, Cases: []domain.Case{}, ScreeningResults: []domain.ScreeningResultRecord{}, ScoreHistory: []domain.ScoreRecord{}, Timeline: []investigationTimelineEntry{}, EDD: buildInvestigationEDDPanel(customer, s.eddStage2Days, s.eddStage3Days), Freshness: time.Now().UTC(), PartialFailures: []string{}}
+	out := investigationResponse{Customer: customer, Counts: map[string]int{}, Pagination: map[string]PaginationMeta{}, Transactions: []domain.Transaction{}, Alerts: []domain.Alert{}, Cases: []domain.Case{}, ScreeningResults: []domain.ScreeningResultRecord{}, ScoreHistory: []domain.ScoreRecord{}, IdentityHistory: []domain.CustomerIdentityHistoryEntry{}, EDDEvents: []domain.CustomerEDDEvent{}, Timeline: []investigationTimelineEntry{}, EDD: buildInvestigationEDDPanel(customer, s.policies.EDD()), Freshness: time.Now().UTC(), PartialFailures: []string{}}
 	if txns, err := s.transactions.ListByCustomerCursor(r.Context(), id, pageReq.Limit+1, toDomainCursor(pageReq.Cursor)); err != nil {
 		out.PartialFailures = append(out.PartialFailures, "transactions")
 	} else {
@@ -272,6 +308,24 @@ func (s *Server) handleCustomerInvestigation(w http.ResponseWriter, r *http.Requ
 			} else {
 				out.PartialFailures = append(out.PartialFailures, "score_history_count")
 			}
+		}
+	}
+	// Both feed the timeline and are separately reportable, so a failure to
+	// read either degrades the panel rather than the whole response.
+	if repo, ok := s.wave3.(domain.CustomerIdentityHistoryRepository); ok {
+		if history, historyErr := repo.ListCustomerIdentityHistory(r.Context(), id, pageReq.Limit, nil); historyErr != nil {
+			out.PartialFailures = append(out.PartialFailures, "identity_history")
+		} else {
+			out.IdentityHistory = history
+			out.Counts["identity_history"] = len(history)
+		}
+	}
+	if repo, ok := s.customers.(domain.CustomerEDDEventRepository); ok {
+		if events, eventsErr := repo.ListCustomerEDDEvents(r.Context(), id, pageReq.Limit); eventsErr != nil {
+			out.PartialFailures = append(out.PartialFailures, "edd_events")
+		} else {
+			out.EDDEvents = events
+			out.Counts["edd_events"] = len(events)
 		}
 	}
 	out.Timeline, out.Pagination["timeline"] = buildInvestigationTimeline(out, pageReq.Limit)

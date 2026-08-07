@@ -555,10 +555,11 @@ func main() {
 			Customers:  deps.Customers,
 			Cases:      deps.Cases,
 			Webhook:    srv.DispatchWebhook,
+			Policy:     policies.EDD(),
 			Stage2Days: cfg.EDDStage2Days,
 			Stage3Days: cfg.EDDStage3Days,
 		}, eddEscalationCheckInterval)
-		slog.Info("EDD escalation job enabled", "stage2_days", cfg.EDDStage2Days, "stage3_days", cfg.EDDStage3Days)
+		slog.Info("EDD escalation job enabled", "policy_version", policies.EDD().Version())
 	}
 
 	if runAPIJobs && deps.Retention != nil && deps.Audit != nil {

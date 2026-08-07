@@ -63,6 +63,8 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/customers/{id}/score-explanation":            pathCustomerScoreExplanation(),
 			"/api/v1/customers/{id}/scores/{scoreID}/explanation": pathCustomerScoreExplanationByID(),
 			"/api/v1/customers/{id}/screening-results":            pathCustomerScreeningResults(),
+			"/api/v1/customers/{id}/edd/{action}":                 pathCustomerEDDAction(),
+			"/api/v1/customers/{id}/edd-events":                   pathCustomerEDDEvents(),
 			"/api/v1/customers/{id}/investigation":                pathCustomerInvestigation(),
 			"/api/v1/customers/{id}/identity-history":             pathCustomerIdentityHistory(),
 			"/api/v1/transactions":                                pathTransactionListCreate(),
@@ -834,6 +836,31 @@ func wave3Schemas() map[string]any {
 			"rerun_of":        map[string]any{"type": "string"},
 			"next":            map[string]any{"type": "string", "description": "The confirmation step required before the rerun can start"},
 		}, "target_manifest", "operation", "rerun_of"),
+		"EDDActionRequest": objectSchema(map[string]any{
+			"rationale":           map[string]any{"type": "string", "description": "Why the window is being closed or reopened; required by the edd policy"},
+			"case_id":             map[string]any{"type": "string"},
+			"expected_updated_at": map[string]any{"type": "string", "format": "date-time"},
+		}),
+		"EDDPanel": objectSchema(map[string]any{
+			"required": map[string]any{"type": "boolean"}, "requested_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"closed_at":    map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"close_reason": map[string]any{"type": "string"}, "current_stage": map[string]any{"type": "string"},
+			"elapsed_days":   map[string]any{"type": "integer"},
+			"remaining_days": map[string]any{"type": "integer", "deprecated": true, "description": "Clamped at zero and therefore unable to express lateness; use overdue_days"},
+			"overdue_days":   map[string]any{"type": "integer", "description": "Whole days past the due boundary, never negative"},
+			"due_at":         map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"next_stage":     map[string]any{"type": "string"}, "next_stage_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"completion_status": map[string]any{"type": "string", "enum": []string{"not_required", "open", "overdue", "escalated", "completed"}},
+			"case_id":           map[string]any{"type": "string"}, "policy_version": map[string]any{"type": "string"},
+		}, "required", "current_stage", "completion_status"),
+		"EDDEvent": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"},
+			"event_type": map[string]any{"type": "string", "enum": []string{"requested", "stage_escalated", "completed", "reopened", "closed_on_downgrade"}},
+			"stage":      map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"},
+			"case_id": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"},
+			"policy_version": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "id", "customer_id", "event_type", "actor", "created_at"),
 		"PendingEvaluation":           objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "transaction_ids": arraySchema(map[string]any{"type": "string"}), "alert_ids": arraySchema(map[string]any{"type": "string"}), "status": map[string]any{"type": "string", "enum": []string{"PENDING_REVIEW", "PROCESSING", "RESOLVED", "FAILED"}}, "reason": map[string]any{"type": "string"}, "batch_run_id": map[string]any{"type": "string", "nullable": true}, "retry_count": map[string]any{"type": "integer"}, "manual_retry_count": map[string]any{"type": "integer", "description": "Operator-initiated revivals of a failed record, counted separately from the automatic retry budget"}, "resolved_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "next_retry_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "escalated_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "transaction_ids", "status", "reason", "retry_count", "version", "created_at", "updated_at"),
 		"PendingTransitionRequest":    objectSchema(map[string]any{"reason": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "expected_version"),
 		"PendingEvaluationHistory":    objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "pending_evaluation_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "action": map[string]any{"type": "string"}, "reason": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "retry_count": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "pending_evaluation_id", "from_status", "to_status", "action", "actor", "retry_count", "created_at"),
@@ -1648,6 +1675,26 @@ func pathBacktests() map[string]any {
 
 func pathBacktestJob() map[string]any {
 	return map[string]any{"get": documentedJSONOperation("Get durable backtest job", []map[string]any{pathIDParameter("id", "Backtest job identifier")}, nil, "200", "Backtest job", schemaRef("BacktestJob"), "401", "404", "500", "503")}
+}
+
+func pathCustomerEDDAction() map[string]any {
+	params := []map[string]any{
+		pathIDParameter("id", "Customer identifier"),
+		{"name": "action", "in": "path", "required": true, "schema": map[string]any{"type": "string", "enum": []string{"complete", "reopen"}}},
+	}
+	return map[string]any{"post": documentedJSONOperation(
+		"Complete or reopen a customer's EDD window",
+		params, schemaRef("EDDActionRequest"),
+		"200", "The EDD panel after the action", schemaRef("EDDPanel"),
+		"400", "401", "404", "409", "500", "503")}
+}
+
+func pathCustomerEDDEvents() map[string]any {
+	return map[string]any{"get": documentedJSONOperation(
+		"List a customer's EDD lifecycle events",
+		[]map[string]any{pathIDParameter("id", "Customer identifier")}, nil,
+		"200", "EDD events, newest first", arraySchema(schemaRef("EDDEvent")),
+		"401", "404", "500", "503")}
 }
 
 func pathPendingEvaluationExport() map[string]any {

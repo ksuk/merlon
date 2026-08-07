@@ -751,7 +751,7 @@ func TestScoreCustomer_SetsEddRequestedAtOnHighTier(t *testing.T) {
 // escalation window closes once the customer is no longer High tier, so a
 // later re-entry into High tier starts a fresh window rather than resuming a
 // stale one.
-func TestScoreCustomer_ClearsEddRequestedAtOnTierDowngrade(t *testing.T) {
+func TestScoreCustomer_ClosesEddWindowButKeepsEvidenceOnTierDowngrade(t *testing.T) {
 	scoring := &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh}
 	s := New(":0", Deps{
 		Customers:    store.NewMemoryCustomerRepo(),
@@ -786,8 +786,17 @@ func TestScoreCustomer_ClearsEddRequestedAtOnTierDowngrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if c.EddRequestedAt != nil {
-		t.Errorf("EddRequestedAt = %v, want nil after downgrade below High", c.EddRequestedAt)
+	// The window closes, but the evidence that EDD was ever requested survives:
+	// erasing it made a routine rescore destroy the record of an outstanding
+	// obligation (ADR-0021, edd_policy tier_downgrade: retain_evidence).
+	if c.EddClosedAt == nil {
+		t.Error("EddClosedAt = nil, want the window closed on downgrade below High")
+	}
+	if c.EddCloseReason != "tier_downgrade" {
+		t.Errorf("EddCloseReason = %q, want tier_downgrade", c.EddCloseReason)
+	}
+	if c.EddRequestedAt == nil {
+		t.Error("EddRequestedAt was erased; the downgrade must close the window, not delete its history")
 	}
 }
 

@@ -100,6 +100,16 @@ type Customer struct {
 	EddStage1LastSentAt *time.Time `json:"edd_stage1_last_sent_at,omitempty"`
 	EddStage2NotifiedAt *time.Time `json:"edd_stage2_notified_at,omitempty"`
 	EddStage3NotifiedAt *time.Time `json:"edd_stage3_notified_at,omitempty"`
+	// EddCompletedAt/EddClosedAt/EddCloseReason end a window explicitly. A
+	// window could previously only be opened and escalated, so an operator who
+	// had finished the enhanced due diligence had no way to say so, and the
+	// record stayed outstanding forever.
+	EddCompletedAt *time.Time `json:"edd_completed_at,omitempty"`
+	EddClosedAt    *time.Time `json:"edd_closed_at,omitempty"`
+	EddCloseReason string     `json:"edd_close_reason,omitempty"`
+	// EddCaseID is the case the escalation job opened, recorded rather than
+	// rediscovered by matching a marker string inside a case summary.
+	EddCaseID string `json:"edd_case_id,omitempty"`
 
 	// AnonymizedAt marks that this customer's direct-PII Attributes fields
 	// have been replaced in response to an APPI deletion request made after

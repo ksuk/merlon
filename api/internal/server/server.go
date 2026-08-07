@@ -345,6 +345,8 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/customers/{id}", s.handleGetCustomer)
 	s.route("POST /api/v1/customers", s.handleCreateCustomer)
 	s.route("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
+	s.route("POST /api/v1/customers/{id}/edd/{action}", s.handleCustomerEDDAction)
+	s.route("GET /api/v1/customers/{id}/edd-events", s.handleListCustomerEDDEvents)
 	s.route("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
 	s.route("GET /api/v1/customers/{id}/score-explanation", s.handleScoreExplanation)
 	s.route("GET /api/v1/customers/{id}/scores/{scoreID}/explanation", s.handleScoreExplanation)

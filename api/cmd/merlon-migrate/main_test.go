@@ -347,7 +347,7 @@ var appRoleDMLTables = []string{
 	"whitelist_reviews",
 }
 
-var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "case_evidence", "case_relationship_events", "customer_identity_history", "pending_evaluation_history", "rule_activation_events", "screening_result_history", "str_report_events"}
+var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "customer_edd_events", "case_evidence", "case_relationship_events", "customer_identity_history", "pending_evaluation_history", "rule_activation_events", "screening_result_history", "str_report_events"}
 
 func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 	migrations, err := loadMigrations("../../../migrations")
@@ -366,7 +366,7 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 		}
 	}
 	classified := append(append([]string{}, appRoleDMLTables...), appRoleAppendOnlyTables...)
-	const expectedApplicationTableCount = 46
+	const expectedApplicationTableCount = 47
 	if len(migrationTables) != expectedApplicationTableCount {
 		t.Fatalf("extracted %d migration tables, want %d: %v", len(migrationTables), expectedApplicationTableCount, migrationTables)
 	}

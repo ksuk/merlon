@@ -72,6 +72,7 @@ DECLARE
         'case_events',
         'case_evidence',
         'case_relationship_events',
+        'customer_edd_events',
         'customer_identity_history',
         'pending_evaluation_history',
         'rule_activation_events',

@@ -460,11 +460,21 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 			eddAt := record.ScoredAt
 			c.EddRequestedAt = &eddAt
 		}
-	} else {
-		c.EddRequestedAt = nil
-		c.EddStage1LastSentAt = nil
-		c.EddStage2NotifiedAt = nil
-		c.EddStage3NotifiedAt = nil
+	} else if c.EddRequestedAt != nil && c.EddClosedAt == nil {
+		// Leaving High tier closes the window, but under the default
+		// retain_evidence policy it does not erase it. Nulling the four stage
+		// timestamps destroyed the record that EDD had been requested and how
+		// far it had escalated -- evidence a routine rescore has no business
+		// deleting. The window is marked closed instead, with the reason.
+		closedAt := record.ScoredAt
+		c.EddClosedAt = &closedAt
+		c.EddCloseReason = "tier_downgrade"
+		if !s.policies.EDD().RetainOnDowngrade() {
+			c.EddRequestedAt = nil
+			c.EddStage1LastSentAt = nil
+			c.EddStage2NotifiedAt = nil
+			c.EddStage3NotifiedAt = nil
+		}
 	}
 
 	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
