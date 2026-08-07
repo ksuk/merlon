@@ -318,6 +318,7 @@ var appRoleDMLTables = []string{
 	"backtest_job_customers",
 	"backtest_jobs",
 	"batch_runs",
+	"cdd_score_overrides",
 	"case_notes",
 	"case_checklist_items",
 	"case_relationships",
@@ -366,7 +367,7 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 		}
 	}
 	classified := append(append([]string{}, appRoleDMLTables...), appRoleAppendOnlyTables...)
-	const expectedApplicationTableCount = 47
+	const expectedApplicationTableCount = 48
 	if len(migrationTables) != expectedApplicationTableCount {
 		t.Fatalf("extracted %d migration tables, want %d: %v", len(migrationTables), expectedApplicationTableCount, migrationTables)
 	}

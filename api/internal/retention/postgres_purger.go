@@ -35,6 +35,7 @@ var CustomerReferencingTables = []string{
 	"alerts",
 	"backtest_job_customers",
 	"cases",
+	"cdd_score_overrides",
 	"customer_edd_events",
 	"customer_identity_history",
 	"customer_score_history",
@@ -150,6 +151,13 @@ func (p *PostgresPurger) CustomerData(ctx context.Context, cutoff, now time.Time
 		return int(markedTag.RowsAffected()), 0, err
 	}
 	if _, err := tx.Exec(ctx,
+		`UPDATE cdd_score_overrides o SET purge_marked_at = $1 FROM customers c WHERE o.customer_id = c.id AND o.purge_marked_at IS NULL AND c.purge_marked_at = $1`, now); err != nil {
+		return int(markedTag.RowsAffected()), 0, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM cdd_score_overrides WHERE purge_marked_at <= $1`, graceCutoff); err != nil {
+		return int(markedTag.RowsAffected()), 0, err
+	}
+	if _, err := tx.Exec(ctx,
 		`UPDATE customer_edd_events e SET purge_marked_at = $1 FROM customers c WHERE e.customer_id = c.id AND e.purge_marked_at IS NULL AND c.purge_marked_at = $1`, now); err != nil {
 		return int(markedTag.RowsAffected()), 0, err
 	}
@@ -194,6 +202,7 @@ func (p *PostgresPurger) CustomerData(ctx context.Context, cutoff, now time.Time
 		  AND NOT EXISTS (SELECT 1 FROM customer_score_history sh WHERE sh.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM customer_identity_history ih WHERE ih.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM customer_edd_events ee WHERE ee.customer_id = c.id)
+		  AND NOT EXISTS (SELECT 1 FROM cdd_score_overrides ov WHERE ov.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM screening_runs sr WHERE sr.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM screening_results res WHERE res.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM pending_evaluations pe WHERE pe.customer_id = c.id)

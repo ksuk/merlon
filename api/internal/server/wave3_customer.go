@@ -4,12 +4,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/policy"
 )
 
@@ -357,14 +359,62 @@ func (s *Server) handleScoreExplanation(w http.ResponseWriter, r *http.Request) 
 		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "score record not found")
 		return
 	}
+	// Contribution is now the weighted share of the total and Score is the
+	// factor's own value, so the sum is a genuine check. The previous
+	// `if Contribution == 0 { sum += Score }` fallback existed because both
+	// fields held the same number; with it, a mismatch could never be detected
+	// and total_reconciled was a restatement of the score rather than a test
+	// of it.
 	sum := 0.0
 	for _, factor := range selected.Factors {
 		sum += factor.Contribution
-		if factor.Contribution == 0 {
-			sum += factor.Score
+	}
+	delta := sum - selected.Score
+	if delta < 0 {
+		delta = -delta
+	}
+	// Float arithmetic over a handful of weighted factors: anything above this
+	// is a real disagreement between the factors and the total, not rounding.
+	reconciled := delta < 1e-9
+
+	// The engine that produced the score is the only authority on the bands
+	// that decided its tier; an adapter that cannot report them simply omits
+	// the field rather than having the server guess.
+	var thresholds map[string][2]float64
+	if reporter, ok := s.scoring.(engine.TierThresholdReporter); ok {
+		thresholds = reporter.TierThresholds()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"score": selected, "total_reconciled": sum,
+		"reconciled":           reconciled,
+		"reconciliation_delta": delta,
+		"tier_thresholds":      thresholds,
+		"tier_reason":          tierReason(selected, thresholds),
+		"rule_set_id":          selected.RuleSetID,
+		"rule_set_sha256":      selected.RuleSetSHA256,
+		"priority":             priorityForTier(selected.Tier),
+		"deterministic":        true,
+	})
+}
+
+// tierReason says why this score produced this tier. The explanation
+// previously reported the tier without the boundaries that decided it, so a
+// customer one hundredth of a point from Medium looked the same as one in the
+// middle of Low.
+func tierReason(record *domain.ScoreRecord, thresholds map[string][2]float64) string {
+	if record == nil {
+		return ""
+	}
+	for _, factor := range record.Factors {
+		if factor.Fallback {
+			return "a CDD factor could not be resolved, so the score was raised to HIGH under the fail-alert rule"
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"score": selected, "total_reconciled": sum, "rule_set_id": selected.RuleSetID, "rule_set_sha256": selected.RuleSetSHA256, "priority": priorityForTier(selected.Tier), "deterministic": true})
+	band, ok := thresholds[string(record.Tier)]
+	if !ok {
+		return fmt.Sprintf("score %.4f produced tier %s", record.Score, record.Tier)
+	}
+	return fmt.Sprintf("score %.4f falls in the %s band [%.2f, %.2f)", record.Score, record.Tier, band[0], band[1])
 }
 func priorityForTier(tier domain.RiskTier) string {
 	switch tier {

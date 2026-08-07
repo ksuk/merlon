@@ -585,8 +585,14 @@ func (e *Engine) scoreCustomer(ctx context.Context, customer *domain.Customer, r
 		if businessMeaning == "" {
 			businessMeaning = "CDD factor " + p.name
 		}
+		// Score is the factor's own normalised value (0-10); Contribution is
+		// what it added to the total after weighting. They previously both held
+		// the contribution, which made the two fields indistinguishable and let
+		// any consumer that summed Score double-count the weighting -- including
+		// the score explanation's own reconciliation check, which therefore
+		// could never detect a mismatch.
 		resultFactors = append(resultFactors, domain.Factor{
-			Name: p.name, Axis: p.name, Score: contribution, Weight: p.f.Weight,
+			Name: p.name, Axis: p.name, Score: value, Weight: p.f.Weight,
 			Contribution: contribution, Description: description, ObservedValue: observed,
 			BusinessMeaning: businessMeaning, Rule: rule, Fallback: !resolved,
 		})
@@ -612,7 +618,20 @@ func (e *Engine) scoreCustomer(ctx context.Context, customer *domain.Customer, r
 	if usedFallback {
 		rationale = "Fail-alert fallback applied for one or more unresolved CDD factors"
 	}
-	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: reportedRuleSetID, RuleSetSHA256: cddDigest, RuleSetVersion: fingerprint(cddDigest), Rationale: rationale, ScoredAt: now}, nil
+	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: reportedRuleSetID, RuleSetSHA256: cddDigest, Rationale: rationale, ScoredAt: now}, nil
+}
+
+// TierThresholds reports the active CDD configuration's score bands as
+// [min, max) pairs. A zero max means unbounded above.
+func (e *Engine) TierThresholds() map[string][2]float64 {
+	if len(e.cdd.TierThresholds) == 0 {
+		return nil
+	}
+	out := make(map[string][2]float64, len(e.cdd.TierThresholds))
+	for tier, band := range e.cdd.TierThresholds {
+		out[tier] = [2]float64{band.Min, band.Max}
+	}
+	return out
 }
 
 func factorObservedValue(name string, customer *domain.Customer, attrs map[string]string) string {
@@ -632,17 +651,6 @@ func factorObservedValue(name string, customer *domain.Customer, attrs map[strin
 		}
 	}
 	return ""
-}
-func fingerprint(s string) int {
-	if len(s) < 8 {
-		return 1
-	}
-	n, _ := strconv.ParseUint(s[:8], 16, 32)
-	n &= 0x7fffffff
-	if n == 0 {
-		n = 1
-	}
-	return int(n)
 }
 func (e *Engine) resolveFactor(name string, f riskFactor, c *domain.Customer, attrs map[string]string) (float64, bool) {
 	if f.Source == "country_risk_table" && e.country != nil {

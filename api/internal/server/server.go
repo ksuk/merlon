@@ -353,7 +353,13 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/customers/{id}/screening-results", s.handleListScreeningResults)
 	s.route("GET /api/v1/customers/{id}/investigation", s.handleCustomerInvestigation)
 	s.route("GET /api/v1/customers/{id}/identity-history", s.handleListCustomerIdentityHistory)
-	s.route("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
+	// Producing a CDD score is a control action, not a read: the score decides
+	// EDD, monitoring thresholds and rescreening frequency, so Viewer no longer
+	// reaches it (ADR-0019, a deliberate breaking change).
+	s.routeHandler("POST /api/v1/customers/{id}/score", s.requireRolePermission(auth.PermCDDScore, s.handleScoreCustomer))
+	s.route("GET /api/v1/customers/{id}/score-overrides", s.handleListCDDScoreOverrides)
+	s.route("GET /api/v1/customers/{id}/cdd-rule-sets", s.handleListCDDRuleSets)
+	s.routeHandler("POST /api/v1/customers/{id}/score-overrides/{overrideID}/approve", s.requireRolePermission(auth.PermCDDOverrideApprove, s.handleApproveCDDScoreOverride))
 	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
 	// Screening (WS-7)

@@ -441,7 +441,39 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(req.Rationale) != "" {
 		record.Rationale = req.Rationale
 	}
-	record.OverrideEvidence = req.OverrideEvidence
+	// An override is a proposal, not a result. Validating its shape and
+	// parking it for approval is what stops one person moving a customer out
+	// of High tier -- the tier that decides EDD, monitoring thresholds and
+	// rescreening frequency -- with an unstructured note and no second
+	// signature (ADR-0019).
+	var pendingOverride *domain.CDDScoreOverride
+	if len(req.OverrideEvidence) > 0 {
+		reason, proposedTier, documents, parseErr := domain.ParseOverrideEvidence(req.OverrideEvidence)
+		if parseErr != nil {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, parseErr.Error())
+			return
+		}
+		if _, ok := s.customers.(domain.CDDScoreOverrideRepository); !ok {
+			writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "score overrides require an approval store")
+			return
+		}
+		record.OverrideEvidence = req.OverrideEvidence
+		pendingOverride = &domain.CDDScoreOverride{
+			ID: generateID(), CustomerID: c.ID, ScoreRecordID: record.ID,
+			ProposedTier: proposedTier, ComputedTier: record.Tier, ComputedScore: record.Score,
+			Reason: reason, SupportingDocuments: documents, Evidence: req.OverrideEvidence,
+			Status: domain.CDDOverridePendingApproval, RequestedBy: resolveAuditUserID(r),
+			RequestedAt: time.Now().UTC(), Version: 1,
+		}
+	}
+	// A machine-produced rescore needs no narrative, and naming the rule set
+	// to score against is ordinary use, not a deviation. What must be
+	// attributable is a deliberate departure from the current configuration:
+	// an override, or pinning a specific historical rule-set version.
+	if (pendingOverride != nil || req.RuleSetVersion > 0) && strings.TrimSpace(req.Rationale) == "" {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "rationale is required when overriding a score or pinning a rule set version")
+		return
+	}
 
 	oldTier := c.RiskTier
 
@@ -486,6 +518,18 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := repos.Customers.SaveScoreRecord(r.Context(), record); err != nil {
 			return err
+		}
+		if pendingOverride != nil {
+			overrides, ok := repos.Customers.(domain.CDDScoreOverrideRepository)
+			if !ok {
+				overrides, ok = s.customers.(domain.CDDScoreOverrideRepository)
+			}
+			if !ok {
+				return errAtomicMutationUnavailable
+			}
+			if err := overrides.CreateCDDScoreOverride(r.Context(), pendingOverride); err != nil {
+				return fmt.Errorf("record score override proposal: %w", err)
+			}
 		}
 		if err := appendRequiredMutationAudit(r.Context(), r, repos, "score_customer", "customers", c.ID, map[string]string{
 			"rule_set_id": record.RuleSetID,
@@ -535,6 +579,14 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if pendingOverride != nil {
+		// The score is recorded and the customer's tier reflects the computed
+		// value; the proposed tier does not take effect until a second person
+		// approves it.
+		w.Header().Set("Warning", "299 - tier override recorded as a proposal awaiting approval")
+		writeJSON(w, http.StatusOK, map[string]any{"score": record, "pending_override": pendingOverride})
+		return
+	}
 	writeJSON(w, http.StatusOK, record)
 }
 

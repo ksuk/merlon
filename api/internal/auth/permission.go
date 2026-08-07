@@ -28,15 +28,23 @@ const (
 	// undo by editing a record afterwards, so the scale of the blast radius,
 	// not just the operation, decides who may authorise it.
 	PermBatchExecuteLarge Permission = "batch:execute:large"
+	// PermCDDScore gates re-scoring a customer. The CDD score decides EDD
+	// requirements, monitoring thresholds and rescreening frequency
+	// (ADR-0004), so producing one is a control action, not a read.
+	PermCDDScore Permission = "cdd:score"
+	// PermCDDOverrideApprove gates approving a proposed override of a computed
+	// tier. Held by Admin only, and never by the person who proposed it.
+	PermCDDOverrideApprove Permission = "cdd:override:approve"
 )
 
 // RolePermissions maps each role to its granted permissions (the authentication model §3).
 // Admin holds every permission; Analyst may request whitelist entries but
 // may not approve them or read the audit log (segregation of duties);
-// Viewer holds none.
+// Viewer holds none: a role that may only read must not be able to move a
+// customer's risk tier (ADR-0019).
 var RolePermissions = map[domain.Role][]Permission{
-	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermRuleWrite, PermBatchExecuteLarge},
-	domain.RoleAnalyst: {PermWhitelistRequest},
+	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermRuleWrite, PermBatchExecuteLarge, PermCDDScore, PermCDDOverrideApprove},
+	domain.RoleAnalyst: {PermWhitelistRequest, PermCDDScore},
 	domain.RoleViewer:  {},
 }
 

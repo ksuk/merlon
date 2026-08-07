@@ -37,6 +37,7 @@ DECLARE
         'backtest_job_customer_snapshots',
         'backtest_job_customers',
         'backtest_jobs',
+        'cdd_score_overrides',
         'batch_runs',
 		'case_checklist_items',
 		'case_notes',

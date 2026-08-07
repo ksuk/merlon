@@ -359,3 +359,26 @@ func (s *Server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
+
+// requireRolePermission gates a route on a fine-grained permission, but only
+// where authentication is actually configured.
+//
+// auth.RequirePermission refuses any request without a role, which is right
+// for the audit export (evidence a roleless caller should never receive) and
+// wrong here: a single-tenant deployment that runs without authentication has
+// no roles at all, and refusing every score would disable the product rather
+// than enforce a control. Whether roles exist is a property of the
+// deployment (s.apikeys, the same condition authMiddleware uses), never of an
+// individual request.
+func (s *Server) requireRolePermission(p auth.Permission, next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.apikeys != nil {
+			role, ok := auth.RoleFromContext(r.Context())
+			if !ok || !auth.HasPermission(role, p) {
+				writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "the "+string(p)+" permission is required")
+				return
+			}
+		}
+		next(w, r)
+	})
+}

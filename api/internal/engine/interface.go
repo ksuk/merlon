@@ -19,6 +19,15 @@ type VersionedScoringEngine interface {
 	ScoreCustomerWithRuleSet(ctx context.Context, customer *domain.Customer, ruleSetID string, definition []byte) (*domain.ScoreRecord, error)
 }
 
+// TierThresholdReporter exposes the score bands the engine used to assign a
+// tier. The score explanation needs them: reporting the tier without the
+// boundaries that decided it leaves a customer one hundredth of a point from
+// Medium looking the same as one in the middle of Low. Optional, so adapters
+// that cannot answer simply omit the bands.
+type TierThresholdReporter interface {
+	TierThresholds() map[string][2]float64
+}
+
 type MonitoringEngine interface {
 	// EvaluateTransactions runs the realtime evaluation pass (mode_filter
 	// unset on the wire, which the engine treats as REALTIME;

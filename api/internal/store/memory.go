@@ -121,6 +121,7 @@ type MemoryCustomerRepo struct {
 	// eddEvents is append-only by construction: nothing mutates or removes a
 	// stored event, matching the PostgreSQL trigger on customer_edd_events.
 	eddEvents map[string][]domain.CustomerEDDEvent
+	overrides map[string]*domain.CDDScoreOverride
 }
 
 func NewMemoryCustomerRepo() *MemoryCustomerRepo {
