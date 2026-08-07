@@ -186,6 +186,13 @@ func (r *MemoryBatchRunRepo) UpdateBatchRun(_ context.Context, id string, status
 	if !ok {
 		return &domain.ErrNotFound{Entity: "batch_run", ID: id}
 	}
+	// A terminal run may have its counts refreshed by the worker that was
+	// still finishing when it was cancelled, but its verdict is settled: a
+	// completed run must never later read as failed, or a cancelled one as
+	// completed, because the audit trail already records the first answer.
+	if isTerminalBatchRunStatus(run.Status) && run.Status != status {
+		return &domain.ErrConflict{Entity: "batch_run", ID: id, Reason: "run is already " + string(run.Status)}
+	}
 	run.Status = status
 	run.ResultCounts = copyIntMap(resultCounts)
 	run.Error = failure
@@ -195,6 +202,18 @@ func (r *MemoryBatchRunRepo) UpdateBatchRun(_ context.Context, id string, status
 		run.CompletedAt = &now
 	}
 	return nil
+}
+
+// isTerminalBatchRunStatus reports whether a run has reached a state it can
+// never leave. cancelled is terminal alongside completed/failed/partial: an
+// operator stopped it, and restarting is a new run, not a continuation.
+func isTerminalBatchRunStatus(status domain.BatchRunStatus) bool {
+	switch status {
+	case domain.BatchRunStatusCompleted, domain.BatchRunStatusFailed,
+		domain.BatchRunStatusPartial, domain.BatchRunStatusCancelled:
+		return true
+	}
+	return false
 }
 
 func (r *MemoryBatchRunRepo) RecordBatchRunOutcome(_ context.Context, runID string, outcome domain.BatchRunCustomerOutcome) error {

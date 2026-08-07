@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -595,6 +593,17 @@ func (s *Server) handleCreateBatchRun(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "target manifest store not configured")
 		return
 	}
+	// The idempotency lookup comes before the manifest check. A retry of a
+	// request that did land finds a manifest this very run has already
+	// consumed, so validating the manifest first would answer a safe retry
+	// with 409 and leave the caller unable to tell it from a real conflict.
+	key := firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key"))
+	if finder, ok := s.batchRuns.(domain.BatchRunWorkflowRepository); ok && key != "" {
+		if existing, findErr := finder.FindBatchRunByIdempotency(r.Context(), req.Operation, key); findErr == nil && existing != nil {
+			writeJSON(w, http.StatusOK, existing)
+			return
+		}
+	}
 	manifest, err := wf.GetTargetManifest(r.Context(), req.TargetManifestID)
 	if err != nil {
 		writeWave3Error(w, err)
@@ -603,13 +612,6 @@ func (s *Server) handleCreateBatchRun(w http.ResponseWriter, r *http.Request) {
 	if manifest.Status != "confirmed" {
 		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "target manifest must be confirmed")
 		return
-	}
-	key := firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key"))
-	if finder, ok := s.batchRuns.(domain.BatchRunWorkflowRepository); ok && key != "" {
-		if existing, findErr := finder.FindBatchRunByIdempotency(r.Context(), req.Operation, key); findErr == nil && existing != nil {
-			writeJSON(w, http.StatusOK, existing)
-			return
-		}
 	}
 	params := req.Parameters
 	if params == nil {
@@ -675,23 +677,63 @@ func (s *Server) handleCreateBatchRun(w http.ResponseWriter, r *http.Request) {
 		writeWave3Error(w, err)
 		return
 	}
-	counts, failure := s.executeManualBatchRun(r.Context(), run, manifest, nil, nil)
-	status := domain.BatchRunStatusCompleted
-	if failure != "" {
-		if counts["succeeded"] > 0 {
-			status = domain.BatchRunStatusPartial
-		} else {
-			status = domain.BatchRunStatusFailed
-		}
+	// The run row and the manifest claim are committed; from here the work is
+	// the run's, not the request's. Executing it on the request context meant a
+	// client disconnect (a closed laptop, a proxy timeout on a batch of 10,000
+	// customers) cancelled both the execution and its finalisation, leaving
+	// status=running and the manifest consumed until the process restarted.
+	//
+	// 202 rather than 201: the run exists but is not finished. Both are 2xx and
+	// the UI client does not branch on the code, but it is recorded as a
+	// contract change in the changelog.
+	execCtx := context.WithoutCancel(r.Context())
+	correlation := correlationID(r)
+	go s.runManualBatchToCompletion(execCtx, run, manifest, correlation)
+
+	writeJSON(w, http.StatusAccepted, run)
+}
+
+// runManualBatchToCompletion executes and finalises a started run. It takes no
+// *http.Request: the response has already been written, so touching the
+// request's audit state here would race the middleware that wrote it.
+func (s *Server) runManualBatchToCompletion(ctx context.Context, run *domain.BatchRun, manifest *domain.TargetManifest, correlation string) {
+	counts, failure := s.executeManualBatchRun(ctx, run, manifest, nil, nil)
+	status := manualBatchTerminalStatus(counts, failure)
+	if s.batchRunCancelled(ctx, run.ID) {
+		// A cancelled run keeps whatever it managed to do; cancelled is a
+		// terminal state of its own, distinct from failed and from partial,
+		// because nothing went wrong -- an operator stopped it.
+		status = domain.BatchRunStatusCancelled
 	}
-	if err := s.finalizeManualBatchRun(r.Context(), r, run, status, counts, failure); err != nil {
-		writeWave3Error(w, err)
-		return
+	if err := s.finalizeManualBatchRun(ctx, nil, run, status, counts, failure); err != nil {
+		slog.ErrorContext(ctx, "failed to finalize manual batch run", "batch_run_id", run.ID, "correlation_id", correlation, "error", err)
 	}
-	if persisted, err := s.batchRuns.Get(r.Context(), run.ID); err == nil {
-		run = persisted
+}
+
+func manualBatchTerminalStatus(counts map[string]int, failure string) domain.BatchRunStatus {
+	if failure == "" {
+		return domain.BatchRunStatusCompleted
 	}
-	writeJSON(w, http.StatusCreated, run)
+	if counts["succeeded"] > 0 {
+		return domain.BatchRunStatusPartial
+	}
+	return domain.BatchRunStatusFailed
+}
+
+// batchRunCancelled re-reads the run's durable status. The execution loop asks
+// between customers rather than holding a flag in memory, so a cancellation
+// issued to a different API process is still seen.
+func (s *Server) batchRunCancelled(ctx context.Context, runID string) bool {
+	if s.batchRuns == nil {
+		return false
+	}
+	current, err := s.batchRuns.Get(ctx, runID)
+	if err != nil || current == nil {
+		// An unreadable status is not evidence of cancellation; continuing is
+		// the behaviour that finishes the operator's requested work.
+		return false
+	}
+	return current.Status == domain.BatchRunStatusCancelled
 }
 
 func (s *Server) executeManualBatchRun(ctx context.Context, run *domain.BatchRun, manifest *domain.TargetManifest, alreadyProcessed map[string]bool, initialCounts map[string]int) (map[string]int, string) {
@@ -719,6 +761,13 @@ func (s *Server) executeManualBatchRun(ctx context.Context, run *domain.BatchRun
 		canonicalID := domain.CanonicalIdentifier(id)
 		if alreadyProcessed[canonicalID] {
 			continue
+		}
+		// Checked between customers, never inside one: a customer that has
+		// begun evaluating is finished and persisted, so cancellation never
+		// leaves a half-written result.
+		if s.batchRunCancelled(ctx, run.ID) {
+			slog.InfoContext(ctx, "manual batch run cancelled by operator", "batch_run_id", run.ID, "processed", counts["succeeded"]+counts["failed"])
+			break
 		}
 		processed, alertCount, failureReason := s.processManualBatchCustomer(ctx, run, id, counts)
 		if failureReason != "" {
@@ -1110,6 +1159,92 @@ func (s *Server) handleGetBatchRun(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, run)
 }
+
+// handleCancelBatchRun stops a running manual batch. BatchRunStatusCancelled
+// existed in the domain but nothing ever wrote it: an operator who started a
+// mis-scoped batch had no way to stop it short of restarting the process.
+//
+// Work already done is kept. A cancelled run is a distinct terminal state from
+// failed and partial, because nothing went wrong -- a person decided to stop.
+func (s *Server) handleCancelBatchRun(w http.ResponseWriter, r *http.Request) {
+	repo, ok := s.batchRuns.(domain.BatchRunWorkflowRepository)
+	if !ok {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "batch run workflow not configured")
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
+		return
+	}
+	id := r.PathValue("id")
+	run, err := s.batchRuns.Get(r.Context(), id)
+	if err != nil {
+		writeWave3Error(w, err)
+		return
+	}
+	if run.Status != domain.BatchRunStatusRunning {
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "only a running batch can be cancelled; this run is "+string(run.Status))
+		return
+	}
+
+	reason := strings.TrimSpace(body.Reason)
+	if reason == "" {
+		reason = "cancelled by operator"
+	}
+	mutate := func(repos domain.AtomicMutationRepositories) error {
+		batchRepo := repos.BatchRuns
+		if batchRepo == nil {
+			batchRepo = s.batchRuns
+		}
+		updater, ok := batchRepo.(domain.BatchRunWorkflowRepository)
+		if !ok {
+			updater = repo
+		}
+		if err := updater.UpdateBatchRun(r.Context(), id, domain.BatchRunStatusCancelled, run.ResultCounts, reason); err != nil {
+			return err
+		}
+		if repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		createdAt := time.Now().UTC()
+		if err := repos.Audit.Create(r.Context(), &domain.AuditEntry{UserID: resolveAuditUserID(r), Action: "batch_run_cancelled", ResourceType: "batch_runs", ResourceID: id, Details: map[string]string{"operation": run.Operation, "reason": reason, "correlation_id": correlationID(r)}, CreatedAt: createdAt}); err != nil {
+			return fmt.Errorf("append batch run cancellation audit: %w", err)
+		}
+		if s.eventOutbox != nil {
+			if repos.EventOutbox == nil {
+				return errAtomicMutationUnavailable
+			}
+			payload, err := json.Marshal(map[string]any{"batch_run_id": id, "reason": reason})
+			if err != nil {
+				return err
+			}
+			if err := repos.EventOutbox.Enqueue(r.Context(), &domain.DurableEvent{ID: generateID(), Topic: "batch.run.cancelled", Payload: payload, ChainID: correlationID(r), CreatedAt: createdAt}); err != nil {
+				return fmt.Errorf("enqueue batch run cancellation event: %w", err)
+			}
+		}
+		markAtomicAuditHandled(r)
+		return nil
+	}
+	if s.atomic != nil {
+		err = s.runAtomic(r.Context(), mutate)
+	} else {
+		err = mutate(domain.AtomicMutationRepositories{BatchRuns: s.batchRuns, Audit: s.audit, EventOutbox: s.eventOutbox})
+	}
+	if err != nil {
+		writeWave3Error(w, err)
+		return
+	}
+	cancelled, err := s.batchRuns.Get(r.Context(), id)
+	if err != nil {
+		writeWave3Error(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cancelled)
+}
+
 func (s *Server) handleRerunBatchRun(w http.ResponseWriter, r *http.Request) {
 	if s.batchRuns == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "batch run store not configured")
@@ -1130,27 +1265,43 @@ func (s *Server) handleRerunBatchRun(w http.ResponseWriter, r *http.Request) {
 		writeWave3Error(w, err)
 		return
 	}
+	// The clone is a preview, not a confirmed manifest.
+	//
+	// It used to be created with status "confirmed" and executed immediately,
+	// which made rerun a way around the preview-and-confirm control the whole
+	// target mechanism exists to provide: an operator could re-run a batch of
+	// any size, against a population resolved at some earlier time, with no
+	// second look and no second person. Reruns of large populations now go
+	// through the same confirmation and dual control as any other batch.
+	//
+	// This is a breaking change, recorded in ADR-0018 and the changelog: the
+	// response is now the manifest awaiting confirmation rather than a started
+	// run, and callers must POST the confirm endpoint with the returned token.
 	clone := *manifest
 	clone.ID = generateID()
 	clone.Token = generateID() + generateID()
 	clone.IdempotencyKey = ""
-	clone.Status = "confirmed"
+	clone.Status = "preview"
 	clone.Version = 1
 	clone.RunID = ""
+	clone.ConfirmedAt = nil
 	clone.CreatedBy = resolveAuditUserID(r)
 	clone.CreatedAt = time.Now().UTC()
-	confirmedAt := clone.CreatedAt
-	clone.ConfirmedAt = &confirmedAt
 	clone.ExpiresAt = clone.CreatedAt.Add(15 * time.Minute)
 	clone.Rationale = "rerun of " + old.ID
+	// The rerun's parameters travel with the manifest so the confirming
+	// operator sees what would run, not just against whom.
+	params := cloneAnyMap(old.Parameters)
+	delete(params, "idempotency_key")
 	if err := manifestRepo.CreateTargetManifest(r.Context(), &clone); err != nil {
 		writeWave3Error(w, err)
 		return
 	}
-	params := cloneAnyMap(old.Parameters)
-	delete(params, "idempotency_key")
-	body, _ := json.Marshal(manualBatchRunRequest{Operation: old.Operation, TargetManifestID: clone.ID, Parameters: params, Rationale: "rerun", RerunOf: old.ID})
-	req := r.Clone(r.Context())
-	req.Body = io.NopCloser(bytes.NewReader(body))
-	s.handleCreateBatchRun(w, req)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"target_manifest": clone,
+		"operation":       old.Operation,
+		"parameters":      params,
+		"rerun_of":        old.ID,
+		"next":            "POST /api/v1/batch/targets/" + clone.ID + "/confirm with the token, then POST /api/v1/batch/runs",
+	})
 }

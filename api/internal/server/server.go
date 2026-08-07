@@ -431,6 +431,7 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/batch/runs", s.handleCreateBatchRun)
 	s.route("GET /api/v1/batch/runs", s.handleListBatchRuns)
 	s.route("GET /api/v1/batch/runs/{id}", s.handleGetBatchRun)
+	s.route("POST /api/v1/batch/runs/{id}/cancel", s.handleCancelBatchRun)
 	s.route("POST /api/v1/batch/runs/{id}/rerun", s.handleRerunBatchRun)
 
 	// Pending engine evaluations (fail-alert recovery queue)

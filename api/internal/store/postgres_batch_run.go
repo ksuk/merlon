@@ -103,13 +103,23 @@ func (r *PgBatchRunRepo) ListBatchRuns(ctx context.Context, filter domain.BatchR
 	}
 	return out, rows.Err()
 }
+
+// UpdateBatchRun refuses to move a run from one terminal state to a different
+// one. A terminal run may still have its counts refreshed by the worker that
+// was finishing when it was cancelled, but its verdict is settled: a completed
+// run must never later read as failed, because the audit trail already records
+// the first answer.
 func (r *PgBatchRunRepo) UpdateBatchRun(ctx context.Context, id string, status domain.BatchRunStatus, resultCounts map[string]int, failure string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE batch_runs SET status=$2,result_counts=$3,error=$4,updated_at=now(),completed_at=CASE WHEN $2<>'running' THEN now() ELSE completed_at END WHERE id=$1`, id, status, wave3JSON(resultCounts), failure)
+	tag, err := r.pool.Exec(ctx, `UPDATE batch_runs SET status=$2,result_counts=$3,error=$4,updated_at=now(),completed_at=CASE WHEN $2<>'running' THEN now() ELSE completed_at END WHERE id=$1 AND (status = $2 OR status NOT IN ('completed','failed','partial','cancelled'))`, id, status, wave3JSON(resultCounts), failure)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return &domain.ErrNotFound{Entity: "batch_run", ID: id}
+		var current string
+		if scanErr := r.pool.QueryRow(ctx, `SELECT status FROM batch_runs WHERE id=$1`, id).Scan(&current); scanErr != nil {
+			return &domain.ErrNotFound{Entity: "batch_run", ID: id}
+		}
+		return &domain.ErrConflict{Entity: "batch_run", ID: id, Reason: "run is already " + current}
 	}
 	return nil
 }
