@@ -930,8 +930,108 @@ export interface WhitelistReview {
   created_at: string
 }
 
+// The five policy documents the server loads at startup (ADR-0016). Every
+// threshold, required field, stage schedule and reason code the UI shows must
+// come from here rather than from a constant in a page, so the screen cannot
+// state a rule the server does not apply.
+export type PolicyName =
+  | "kyc_required_fields"
+  | "edd"
+  | "cdd_rule_selection"
+  | "travel_rule"
+  | "screening_readiness"
+
+export interface PolicyDescriptor {
+  name: PolicyName
+  schema_version: string
+  policy_version: string
+  digest: string
+  source: "file" | "default"
+}
+
+export interface KYCTypeRequirements {
+  required: string[]
+  recommended?: string[]
+}
+
+export interface KYCRequiredFieldsPolicy {
+  schema_version: string
+  policy_version: string
+  enforcement: "warn" | "reject"
+  defaults: KYCTypeRequirements
+  types: Record<string, KYCTypeRequirements>
+}
+
+export interface EDDPolicyStage {
+  name: string
+  after_days: number
+  action: string
+  case_priority?: CasePriority
+}
+
+export interface EDDPolicyDocument {
+  schema_version: string
+  policy_version: string
+  trigger_tiers: RiskTier[]
+  stages: EDDPolicyStage[]
+  due_days: number
+  completion: { requires_rationale: boolean; requires_case_link: boolean }
+  tier_downgrade: string
+}
+
+export interface CDDRuleSelectionPolicyDocument {
+  schema_version: string
+  policy_version: string
+  default_rule_set_id: string
+  selection_authority: string
+  rules: { match: Record<string, string[] | undefined>; rule_set_id: string; priority: number }[]
+}
+
+export type CounterpartyType = "vasp" | "unhosted_wallet" | "unknown" | "exempt"
+
+export interface TravelRulePolicyDocument {
+  schema_version: string
+  policy_version: string
+  threshold_amount: number
+  threshold_currency: string
+  covered_channels: string[]
+  covered_directions: string[]
+  applicable_counterparty_types: CounterpartyType[]
+  required_evidence_fields: Record<string, string[]>
+  not_applicable_reasons: string[]
+  assertion_authority: string
+  incomplete_routing: string
+}
+
+export interface ScreeningReadinessPolicyDocument {
+  schema_version: string
+  policy_version: string
+  default_freshness_seconds: number
+  mark_runs_degraded: boolean
+  gate_screening_runs: boolean
+  sources: { list_id: string; required: boolean; freshness_seconds?: number }[]
+}
+
+interface PolicyDocumentByName {
+  kyc_required_fields: KYCRequiredFieldsPolicy
+  edd: EDDPolicyDocument
+  cdd_rule_selection: CDDRuleSelectionPolicyDocument
+  travel_rule: TravelRulePolicyDocument
+  screening_readiness: ScreeningReadinessPolicyDocument
+}
+
+export interface PolicyDocument<N extends PolicyName = PolicyName> extends PolicyDescriptor {
+  name: N
+  document: PolicyDocumentByName[N]
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
+  policies: {
+    list: () => request<{ data: PolicyDescriptor[] }>("/policies"),
+    get: <N extends PolicyName>(name: N) =>
+      request<PolicyDocument<N>>(`/policies/${encodeURIComponent(name)}`),
+  },
   customers: {
     list: (params?: CursorPageParams & { search?: string }) => {
       const qs = buildCursorQuery(params)
