@@ -208,6 +208,10 @@ export function CustomerDetailPage() {
   const durableMatches = durableScreening?.data ?? []
   const latestRun = screeningRuns?.data?.[0]
   const hasScreeningHit = Boolean(screenResult?.hit || durableMatches.length > 0)
+  // A degraded run matched against an incomplete set of lists, so "no hit"
+  // here is not evidence that the customer is clear.
+  const degradedRun = Boolean(latestRun?.degraded) || durableMatches.some((match) => match.degraded)
+  const degradedSources = Array.from(new Set([...(latestRun?.degraded_sources ?? []), ...durableMatches.flatMap((match) => match.degraded_sources ?? [])]))
 
   return (
     <div className="space-y-6">
@@ -417,6 +421,12 @@ export function CustomerDetailPage() {
                   ? t("customerDetail.screening.durableSummary", { count: latestRun.result_count, time: formatDateTime(latestRun.created_at, i18n.language) })
                   : t("customerDetail.screening.loading")}
             </p>
+            {degradedRun && (
+              <p role="alert" className="mt-2 rounded-md border border-destructive/50 bg-destructive/5 p-2 text-sm text-destructive">
+                {t("customerDetail.screening.degraded")}
+                {degradedSources.length > 0 ? ` ${t("customerDetail.screening.degradedSources", { sources: degradedSources.join(", ") })}` : ""}
+              </p>
+            )}
             {screenError && <p role="alert" className="mt-2 text-sm text-destructive">{t("customerDetail.screening.error", { error: screenError })}</p>}
             {durableScreeningError && <p role="alert" className="mt-2 text-sm text-destructive">{t("customerDetail.screening.durableError", { error: durableScreeningError })}</p>}
             {durableScreeningLoading && !screenResult && <p role="status" className="mt-2 text-sm text-muted-foreground">{t("customerDetail.screening.loading")}</p>}

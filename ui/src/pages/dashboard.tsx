@@ -184,6 +184,29 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {stats.screening_ready != null && (
+        <Card className={stats.screening_ready ? undefined : "border-destructive"}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="h-4 w-4" />
+              {t("dashboard.screeningReadiness.title")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-3">
+            <Badge variant={stats.screening_ready ? "low" : "destructive"}>
+              {stats.screening_ready ? t("dashboard.screeningReadiness.ready") : t("dashboard.screeningReadiness.degraded")}
+            </Badge>
+            {stats.screening_ready ? (
+              <span className="text-sm text-muted-foreground">{t("dashboard.screeningReadiness.readyDescription")}</span>
+            ) : (
+              <span role="alert" className="text-sm text-destructive">
+                {t("dashboard.screeningReadiness.degradedSources", { sources: (stats.screening_degraded_sources ?? []).join(", ") })}
+              </span>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {stats.screening_list_freshness && stats.screening_list_freshness.length > 0 && (
         <Card>
           <CardHeader>

@@ -118,6 +118,10 @@ export interface DashboardStats {
   recent_transactions: number
   recent_transactions_window_hours: number
   screening_list_freshness?: ScreeningListFreshnessStat[]
+  // Every source the readiness policy marks required is usable. False means
+  // customers are being screened against an incomplete picture.
+  screening_ready?: boolean
+  screening_degraded_sources?: string[]
 }
 
 export type RiskTier = "low" | "medium" | "high"
@@ -588,6 +592,10 @@ export interface ScreeningResultRecord {
   suppression_reason?: string
   match_evidence?: Record<string, unknown>
   case_id?: string
+  // A required watchlist source was not ready when this run started, so the
+  // absence of a hit is not evidence that the customer is clear.
+  degraded?: boolean
+  degraded_sources?: string[]
   version: number
   updated_at: string
 }
@@ -601,6 +609,8 @@ export interface ScreeningRun {
   result_count: number
   error?: string
   actor: string
+  degraded?: boolean
+  degraded_sources?: string[]
   started_at: string
   completed_at?: string
   created_at: string
@@ -625,6 +635,11 @@ export interface ScreeningSourceDirectory {
   configured_count: number
   ready_count: number
   unready_count: number
+  // screening_ready only counts sources the readiness policy marks required,
+  // so a stale optional source (pep_provider by default) leaves it true.
+  screening_ready: boolean
+  degraded_sources?: string[]
+  policy_version?: string
 }
 
 export interface PendingEvaluation {
@@ -1088,18 +1103,23 @@ export const api = {
       }),
   },
   screening: {
-    results: (params?: CursorPageParams & { customerId?: string; status?: ScreeningResultStatus; listId?: string }) => {
+    // Omitting `suppressed` returns both suppressed and unsuppressed hits,
+    // which is the historical queue contents; pass false to hide repeat false
+    // positives and true to audit what was hidden.
+    results: (params?: CursorPageParams & { customerId?: string; status?: ScreeningResultStatus; listId?: string; suppressed?: boolean }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
       if (params?.status) qs.set("status", params.status)
       if (params?.listId) qs.set("list_id", params.listId)
+      if (params?.suppressed != null) qs.set("suppressed", String(params.suppressed))
       const query = qs.toString()
       return request<PaginatedResponse<ScreeningResultRecord>>(`/screening/results${query ? `?${query}` : ""}`)
     },
     getResult: (id: string) => request<ScreeningResultRecord>(`/screening/results/${encodeURIComponent(id)}`),
     history: (id: string) => request<ScreeningResultHistoryEntry[]>(`/screening/results/${encodeURIComponent(id)}/history`),
-    sources: (params?: { freshnessThresholdSeconds?: number }) => {
+    sources: (params?: { freshnessThresholdSeconds?: number; sourceIds?: string[] }) => {
       const qs = new URLSearchParams()
+      if (params?.sourceIds?.length) qs.set("source_ids", params.sourceIds.join(","))
       if (params?.freshnessThresholdSeconds != null) qs.set("freshness_threshold_seconds", String(params.freshnessThresholdSeconds))
       const query = qs.toString()
       return request<ScreeningSourceDirectory>(`/screening/sources${query ? `?${query}` : ""}`)

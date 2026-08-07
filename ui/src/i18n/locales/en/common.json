@@ -88,6 +88,13 @@
         "failed": "Failed",
         "unavailable": "Status unavailable"
       }
+    },
+    "screeningReadiness": {
+      "title": "Screening readiness",
+      "ready": "Ready",
+      "degraded": "Degraded",
+      "readyDescription": "Every source the readiness policy requires is usable.",
+      "degradedSources": "Required sources not ready: {{sources}}"
     }
   },
   "customers": {
@@ -194,7 +201,7 @@
       "unassigned": "Unassigned",
       "overdue": "Overdue",
       "ageValue": "{{days}} days",
-	  "maxAge": "Max age (days)",
+      "maxAge": "Max age (days)",
       "dueAt": "Due",
       "sla": "SLA",
       "slaUnassigned": "No SLA",
@@ -286,9 +293,9 @@
       "manual": "Manually linked",
       "add": "Add related case",
       "caseId": "Case ID",
-	  "search": "Search related cases",
-	  "results": "Eligible active cases",
-	  "directedNote": "Manual links are directed from this case to the other case. Automatic entries are same-customer history.",
+      "search": "Search related cases",
+      "results": "Eligible active cases",
+      "directedNote": "Manual links are directed from this case to the other case. Automatic entries are same-customer history.",
       "type": "Relationship type",
       "rationale": "Link rationale",
       "submit": "Add link",
@@ -351,9 +358,9 @@
       "workItemsEmpty": "No work items",
       "workTitle": "Work item title",
       "workAdd": "Add work item",
-      "eventReason": "Reason"
-      ,"changeDetails": "View change details"
-      ,"workStatus": "Work item status"
+      "eventReason": "Reason",
+      "changeDetails": "View change details",
+      "workStatus": "Work item status"
     },
     "edd": {
       "stage3": "Stage 3: Transaction refusal recommended",
@@ -389,7 +396,7 @@
       "unassigned": "Unassigned",
       "overdue": "Overdue",
       "ageValue": "{{days}} days",
-	  "maxAge": "Max age (days)",
+      "maxAge": "Max age (days)",
       "dueAt": "Due",
       "sla": "SLA",
       "slaUnassigned": "No SLA",
@@ -692,7 +699,9 @@
         "startReview": "Start review",
         "truePositive": "True positive",
         "falsePositive": "False positive"
-      }
+      },
+      "degraded": "This customer was matched against an incomplete set of lists.",
+      "degradedSources": "Unavailable sources: {{sources}}"
     },
     "investigation": {
       "title": "Customer 360",
@@ -1043,6 +1052,34 @@
       "REVIEWING": "Reviewing",
       "TRUE_POSITIVE": "True positive",
       "FALSE_POSITIVE": "False positive"
+    },
+    "showSuppressed": "Show suppressed hits",
+    "degraded": "Degraded",
+    "degradedSources": "Screened while these sources were unavailable: {{sources}}",
+    "sources": {
+      "title": "Screening sources",
+      "ready": "Ready",
+      "notReady": "Not ready",
+      "loading": "Loading source directory",
+      "error": "Failed to read the source directory: {{error}}",
+      "degradedWarning": "A required source is not ready, so matching is incomplete: {{sources}}",
+      "counts": "{{configured}} configured / {{ready}} ready / {{unready}} not ready",
+      "policyVersion": "Policy version {{version}}",
+      "listId": "Source",
+      "requirement": "Requirement",
+      "required": "Required",
+      "optional": "Optional",
+      "state": "State",
+      "lastSuccess": "Last successful import",
+      "diagnostic": "Diagnostic",
+      "operationalState": {
+        "never_imported": "Never imported",
+        "ready": "Ready",
+        "stale": "Stale",
+        "unreadable": "Unreadable",
+        "failed": "Failed",
+        "unavailable": "Unavailable"
+      }
     }
   },
   "pendingEvaluations": {

@@ -88,6 +88,13 @@
         "failed": "取込失敗",
         "unavailable": "状態取得不可"
       }
+    },
+    "screeningReadiness": {
+      "title": "照合体制の状態",
+      "ready": "正常",
+      "degraded": "不完全",
+      "readyDescription": "必須ソースはすべて利用可能です。",
+      "degradedSources": "利用できない必須ソース: {{sources}}"
     }
   },
   "customers": {
@@ -194,7 +201,7 @@
       "unassigned": "未割当",
       "overdue": "期限超過",
       "ageValue": "{{days}}日",
-	  "maxAge": "最長経過日数",
+      "maxAge": "最長経過日数",
       "dueAt": "期限",
       "sla": "SLA",
       "slaUnassigned": "期限未設定",
@@ -286,9 +293,9 @@
       "manual": "手動リンク",
       "add": "関連ケースを追加",
       "caseId": "ケースID",
-	  "search": "関連ケースを検索",
-	  "results": "リンク可能なアクティブケース",
-	  "directedNote": "手動リンクはこのケースから相手ケースへの一方向リンクです。自動表示は同一顧客の履歴です。",
+      "search": "関連ケースを検索",
+      "results": "リンク可能なアクティブケース",
+      "directedNote": "手動リンクはこのケースから相手ケースへの一方向リンクです。自動表示は同一顧客の履歴です。",
       "type": "関連種別",
       "rationale": "リンク理由",
       "submit": "リンクを追加",
@@ -351,9 +358,9 @@
       "workItemsEmpty": "作業項目はありません",
       "workTitle": "作業項目名",
       "workAdd": "作業項目を追加",
-      "eventReason": "理由"
-      ,"changeDetails": "変更内容を表示"
-      ,"workStatus": "作業項目の状態"
+      "eventReason": "理由",
+      "changeDetails": "変更内容を表示",
+      "workStatus": "作業項目の状態"
     },
     "edd": {
       "stage3": "ステージ3: 取引謝絶推奨済み",
@@ -389,7 +396,7 @@
       "unassigned": "未割当",
       "overdue": "期限超過",
       "ageValue": "{{days}}日",
-	  "maxAge": "最長経過日数",
+      "maxAge": "最長経過日数",
       "dueAt": "期限",
       "sla": "SLA",
       "slaUnassigned": "期限未設定",
@@ -692,7 +699,9 @@
         "startReview": "レビュー開始",
         "truePositive": "真陽性",
         "falsePositive": "偽陽性"
-      }
+      },
+      "degraded": "この顧客は不完全なリスト集合に対して照合されました。",
+      "degradedSources": "利用できなかったソース: {{sources}}"
     },
     "investigation": {
       "title": "顧客360",
@@ -1043,6 +1052,34 @@
       "REVIEWING": "確認中",
       "TRUE_POSITIVE": "真陽性",
       "FALSE_POSITIVE": "偽陽性"
+    },
+    "showSuppressed": "抑止されたヒットを表示",
+    "degraded": "不完全",
+    "degradedSources": "照合時に利用できなかったソース: {{sources}}",
+    "sources": {
+      "title": "照合ソース",
+      "ready": "正常",
+      "notReady": "不完全",
+      "loading": "ソース一覧を読み込み中",
+      "error": "ソース一覧を取得できませんでした: {{error}}",
+      "degradedWarning": "必須ソースが利用できないため、照合は不完全です: {{sources}}",
+      "counts": "登録 {{configured}} 件 / 利用可 {{ready}} 件 / 利用不可 {{unready}} 件",
+      "policyVersion": "ポリシー版 {{version}}",
+      "listId": "ソース",
+      "requirement": "区分",
+      "required": "必須",
+      "optional": "任意",
+      "state": "状態",
+      "lastSuccess": "最終取込成功",
+      "diagnostic": "診断",
+      "operationalState": {
+        "never_imported": "未取込",
+        "ready": "利用可",
+        "stale": "鮮度切れ",
+        "unreadable": "読み取り不可",
+        "failed": "取込失敗",
+        "unavailable": "利用不可"
+      }
     }
   },
   "pendingEvaluations": {
