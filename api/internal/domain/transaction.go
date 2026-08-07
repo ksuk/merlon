@@ -44,6 +44,15 @@ type Transaction struct {
 	TravelRuleApplicable          *bool          `json:"travel_rule_applicable,omitempty"`
 	TravelRuleEvidence            map[string]any `json:"travel_rule_evidence,omitempty"`
 	TravelRuleNotApplicableReason string         `json:"travel_rule_not_applicable_reason,omitempty"`
+	// TravelRuleNotApplicableReasonCode is the closed-enum companion to the
+	// free text above. The free text keeps being accepted; a code is what
+	// makes "why was this exempt" answerable across a whole book.
+	TravelRuleNotApplicableReasonCode string `json:"travel_rule_not_applicable_reason_code,omitempty"`
+	// TravelRuleStatus and TravelRuleAssessment are the server's own verdict,
+	// recorded for every transaction. The client's assertion above is kept
+	// unchanged; where the two disagree, the assessment says so.
+	TravelRuleStatus     string         `json:"travel_rule_status,omitempty"`
+	TravelRuleAssessment map[string]any `json:"travel_rule_assessment,omitempty"`
 }
 
 // CounterpartyType classifies the counterparty side of a virtual-asset

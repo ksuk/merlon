@@ -324,6 +324,13 @@ func travelRuleEvidencePresent(field string, transaction *domain.Transaction) bo
 	}
 }
 
+// BaseCurrency reports the currency the threshold is denominated in. Named
+// distinctly from the ThresholdCurrency field so callers holding a nil policy
+// still get the default.
+func (p *TravelRulePolicy) BaseCurrency() string {
+	return p.resolved().ThresholdCurrency
+}
+
 // ValidReasonCode reports whether code is one of the policy's permitted
 // not-applicable reasons.
 func (p *TravelRulePolicy) ValidReasonCode(code string) bool {

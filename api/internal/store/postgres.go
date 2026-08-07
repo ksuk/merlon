@@ -486,12 +486,12 @@ func NewPgTransactionRepo(pool DBTX) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason"
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, COALESCE(travel_rule_not_applicable_reason_code,''), COALESCE(travel_rule_status,''), travel_rule_assessment"
 
 func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
 	var counterpartyID, counterpartyCountry, channel *string
-	var counterpartyJSON, metadataJSON, travelRuleEvidence []byte
+	var counterpartyJSON, metadataJSON, travelRuleEvidence, travelRuleAssessment []byte
 	var travelRuleReason *string
 	err := row.Scan(
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
@@ -499,6 +499,7 @@ func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 		&channel, &t.AccountID, &counterpartyJSON, &metadataJSON,
 		&t.IdempotencyKey,
 		&t.ExecutedAt, &t.CreatedAt, &t.TravelRuleApplicable, &travelRuleEvidence, &travelRuleReason,
+		&t.TravelRuleNotApplicableReasonCode, &t.TravelRuleStatus, &travelRuleAssessment,
 	)
 	if err != nil {
 		return t, err
@@ -531,6 +532,11 @@ func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	}
 	if travelRuleReason != nil {
 		t.TravelRuleNotApplicableReason = *travelRuleReason
+	}
+	if len(travelRuleAssessment) > 0 {
+		if err := json.Unmarshal(travelRuleAssessment, &t.TravelRuleAssessment); err != nil {
+			return t, err
+		}
 	}
 	return t, nil
 }
@@ -676,11 +682,12 @@ func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) e
 	}
 
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, travel_rule_not_applicable_reason_code, travel_rule_status, travel_rule_assessment)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,''), $21)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
 		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
 		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.IdempotencyKey, t.ExecutedAt, t.CreatedAt, t.TravelRuleApplicable, wave3JSON(t.TravelRuleEvidence), t.TravelRuleNotApplicableReason,
+		t.TravelRuleNotApplicableReasonCode, t.TravelRuleStatus, wave3JSON(t.TravelRuleAssessment),
 	)
 	if err != nil && isIdempotencyKeyViolation(err) {
 		return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "idempotency key already used"}

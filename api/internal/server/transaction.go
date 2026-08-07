@@ -34,6 +34,9 @@ type CreateTransactionRequest struct {
 	TravelRuleApplicable          *bool                       `json:"travel_rule_applicable,omitempty"`
 	TravelRuleEvidence            map[string]any              `json:"travel_rule_evidence,omitempty"`
 	TravelRuleNotApplicableReason string                      `json:"travel_rule_not_applicable_reason,omitempty"`
+	// TravelRuleNotApplicableReasonCode is the closed-enum companion. The
+	// free-text field above keeps being accepted and maps to `other`.
+	TravelRuleNotApplicableReasonCode string `json:"travel_rule_not_applicable_reason_code,omitempty"`
 	// Future event times are accepted intentionally for upstream clock skew
 	// and scheduled transactions. Realtime evaluation anchors its upper bound
 	// at max(now, ExecutedAt), so the accepted transaction is never omitted.
@@ -227,6 +230,14 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		applicable := req.Counterparty.TravelRuleStatus != domain.TravelRuleNotApplicable
 		t.TravelRuleApplicable = &applicable
 	}
+	t.TravelRuleNotApplicableReasonCode = strings.TrimSpace(req.TravelRuleNotApplicableReasonCode)
+	// Every transaction is assessed, including one that arrives with no
+	// counterparty block at all: leaving those unassessed is what made an
+	// un-evaluated transaction indistinguishable from a pre-policy one.
+	travelRuleAssessment, assessed := s.assessTravelRule(w, t)
+	if !assessed {
+		return
+	}
 	// Idempotency-Key (the HTTP API contract §4.1): a resend using an already-used key is
 	// rejected with 409, independent of whether external_id also matches.
 	if key := r.Header.Get("Idempotency-Key"); key != "" {
@@ -288,6 +299,23 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	// Any engine/history failure is fail-alerted into PENDING_REVIEW rather than
 	// silently dropping the transaction.
 	s.monitorCreatedTransaction(r.Context(), customer, t)
+
+	// A transaction the Travel Rule covers but whose required evidence has not
+	// arrived is a compliance gap, not a rejection: the transaction happened.
+	// It goes to the same PENDING_REVIEW queue an engine outage uses, so the
+	// gap is worked rather than noticed later.
+	if s.pendingEvals != nil && travelRuleAssessment.Applicable && len(travelRuleAssessment.MissingFields) > 0 &&
+		s.policies.TravelRule().RoutesIncompleteToReview() {
+		pending := &domain.PendingEvaluation{
+			ID: generateID(), CustomerID: t.CustomerID, TransactionIDs: []string{t.ID},
+			Status: domain.PendingEvaluationStatusPendingReview,
+			Reason: "travel_rule_incomplete: " + strings.Join(travelRuleAssessment.MissingFields, ", "),
+		}
+		if err := s.pendingEvals.Create(r.Context(), pending); err != nil {
+			slog.ErrorContext(r.Context(), "failed to queue incomplete travel rule evidence for review",
+				"transaction_id", t.ID, "error", err)
+		}
+	}
 
 	writeJSON(w, http.StatusCreated, t)
 }
