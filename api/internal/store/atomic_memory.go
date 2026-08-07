@@ -129,7 +129,7 @@ type memoryAtomicSnapshot struct {
 	wave3Runs          map[string]*domain.ScreeningRun
 	wave3Results       map[string]*domain.ScreeningResultRecord
 	wave3History       map[string][]domain.ScreeningResultHistoryEntry
-	wave3Sources       map[string]domain.ScreeningSourceStatus
+	wave3Sources       map[string]domain.ScreeningSourceSnapshot
 	wave3Metadata      map[string]*domain.BacktestMetadata
 	wave3Manifests     map[string]*domain.TargetManifest
 	pendingData        map[string]*domain.PendingEvaluation
@@ -244,7 +244,7 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 	var wave3Runs map[string]*domain.ScreeningRun
 	var wave3Results map[string]*domain.ScreeningResultRecord
 	var wave3History map[string][]domain.ScreeningResultHistoryEntry
-	var wave3Sources map[string]domain.ScreeningSourceStatus
+	var wave3Sources map[string]domain.ScreeningSourceSnapshot
 	var wave3Metadata map[string]*domain.BacktestMetadata
 	var wave3Manifests map[string]*domain.TargetManifest
 	var pendingData map[string]*domain.PendingEvaluation
@@ -258,7 +258,7 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 		wave3Runs = cloneScreeningRuns(r.wave3.runs)
 		wave3Results = cloneScreeningResults(r.wave3.results)
 		wave3History = cloneScreeningHistory(r.wave3.history)
-		wave3Sources = cloneScreeningSources(r.wave3.sources)
+		wave3Sources = cloneScreeningSources(r.wave3.snapshots)
 		wave3Metadata = cloneBacktestMetadata(r.wave3.metadata)
 		wave3Manifests = cloneTargetManifests(r.wave3.manifests)
 		r.wave3.mu.RUnlock()
@@ -356,7 +356,7 @@ func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
 		r.wave3.runs = snapshot.wave3Runs
 		r.wave3.results = snapshot.wave3Results
 		r.wave3.history = snapshot.wave3History
-		r.wave3.sources = snapshot.wave3Sources
+		r.wave3.snapshots = snapshot.wave3Sources
 		r.wave3.metadata = snapshot.wave3Metadata
 		r.wave3.manifests = snapshot.wave3Manifests
 		r.wave3.mu.Unlock()
@@ -539,8 +539,8 @@ func cloneScreeningHistory(input map[string][]domain.ScreeningResultHistoryEntry
 	return output
 }
 
-func cloneScreeningSources(input map[string]domain.ScreeningSourceStatus) map[string]domain.ScreeningSourceStatus {
-	output := make(map[string]domain.ScreeningSourceStatus, len(input))
+func cloneScreeningSources(input map[string]domain.ScreeningSourceSnapshot) map[string]domain.ScreeningSourceSnapshot {
+	output := make(map[string]domain.ScreeningSourceSnapshot, len(input))
 	for key, value := range input {
 		copy := value
 		if value.LastAttemptAt != nil {
@@ -554,10 +554,6 @@ func cloneScreeningSources(input map[string]domain.ScreeningSourceStatus) map[st
 		if value.LastSuccessAt != nil {
 			at := *value.LastSuccessAt
 			copy.LastSuccessAt = &at
-		}
-		if value.AgeSeconds != nil {
-			age := *value.AgeSeconds
-			copy.AgeSeconds = &age
 		}
 		output[key] = copy
 	}

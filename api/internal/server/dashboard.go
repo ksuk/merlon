@@ -79,9 +79,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.wave3 != nil || s.screeningListStore != nil || s.screeningFailureTracker != nil || len(s.screeningListIDs) > 0 {
-		sources, sourceErr := s.screeningSourceStatuses(ctx, s.screeningListIDs, defaultScreeningSourceThreshold)
+		sources, sourceErr := s.screeningSourceStatuses(ctx, s.screeningListIDs, 0)
 		if sourceErr != nil {
-			sources = unavailableSourceStatuses(configuredScreeningSourceIDs(s.screeningListIDs), defaultScreeningSourceThreshold, "source status unavailable")
+			sources = unavailableSourceStatuses(s.configuredScreeningSourceIDs(s.screeningListIDs), s.screeningSourceThresholds(0), "source status unavailable")
 		}
 		for _, source := range sources {
 			stat := domain.ScreeningListFreshnessStat{ListID: source.ListID, ListType: source.ListType, OperationalState: source.OperationalState, LastAttemptAt: source.LastAttemptAt, LastSuccessAt: source.LastSuccessAt, AgeSeconds: source.AgeSeconds, Diagnostic: source.Diagnostic}
@@ -91,6 +91,13 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			stat.NeedsOperationalAlert = source.OperationalState != domain.ScreeningSourceReady
 			stats.ScreeningListFreshness = append(stats.ScreeningListFreshness, stat)
 		}
+		required := s.policies.ScreeningReadiness().Required
+		stats.ScreeningDegradedSources = unreadyRequiredSources(sources, required)
+		stats.ScreeningReady = len(stats.ScreeningDegradedSources) == 0
+	} else {
+		// Nothing to assess: no source directory is wired at all. Claiming
+		// readiness here would be inventing a fact.
+		stats.ScreeningReady = true
 	}
 
 	writeJSON(w, http.StatusOK, stats)
@@ -102,9 +109,9 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 // never_imported row so source cardinality cannot be mistaken for queue size.
 func (s *Server) screeningListFreshness(ctx context.Context) []domain.ScreeningListFreshnessStat {
 	out := make([]domain.ScreeningListFreshnessStat, 0, len(s.screeningListIDs))
-	sources, err := s.screeningSourceStatuses(ctx, s.screeningListIDs, defaultScreeningSourceThreshold)
+	sources, err := s.screeningSourceStatuses(ctx, s.screeningListIDs, 0)
 	if err != nil {
-		sources = unavailableSourceStatuses(configuredScreeningSourceIDs(s.screeningListIDs), defaultScreeningSourceThreshold, "source status unavailable")
+		sources = unavailableSourceStatuses(s.configuredScreeningSourceIDs(s.screeningListIDs), s.screeningSourceThresholds(0), "source status unavailable")
 	}
 	for _, source := range sources {
 		f := domain.ScreeningListFreshnessStat{ListID: source.ListID, ListType: source.ListType, OperationalState: source.OperationalState, LastAttemptAt: source.LastAttemptAt, LastSuccessAt: source.LastSuccessAt, AgeSeconds: source.AgeSeconds, Diagnostic: source.Diagnostic}

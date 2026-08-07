@@ -16,11 +16,14 @@ import (
 // operator workflows.  A single mutex gives review/confirmation operations a
 // compare-and-swap boundary equivalent to the PostgreSQL implementation.
 type MemoryWave3Repo struct {
-	mu        sync.RWMutex
-	runs      map[string]*domain.ScreeningRun
-	results   map[string]*domain.ScreeningResultRecord
-	history   map[string][]domain.ScreeningResultHistoryEntry
-	sources   map[string]domain.ScreeningSourceStatus
+	mu      sync.RWMutex
+	runs    map[string]*domain.ScreeningRun
+	results map[string]*domain.ScreeningResultRecord
+	history map[string][]domain.ScreeningResultHistoryEntry
+	// snapshots holds unjudged importer facts; domain.ClassifyScreeningSource
+	// turns them into an operational state at read time, so this store cannot
+	// drift from the PostgreSQL one.
+	snapshots map[string]domain.ScreeningSourceSnapshot
 	metadata  map[string]*domain.BacktestMetadata
 	manifests map[string]*domain.TargetManifest
 	identity  map[string][]domain.CustomerIdentityHistoryEntry
@@ -32,7 +35,7 @@ type MemoryWave3Repo struct {
 func NewMemoryWave3Repo() *MemoryWave3Repo {
 	return &MemoryWave3Repo{
 		runs: make(map[string]*domain.ScreeningRun), results: make(map[string]*domain.ScreeningResultRecord),
-		history: make(map[string][]domain.ScreeningResultHistoryEntry), sources: make(map[string]domain.ScreeningSourceStatus),
+		history: make(map[string][]domain.ScreeningResultHistoryEntry), snapshots: make(map[string]domain.ScreeningSourceSnapshot),
 		metadata: make(map[string]*domain.BacktestMetadata), manifests: make(map[string]*domain.TargetManifest),
 		identity: make(map[string][]domain.CustomerIdentityHistoryEntry),
 	}
@@ -292,61 +295,75 @@ func (r *MemoryWave3Repo) ListScreeningResultHistory(_ context.Context, id strin
 	return items, nil
 }
 
-func (r *MemoryWave3Repo) ListScreeningSources(_ context.Context, configuredIDs []string, freshnessThreshold time.Duration) ([]domain.ScreeningSourceStatus, error) {
+func (r *MemoryWave3Repo) ListScreeningSources(_ context.Context, configuredIDs []string, thresholdFor func(string) time.Duration) ([]domain.ScreeningSourceStatus, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if freshnessThreshold <= 0 {
-		freshnessThreshold = 72 * time.Hour
-	}
 	now := time.Now().UTC()
 	out := make([]domain.ScreeningSourceStatus, 0, len(configuredIDs))
 	for _, id := range configuredIDs {
-		status, ok := r.sources[id]
-		if !ok {
-			status = domain.ScreeningSourceStatus{ListID: id, Configured: true, OperationalState: domain.ScreeningSourceNeverImported, FreshnessThresholdSeconds: int64(freshnessThreshold.Seconds())}
+		snapshot := r.snapshots[id]
+		snapshot.ListID = id
+		if _, imported := r.snapshots[id]; !imported {
+			snapshot.SnapshotMissing = true
 		}
-		status.ListID = id
-		status.Configured = true
-		if status.LastSuccessAt != nil {
-			age := int64(now.Sub(*status.LastSuccessAt).Seconds())
-			if age < 0 {
-				age = 0
-			}
-			status.AgeSeconds = &age
-			if status.ConsecutiveFailures > 0 {
-				status.OperationalState = domain.ScreeningSourceFailed
-			} else if time.Duration(age)*time.Second > freshnessThreshold {
-				status.OperationalState = domain.ScreeningSourceStale
-			} else {
-				status.OperationalState = domain.ScreeningSourceReady
-			}
-		}
-		out = append(out, status)
+		out = append(out, domain.ClassifyScreeningSource(snapshot, resolveSourceThreshold(thresholdFor, id), now))
 	}
 	return out, nil
 }
 
+// resolveSourceThreshold keeps the pre-policy 72-hour default reachable for
+// callers that have no policy to consult.
+func resolveSourceThreshold(thresholdFor func(string) time.Duration, listID string) time.Duration {
+	if thresholdFor == nil {
+		return 72 * time.Hour
+	}
+	if d := thresholdFor(listID); d > 0 {
+		return d
+	}
+	return 72 * time.Hour
+}
+
 // RecordScreeningSource is used by tests and by the memory import adapter to
-// update the same source directory that the API reads.
+// update the same source directory that the API reads. It records what
+// happened, never what it means: the operational state is derived on read.
 func (r *MemoryWave3Repo) RecordScreeningSource(id, listType string, success bool, diagnostic string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now().UTC()
-	current := r.sources[id]
+	current := r.snapshots[id]
 	current.ListID = id
 	current.ListType = listType
-	current.Configured = true
 	current.LastAttemptAt = &now
 	current.Diagnostic = strings.TrimSpace(diagnostic)
+	current.SnapshotMissing = false
 	if success {
 		current.LastSuccessAt = &now
 		current.ConsecutiveFailures = 0
 	} else {
 		current.ConsecutiveFailures++
 		current.LastFailureAt = &now
-		current.OperationalState = domain.ScreeningSourceFailed
 	}
-	r.sources[id] = current
+	r.snapshots[id] = current
+}
+
+// MarkScreeningSourceUnreadable records that a source body exists but cannot
+// be read, the state the memory store previously had no way to express.
+func (r *MemoryWave3Repo) MarkScreeningSourceUnreadable(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current := r.snapshots[id]
+	current.ListID = id
+	current.SnapshotUnreadable = true
+	r.snapshots[id] = current
+}
+
+// SetScreeningSourceSnapshot writes an importer state directly, including
+// timestamps in the past. RecordScreeningSource can only ever say "just now",
+// which is not enough to reproduce a stale source.
+func (r *MemoryWave3Repo) SetScreeningSourceSnapshot(snapshot domain.ScreeningSourceSnapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.snapshots[snapshot.ListID] = snapshot
 }
 
 func (r *MemoryWave3Repo) SaveBacktestMetadata(_ context.Context, metadata *domain.BacktestMetadata) error {

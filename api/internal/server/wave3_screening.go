@@ -147,22 +147,63 @@ func (s *Server) handleListScreeningSources(w http.ResponseWriter, r *http.Reque
 	ids := append([]string(nil), s.screeningListIDs...)
 	if raw := strings.TrimSpace(r.URL.Query().Get("source_ids")); raw != "" {
 		ids = strings.Split(raw, ",")
+		for i, id := range ids {
+			ids[i] = strings.TrimSpace(id)
+			if ids[i] == "" {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "source_ids must not contain an empty identifier")
+				return
+			}
+		}
 	}
-	threshold := 72 * time.Hour
+	var override time.Duration
+	// Only a wholly absent value falls back to the policy window. A parameter
+	// the caller did supply but that does not parse is an error, not a
+	// silently ignored intent.
 	if raw := r.URL.Query().Get("freshness_threshold_seconds"); raw != "" {
-		n, err := strconv.ParseInt(raw, 10, 64)
+		n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 		if err != nil || n <= 0 {
 			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "freshness_threshold_seconds must be a positive integer")
 			return
 		}
-		threshold = time.Duration(n) * time.Second
+		override = time.Duration(n) * time.Second
 	}
-	items, err := s.screeningSourceStatuses(r.Context(), ids, threshold)
+	items, err := s.screeningSourceStatuses(r.Context(), ids, override)
 	if err != nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": items, "configured_count": len(ids), "ready_count": countSourceState(items, domain.ScreeningSourceReady), "unready_count": len(items) - countSourceState(items, domain.ScreeningSourceReady)})
+	ready := countSourceState(items, domain.ScreeningSourceReady)
+	readiness := s.policies.ScreeningReadiness()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":             items,
+		"configured_count": len(items),
+		"ready_count":      ready,
+		"unready_count":    len(items) - ready,
+		// screening_ready answers the only question that decides whether a
+		// clear screening result can be trusted: is every source we consider
+		// mandatory currently usable. An optional feed being stale does not
+		// make the answer false.
+		"screening_ready":  screeningReadyFrom(items, readiness.Required),
+		"policy_version":   readiness.Version(),
+		"degraded_sources": unreadyRequiredSources(items, readiness.Required),
+	})
+}
+
+// screeningReadyFrom reports whether every required source is ready. Sources
+// the caller asked about that the policy does not require are reported but do
+// not decide readiness.
+func screeningReadyFrom(items []domain.ScreeningSourceStatus, required func(string) bool) bool {
+	return len(unreadyRequiredSources(items, required)) == 0
+}
+
+func unreadyRequiredSources(items []domain.ScreeningSourceStatus, required func(string) bool) []string {
+	out := []string{}
+	for _, item := range items {
+		if !item.IsReady() && required(item.ListID) {
+			out = append(out, item.ListID)
+		}
+	}
+	return out
 }
 
 func countSourceState(items []domain.ScreeningSourceStatus, state domain.ScreeningSourceState) int {

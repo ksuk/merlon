@@ -11,37 +11,50 @@ import (
 	"github.com/ksuk/merlon/api/internal/screening"
 )
 
-const defaultScreeningSourceThreshold = 72 * time.Hour
-
-func configuredScreeningSourceIDs(ids []string) []string {
-	if len(ids) == 0 {
-		return []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
+// configuredScreeningSourceIDs resolves which sources a readiness view covers.
+// The screening_readiness policy is the source of truth; an explicit request
+// argument (a query parameter, or the deployment's own list) still wins so an
+// operator can inspect a single feed.
+func (s *Server) configuredScreeningSourceIDs(ids []string) []string {
+	if len(ids) > 0 {
+		return append([]string(nil), ids...)
 	}
-	return append([]string(nil), ids...)
+	return s.policies.ScreeningReadiness().SourceIDs()
+}
+
+// screeningSourceThresholds returns the per-source freshness window. A daily
+// sanctions feed and a monthly PEP refresh are not stale at the same age, so
+// the window is a function of the source rather than one global duration.
+// override, when positive, is an explicit request-scoped window and applies to
+// every source.
+func (s *Server) screeningSourceThresholds(override time.Duration) func(string) time.Duration {
+	if override > 0 {
+		return func(string) time.Duration { return override }
+	}
+	readiness := s.policies.ScreeningReadiness()
+	return readiness.ThresholdFor
 }
 
 // screeningSourceStatuses reads the same durable importer state used by the
 // scheduled screening job.  The Wave3 repository remains a compatibility
 // fallback for deployments that do not wire the importer (for example a
 // read-only API process).
-func (s *Server) screeningSourceStatuses(ctx context.Context, ids []string, threshold time.Duration) ([]domain.ScreeningSourceStatus, error) {
-	ids = configuredScreeningSourceIDs(ids)
-	if threshold <= 0 {
-		threshold = defaultScreeningSourceThreshold
-	}
+func (s *Server) screeningSourceStatuses(ctx context.Context, ids []string, override time.Duration) ([]domain.ScreeningSourceStatus, error) {
+	ids = s.configuredScreeningSourceIDs(ids)
+	thresholdFor := s.screeningSourceThresholds(override)
 	if s.screeningListStore != nil && s.screeningFailureTracker != nil {
-		return readImporterSourceStatuses(ctx, ids, threshold, s.screeningListStore, s.screeningFailureTracker), nil
+		return readImporterSourceStatuses(ctx, ids, thresholdFor, s.screeningListStore, s.screeningFailureTracker), nil
 	}
 	if workflow, ok := s.wave3.(domain.ScreeningWorkflowRepository); ok {
-		items, err := workflow.ListScreeningSources(ctx, ids, threshold)
+		items, err := workflow.ListScreeningSources(ctx, ids, thresholdFor)
 		if err == nil {
-			return normalizeScreeningSourceStatuses(items, ids, threshold, "source directory returned incomplete data"), nil
+			return normalizeScreeningSourceStatuses(items, ids, thresholdFor, "source directory returned incomplete data"), nil
 		}
 		// A source directory must not disappear when its status tracker is
 		// temporarily unavailable. Returning one safe unavailable row per
 		// configured source preserves cardinality and gives the UI an explicit
 		// operational error state.
-		return unavailableSourceStatuses(ids, threshold, "source status unavailable"), nil
+		return unavailableSourceStatuses(ids, thresholdFor, "source status unavailable"), nil
 	}
 	return nil, fmt.Errorf("screening source directory not configured")
 }
@@ -64,102 +77,61 @@ func (s *Server) screeningDegradation(ctx context.Context) domain.ScreeningDegra
 		slog.Warn("screening: source readiness could not be assessed; run recorded without a degradation claim", "error", err)
 		return domain.ScreeningDegradation{}
 	}
-	var degraded []string
-	for _, status := range statuses {
-		if status.OperationalState == domain.ScreeningSourceReady {
-			continue
-		}
-		if !readiness.Required(status.ListID) {
-			continue
-		}
-		degraded = append(degraded, status.ListID)
-	}
+	degraded := unreadyRequiredSources(statuses, readiness.Required)
 	if len(degraded) == 0 {
 		return domain.ScreeningDegradation{}
 	}
 	return domain.ScreeningDegradation{Degraded: true, Sources: degraded}
 }
 
-func readImporterSourceStatuses(ctx context.Context, ids []string, threshold time.Duration, listStore screening.ListStore, tracker screening.FailureTracker) []domain.ScreeningSourceStatus {
+func readImporterSourceStatuses(ctx context.Context, ids []string, thresholdFor func(string) time.Duration, listStore screening.ListStore, tracker screening.FailureTracker) []domain.ScreeningSourceStatus {
 	now := time.Now().UTC()
 	out := make([]domain.ScreeningSourceStatus, 0, len(ids))
 	reader, hasReader := tracker.(screening.FailureStatusReader)
 	for _, id := range ids {
-		status := domain.ScreeningSourceStatus{
-			ListID: id, Configured: true,
-			OperationalState:          domain.ScreeningSourceNeverImported,
-			FreshnessThresholdSeconds: int64(threshold.Seconds()),
-		}
+		snapshot := domain.ScreeningSourceSnapshot{ListID: id}
 
 		data, listErr := listStore.GetList(ctx, id)
 		if data != nil {
-			status.ListType = data.ListType
+			snapshot.ListType = data.ListType
 		}
+		snapshot.SnapshotUnreadable = listErr != nil && !errors.Is(listErr, screening.ErrListNotFound)
+		snapshot.SnapshotMissing = listErr != nil
 
-		var snapshot screening.FailureStatus
+		var status screening.FailureStatus
 		var trackerErr error
 		if hasReader {
-			snapshot, trackerErr = reader.FailureStatus(ctx, id)
+			status, trackerErr = reader.FailureStatus(ctx, id)
 		} else {
 			var count int
 			count, trackerErr = tracker.ConsecutiveFailures(ctx, id)
-			snapshot.ConsecutiveFailures = count
+			status.ConsecutiveFailures = count
 			if trackerErr == nil {
 				last, lastErr := tracker.LastSuccessAt(ctx, id)
 				if lastErr == nil {
-					snapshot.LastSuccessAt = sourceTimePtr(last)
+					status.LastSuccessAt = sourceTimePtr(last)
 				}
 			}
 		}
 		if trackerErr != nil {
-			status.OperationalState = domain.ScreeningSourceUnavailable
-			status.Diagnostic = "source status unavailable"
-			out = append(out, status)
-			continue
+			// Nothing below the tracker is trustworthy, so report exactly that
+			// rather than a freshness verdict derived from unread state.
+			snapshot = domain.ScreeningSourceSnapshot{ListID: id, ListType: snapshot.ListType, StatusUnavailable: true}
+		} else {
+			snapshot.LastAttemptAt = status.LastAttemptAt
+			snapshot.LastFailureAt = status.LastFailureAt
+			snapshot.LastSuccessAt = status.LastSuccessAt
+			snapshot.ConsecutiveFailures = status.ConsecutiveFailures
+			snapshot.Diagnostic = safeSourceDiagnostic(status.Diagnostic)
 		}
-		status.LastAttemptAt = snapshot.LastAttemptAt
-		status.LastFailureAt = snapshot.LastFailureAt
-		status.LastSuccessAt = snapshot.LastSuccessAt
-		status.ConsecutiveFailures = snapshot.ConsecutiveFailures
-		status.Diagnostic = safeSourceDiagnostic(snapshot.Diagnostic)
-
-		switch {
-		case listErr != nil && !errors.Is(listErr, screening.ErrListNotFound):
-			status.OperationalState = domain.ScreeningSourceUnreadable
-			status.Diagnostic = "source snapshot unreadable"
-		case listErr != nil && snapshot.LastSuccessAt != nil:
-			// A success tracker row without its snapshot indicates corruption or
-			// an incomplete restore; never report it as ready.
-			status.OperationalState = domain.ScreeningSourceUnreadable
-			status.Diagnostic = "last successful source snapshot unavailable"
-		case snapshot.ConsecutiveFailures > 0:
-			status.OperationalState = domain.ScreeningSourceFailed
-			if status.Diagnostic == "" {
-				status.Diagnostic = "source import failed"
-			}
-		case snapshot.LastSuccessAt == nil:
-			status.OperationalState = domain.ScreeningSourceNeverImported
-		case now.Sub(*snapshot.LastSuccessAt) > threshold:
-			status.OperationalState = domain.ScreeningSourceStale
-		default:
-			status.OperationalState = domain.ScreeningSourceReady
-		}
-		if snapshot.LastSuccessAt != nil {
-			age := int64(now.Sub(*snapshot.LastSuccessAt).Seconds())
-			if age < 0 {
-				age = 0
-			}
-			status.AgeSeconds = &age
-		}
-		out = append(out, status)
+		out = append(out, domain.ClassifyScreeningSource(snapshot, thresholdFor(id), now))
 	}
 	return out
 }
 
-func normalizeScreeningSourceStatuses(items []domain.ScreeningSourceStatus, ids []string, threshold time.Duration, diagnostic string) []domain.ScreeningSourceStatus {
+func normalizeScreeningSourceStatuses(items []domain.ScreeningSourceStatus, ids []string, thresholdFor func(string) time.Duration, diagnostic string) []domain.ScreeningSourceStatus {
 	byID := make(map[string]domain.ScreeningSourceStatus, len(items))
 	for _, item := range items {
-		item.FreshnessThresholdSeconds = int64(threshold.Seconds())
 		byID[item.ListID] = item
 	}
 	out := make([]domain.ScreeningSourceStatus, 0, len(ids))
@@ -171,19 +143,19 @@ func normalizeScreeningSourceStatuses(items []domain.ScreeningSourceStatus, ids 
 		item.ListID = id
 		item.Configured = true
 		if item.FreshnessThresholdSeconds <= 0 {
-			item.FreshnessThresholdSeconds = int64(threshold.Seconds())
+			item.FreshnessThresholdSeconds = int64(thresholdFor(id).Seconds())
 		}
 		out = append(out, item)
 	}
 	return out
 }
 
-func unavailableSourceStatuses(ids []string, threshold time.Duration, diagnostic string) []domain.ScreeningSourceStatus {
+func unavailableSourceStatuses(ids []string, thresholdFor func(string) time.Duration, diagnostic string) []domain.ScreeningSourceStatus {
 	out := make([]domain.ScreeningSourceStatus, 0, len(ids))
 	for _, id := range ids {
 		out = append(out, domain.ScreeningSourceStatus{
 			ListID: id, Configured: true, OperationalState: domain.ScreeningSourceUnavailable,
-			FreshnessThresholdSeconds: int64(threshold.Seconds()), Diagnostic: diagnostic,
+			FreshnessThresholdSeconds: int64(thresholdFor(id).Seconds()), Diagnostic: diagnostic,
 		})
 	}
 	return out

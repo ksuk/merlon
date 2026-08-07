@@ -183,7 +183,11 @@ type ScreeningWorkflowRepository interface {
 	ListScreeningResults(ctx context.Context, filter ScreeningResultFilter, limit int) ([]ScreeningResultRecord, error)
 	ReviewScreeningResult(ctx context.Context, id string, to ScreeningResultStatus, reason, actor string, expectedVersion int) (*ScreeningReviewOutcome, error)
 	ListScreeningResultHistory(ctx context.Context, id string, limit int) ([]ScreeningResultHistoryEntry, error)
-	ListScreeningSources(ctx context.Context, configuredIDs []string, freshnessThreshold time.Duration) ([]ScreeningSourceStatus, error)
+	// ListScreeningSources takes a per-source freshness window rather than one
+	// global duration: a daily sanctions feed and a monthly PEP refresh are
+	// not stale at the same age, and the screening_readiness policy expresses
+	// that difference. thresholdFor must be non-nil.
+	ListScreeningSources(ctx context.Context, configuredIDs []string, thresholdFor func(listID string) time.Duration) ([]ScreeningSourceStatus, error)
 }
 
 type BacktestMetadataRepository interface {

@@ -214,7 +214,7 @@ func TestHandleScreeningCheck_RecordsDegradationWhenRequiredSourcesUnready(t *te
 
 func TestHandleScreeningCheck_NoDegradationWhenSourcesFresh(t *testing.T) {
 	s, wave3, customerID := screeningCheckServer(t)
-	for _, id := range configuredScreeningSourceIDs(nil) {
+	for _, id := range s.configuredScreeningSourceIDs(nil) {
 		wave3.RecordScreeningSource(id, "sanctions", true, "")
 	}
 
@@ -242,7 +242,7 @@ func TestHandleScreeningCheck_NoDegradationWhenSourcesFresh(t *testing.T) {
 
 func TestHandleScreeningCheck_TotalPersistenceFailureIsReportedAsServerError(t *testing.T) {
 	s, wave3, customerID := screeningCheckServer(t)
-	for _, id := range configuredScreeningSourceIDs(nil) {
+	for _, id := range s.configuredScreeningSourceIDs(nil) {
 		wave3.RecordScreeningSource(id, "sanctions", true, "")
 	}
 	// A run already occupying the id is the memory store's conflict path;

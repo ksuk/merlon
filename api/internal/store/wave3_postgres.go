@@ -335,10 +335,7 @@ func (r *PgWave3Repo) ListScreeningResultHistory(ctx context.Context, id string,
 	return out, rows.Err()
 }
 
-func (r *PgWave3Repo) ListScreeningSources(ctx context.Context, configuredIDs []string, threshold time.Duration) ([]domain.ScreeningSourceStatus, error) {
-	if threshold <= 0 {
-		threshold = 72 * time.Hour
-	}
+func (r *PgWave3Repo) ListScreeningSources(ctx context.Context, configuredIDs []string, thresholdFor func(string) time.Duration) ([]domain.ScreeningSourceStatus, error) {
 	rows, err := r.pool.Query(ctx, `SELECT ids.list_id,COALESCE(s.list_type,''),s.imported_at,f.last_attempt_at,f.last_success_at,f.last_failure_at,COALESCE(f.consecutive_failures,0),COALESCE(f.last_error,'') FROM unnest($1::text[]) AS ids(list_id) LEFT JOIN screening_list_snapshots s ON s.list_id=ids.list_id LEFT JOIN screening_list_failures f ON f.list_id=ids.list_id ORDER BY ids.list_id`, configuredIDs)
 	if err != nil {
 		return nil, err
@@ -347,42 +344,22 @@ func (r *PgWave3Repo) ListScreeningSources(ctx context.Context, configuredIDs []
 	now := time.Now().UTC()
 	out := []domain.ScreeningSourceStatus{}
 	for rows.Next() {
-		var x domain.ScreeningSourceStatus
+		var snapshot domain.ScreeningSourceSnapshot
 		var imported, attempt, success, failure *time.Time
-		var id, typ string
-		if err := rows.Scan(&id, &typ, &imported, &attempt, &success, &failure, &x.ConsecutiveFailures, &x.Diagnostic); err != nil {
+		if err := rows.Scan(&snapshot.ListID, &snapshot.ListType, &imported, &attempt, &success, &failure, &snapshot.ConsecutiveFailures, &snapshot.Diagnostic); err != nil {
 			return nil, err
 		}
-		x.ListID = id
-		x.ListType = typ
-		x.Configured = true
-		x.LastAttemptAt = attempt
-		x.LastSuccessAt = success
-		x.LastFailureAt = failure
-		// The snapshot table predates the failure tracker.  Treat an existing
+		snapshot.LastAttemptAt = attempt
+		snapshot.LastSuccessAt = success
+		snapshot.LastFailureAt = failure
+		// The snapshot table predates the failure tracker. Treat an existing
 		// imported snapshot as the last successful import so legacy rows do not
 		// appear as never_imported after the source directory is enabled.
-		if x.LastSuccessAt == nil && imported != nil {
-			x.LastSuccessAt = imported
+		if snapshot.LastSuccessAt == nil && imported != nil {
+			snapshot.LastSuccessAt = imported
 		}
-		x.FreshnessThresholdSeconds = int64(threshold.Seconds())
-		if x.LastSuccessAt == nil {
-			x.OperationalState = domain.ScreeningSourceNeverImported
-		} else {
-			age := int64(now.Sub(*x.LastSuccessAt).Seconds())
-			if age < 0 {
-				age = 0
-			}
-			x.AgeSeconds = &age
-			if x.ConsecutiveFailures > 0 {
-				x.OperationalState = domain.ScreeningSourceFailed
-			} else if time.Duration(age)*time.Second > threshold {
-				x.OperationalState = domain.ScreeningSourceStale
-			} else {
-				x.OperationalState = domain.ScreeningSourceReady
-			}
-		}
-		out = append(out, x)
+		snapshot.SnapshotMissing = imported == nil
+		out = append(out, domain.ClassifyScreeningSource(snapshot, resolveSourceThreshold(thresholdFor, snapshot.ListID), now))
 	}
 	return out, rows.Err()
 }
