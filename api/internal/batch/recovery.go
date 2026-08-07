@@ -26,6 +26,16 @@ const maxPendingRetries = 5
 // sweeps of the PENDING_REVIEW queue.
 const defaultPollInterval = 30 * time.Second
 
+const (
+	// recoveryPageSize is how many queued records one read returns.
+	recoveryPageSize = 100
+	// maxRecoveryPagesPerRun bounds one sweep. A backlog deeper than this is
+	// drained across successive sweeps rather than in one long transaction,
+	// and because the queue is read oldest-first the drain always makes
+	// forward progress.
+	maxRecoveryPagesPerRun = 10
+)
+
 // RecoveryJob re-evaluates transactions queued as PENDING_REVIEW (OPS-005,
 // the operational design §4.4 Fail-Alert) once the monitoring engine becomes reachable
 // again, so detection resumes automatically instead of requiring manual
@@ -93,10 +103,25 @@ func (j *RecoveryJob) Run(ctx context.Context) error {
 // have retry_count incremented and, past maxPendingRetries, are marked
 // FAILED so they stop being retried.
 func (j *RecoveryJob) RunOnce(ctx context.Context) (processed int, err error) {
-	const listPageSize = 100
-	records, err := j.pending.ListByStatus(ctx, domain.PendingEvaluationStatusPendingReview, listPageSize, 0)
-	if err != nil {
-		return 0, err
+	// ListByStatus returns oldest first, so the record that has waited longest
+	// is retried first. Reading a single fixed page used to mean that with more
+	// than one page queued -- exactly what an engine outage produces -- the
+	// same head of the queue was retried on every sweep while the tail was
+	// never processed at all.
+	//
+	// The whole sweep is collected before any record is processed. Paging while
+	// processing would shift the offset window underneath itself, because a
+	// record that succeeds leaves PENDING_REVIEW.
+	var records []domain.PendingEvaluation
+	for page := 0; page < maxRecoveryPagesPerRun; page++ {
+		batch, err := j.pending.ListByStatus(ctx, domain.PendingEvaluationStatusPendingReview, recoveryPageSize, page*recoveryPageSize)
+		if err != nil {
+			return 0, err
+		}
+		records = append(records, batch...)
+		if len(batch) < recoveryPageSize {
+			break
+		}
 	}
 
 	var joined error

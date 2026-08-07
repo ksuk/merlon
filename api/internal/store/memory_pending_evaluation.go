@@ -112,10 +112,26 @@ func (r *MemoryPendingEvaluationRepo) TransitionPendingEvaluation(_ context.Cont
 		if pe.Status == domain.PendingEvaluationStatusResolved {
 			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "already resolved"}
 		}
+		// FAILED is where the automatic retry budget was spent. Reviving from
+		// there is a deliberate operator act, not a continuation of the loop
+		// that gave up, so it goes through manual_retry and its own counter.
+		if pe.Status == domain.PendingEvaluationStatusFailed {
+			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "record has failed; use manual_retry to revive it"}
+		}
 		pe.Status = domain.PendingEvaluationStatusPendingReview
 		pe.RetryCount++
 		pe.LastAttemptAt = &now
 		next := now.Add(time.Duration(1<<minInt(pe.RetryCount, 8)) * time.Second)
+		pe.NextRetryAt = &next
+	case "manual_retry":
+		if pe.Status == domain.PendingEvaluationStatusResolved {
+			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "already resolved"}
+		}
+		pe.Status = domain.PendingEvaluationStatusPendingReview
+		pe.ManualRetryCount++
+		pe.LastAttemptAt = &now
+		pe.EscalatedAt = nil
+		next := now
 		pe.NextRetryAt = &next
 	case "process":
 		if pe.Status != domain.PendingEvaluationStatusPendingReview {
@@ -206,10 +222,14 @@ func (r *MemoryPendingEvaluationRepo) ListByStatus(_ context.Context, status dom
 			all = append(all, *pe)
 		}
 	}
-	sortByCreatedAtDesc(all,
-		func(pe domain.PendingEvaluation) time.Time { return pe.CreatedAt },
-		func(pe domain.PendingEvaluation) string { return pe.ID },
-	)
+	// Oldest first, matching PostgreSQL: this is a work queue, and the record
+	// that has waited longest is the one the recovery job must take next.
+	sort.Slice(all, func(i, j int) bool {
+		if !all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].CreatedAt.Before(all[j].CreatedAt)
+		}
+		return all[i].ID < all[j].ID
+	})
 	return pageByOffset(all, limit, offset), nil
 }
 

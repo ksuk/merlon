@@ -20,13 +20,13 @@ func NewPgPendingEvaluationRepo(pool DBTX) *PgPendingEvaluationRepo {
 	return &PgPendingEvaluationRepo{pool: pool}
 }
 
-const pendingEvaluationColumns = "id, customer_id, transaction_ids, status, reason, batch_run_id, alert_ids, retry_count, resolved_at, last_attempt_at, next_retry_at, escalated_at, version, created_at, updated_at"
+const pendingEvaluationColumns = "id, customer_id, transaction_ids, status, reason, batch_run_id, alert_ids, retry_count, manual_retry_count, resolved_at, last_attempt_at, next_retry_at, escalated_at, version, created_at, updated_at"
 
 func scanPendingEvaluation(row pgx.Row) (*domain.PendingEvaluation, error) {
 	var pe domain.PendingEvaluation
 	err := row.Scan(
 		&pe.ID, &pe.CustomerID, &pe.TransactionIDs, &pe.Status, &pe.Reason,
-		&pe.BatchRunID, &pe.AlertIDs, &pe.RetryCount, &pe.ResolvedAt, &pe.LastAttemptAt, &pe.NextRetryAt, &pe.EscalatedAt, &pe.Version, &pe.CreatedAt, &pe.UpdatedAt,
+		&pe.BatchRunID, &pe.AlertIDs, &pe.RetryCount, &pe.ManualRetryCount, &pe.ResolvedAt, &pe.LastAttemptAt, &pe.NextRetryAt, &pe.EscalatedAt, &pe.Version, &pe.CreatedAt, &pe.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -139,7 +139,7 @@ func (r *PgPendingEvaluationRepo) TransitionPendingEvaluation(ctx context.Contex
 	var pe domain.PendingEvaluation
 	var batchRunID *string
 	var alertIDs []string
-	err = tx.QueryRow(ctx, `SELECT id::text,customer_id::text,transaction_ids,status,reason,batch_run_id::text,alert_ids,retry_count,resolved_at,last_attempt_at,next_retry_at,escalated_at,version,created_at,updated_at FROM pending_evaluations WHERE id=$1 FOR UPDATE`, id).Scan(&pe.ID, &pe.CustomerID, &pe.TransactionIDs, &pe.Status, &pe.Reason, &batchRunID, &alertIDs, &pe.RetryCount, &pe.ResolvedAt, &pe.LastAttemptAt, &pe.NextRetryAt, &pe.EscalatedAt, &pe.Version, &pe.CreatedAt, &pe.UpdatedAt)
+	err = tx.QueryRow(ctx, `SELECT id::text,customer_id::text,transaction_ids,status,reason,batch_run_id::text,alert_ids,retry_count,manual_retry_count,resolved_at,last_attempt_at,next_retry_at,escalated_at,version,created_at,updated_at FROM pending_evaluations WHERE id=$1 FOR UPDATE`, id).Scan(&pe.ID, &pe.CustomerID, &pe.TransactionIDs, &pe.Status, &pe.Reason, &batchRunID, &alertIDs, &pe.RetryCount, &pe.ManualRetryCount, &pe.ResolvedAt, &pe.LastAttemptAt, &pe.NextRetryAt, &pe.EscalatedAt, &pe.Version, &pe.CreatedAt, &pe.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &domain.ErrNotFound{Entity: "pending_evaluation", ID: id}
 	}
@@ -155,18 +155,38 @@ func (r *PgPendingEvaluationRepo) TransitionPendingEvaluation(ctx context.Contex
 	now := time.Now().UTC()
 	next := pe.NextRetryAt
 	var resolved, escalated *time.Time
+	// clearEscalation distinguishes "this action did not escalate" from "this
+	// action un-escalates": both leave escalated nil, but only the second may
+	// overwrite a previously recorded escalation.
+	clearEscalation := false
 	retry := pe.RetryCount
+	manualRetry := pe.ManualRetryCount
 	status := pe.Status
 	switch action {
 	case "retry":
 		if status == domain.PendingEvaluationStatusResolved {
 			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "already resolved"}
 		}
+		// FAILED is where the automatic retry budget was spent. Reviving from
+		// there is a deliberate operator act, not a continuation of the loop
+		// that gave up, so it goes through manual_retry and its own counter.
+		if status == domain.PendingEvaluationStatusFailed {
+			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "record has failed; use manual_retry to revive it"}
+		}
 		status = domain.PendingEvaluationStatusPendingReview
 		retry++
 		nextAt := now.Add(time.Duration(1<<minInt(retry, 8)) * time.Second)
 		next = &nextAt
 		pe.LastAttemptAt = &now
+	case "manual_retry":
+		if status == domain.PendingEvaluationStatusResolved {
+			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "already resolved"}
+		}
+		status = domain.PendingEvaluationStatusPendingReview
+		manualRetry++
+		next = &now
+		pe.LastAttemptAt = &now
+		clearEscalation = true
 	case "process":
 		if status != domain.PendingEvaluationStatusPendingReview {
 			return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "record is not pending review"}
@@ -195,7 +215,7 @@ func (r *PgPendingEvaluationRepo) TransitionPendingEvaluation(ctx context.Contex
 		return nil, &domain.ErrConflict{Entity: "pending_evaluation", ID: id, Reason: "unknown action"}
 	}
 	version := pe.Version + 1
-	if _, err := tx.Exec(ctx, `UPDATE pending_evaluations SET status=$2,retry_count=$3,resolved_at=$4,last_attempt_at=COALESCE($5,last_attempt_at),next_retry_at=$6,escalated_at=$7,version=$8,updated_at=$9 WHERE id=$1 AND version=$10`, id, status, retry, resolved, pe.LastAttemptAt, next, escalated, version, now, pe.Version); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE pending_evaluations SET status=$2,retry_count=$3,manual_retry_count=$4,resolved_at=$5,last_attempt_at=COALESCE($6,last_attempt_at),next_retry_at=$7,escalated_at=CASE WHEN $8::boolean THEN NULL ELSE COALESCE($9,escalated_at) END,version=$10,updated_at=$11 WHERE id=$1 AND version=$12`, id, status, retry, manualRetry, resolved, pe.LastAttemptAt, next, clearEscalation, escalated, version, now, pe.Version); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO pending_evaluation_history(id,pending_evaluation_id,from_status,to_status,action,reason,actor,retry_count,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, wave3ID(), id, from, status, action, reason, actor, retry, now); err != nil {
@@ -206,11 +226,16 @@ func (r *PgPendingEvaluationRepo) TransitionPendingEvaluation(ctx context.Contex
 	}
 	pe.Status = status
 	pe.RetryCount = retry
+	pe.ManualRetryCount = manualRetry
 	pe.Version = version
 	pe.UpdatedAt = now
 	pe.ResolvedAt = resolved
 	pe.NextRetryAt = next
-	pe.EscalatedAt = escalated
+	if clearEscalation {
+		pe.EscalatedAt = nil
+	} else if escalated != nil {
+		pe.EscalatedAt = escalated
+	}
 	return &pe, nil
 }
 
@@ -264,7 +289,7 @@ func (r *PgPendingEvaluationRepo) Get(ctx context.Context, id string) (*domain.P
 
 func (r *PgPendingEvaluationRepo) ListByStatus(ctx context.Context, status domain.PendingEvaluationStatus, limit, offset int) ([]domain.PendingEvaluation, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations WHERE status = $1 ORDER BY created_at ASC LIMIT $2 OFFSET $3`,
+		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations WHERE status = $1 AND purge_marked_at IS NULL ORDER BY created_at ASC, id ASC LIMIT $2 OFFSET $3`,
 		string(status), limit, offset,
 	)
 	if err != nil {

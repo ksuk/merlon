@@ -27,13 +27,19 @@ type PendingEvaluation struct {
 	BatchRunID     *string                 `json:"batch_run_id,omitempty"`
 	AlertIDs       []string                `json:"alert_ids,omitempty"`
 	RetryCount     int                     `json:"retry_count"`
-	ResolvedAt     *time.Time              `json:"resolved_at,omitempty"`
-	LastAttemptAt  *time.Time              `json:"last_attempt_at,omitempty"`
-	NextRetryAt    *time.Time              `json:"next_retry_at,omitempty"`
-	EscalatedAt    *time.Time              `json:"escalated_at,omitempty"`
-	Version        int                     `json:"version"`
-	CreatedAt      time.Time               `json:"created_at"`
-	UpdatedAt      time.Time               `json:"updated_at"`
+	// ManualRetryCount counts operator-initiated revivals of a FAILED record
+	// separately from automatic retries. Kept apart because the automatic
+	// budget (maxPendingRetries) is a statement about the engine, while a
+	// manual revival is a statement about a person deciding to try again;
+	// mixing them would let one hide the other.
+	ManualRetryCount int        `json:"manual_retry_count"`
+	ResolvedAt       *time.Time `json:"resolved_at,omitempty"`
+	LastAttemptAt    *time.Time `json:"last_attempt_at,omitempty"`
+	NextRetryAt      *time.Time `json:"next_retry_at,omitempty"`
+	EscalatedAt      *time.Time `json:"escalated_at,omitempty"`
+	Version          int        `json:"version"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 type PendingEvaluationRepository interface {

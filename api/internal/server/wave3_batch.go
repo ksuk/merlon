@@ -397,28 +397,44 @@ func (s *Server) handleListPendingEvaluations(w http.ResponseWriter, r *http.Req
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
-	filter := domain.PendingEvaluationFilter{CustomerID: r.URL.Query().Get("customer_id"), BatchRunID: r.URL.Query().Get("batch_run_id"), Cursor: toDomainCursor(pageReq.Cursor)}
+	filter, status, message := parsePendingEvaluationFilter(r)
+	if status != 0 {
+		writeErrorCode(w, status, apierr.CodeValidationFailed, message)
+		return
+	}
+	filter.Cursor = toDomainCursor(pageReq.Cursor)
+	items, err := repo.ListPendingEvaluations(r.Context(), filter, pageReq.Limit+1)
+	if err != nil {
+		writeWave3Error(w, err)
+		return
+	}
+	page, meta := BuildPaginationMeta(items, pageReq.Limit, func(item domain.PendingEvaluation) Cursor { return Cursor{CreatedAt: item.CreatedAt, ID: item.ID} })
+	writePaginatedJSON(w, http.StatusOK, page, meta)
+}
+
+// parsePendingEvaluationFilter is shared by the queue listing and its export,
+// so the exported evidence covers exactly the rows the operator was looking at.
+// It returns a non-zero HTTP status with a message when the query is invalid.
+func parsePendingEvaluationFilter(r *http.Request) (domain.PendingEvaluationFilter, int, string) {
+	filter := domain.PendingEvaluationFilter{CustomerID: r.URL.Query().Get("customer_id"), BatchRunID: r.URL.Query().Get("batch_run_id")}
 	if raw := firstNonEmpty(r.URL.Query().Get("created_from"), r.URL.Query().Get("from")); raw != "" {
 		parsed, parseErr := time.Parse(time.RFC3339Nano, raw)
 		if parseErr != nil {
-			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "created_from must be RFC3339")
-			return
+			return filter, http.StatusBadRequest, "created_from must be RFC3339"
 		}
 		filter.CreatedFrom = &parsed
 	}
 	if raw := firstNonEmpty(r.URL.Query().Get("created_to"), r.URL.Query().Get("to")); raw != "" {
 		parsed, parseErr := time.Parse(time.RFC3339Nano, raw)
 		if parseErr != nil {
-			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "created_to must be RFC3339")
-			return
+			return filter, http.StatusBadRequest, "created_to must be RFC3339"
 		}
 		filter.CreatedTo = &parsed
 	}
 	if raw := r.URL.Query().Get("min_age_days"); raw != "" {
 		days, parseErr := strconv.Atoi(raw)
 		if parseErr != nil || days < 0 {
-			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "min_age_days must be a non-negative integer")
-			return
+			return filter, http.StatusBadRequest, "min_age_days must be a non-negative integer"
 		}
 		cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
 		if filter.CreatedTo == nil || cutoff.Before(*filter.CreatedTo) {
@@ -428,8 +444,7 @@ func (s *Server) handleListPendingEvaluations(w http.ResponseWriter, r *http.Req
 	if raw := r.URL.Query().Get("max_age_days"); raw != "" {
 		days, parseErr := strconv.Atoi(raw)
 		if parseErr != nil || days < 0 {
-			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "max_age_days must be a non-negative integer")
-			return
+			return filter, http.StatusBadRequest, "max_age_days must be a non-negative integer"
 		}
 		cutoff := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
 		if filter.CreatedFrom == nil || cutoff.After(*filter.CreatedFrom) {
@@ -437,22 +452,16 @@ func (s *Server) handleListPendingEvaluations(w http.ResponseWriter, r *http.Req
 		}
 	}
 	if filter.CreatedFrom != nil && filter.CreatedTo != nil && filter.CreatedFrom.After(*filter.CreatedTo) {
-		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "pending evaluation time range is invalid")
-		return
+		return filter, http.StatusBadRequest, "pending evaluation time range is invalid"
 	}
 	if raw := r.URL.Query().Get("status"); raw != "" {
 		for _, item := range strings.Split(raw, ",") {
 			filter.Status = append(filter.Status, domain.PendingEvaluationStatus(strings.TrimSpace(item)))
 		}
 	}
-	items, err := repo.ListPendingEvaluations(r.Context(), filter, pageReq.Limit+1)
-	if err != nil {
-		writeWave3Error(w, err)
-		return
-	}
-	page, meta := BuildPaginationMeta(items, pageReq.Limit, func(item domain.PendingEvaluation) Cursor { return Cursor{CreatedAt: item.CreatedAt, ID: item.ID} })
-	writePaginatedJSON(w, http.StatusOK, page, meta)
+	return filter, 0, ""
 }
+
 func (s *Server) handleGetPendingEvaluation(w http.ResponseWriter, r *http.Request) {
 	if s.pendingEvals == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "pending evaluation store not configured")
@@ -495,6 +504,15 @@ func (s *Server) handleTransitionPending(w http.ResponseWriter, r *http.Request)
 	if body.ExpectedVersion <= 0 {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "expected_version is required")
 		return
+	}
+	// Reviving a record the automatic retry budget has already given up on is
+	// an override of the system's own conclusion, so it carries the same
+	// authority as approving a whitelist entry.
+	if r.PathValue("action") == "manual_retry" {
+		if role, ok := auth.RoleFromContext(r.Context()); ok && !auth.HasPermission(role, auth.PermWhitelistApprove) {
+			writeErrorCode(w, http.StatusForbidden, apierr.CodeForbidden, "reviving a failed evaluation requires the "+string(auth.PermWhitelistApprove)+" permission")
+			return
+		}
 	}
 	var item *domain.PendingEvaluation
 	mutate := func(repos domain.AtomicMutationRepositories) error {

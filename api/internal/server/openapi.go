@@ -104,6 +104,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/batch/runs/{id}":                             pathBatchRun(),
 			"/api/v1/batch/runs/{id}/rerun":                       pathBatchRerun(),
 			"/api/v1/pending-evaluations":                         pathPendingEvaluations(),
+			"/api/v1/pending-evaluations/export":                  pathPendingEvaluationExport(),
 			"/api/v1/pending-evaluations/{id}":                    pathPendingEvaluation(),
 			"/api/v1/pending-evaluations/{id}/history":            pathPendingHistory(),
 			"/api/v1/pending-evaluations/{id}/{action}":           pathPendingTransition(),
@@ -822,7 +823,7 @@ func wave3Schemas() map[string]any {
 		"TargetConfirmationRequest":   objectSchema(map[string]any{"token": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "idempotency_key": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "token", "rationale", "expected_version"),
 		"BatchRun":                    objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "job_type": map[string]any{"type": "string"}, "operation": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"running", "completed", "failed", "partial", "cancelled"}}, "parameters": map[string]any{"type": "object", "additionalProperties": true}, "target_manifest_id": map[string]any{"type": "string"}, "config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "actor": map[string]any{"type": "string"}, "result_counts": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}}, "customer_outcomes": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "object", "additionalProperties": true}}, "error": map[string]any{"type": "string"}, "rerun_of": map[string]any{"type": "string"}, "started_at": map[string]any{"type": "string", "format": "date-time"}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "updated_at": map[string]any{"type": "string", "format": "date-time"}, "processed_customer_ids": arraySchema(map[string]any{"type": "string"})}, "id", "job_type", "status", "started_at", "processed_customer_ids"),
 		"BatchRunCreateRequest":       objectSchema(map[string]any{"operation": map[string]any{"type": "string"}, "target_manifest_id": map[string]any{"type": "string"}, "parameters": map[string]any{"type": "object", "additionalProperties": true}, "rationale": map[string]any{"type": "string"}, "idempotency_key": map[string]any{"type": "string"}, "rerun_of": map[string]any{"type": "string"}}, "operation", "target_manifest_id"),
-		"PendingEvaluation":           objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "transaction_ids": arraySchema(map[string]any{"type": "string"}), "alert_ids": arraySchema(map[string]any{"type": "string"}), "status": map[string]any{"type": "string", "enum": []string{"PENDING_REVIEW", "PROCESSING", "RESOLVED", "FAILED"}}, "reason": map[string]any{"type": "string"}, "batch_run_id": map[string]any{"type": "string", "nullable": true}, "retry_count": map[string]any{"type": "integer"}, "resolved_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "next_retry_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "escalated_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "transaction_ids", "status", "reason", "retry_count", "version", "created_at", "updated_at"),
+		"PendingEvaluation":           objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "transaction_ids": arraySchema(map[string]any{"type": "string"}), "alert_ids": arraySchema(map[string]any{"type": "string"}), "status": map[string]any{"type": "string", "enum": []string{"PENDING_REVIEW", "PROCESSING", "RESOLVED", "FAILED"}}, "reason": map[string]any{"type": "string"}, "batch_run_id": map[string]any{"type": "string", "nullable": true}, "retry_count": map[string]any{"type": "integer"}, "manual_retry_count": map[string]any{"type": "integer", "description": "Operator-initiated revivals of a failed record, counted separately from the automatic retry budget"}, "resolved_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "next_retry_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "escalated_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "transaction_ids", "status", "reason", "retry_count", "version", "created_at", "updated_at"),
 		"PendingTransitionRequest":    objectSchema(map[string]any{"reason": map[string]any{"type": "string"}, "expected_version": map[string]any{"type": "integer", "minimum": 1}}, "expected_version"),
 		"PendingEvaluationHistory":    objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "pending_evaluation_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "action": map[string]any{"type": "string"}, "reason": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "retry_count": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "pending_evaluation_id", "from_status", "to_status", "action", "actor", "retry_count", "created_at"),
 		"CustomerIdentityHistory":     objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "changed_fields": map[string]any{"type": "object", "additionalProperties": true}, "actor": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "customer_id", "changed_fields", "actor", "rationale", "created_at"),
@@ -1623,6 +1624,27 @@ func pathBacktests() map[string]any {
 
 func pathBacktestJob() map[string]any {
 	return map[string]any{"get": documentedJSONOperation("Get durable backtest job", []map[string]any{pathIDParameter("id", "Backtest job identifier")}, nil, "200", "Backtest job", schemaRef("BacktestJob"), "401", "404", "500", "503")}
+}
+
+func pathPendingEvaluationExport() map[string]any {
+	params := []map[string]any{
+		{"name": "format", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"csv", "json"}, "default": "csv"}},
+		{"name": "status", "in": "query", "description": "Comma-separated queue statuses", "schema": map[string]any{"type": "string"}},
+		{"name": "customer_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		{"name": "batch_run_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		{"name": "created_from", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		{"name": "created_to", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		{"name": "min_age_days", "in": "query", "schema": map[string]any{"type": "integer", "minimum": 0}},
+		{"name": "max_age_days", "in": "query", "schema": map[string]any{"type": "integer", "minimum": 0}},
+	}
+	return map[string]any{"get": map[string]any{
+		"summary":     "Export the monitoring gap queue as evidence",
+		"description": "Returns every record matching the same filter the listing endpoint accepts. Requires audit:read.",
+		"parameters":  params,
+		"responses": successWithErrors("200", "Pending evaluation export",
+			map[string]any{"oneOf": []any{arraySchema(schemaRef("PendingEvaluation")), map[string]any{"type": "string", "format": "binary"}}},
+			"400", "401", "403", "500", "503"),
+	}}
 }
 
 func pathBacktestAffectedCustomers() map[string]any {
