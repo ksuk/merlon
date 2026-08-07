@@ -518,6 +518,23 @@ export interface BacktestJob {
   }
 }
 
+// A customer the candidate rule set starts alerting on (added), stops
+// alerting on (removed), or treats identically (unchanged). `mixed` only
+// appears in the aggregate: added by one scenario and removed by another.
+export type BacktestDeltaKind = "added" | "removed" | "unchanged" | "mixed"
+
+export interface BacktestAffectedCustomer {
+  job_id: string
+  scenario_id: string
+  customer_id: string
+  delta_kind: Exclude<BacktestDeltaKind, "mixed">
+}
+
+export interface AffectedBacktestCustomersPage extends PaginatedResponse<string> {
+  delta_kinds?: Record<string, BacktestDeltaKind>
+  rows?: BacktestAffectedCustomer[]
+}
+
 export interface BacktestScenarioResult {
   scenario_id: string
   alerts_generated: number
@@ -1362,11 +1379,20 @@ export const api = {
       const query = qs.toString()
       return request<PaginatedResponse<BacktestJob>>(`/backtests${query ? `?${query}` : ""}`).then((page) => ({ ...page, data: page.data.map(normalizeBacktestJob) }))
     },
+    // Rule sets available for comparison, including inactive ones: a candidate
+    // is compared before it is activated, so the generic rule listing's
+    // active-only view could never offer it.
+    discoverRules: (params?: CursorPageParams) => {
+      const qs = buildCursorQuery(params)
+      const query = qs.toString()
+      return request<PaginatedResponse<RuleDefinition>>(`/backtests/rules${query ? `?${query}` : ""}`)
+    },
+    discoverAllRules: () => listAllPages((page) => api.backtest.discoverRules(page)),
     affectedCustomers: (id: string, params?: CursorPageParams & { scenarioId?: string }) => {
       const qs = buildCursorQuery(params)
       if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
       const query = qs.toString()
-      return request<PaginatedResponse<string>>(`/backtests/${encodeURIComponent(id)}/affected-customers${query ? `?${query}` : ""}`)
+      return request<AffectedBacktestCustomersPage>(`/backtests/${encodeURIComponent(id)}/affected-customers${query ? `?${query}` : ""}`)
     },
     cancel: async (id: string) =>
       normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" })),

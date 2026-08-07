@@ -888,6 +888,18 @@
         "completed": "完了",
         "failed": "失敗",
         "cancelled": "キャンセル済み"
+      },
+      "scenarioFilter": "シナリオ",
+      "allScenarios": "すべてのシナリオ",
+      "affectedCustomer": "顧客",
+      "deltaKind": "変化",
+      "deltaScenarios": "シナリオ別",
+      "deltaSummary": "新たに検知 {{added}} 件 / 検知されなくなる {{removed}} 件 / 変化なし {{unchanged}} 件 / 混在 {{mixed}} 件",
+      "deltaKindLabel": {
+        "added": "新たに検知",
+        "removed": "検知されなくなる",
+        "unchanged": "変化なし",
+        "mixed": "混在"
       }
     },
     "polling": {

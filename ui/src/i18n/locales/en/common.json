@@ -888,6 +888,18 @@
         "completed": "completed",
         "failed": "failed",
         "cancelled": "cancelled"
+      },
+      "scenarioFilter": "Scenario",
+      "allScenarios": "All scenarios",
+      "affectedCustomer": "Customer",
+      "deltaKind": "Change",
+      "deltaScenarios": "By scenario",
+      "deltaSummary": "Newly alerting {{added}} / no longer alerting {{removed}} / unchanged {{unchanged}} / mixed {{mixed}}",
+      "deltaKindLabel": {
+        "added": "Newly alerting",
+        "removed": "No longer alerting",
+        "unchanged": "Unchanged",
+        "mixed": "Mixed"
       }
     },
     "polling": {

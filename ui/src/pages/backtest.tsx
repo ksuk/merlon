@@ -3,10 +3,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
+import { api, type AffectedBacktestCustomersPage, type BacktestDeltaKind, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
 import { FlaskConical, Play, RotateCcw, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { Link } from "react-router"
 
 const pollingBackoffMs = [1000, 2000, 4000, 8000, 15000] as const
 const maxPollingDurationMs = 10 * 60 * 1000
@@ -24,7 +25,7 @@ export function BacktestPage() {
   const { t } = useTranslation()
   const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
   const { data: page, loading, error } = useApi(() => api.customers.listAll(), customerRefreshKey)
-  const { data: discoveredRulesPage, error: rulesError } = useApi(() => api.rules.listAll({ type: "TM_SCENARIO", activeOnly: true }))
+  const { data: discoveredRulesPage, error: rulesError } = useApi(() => api.backtest.discoverAllRules())
   const [historyKey, setHistoryKey] = useState(0)
   const { data: jobHistory } = useApi(() => api.backtest.list({ limit: 20 }), historyKey)
   const customers = page?.data
@@ -34,9 +35,12 @@ export function BacktestPage() {
   const [cancelling, setCancelling] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [job, setJob] = useState<BacktestJob | null>(null)
+  const [affectedScenario, setAffectedScenario] = useState("")
   const { data: affectedCustomers } = useApi(
-    () => job?.id && job.status === "completed" ? api.backtest.affectedCustomers(job.id) : Promise.resolve({ data: [], pagination: { has_more: false } }),
-    job?.id && job.status === "completed" ? job.id : "no-completed-job",
+    () => job?.id && job.status === "completed"
+      ? api.backtest.affectedCustomers(job.id, affectedScenario ? { scenarioId: affectedScenario } : undefined)
+      : Promise.resolve({ data: [], pagination: { has_more: false } } as AffectedBacktestCustomersPage),
+    job?.id && job.status === "completed" ? `${job.id}:${affectedScenario}` : "no-completed-job",
   )
   const [pollMessage, setPollMessage] = useState<PollMessage | null>(null)
   const [from, setFrom] = useState(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
@@ -217,6 +221,14 @@ export function BacktestPage() {
 
   const hasActiveJob = job?.status === "queued" || job?.status === "running"
   const scenarioResults = result?.scenario_results ?? []
+  const scenarioOptions = Array.from(new Set([
+    ...[job?.baseline, job?.candidate, job?.delta].flatMap((item) => item?.scenario_results?.map((scenario) => scenario.scenario_id) ?? []),
+    ...(affectedCustomers?.rows ?? []).map((row) => row.scenario_id),
+  ])).sort()
+  const deltaCounts = Object.values(affectedCustomers?.delta_kinds ?? {}).reduce(
+    (counts, kind) => ({ ...counts, [kind]: counts[kind] + 1 }),
+    { added: 0, removed: 0, unchanged: 0, mixed: 0 } as Record<BacktestDeltaKind, number>,
+  )
 
   if (loading) {
     return (
@@ -346,7 +358,42 @@ export function BacktestPage() {
 
       {job && (job.baseline || job.candidate || job.delta) && <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.sideBySide")}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-3"><ComparisonColumn label={t("backtest.job.baseline")} result={job.baseline} /><ComparisonColumn label={t("backtest.job.candidate")} result={job.candidate} /><ComparisonColumn label={t("backtest.job.delta")} result={job.delta} /></CardContent></Card>}
 
-      {job && job.status === "completed" && <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.affectedCustomers")}</CardTitle></CardHeader><CardContent>{affectedCustomers?.data.length ? <p className="font-mono text-xs">{affectedCustomers.data.join(", ")}</p> : <p className="text-sm text-muted-foreground">{t("backtest.job.noAffectedCustomers")}</p>}</CardContent></Card>}
+      {job && job.status === "completed" && (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-base">{t("backtest.job.affectedCustomers")}</CardTitle>
+            <label htmlFor="backtest-affected-scenario" className="flex items-center gap-2 text-sm">
+              <span>{t("backtest.job.scenarioFilter")}</span>
+              <select id="backtest-affected-scenario" value={affectedScenario} onChange={(event) => setAffectedScenario(event.target.value)} className="rounded-md border bg-background px-2 py-1">
+                <option value="">{t("backtest.job.allScenarios")}</option>
+                {scenarioOptions.map((scenarioID) => <option key={scenarioID} value={scenarioID}>{scenarioID}</option>)}
+              </select>
+            </label>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {affectedCustomers?.data.length ? (
+              <>
+                <p className="text-xs text-muted-foreground">{t("backtest.job.deltaSummary", deltaCounts)}</p>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>{t("backtest.job.affectedCustomer")}</TableHead><TableHead>{t("backtest.job.deltaKind")}</TableHead><TableHead>{t("backtest.job.deltaScenarios")}</TableHead></TableRow></TableHeader>
+                    <TableBody>{affectedCustomers.data.map((customerID) => {
+                      const rows = (affectedCustomers.rows ?? []).filter((row) => row.customer_id === customerID)
+                      return (
+                        <TableRow key={customerID}>
+                          <TableCell className="font-mono text-xs"><Link to={`/customers/${customerID}`} className="text-primary hover:underline">{customerID}</Link></TableCell>
+                          <TableCell><DeltaKindBadge kind={affectedCustomers.delta_kinds?.[customerID]} /></TableCell>
+                          <TableCell className="space-x-2 text-xs">{rows.length ? rows.map((row) => <span key={`${row.scenario_id}-${row.delta_kind}`} className="font-mono">{row.scenario_id} <DeltaKindBadge kind={row.delta_kind} /></span>) : "-"}</TableCell>
+                        </TableRow>
+                      )
+                    })}</TableBody>
+                  </Table>
+                </div>
+              </>
+            ) : <p className="text-sm text-muted-foreground">{t("backtest.job.noAffectedCustomers")}</p>}
+          </CardContent>
+        </Card>
+      )}
 
       <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.history")}</CardTitle></CardHeader><CardContent>{jobHistory?.data.length ? <Table><TableHeader><TableRow><TableHead>{t("backtest.job.historyId")}</TableHead><TableHead>{t("backtest.job.historyStatus")}</TableHead><TableHead>{t("backtest.job.historyComparison")}</TableHead></TableRow></TableHeader><TableBody>{jobHistory.data.map((item) => <TableRow key={item.id}><TableCell className="font-mono text-xs">{item.id}</TableCell><TableCell><Badge variant={item.status === "failed" ? "critical" : "outline"}>{t(`backtest.job.status.${item.status}`)}</Badge></TableCell><TableCell className="text-xs">{item.baseline_rule_set_id} → {item.candidate_rule_set_id}{item.metadata?.rerun_of ? ` (${item.metadata.rerun_of})` : ""}</TableCell></TableRow>)}</TableBody></Table> : <p className="text-sm text-muted-foreground">{t("backtest.job.historyEmpty")}</p>}</CardContent></Card>
 
@@ -415,6 +462,34 @@ export function BacktestPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+// `removed` is the row a rule-set review most needs to see: the candidate
+// stops alerting on that customer. It gets the strongest variant and its own
+// symbol so it is distinguishable without reading the label.
+const DELTA_KIND_VARIANT: Record<BacktestDeltaKind, "high" | "critical" | "secondary" | "medium"> = {
+  added: "high",
+  removed: "critical",
+  unchanged: "secondary",
+  mixed: "medium",
+}
+
+const DELTA_KIND_SYMBOL: Record<BacktestDeltaKind, string> = {
+  added: "+",
+  removed: "−",
+  unchanged: "=",
+  mixed: "±",
+}
+
+function DeltaKindBadge({ kind }: { kind?: BacktestDeltaKind }) {
+  const { t } = useTranslation()
+  if (!kind) return <span className="text-xs text-muted-foreground">-</span>
+  return (
+    <Badge variant={DELTA_KIND_VARIANT[kind]}>
+      <span aria-hidden="true" className="mr-1">{DELTA_KIND_SYMBOL[kind]}</span>
+      {t(`backtest.job.deltaKindLabel.${kind}`)}
+    </Badge>
   )
 }
 
