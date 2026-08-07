@@ -340,3 +340,41 @@ func TestIdempotentTargetConfirmationWritesOneAuditRecord(t *testing.T) {
 		t.Fatalf("audit records for one confirmation = %d, want 1", confirmations)
 	}
 }
+
+// Where authentication is in force, a request that somehow arrives without a
+// role must be refused, not waved through. The router's own middleware answers
+// such a request with 401 before the handler runs, so the gate is exercised
+// directly: it is the last line, not the first.
+func TestLargeTargetConfirmationFailsClosedWithoutARole(t *testing.T) {
+	authenticated := New(":0", Deps{Customers: store.NewMemoryCustomerRepo(), Wave3: store.NewMemoryWave3Repo(), APIKeys: store.NewMemoryAPIKeyRepo()})
+	unauthenticated := New(":0", Deps{Customers: store.NewMemoryCustomerRepo(), Wave3: store.NewMemoryWave3Repo()})
+	manifest := &domain.TargetManifest{TargetCount: largeBatchThreshold + 1, CreatedBy: "analyst-1"}
+	roleless := httptest.NewRequest(http.MethodPost, "/api/v1/batch/targets/x/confirm", nil)
+
+	if status, _ := authenticated.checkLargeBatchAuthorization(roleless, manifest); status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: a deployment with authentication must not accept a roleless confirmation", status)
+	}
+	// A deployment that runs without authentication has no roles to check;
+	// separation of duties still applies there.
+	if status, _ := unauthenticated.checkLargeBatchAuthorization(roleless, manifest); status != 0 {
+		t.Fatalf("status = %d, want 0 where no authentication is configured", status)
+	}
+}
+
+// A manifest with no recorded author cannot be checked for separation of
+// duties, so an authenticated deployment refuses it rather than assuming.
+func TestLargeTargetConfirmationRequiresAKnownAuthor(t *testing.T) {
+	s := New(":0", Deps{Customers: store.NewMemoryCustomerRepo(), Wave3: store.NewMemoryWave3Repo(), APIKeys: store.NewMemoryAPIKeyRepo()})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/targets/x/confirm", nil)
+	req = req.WithContext(auth.WithRole(req.Context(), domain.RoleAdmin))
+
+	authorless := &domain.TargetManifest{TargetCount: largeBatchThreshold + 1}
+	if status, _ := s.checkLargeBatchAuthorization(req, authorless); status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for a large manifest with no recorded author", status)
+	}
+	// The same manifest below the threshold is untouched by any of this.
+	small := &domain.TargetManifest{TargetCount: largeBatchThreshold}
+	if status, _ := s.checkLargeBatchAuthorization(req, small); status != 0 {
+		t.Fatalf("status = %d, want 0 below the threshold", status)
+	}
+}

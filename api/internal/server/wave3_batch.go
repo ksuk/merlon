@@ -241,16 +241,27 @@ const largeBatchThreshold = 1000
 // checkLargeBatchAuthorization returns a status and message when the caller may
 // not confirm this manifest, or 0 when they may. Small manifests are
 // unaffected, so the everyday workflow keeps working exactly as before.
-func checkLargeBatchAuthorization(r *http.Request, manifest *domain.TargetManifest) (int, string) {
+//
+// Whether authentication is in force is a property of the deployment
+// (s.apikeys, the same condition authMiddleware uses), never of the individual
+// request: deciding from the absence of a role in the request context would
+// mean any path that bypassed the middleware also bypassed this gate.
+func (s *Server) checkLargeBatchAuthorization(r *http.Request, manifest *domain.TargetManifest) (int, string) {
 	if manifest == nil || manifest.TargetCount <= largeBatchThreshold {
 		return 0, ""
 	}
-	// An unauthenticated deployment has no roles to check. Failing closed here
-	// would break every single-tenant install that runs without auth, so the
-	// role check applies only where roles exist; the separation-of-duties check
-	// below still does.
-	if role, ok := auth.RoleFromContext(r.Context()); ok && !auth.HasPermission(role, auth.PermBatchExecuteLarge) {
+	authenticated := s.apikeys != nil
+	role, hasRole := auth.RoleFromContext(r.Context())
+	switch {
+	case hasRole && !auth.HasPermission(role, auth.PermBatchExecuteLarge):
 		return http.StatusForbidden, fmt.Sprintf("confirming a batch over %d customers requires the %s permission", largeBatchThreshold, auth.PermBatchExecuteLarge)
+	case !hasRole && authenticated:
+		return http.StatusForbidden, "confirming a large batch requires an authenticated role"
+	}
+	if authenticated && manifest.CreatedBy == "" {
+		// Separation of duties cannot be evaluated against an unknown author,
+		// and a large batch is not the place to assume the best.
+		return http.StatusForbidden, "confirming a large batch requires a manifest with a recorded author"
 	}
 	if manifest.CreatedBy != "" && resolveAuditUserID(r) == manifest.CreatedBy {
 		// The same rule whitelist approval already applies: the person who
@@ -293,7 +304,7 @@ func (s *Server) handleConfirmTargetManifest(w http.ResponseWriter, r *http.Requ
 	// The dual-control checks need the manifest's size and author, which route
 	// middleware cannot see, so they run here before the mutation opens.
 	if existing, err := repo.GetTargetManifest(r.Context(), r.PathValue("id")); err == nil {
-		if status, message := checkLargeBatchAuthorization(r, existing); status != 0 {
+		if status, message := s.checkLargeBatchAuthorization(r, existing); status != 0 {
 			writeErrorCode(w, status, apierr.CodeForbidden, message)
 			return
 		}
