@@ -459,6 +459,8 @@ func wave2Schemas() map[string]any {
 			"risk_score": map[string]any{"type": "number", "nullable": true}, "risk_tier": map[string]any{"type": "string", "nullable": true},
 			"last_scored_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
 			"created_at":     map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
+			"kyc_missing_fields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Required identity attributes this record does not carry, per the kyc_required_fields policy for its customer type. Recomputed on read; absent when nothing is missing."},
+			"kyc_policy_version": map[string]any{"type": "string", "description": "Version of the policy that produced kyc_missing_fields"},
 		}, "id", "external_id", "customer_type", "country_code", "product_types", "attributes", "status", "created_at", "updated_at"),
 		"CustomerStatusWebhookRequest": objectSchema(map[string]any{
 			"external_id": map[string]any{"type": "string"},

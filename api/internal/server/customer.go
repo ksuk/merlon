@@ -134,7 +134,7 @@ func (s *Server) handleGetCustomer(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, c)
+	s.writeCustomerWithKYC(w, http.StatusOK, c)
 }
 
 func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +149,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isValidCustomerType(req.CustomerType) {
-		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_type must be one of: individual, corporate_domestic, corporate_foreign")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, customerTypeErrorMessage())
 		return
 	}
 	attributes := mergeIdentityAttributes(req.Attributes, req.Identity)
@@ -169,6 +169,12 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		Attributes:   attributes,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+	}
+
+	// Validated after the merge, so a create that supplies identity through
+	// either `identity` or `attributes` is judged on what will be stored.
+	if !s.enforceKYC(w, c) {
+		return
 	}
 
 	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
@@ -195,7 +201,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, c)
+	s.writeCustomerWithKYC(w, http.StatusCreated, c)
 }
 
 func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
@@ -246,6 +252,12 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		}
 		c.Attributes = merged
 	}
+	// Judged on the merged result, not the request: a partial update that
+	// removes the last value of a required field is exactly the case a
+	// request-only check would miss.
+	if !s.enforceKYC(w, c) {
+		return
+	}
 
 	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
 		if repos.Customers == nil || repos.Audit == nil {
@@ -289,7 +301,7 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeAtomicMutationError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, c)
+	s.writeCustomerWithKYC(w, http.StatusOK, c)
 }
 
 func cloneAnyMap(in map[string]any) map[string]any {
@@ -679,14 +691,12 @@ func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
 }
 
 func isValidCustomerType(ct domain.CustomerType) bool {
-	switch ct {
-	case domain.CustomerTypeIndividual, domain.CustomerTypeCorporateDomestic, domain.CustomerTypeCorporateForeign,
-		domain.CustomerTypeTrust, domain.CustomerTypePartnership, domain.CustomerTypeNPO,
-		domain.CustomerTypeGovernment, domain.CustomerTypeForeignLegalArrangement:
-		return true
-	default:
-		return false
+	for _, valid := range validCustomerTypes() {
+		if ct == valid {
+			return true
+		}
 	}
+	return false
 }
 
 func validateAttributes(attrs map[string]any) error {
