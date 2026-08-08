@@ -217,11 +217,11 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 
 func validateCountryRisk(table countryRisk) error {
 	if !validCountryRiskScore(table.DefaultScore) {
-		return fmt.Errorf("country risk default_score must be an integer between 1 and 5")
+		return fieldErrorf("default_score", "country risk default_score must be an integer between 1 and 5")
 	}
 	for code, row := range table.Countries {
 		if !validCountryRiskScore(row.Score) {
-			return fmt.Errorf("country %q score must be an integer between 1 and 5", code)
+			return fieldErrorf("countries."+code+".score", "country %q score must be an integer between 1 and 5", code)
 		}
 	}
 	return nil
@@ -240,29 +240,29 @@ func envOr(key, fallback string) string {
 
 func validateCDD(c cddConfig) error {
 	if len(c.RiskFactors) == 0 {
-		return fmt.Errorf("CDD risk_factors must not be empty")
+		return fieldErrorf("risk_factors", "CDD risk_factors must not be empty")
 	}
 	var total float64
 	for name, factor := range c.RiskFactors {
 		if factor.Weight <= 0 {
-			return fmt.Errorf("CDD risk_factor %q weight must be positive", name)
+			return fieldErrorf("risk_factors."+name+".weight", "CDD risk_factor %q weight must be positive", name)
 		}
 		if len(factor.Values) == 0 && factor.Source == "" {
-			return fmt.Errorf("CDD risk_factor %q must have either values or source", name)
+			return fieldErrorf("risk_factors."+name, "CDD risk_factor %q must have either values or source", name)
 		}
 		total += factor.Weight
 	}
 	if total < 0.99 || total > 1.01 {
-		return fmt.Errorf("CDD risk_factor weights must sum to 1.0, got %.4f", total)
+		return fieldErrorf("risk_factors", "CDD risk_factor weights must sum to 1.0, got %.4f", total)
 	}
 	if low, ok := c.TierThresholds["LOW"]; ok {
 		if medium, ok := c.TierThresholds["MEDIUM"]; ok && low.Max != 0 && medium.Min != 0 && low.Max != medium.Min {
-			return fmt.Errorf("LOW.max (%.6g) must equal MEDIUM.min (%.6g)", low.Max, medium.Min)
+			return fieldErrorf("tier_thresholds", "LOW.max (%.6g) must equal MEDIUM.min (%.6g)", low.Max, medium.Min)
 		}
 	}
 	if medium, ok := c.TierThresholds["MEDIUM"]; ok {
 		if high, ok := c.TierThresholds["HIGH"]; ok && medium.Max != 0 && high.Min != 0 && medium.Max != high.Min {
-			return fmt.Errorf("MEDIUM.max (%.6g) must equal HIGH.min (%.6g)", medium.Max, high.Min)
+			return fieldErrorf("tier_thresholds", "MEDIUM.max (%.6g) must equal HIGH.min (%.6g)", medium.Max, high.Min)
 		}
 	}
 	return nil
@@ -386,7 +386,7 @@ func parseScenario(content []byte) (scenario, error) {
 		}
 	}
 	if s.ID == "" {
-		return scenario{}, fmt.Errorf("scenario_id is required")
+		return scenario{}, fieldErrorf("scenario_id", "scenario_id is required")
 	}
 	return s, nil
 }
@@ -1242,69 +1242,78 @@ func (e *Engine) ValidateConfig(ctx context.Context, typ, content string) (*engi
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result := &engine.ConfigValidationResult{Valid: true}
-	addError := func(field string, err error) {
-		result.Valid = false
-		result.Errors = append(result.Errors, engine.ConfigValidationError{Field: field, Message: err.Error()})
-	}
+	c := newConfigValidationCollector(content)
 	if len(content) > 512*1024 {
-		addError("yaml", fmt.Errorf("yaml_content too large (max 512KB)"))
-		return result, nil
+		c.add("yaml", engine.ConfigErrorSchema, fmt.Errorf("yaml_content too large (max 512KB)"))
+		return c.result, nil
 	}
 	switch typ {
 	case "cdd_weights":
 		var cdd cddConfig
 		if err := yaml.Unmarshal([]byte(content), &cdd); err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.addSyntax(err)
 		} else if err := normalizeCDD(&cdd); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		} else if err := validateCDD(cdd); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		}
 	case "tm_scenarios":
+		// parseScenario reports both kinds of failure through one error. Ask
+		// the parser first, so a document it accepted is never reported as a
+		// syntax error the operator cannot find.
+		var probe map[string]any
+		if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+			c.addSyntax(err)
+			return c.result, nil
+		}
 		s, err := parseScenario([]byte(content))
 		if err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.add("config", engine.ConfigErrorSchema, err)
 		} else if !knownScenarioID(s.ID) {
-			addError("config", fmt.Errorf("unknown scenario type: %s", s.ID))
+			// The document is well formed; it names a scenario this engine does
+			// not implement. That is a different mistake from a malformed
+			// document and has a different fix.
+			c.addPathError("config", "scenario_id", engine.ConfigErrorCrossReference, fmt.Errorf("unknown scenario type: %s", s.ID))
 		} else {
 			var raw map[string]any
 			_ = yaml.Unmarshal([]byte(content), &raw)
 			isV2 := strings.HasPrefix(stringValue(raw["schema_version"]), "2") || raw["conditions"] != nil
 			if !isV2 && len(s.Parameters) == 0 {
-				addError("config", fmt.Errorf("parameters must not be empty"))
+				c.addPathError("config", "parameters", engine.ConfigErrorSchema, fmt.Errorf("parameters must not be empty"))
 			}
 		}
 	case "screening_lists":
 		var list screeningList
 		if err := yaml.Unmarshal([]byte(content), &list); err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.addSyntax(err)
 		} else if err := validateScreeningList(list); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		}
 	case "country_risk":
 		var table countryRisk
 		if err := yaml.Unmarshal([]byte(content), &table); err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.addSyntax(err)
 		} else if err := validateCountryRisk(table); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		}
 	default:
-		addError("config_type", fmt.Errorf("unknown config type: %s", typ))
+		// config_type is a request parameter, not a location in the document.
+		// Reporting a line here would send the operator to an innocent line.
+		c.add("config_type", engine.ConfigErrorSchema, fmt.Errorf("unknown config type: %s", typ))
 	}
-	return result, nil
+	return c.result, nil
 }
 
 func validateScreeningList(list screeningList) error {
 	if list.ID == "" {
-		return fmt.Errorf("list_id must not be empty")
+		return fieldErrorf("list_id", "list_id must not be empty")
 	}
 	if len(list.Entries) == 0 {
-		return fmt.Errorf("entries must not be empty")
+		return fieldErrorf("entries", "entries must not be empty")
 	}
-	for _, entry := range list.Entries {
+	for i, entry := range list.Entries {
 		if len(entry.Names) == 0 {
-			return fmt.Errorf("entry %q must have at least one name", entry.ID)
+			return fieldErrorf(fmt.Sprintf("entries[%d].names", i), "entry %q must have at least one name", entry.ID)
 		}
 	}
 	return nil

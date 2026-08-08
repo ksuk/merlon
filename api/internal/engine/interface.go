@@ -129,14 +129,58 @@ type VersionedBacktestEngine interface {
 	RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error)
 }
 
+// ConfigValidationErrorClass separates mistakes that need different fixes
+// (ADR-0025, DR-18). "parse error" and "this scenario does not exist" were both
+// reported as a bare message, leaving an operator to guess whether the document
+// was malformed, structurally wrong, or referring to something absent.
+type ConfigValidationErrorClass string
+
+const (
+	// ConfigErrorSyntax is a document the parser could not read at all. It
+	// always carries a line, because that is the only actionable thing to say.
+	ConfigErrorSyntax ConfigValidationErrorClass = "syntax"
+	// ConfigErrorSchema is a document that parses but does not have the shape
+	// or values the engine requires.
+	ConfigErrorSchema ConfigValidationErrorClass = "schema"
+	// ConfigErrorCrossReference is a well-formed document naming something that
+	// does not exist in this deployment.
+	ConfigErrorCrossReference ConfigValidationErrorClass = "cross_reference"
+	// ConfigErrorActivation is a refusal to make an otherwise valid version
+	// effective, such as the separation-of-duties check in ADR-0014. It has no
+	// position: nothing in the document is wrong.
+	ConfigErrorActivation ConfigValidationErrorClass = "activation"
+)
+
+// ConfigValidationSeverity decides whether a finding blocks. Only "error" does.
+// A warning that blocks becomes a warning every operator overrides, and the
+// override stops carrying information (ADR-0025).
+type ConfigValidationSeverity string
+
+const (
+	ConfigSeverityError   ConfigValidationSeverity = "error"
+	ConfigSeverityWarning ConfigValidationSeverity = "warning"
+)
+
+// ConfigValidationError is additive: Field and Message keep their meaning and
+// their place, so a client written against the previous contract still works.
 type ConfigValidationError struct {
 	Field   string `json:"field"`
 	Message string `json:"message"`
+	// Class, Severity, Line, Column and Path are omitted when unknown rather
+	// than defaulted. A zero line would read as "the first line".
+	Class    ConfigValidationErrorClass `json:"class,omitempty"`
+	Severity ConfigValidationSeverity   `json:"severity,omitempty"`
+	Line     int                        `json:"line,omitempty"`
+	Column   int                        `json:"column,omitempty"`
+	Path     string                     `json:"path,omitempty"`
 }
 
 type ConfigValidationResult struct {
 	Valid  bool                    `json:"valid"`
 	Errors []ConfigValidationError `json:"errors"`
+	// Warnings never affect Valid. They are carried separately so a client
+	// written against the previous contract cannot mistake one for a rejection.
+	Warnings []ConfigValidationError `json:"warnings,omitempty"`
 }
 
 type ConfigEngine interface {

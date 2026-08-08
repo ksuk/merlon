@@ -702,7 +702,7 @@ func compatibilitySchemas() map[string]any {
 			"next_review_date": map[string]any{"type": "string", "format": "date", "nullable": true}, "created_at": map[string]any{"type": "string", "format": "date-time"},
 		}),
 		"UserProfile":            objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "email": map[string]any{"type": "string", "format": "email"}, "role": map[string]any{"type": "string"}}, "id", "email", "role"),
-		"ConfigValidationResult": objectSchema(map[string]any{"valid": map[string]any{"type": "boolean"}, "errors": arraySchema(map[string]any{"type": "object", "additionalProperties": true})}, "valid", "errors"),
+		"ConfigValidationResult": objectSchema(map[string]any{"valid": map[string]any{"type": "boolean"}, "errors": arraySchema(schemaRef("ConfigValidationError")), "warnings": arraySchema(schemaRef("ConfigValidationError"))}, "valid", "errors"),
 		"SystemInfo":             objectSchema(map[string]any{"version": map[string]any{"type": "string"}, "components": arraySchema(map[string]any{"type": "string"}), "endpoints": map[string]any{"type": "integer"}, "features": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}}}),
 		"Webhook": objectSchema(map[string]any{
 			"id": map[string]any{"type": "string"}, "url": map[string]any{"type": "string", "format": "uri"},
@@ -921,6 +921,15 @@ func wave3Schemas() map[string]any {
 // wave4Schemas documents the operator-readiness contracts added in Wave 4.
 func wave4Schemas() map[string]any {
 	return map[string]any{
+		"ConfigValidationError": objectSchema(map[string]any{
+			"field":    map[string]any{"type": "string", "description": "Legacy coarse field name, retained unchanged"},
+			"message":  map[string]any{"type": "string"},
+			"class":    map[string]any{"type": "string", "enum": []string{"syntax", "schema", "cross_reference", "activation"}, "description": "What kind of mistake this is; syntax and schema have different fixes"},
+			"severity": map[string]any{"type": "string", "enum": []string{"error", "warning"}, "description": "Only error affects valid. Warnings never block activation (ADR-0025)."},
+			"line":     map[string]any{"type": "integer", "description": "1-based line in the submitted document; omitted when the position is unknown rather than defaulted to the first line"},
+			"column":   map[string]any{"type": "integer"},
+			"path":     map[string]any{"type": "string", "description": "Dotted document path, e.g. entries[0].names"},
+		}, "field", "message"),
 		"CapabilityDescriptor": objectSchema(map[string]any{
 			"id":                  map[string]any{"type": "string", "description": "Stable capability identifier"},
 			"availability":        map[string]any{"type": "string", "enum": []string{"available", "not_configured", "forbidden", "unsupported", "degraded", "unavailable"}},
