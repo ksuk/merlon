@@ -829,7 +829,14 @@
         "completed": "Completed",
         "reopened": "Reopened",
         "closed_on_downgrade": "Closed on tier downgrade"
-      }
+      },
+      "relatedTitle": "Related records",
+      "relatedTransactions": "Transactions",
+      "relatedAlerts": "Alerts",
+      "relatedCases": "Cases",
+      "relatedViewAll": "View all {{count}}",
+      "relatedEmpty": "No records",
+      "relatedShowing": "Showing {{shown}} of {{total}}"
     },
     "attributes": {
       "title": "Attributes"

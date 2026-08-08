@@ -829,7 +829,14 @@
         "completed": "完了",
         "reopened": "再開",
         "closed_on_downgrade": "ティア引き下げによる終了"
-      }
+      },
+      "relatedTitle": "関連レコード",
+      "relatedTransactions": "取引",
+      "relatedAlerts": "アラート",
+      "relatedCases": "ケース",
+      "relatedViewAll": "全{{count}}件を表示",
+      "relatedEmpty": "レコードなし",
+      "relatedShowing": "{{total}}件中{{shown}}件を表示"
     },
     "attributes": {
       "title": "属性"

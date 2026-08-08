@@ -14,6 +14,7 @@ import { useApi } from "@/hooks/use-api"
 import { usePolicy } from "@/hooks/use-policy"
 import { api, type CDDScoreOverride, type Customer, type EDDCompletionStatus, type Factor, type RiskTier, type ScoreRecord, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
 import { identityRequirements } from "@/lib/identity"
+import { InvestigationRelated } from "@/components/investigation-related"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -675,6 +676,7 @@ export function CustomerDetailPage() {
                   )}
                 </div>
               )}
+              <InvestigationRelated investigation={investigation} customerID={id ?? ""} />
               {(investigation.timeline?.length ?? 0) > 0 && (
                 <div>
                   <h3 className="mb-2 text-sm font-semibold">{t("customerDetail.investigation.timeline")}</h3>
