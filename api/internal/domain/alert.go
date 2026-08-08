@@ -40,6 +40,17 @@ func IsAlertUnresolved(status AlertStatus) bool {
 	}
 }
 
+// AllAlertStatuses is every status an alert can hold, for lookups that must
+// span the whole history rather than the operator's active queue. Callers that
+// want the queue default must leave AlertQueueFilter.Statuses empty instead.
+func AllAlertStatuses() []AlertStatus {
+	return []AlertStatus{
+		AlertStatusOpen, AlertStatusInvestigating, AlertStatusEscalated,
+		AlertStatusClosedTruePositive, AlertStatusClosedFalsePositive,
+		AlertStatusSuppressed,
+	}
+}
+
 // IsAlertTerminal reports whether an alert has an operator disposition. The
 // disposition itself is immutable history, but an explicit, reasoned reopen
 // may move the current alert back into investigation. The decision event

@@ -282,6 +282,19 @@ func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, parseErr.Error())
 			return
 		}
+		filter, matched, resolveErr := s.resolveCaseTransactionFilter(r, filter)
+		if resolveErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, resolveErr.Error())
+			return
+		}
+		if !matched {
+			// The transaction raised no alerts, so it is linked to no case.
+			// Answering with the unfiltered queue would call every open case
+			// related to it.
+			page, meta := BuildPaginationMeta([]domain.Case{}, 0, caseQueueCursor)
+			writePaginatedJSON(w, http.StatusOK, page, meta)
+			return
+		}
 		if useCursorPagination(r) {
 			filterFingerprint := queueFilterFingerprint(r)
 			cursorRepo, ok := s.cases.(domain.CaseQueueCursorRepository)
