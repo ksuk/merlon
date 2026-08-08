@@ -85,6 +85,12 @@ type Config struct {
 	// (NOTIF-003). Empty uses notify.DefaultRoutingRules().
 	NotifyRoutingPath string
 
+	// OperatorTeams is the configured assignment-team directory. Queue rows
+	// are deliberately not a source of truth for this list.
+	OperatorTeams []string
+	// CasePriorityPath points to the versioned CDD-to-case-priority policy.
+	CasePriorityPath string
+
 	// PublicURL is the base URL of this Merlon instance, prefixed to alert
 	// IDs to build the link carried in notification emails (notifications.md
 	// §1: "ケース/アラートIDと本システムへのリンクのみを記載する").
@@ -251,6 +257,8 @@ func Load() *Config {
 		SMTPUseTLS:   getEnv("MERLON_SMTP_USE_TLS", "") == "true",
 
 		NotifyRoutingPath: getEnv("MERLON_NOTIFY_ROUTING_PATH", ""),
+		OperatorTeams:     getEnvList("MERLON_OPERATOR_TEAMS"),
+		CasePriorityPath:  getEnv("MERLON_CASE_PRIORITY_PATH", "content/case_priority_v1.yaml"),
 		PublicURL:         getEnv("MERLON_PUBLIC_URL", ""),
 
 		EDDStage2Days: getEnvInt("MERLON_EDD_STAGE2_DAYS", 60),

@@ -55,6 +55,8 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_WHITELIST_MAX_VALID_DAYS` | `365` | Maximum whitelist validity period. |
 | `MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS` | `60` / `90` | EDD escalation thresholds. |
 | `MERLON_TM_SCENARIOS_PATH` | `tm_scenarios` | Store the directory in controlled source management. Runtime digests identify loaded content but do not authorize changes. |
+| `MERLON_OPERATOR_TEAMS` | unset | Comma-separated durable assignment-team directory. Queue rows are never scanned to infer teams; authenticated assignment requires a configured value. |
+| `MERLON_CASE_PRIORITY_PATH` | `content/case_priority_v1.yaml` | Versioned YAML mapping from persisted CDD tier/score to case priority. |
 | `MERLON_CDD_WEIGHTS_PATH` | `cdd_weights.yaml` | Native Go CDD rule root; pin and review content changes. |
 | `MERLON_COUNTRY_RISK_PATH` | unset | Optional native Go country-risk table. |
 | `MERLON_SCREENING_LISTS_PATH` | `screening_lists` | Native Go last-good screening-list snapshot root. |

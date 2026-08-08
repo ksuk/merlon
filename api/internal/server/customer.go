@@ -164,8 +164,18 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:    now,
 	}
 
-	if err := s.customers.Create(r.Context(), c); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
+		if repos.Customers == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		if err := repos.Customers.Create(r.Context(), c); err != nil {
+			return err
+		}
+		return appendRequiredMutationAudit(r.Context(), r, repos, "create", "customers", c.ID, map[string]string{
+			"external_id": c.ExternalID,
+		}, c.CreatedAt)
+	}); err != nil {
+		writeAtomicMutationError(w, err)
 		return
 	}
 
@@ -205,8 +215,20 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 		c.Attributes = req.Attributes
 	}
 
-	if err := s.customers.Update(r.Context(), c); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+	before := *c
+	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
+		if repos.Customers == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		if err := repos.Customers.Update(r.Context(), c); err != nil {
+			return err
+		}
+		return appendRequiredMutationAudit(r.Context(), r, repos, "update", "customers", c.ID, map[string]string{
+			"before_country_code": before.CountryCode, "after_country_code": c.CountryCode,
+			"before_external_id": before.ExternalID, "after_external_id": c.ExternalID,
+		}, c.UpdatedAt)
+	}); err != nil {
+		writeAtomicMutationError(w, err)
 		return
 	}
 
@@ -292,13 +314,29 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 		c.EddStage3NotifiedAt = nil
 	}
 
-	if err := s.customers.Update(r.Context(), c); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-		return
-	}
-
-	if err := s.customers.SaveScoreRecord(r.Context(), record); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
+		if repos.Customers == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		if err := repos.Customers.Update(r.Context(), c); err != nil {
+			return err
+		}
+		if err := repos.Customers.SaveScoreRecord(r.Context(), record); err != nil {
+			return err
+		}
+		if err := appendRequiredMutationAudit(r.Context(), r, repos, "score_customer", "customers", c.ID, map[string]string{
+			"rule_set_id": record.RuleSetID,
+			"score":       strconv.FormatFloat(record.Score, 'f', -1, 64),
+			"tier":        string(record.Tier),
+		}, record.ScoredAt); err != nil {
+			return err
+		}
+		if s.eventOutbox != nil {
+			return s.enqueueTierChange(r.Context(), repos, c.ID, oldTier, record.Tier, record.ScoredAt)
+		}
+		return nil
+	}); err != nil {
+		writeAtomicMutationError(w, err)
 		return
 	}
 
@@ -320,8 +358,10 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 	// events/handlers.TierChangeHandler can trigger the transaction-monitoring design's
 	// 24h retroactive TM re-evaluation on upgrades. Independent of the
 	// screening rescreen above (different downstream consumer).
-	if err := s.publishTierChange(r.Context(), c.ID, oldTier, record.Tier, record.ScoredAt); err != nil {
-		slog.ErrorContext(r.Context(), "tier-change event publish failed", "customer_id", c.ID, "error", err)
+	if s.eventOutbox == nil {
+		if err := s.publishTierChange(r.Context(), c.ID, oldTier, record.Tier, record.ScoredAt); err != nil {
+			slog.ErrorContext(r.Context(), "tier-change event publish failed", "customer_id", c.ID, "error", err)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, record)
@@ -359,8 +399,16 @@ func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTi
 	if s.events == nil {
 		return nil
 	}
-	if oldTier != nil && *oldTier == newTier {
-		return nil
+	event, err := s.newTierChangeEvent(customerID, oldTier, newTier, scoredAt)
+	if err != nil || event.ID == "" {
+		return err
+	}
+	return s.events.Publish(ctx, event)
+}
+
+func (s *Server) newTierChangeEvent(customerID string, oldTier *domain.RiskTier, newTier domain.RiskTier, scoredAt time.Time) (events.Event, error) {
+	if s.events == nil || (oldTier != nil && *oldTier == newTier) {
+		return events.Event{}, nil
 	}
 
 	tc := handlers.TierChangeEvent{
@@ -372,15 +420,35 @@ func (s *Server) publishTierChange(ctx context.Context, customerID string, oldTi
 	}
 	payload, err := json.Marshal(tc)
 	if err != nil {
-		return err
+		return events.Event{}, err
 	}
-
-	return s.events.Publish(ctx, events.Event{
+	return events.Event{
 		ID:        generateID(),
 		Topic:     "cdd.tier_changed",
 		Payload:   payload,
 		ChainID:   tc.ChainID,
-		CreatedAt: time.Now(),
+		CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+func (s *Server) enqueueTierChange(ctx context.Context, repos domain.AtomicMutationRepositories, customerID string, oldTier *domain.RiskTier, newTier domain.RiskTier, scoredAt time.Time) error {
+	if s.eventOutbox == nil || s.events == nil || (oldTier != nil && *oldTier == newTier) {
+		return nil
+	}
+	if repos.EventOutbox == nil {
+		return errAtomicMutationUnavailable
+	}
+	event, err := s.newTierChangeEvent(customerID, oldTier, newTier, scoredAt)
+	if err != nil {
+		return err
+	}
+	return repos.EventOutbox.Enqueue(ctx, &domain.DurableEvent{
+		ID:            event.ID,
+		Topic:         event.Topic,
+		Payload:       event.Payload,
+		ChainID:       event.ChainID,
+		ChainHopCount: event.ChainHopCount,
+		CreatedAt:     event.CreatedAt,
 	})
 }
 

@@ -55,6 +55,46 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const method = (init?.method ?? "GET").toUpperCase()
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  }
+  if (method !== "GET" && method !== "HEAD") {
+    const csrfToken = getCookie("csrf_token")
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers })
+  if (!res.ok) {
+    const body = await res.text()
+    let message = body
+    let code: string | undefined
+    try {
+      const parsed: unknown = JSON.parse(body)
+      if (parsed && typeof parsed === "object") {
+        const errorBody = parsed as { error?: unknown; error_code?: unknown }
+        if (typeof errorBody.error === "string") message = errorBody.error
+        if (typeof errorBody.error_code === "string") code = errorBody.error_code
+      }
+    } catch {
+      // Keep a proxy/plain-text error useful to the operator.
+    }
+    throw new ApiError(message, res.status, code)
+  }
+  return res.blob()
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 export interface ScreeningListFreshnessStat {
   list_id: string
   list_type: string
@@ -122,6 +162,11 @@ export interface Alert {
   resolved_by?: string
   created_at: string
   updated_at: string
+  assigned_to?: string
+  assigned_team?: string
+  due_at?: string
+  disposition?: string
+  disposition_rationale?: string
 }
 
 export interface Case {
@@ -131,10 +176,21 @@ export interface Case {
   status: CaseStatus
   priority: CasePriority
   assigned_to?: string
+  assigned_team?: string
+  due_at?: string
   summary: string
   notes?: CaseNote[]
   reopen_reason?: string
   related_case_ids?: string[]
+  investigation_disposition?: string
+  str_candidate?: boolean
+  disposition_rationale?: string
+  str_report_id?: string
+  str_filed_at?: string
+  str_filed_by?: string
+  str_filing_channel?: string
+  str_destination?: string
+  str_external_reference?: string
   created_at: string
   updated_at: string
   closed_at?: string
@@ -152,6 +208,104 @@ export interface CaseNote {
 export interface RelatedCase {
   case: Case
   link_type: "auto" | "manual"
+  relationship?: CaseRelationship
+}
+
+export interface CaseRelationship {
+  id: string
+  case_id: string
+  related_case_id: string
+  relationship_type: string
+  rationale: string
+  created_by: string
+  created_at: string
+  active: boolean
+  removed_by?: string
+  removed_at?: string
+  removal_reason?: string
+  source: "auto" | "manual"
+}
+
+export interface CaseEvent {
+  id: string
+  case_id: string
+  event_type: string
+  actor: string
+  reason?: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  related_alert_ids?: string[]
+  related_case_ids?: string[]
+  related_report_ids?: string[]
+  correlation_id?: string
+  created_at: string
+}
+
+export interface CaseEvidence {
+  id: string
+  case_id: string
+  description: string
+  source: string
+  evidence_type: string
+  collected_at: string
+  collected_by: string
+  integrity_hash?: string
+  version: number
+  created_at: string
+}
+
+export interface CaseChecklistItem {
+  id: string
+  case_id: string
+  key: string
+  label: string
+  completed: boolean
+  completed_by?: string
+  completed_at?: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseWorkItem {
+  id: string
+  case_id: string
+  title: string
+  description?: string
+  status: string
+  assigned_to?: string
+  due_at?: string
+  completed_by?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CaseFile {
+  case: Case
+  events: CaseEvent[]
+  event_pagination?: PaginationMeta
+  evidence: CaseEvidence[]
+  checklist: CaseChecklistItem[]
+  work_items: CaseWorkItem[]
+  relationships: CaseRelationship[]
+}
+
+export interface OperatorDirectory {
+  users: { id: string; email: string; role: string }[]
+  teams: string[]
+}
+
+export interface AlertDecisionEvent {
+  id: string
+  alert_id: string
+  from_status: AlertStatus
+  to_status: AlertStatus
+  outcome: string
+  rationale: string
+  actor: string
+  supersedes_id?: string
+  created_at: string
 }
 
 export interface Transaction {
@@ -272,15 +426,31 @@ export interface STRReport {
   id: string
   alert_id: string
   customer_id: string
+  case_id?: string
   report_type: string
   status: string
   suspicious_point: string
   transaction_ids: string[]
+  transaction_snapshot: {
+    id: string
+    external_id: string
+    amount: number
+    currency: string
+    direction: string
+    counterparty_id?: string
+    counterparty_country?: string
+    channel?: string
+    executed_at: string
+    created_at: string
+  }[]
   total_amount: number
   currency: string
   created_at: string
+  updated_at: string
   submitted_at?: string
   created_by: string
+  submitted_by?: string
+  submission_evidence?: string
 }
 
 export interface BacktestResult {
@@ -471,6 +641,7 @@ export interface PaginatedResponse<T> {
 export interface CursorPageParams {
   cursor?: string
   limit?: number
+  offset?: number
   sort?: "risk"
 }
 
@@ -487,7 +658,10 @@ export async function listAllPages<T>(
   options: ListAllPagesOptions = {},
 ): Promise<PaginatedResponse<T>> {
   const limit = options.limit ?? 200
-  const maxPages = options.maxPages ?? 10_000
+  // Keep browser callers bounded even when a caller accidentally uses the
+  // compatibility helper for an unbounded collection. Queue pages should use
+  // the cursor controls directly instead of collecting every page here.
+  const maxPages = options.maxPages ?? 50
   const data: T[] = []
   let cursor: string | undefined
 
@@ -513,6 +687,7 @@ function buildCursorQuery(params?: CursorPageParams): URLSearchParams {
   const qs = new URLSearchParams()
   if (params?.cursor) qs.set("cursor", params.cursor)
   if (params?.limit != null) qs.set("limit", String(params.limit))
+  if (params?.offset != null) qs.set("offset", String(params.offset))
   if (params?.sort) qs.set("sort", params.sort)
   return qs
 }
@@ -585,20 +760,36 @@ export const api = {
       })),
   },
   alerts: {
-    list: (params?: CursorPageParams & { customerId?: string }) => {
+    list: (params?: CursorPageParams & { customerId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; severity?: AlertSeverity; scenarioId?: string; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.active != null) qs.set("active", String(params.active))
+      if (params?.terminal != null) qs.set("terminal", String(params.terminal))
+      if (params?.assignee) qs.set("assignee", params.assignee)
+      if (params?.mine != null) qs.set("mine", String(params.mine))
+      if (params?.team) qs.set("team", params.team)
+      if (params?.unassigned != null) qs.set("unassigned", String(params.unassigned))
+      if (params?.severity) qs.set("severity", params.severity)
+      if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
+      if (params?.search) qs.set("search", params.search)
+      if (params?.overdue != null) qs.set("overdue", String(params.overdue))
+      if (params?.minAgeDays != null) qs.set("min_age_days", String(params.minAgeDays))
+      if (params?.maxAgeDays != null) qs.set("max_age_days", String(params.maxAgeDays))
       const query = qs.toString()
       return request<PaginatedResponse<Alert>>(`/alerts${query ? `?${query}` : ""}`)
     },
-    listAll: (params?: { customerId?: string; sort?: "risk" }) =>
+    listAll: (params?: { customerId?: string; sort?: "risk"; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; severity?: AlertSeverity; scenarioId?: string; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) =>
       listAllPages((page) => api.alerts.list({ ...params, sort: params?.sort ?? "risk", ...page })),
     get: (id: string) => request<Alert>(`/alerts/${encodeURIComponent(id)}`),
-    updateStatus: (id: string, status: AlertStatus, expectedUpdatedAt?: string) =>
+    updateStatus: (id: string, status: AlertStatus, expectedUpdatedAt?: string, options?: { rationale?: string; confirm?: boolean; assigned_to?: string; assigned_team?: string; due_at?: string; clear_due_at?: boolean }) =>
       request<Alert>(`/alerts/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        body: JSON.stringify({ status, ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}) }),
+        body: JSON.stringify({ status, ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}), ...options }),
       }),
+    updateQueue: (id: string, options: { assigned_to?: string; assigned_team?: string; due_at?: string; clear_due_at?: boolean; expected_updated_at?: string }) =>
+      request<Alert>(`/alerts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(options) }),
+    decisions: (id: string) => request<AlertDecisionEvent[]>(`/alerts/${encodeURIComponent(id)}/decisions`),
     bulkClose: (data: { scenario_id?: string; period_from?: string; period_to?: string; severity?: AlertSeverity; reason: string }) =>
       request<{ closed_count: number; alert_ids: string[] }>("/alerts/bulk-close", {
         method: "POST",
@@ -611,18 +802,32 @@ export const api = {
       }),
   },
   cases: {
-    list: (params?: CursorPageParams & { customerId?: string }) => {
+    list: (params?: CursorPageParams & { customerId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; priority?: CasePriority; disposition?: string; strCandidate?: boolean; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.active != null) qs.set("active", String(params.active))
+      if (params?.terminal != null) qs.set("terminal", String(params.terminal))
+      if (params?.assignee) qs.set("assignee", params.assignee)
+      if (params?.mine != null) qs.set("mine", String(params.mine))
+      if (params?.team) qs.set("team", params.team)
+      if (params?.unassigned != null) qs.set("unassigned", String(params.unassigned))
+      if (params?.priority) qs.set("priority", params.priority)
+      if (params?.disposition) qs.set("disposition", params.disposition)
+      if (params?.strCandidate != null) qs.set("str_candidate", String(params.strCandidate))
+      if (params?.search) qs.set("search", params.search)
+      if (params?.overdue != null) qs.set("overdue", String(params.overdue))
+      if (params?.minAgeDays != null) qs.set("min_age_days", String(params.minAgeDays))
+      if (params?.maxAgeDays != null) qs.set("max_age_days", String(params.maxAgeDays))
       const query = qs.toString()
       return request<PaginatedResponse<Case>>(`/cases${query ? `?${query}` : ""}`)
     },
-    listAll: (params?: { customerId?: string; sort?: "risk" }) =>
+    listAll: (params?: { customerId?: string; sort?: "risk"; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; priority?: CasePriority; disposition?: string; strCandidate?: boolean; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) =>
       listAllPages((page) => api.cases.list({ ...params, sort: params?.sort ?? "risk", ...page })),
     get: (id: string) => request<Case>(`/cases/${encodeURIComponent(id)}`),
-    create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; summary: string }) =>
+    create: (data: { customer_id: string; alert_ids: string[]; priority: string; assigned_to?: string; assigned_team?: string; due_at?: string; summary: string }) =>
       request<Case>("/cases", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: { status?: CaseStatus; assigned_to?: string; summary?: string; reason?: string; expected_updated_at?: string }) =>
+    update: (id: string, data: { status?: CaseStatus; priority?: CasePriority; assigned_to?: string; assigned_team?: string; due_at?: string; clear_due_at?: boolean; summary?: string; reason?: string; rationale?: string; confirm?: boolean; str_report_id?: string; filing_channel?: string; destination?: string; external_reference?: string; investigation_disposition?: string; str_candidate?: boolean; expected_updated_at?: string }) =>
       request<Case>(`/cases/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify(data),
@@ -633,11 +838,27 @@ export const api = {
         body: JSON.stringify({ author, content }),
       }),
     related: (id: string) => request<RelatedCase[]>(`/cases/${encodeURIComponent(id)}/related`),
-    addRelated: (id: string, relatedCaseId: string) =>
+    addRelated: (id: string, relatedCaseId: string, relationshipType?: string, rationale?: string, expectedUpdatedAt?: string) =>
       request<Case>(`/cases/${encodeURIComponent(id)}/related`, {
         method: "POST",
-        body: JSON.stringify({ related_case_id: relatedCaseId }),
+        body: JSON.stringify({ related_case_id: relatedCaseId, ...(relationshipType ? { relationship_type: relationshipType } : {}), ...(rationale ? { rationale } : {}), ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}) }),
       }),
+    removeRelated: (id: string, relationshipId: string, reason: string, expectedUpdatedAt?: string) => request<{ relationship_id: string; active: boolean }>(`/cases/${encodeURIComponent(id)}/related/${encodeURIComponent(relationshipId)}`, { method: "DELETE", body: JSON.stringify({ reason, ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}) }) }),
+    correctRelated: (id: string, relationshipId: string, relationshipType: string, rationale: string) => request<CaseRelationship>(`/cases/${encodeURIComponent(id)}/related/${encodeURIComponent(relationshipId)}`, { method: "PUT", body: JSON.stringify({ relationship_type: relationshipType, rationale }) }),
+    file: (id: string) => request<CaseFile>(`/cases/${encodeURIComponent(id)}/timeline`),
+    addEvidence: (id: string, data: { description: string; source: string; evidence_type: string; collected_at?: string; collected_by: string; integrity_hash?: string }) => request<CaseEvidence>(`/cases/${encodeURIComponent(id)}/evidence`, { method: "POST", body: JSON.stringify(data) }),
+    correctEvidence: (id: string, evidenceID: string, data: { description?: string; source?: string; evidence_type?: string; collected_at?: string; collected_by?: string; integrity_hash?: string; reason: string }) => request<CaseEvidence>(`/cases/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceID)}/corrections`, { method: "POST", body: JSON.stringify(data) }),
+    updateChecklist: (id: string, key: string, label: string, completed: boolean) => request<CaseChecklistItem>(`/cases/${encodeURIComponent(id)}/checklist/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ label, completed }) }),
+    addWorkItem: (id: string, data: { title: string; description?: string; status?: string; assigned_to?: string; due_at?: string }) => request<CaseWorkItem>(`/cases/${encodeURIComponent(id)}/work-items`, { method: "POST", body: JSON.stringify(data) }),
+    updateWorkItem: (id: string, itemId: string, data: { title: string; description?: string; status?: string; assigned_to?: string; due_at?: string }) => request<CaseWorkItem>(`/cases/${encodeURIComponent(id)}/work-items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(data) }),
+    downloadFile: async (id: string) => {
+      const blob = await requestBlob(`/cases/${encodeURIComponent(id)}/export`)
+      triggerDownload(blob, `case_${id}.json`)
+    },
+    exportFileUrl: (id: string) => `${BASE}/cases/${encodeURIComponent(id)}/export`,
+  },
+  operators: {
+    directory: () => request<OperatorDirectory>("/operators"),
   },
   transactions: {
     // The API intentionally requires customer_id so an operator cannot
@@ -666,19 +887,8 @@ export const api = {
     export: async (params?: AuditListParams, format: "csv" | "json" = "csv") => {
       const qs = new URLSearchParams(buildAuditQuery(params))
       qs.set("format", format)
-      const res = await fetch(`${BASE}/audit/export?${qs.toString()}`)
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`API ${res.status}: ${body}`)
-      }
-      const blob = await res.blob()
-      const link = document.createElement("a")
-      link.href = URL.createObjectURL(blob)
-      link.download = `audit_logs.${format}`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(link.href)
+      const blob = await requestBlob(`/audit/export?${qs.toString()}`)
+      triggerDownload(blob, `audit_logs.${format}`)
     },
   },
   batch: {
@@ -694,12 +904,53 @@ export const api = {
       }),
   },
   reports: {
-    createSTR: (alertId: string, suspiciousPoint: string, createdBy: string) =>
+    list: (
+      params?: {
+        status?: "draft" | "submitted"
+        customerId?: string
+        alertId?: string
+      } & CursorPageParams,
+    ) => {
+      const qs = new URLSearchParams()
+      if (params?.status) qs.set("status", params.status)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.alertId) qs.set("alert_id", params.alertId)
+      if (params?.cursor) qs.set("cursor", params.cursor)
+      if (params?.limit != null) qs.set("limit", String(params.limit))
+      const query = qs.toString()
+      return request<PaginatedResponse<STRReport>>(`/reports/str${query ? `?${query}` : ""}`)
+    },
+    listAll: (params?: { status?: "draft" | "submitted"; customerId?: string; alertId?: string }) =>
+      listAllPages((page) => api.reports.list({ ...params, ...page })),
+    get: (id: string) => request<STRReport>(`/reports/str/${encodeURIComponent(id)}`),
+    createSTR: (alertId: string, caseId: string, suspiciousPoint: string, createdBy: string) =>
       request<STRReport>("/reports/str", {
         method: "POST",
-        body: JSON.stringify({ alert_id: alertId, suspicious_point: suspiciousPoint, created_by: createdBy }),
+        body: JSON.stringify({ alert_id: alertId, case_id: caseId, suspicious_point: suspiciousPoint, created_by: createdBy }),
       }),
-    exportSTR: (alertId: string, format: "csv" | "json" = "csv") =>
+    update: (id: string, suspiciousPoint: string) =>
+      request<STRReport>(`/reports/str/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify({ suspicious_point: suspiciousPoint }),
+      }),
+    submit: (id: string, submissionEvidence: string, submittedBy?: string) =>
+      request<STRReport>(`/reports/str/${encodeURIComponent(id)}/submit`, {
+        method: "POST",
+        body: JSON.stringify({
+          submission_evidence: submissionEvidence,
+          ...(submittedBy ? { submitted_by: submittedBy } : {}),
+        }),
+      }),
+    // STR exports are keyed by the durable report ID. The alert-id form is
+    // retained separately for older integrations during the contract
+    // compatibility window.
+    exportSTR: (reportId: string, format: "csv" | "json" = "csv") =>
+      `${BASE}/reports/str/export?report_id=${encodeURIComponent(reportId)}&format=${format}`,
+    downloadSTR: async (reportId: string, format: "csv" | "json" = "csv") => {
+      const blob = await requestBlob(`/reports/str/export?report_id=${encodeURIComponent(reportId)}&format=${format}`)
+      triggerDownload(blob, `str_${reportId}.${format}`)
+    },
+    exportSTRByAlert: (alertId: string, format: "csv" | "json" = "csv") =>
       `${BASE}/reports/str/export?alert_id=${encodeURIComponent(alertId)}&format=${format}`,
   },
   backtest: {

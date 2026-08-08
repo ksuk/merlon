@@ -19,6 +19,15 @@ import (
 type UpdateAlertStatusRequest struct {
 	Status     domain.AlertStatus `json:"status"`
 	ResolvedBy string             `json:"resolved_by"`
+	// Rationale is a pointer so an explicitly blank value can be rejected,
+	// while omitted legacy requests remain readable during the API migration.
+	Rationale    *string    `json:"rationale,omitempty"`
+	Confirm      *bool      `json:"confirm,omitempty"`
+	AssignedTo   *string    `json:"assigned_to,omitempty"`
+	AssignedTeam *string    `json:"assigned_team,omitempty"`
+	DueAt        *time.Time `json:"due_at,omitempty"`
+	// ClearDueAt distinguishes an explicit clear from an omitted due_at field.
+	ClearDueAt bool `json:"clear_due_at,omitempty"`
 	// ExpectedUpdatedAt enables optimistic locking (the data model §3.9,
 	// WS-11 Task 8): when set, the update is rejected with 409 if the
 	// alert's stored updated_at no longer matches. Omitted entirely, the
@@ -32,6 +41,10 @@ func alertCursor(a domain.Alert) Cursor {
 
 func alertRiskCursor(a domain.Alert) Cursor {
 	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID, Sort: "risk", Rank: domain.AlertSeverityRank(a.Severity)}
+}
+
+func alertQueueCursor(a domain.Alert) Cursor {
+	return Cursor{CreatedAt: a.UpdatedAt, ID: a.ID, Sort: "risk", Rank: domain.AlertSeverityRank(a.Severity)}
 }
 
 // recordAlertCreated increments merlon_alerts_total (OPS-003, the operational design
@@ -53,13 +66,81 @@ func (s *Server) consolidateAlertIntoCase(ctx context.Context, a *domain.Alert) 
 	if s.cases == nil {
 		return
 	}
-	if _, err := casemgmt.ConsolidateAlert(ctx, s.cases, a, casemgmt.DefaultConsolidationWindow); err != nil {
+	priorityResolver := casemgmt.PriorityResolver(func(ctx context.Context, customerID string) (domain.CasePriority, error) {
+		customer, err := s.customers.Get(ctx, customerID)
+		if err != nil {
+			return "", err
+		}
+		return s.priorityPolicy.PriorityFor(customer), nil
+	})
+	var err error
+	if s.caseAlertLifecycle != nil {
+		_, err = casemgmt.ConsolidateAlertWithLifecycleAndPriority(ctx, s.cases, s.caseAlertLifecycle, a, casemgmt.DefaultConsolidationWindow, priorityResolver)
+	} else {
+		_, err = casemgmt.ConsolidateAlertWithLifecycleAndPriority(ctx, s.cases, nil, a, casemgmt.DefaultConsolidationWindow, priorityResolver)
+	}
+	if err != nil {
 		slog.Error("failed to consolidate alert into case",
 			"alert_id", a.ID, "customer_id", a.CustomerID, "error", err)
 	}
 }
 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
+	if hasAlertQueueFilter(r) {
+		filter, parseErr := parseAlertQueueFilter(r)
+		if parseErr != nil {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, parseErr.Error())
+			return
+		}
+		if useCursorPagination(r) {
+			filterFingerprint := queueFilterFingerprint(r)
+			cursorRepo, ok := s.alerts.(domain.AlertQueueCursorRepository)
+			if !ok {
+				writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "alert queue cursor pagination is not configured")
+				return
+			}
+			pageReq, err := ParsePageRequest(r)
+			if err != nil {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+				return
+			}
+			if pageReq.Cursor != nil && pageReq.Cursor.Sort != "risk" {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "cursor sort does not match alert queue ordering")
+				return
+			}
+			if err := bindQueueCursorFilter(pageReq.Cursor, filterFingerprint); err != nil {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+				return
+			}
+			alerts, err := cursorRepo.ListQueueCursor(r.Context(), filter, pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+			if err != nil {
+				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+				return
+			}
+			page, meta := BuildPaginationMeta(alerts, pageReq.Limit, alertQueueCursor)
+			meta = addQueueCursorFilter(meta, filterFingerprint)
+			writePaginatedJSON(w, http.StatusOK, page, meta)
+			return
+		}
+		queueRepo, ok := s.alerts.(domain.AlertQueueRepository)
+		if !ok {
+			writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "alert queue filters are not configured")
+			return
+		}
+		limit, offset := parseOffsetLimit(r, 20)
+		alerts, err := queueRepo.ListQueue(r.Context(), filter, limit+1, offset)
+		if err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+		page, meta := BuildPaginationMeta(alerts, limit, alertQueueCursor)
+		meta = addQueueCursorFilter(meta, queueFilterFingerprint(r))
+		if r.URL.Query().Get("offset") != "" {
+			setOffsetDeprecationHeaders(w)
+		}
+		writePaginatedJSON(w, http.StatusOK, page, meta)
+		return
+	}
 	customerID := r.URL.Query().Get("customer_id")
 
 	if useCursorPagination(r) {
@@ -183,8 +264,30 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
+	if req.AssignedTo != nil {
+		if err := s.validateKnownOperator(r, *req.AssignedTo); err != nil {
+			var validation *operatorAssignmentValidationError
+			if errors.As(err, &validation) {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, validation.Error())
+				return
+			}
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+	}
+	if req.AssignedTeam != nil {
+		if err := s.validateKnownTeam(r, *req.AssignedTeam); err != nil {
+			var validation *operatorAssignmentValidationError
+			if errors.As(err, &validation) {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, validation.Error())
+				return
+			}
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+	}
 
-	if req.Status == "" {
+	if req.Status == "" && req.AssignedTo == nil && req.AssignedTeam == nil && req.DueAt == nil && !req.ClearDueAt {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "status required")
 		return
 	}
@@ -199,9 +302,31 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	if !domain.ValidAlertStatusTransition(current.Status, req.Status) {
+	if req.Status != "" && !domain.ValidAlertStatusTransition(current.Status, req.Status) {
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, "invalid alert status transition")
 		return
+	}
+	if req.Confirm != nil && !*req.Confirm {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "confirmation is required for a status decision")
+		return
+	}
+	if domain.IsAlertTerminal(req.Status) && (req.Rationale == nil || strings.TrimSpace(*req.Rationale) == "") {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "rationale is required for terminal alert status")
+		return
+	}
+	if domain.IsAlertTerminal(req.Status) && (req.Confirm == nil || !*req.Confirm) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "confirmation is required for terminal alert status")
+		return
+	}
+	if domain.IsAlertTerminal(current.Status) && req.Status == domain.AlertStatusInvestigating {
+		if req.Rationale == nil || strings.TrimSpace(*req.Rationale) == "" {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "rationale is required to reopen an alert")
+			return
+		}
+		if req.Confirm == nil || !*req.Confirm {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "confirmation is required to reopen an alert")
+			return
+		}
 	}
 	if domain.IsAlertTerminal(req.Status) && strings.TrimSpace(req.ResolvedBy) == "" {
 		// Keep the legacy request field for compatibility, but never make the
@@ -210,41 +335,123 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 		req.ResolvedBy = resolveAuditUserID(r)
 	}
 
-	if req.ExpectedUpdatedAt != nil {
-		if err := s.alerts.UpdateStatusIfUnmodified(r.Context(), id, req.Status, req.ResolvedBy, *req.ExpectedUpdatedAt); err != nil {
-			var conflict *domain.ErrConflict
-			if errors.As(err, &conflict) {
-				writeError(w, http.StatusConflict, conflict.Error())
-				return
-			}
-			var notFound *domain.ErrNotFound
-			if errors.As(err, &notFound) {
-				writeError(w, http.StatusNotFound, err.Error())
-				return
-			}
-			var invalid *domain.ErrInvalidStateTransition
-			if errors.As(err, &invalid) {
-				writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, invalid.Error())
-				return
-			}
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	} else if err := s.alerts.UpdateStatus(r.Context(), id, req.Status, req.ResolvedBy); err != nil {
-		var notFound *domain.ErrNotFound
-		if errors.As(err, &notFound) {
-			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
-			return
-		}
-		var invalid *domain.ErrInvalidStateTransition
-		if errors.As(err, &invalid) {
-			writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, invalid.Error())
-			return
-		}
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+	if s.atomic == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, errAtomicMutationUnavailable.Error())
 		return
 	}
-
-	a, _ := s.alerts.Get(r.Context(), id)
+	var a *domain.Alert
+	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
+		if repos.Alerts == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		currentInTx, err := repos.Alerts.Get(r.Context(), id)
+		if err != nil {
+			return err
+		}
+		if req.Status != "" {
+			if req.Rationale != nil && strings.TrimSpace(*req.Rationale) != "" {
+				dispositionRepo, ok := repos.Alerts.(domain.AlertDispositionRepository)
+				if !ok {
+					return errAtomicMutationUnavailable
+				}
+				if err := dispositionRepo.UpdateStatusWithRationale(r.Context(), id, req.Status, req.ResolvedBy, strings.TrimSpace(*req.Rationale), req.ExpectedUpdatedAt); err != nil {
+					return err
+				}
+			} else if req.ExpectedUpdatedAt != nil {
+				if err := repos.Alerts.UpdateStatusIfUnmodified(r.Context(), id, req.Status, req.ResolvedBy, *req.ExpectedUpdatedAt); err != nil {
+					return err
+				}
+			} else if err := repos.Alerts.UpdateStatus(r.Context(), id, req.Status, req.ResolvedBy); err != nil {
+				return err
+			}
+		}
+		currentAfterStatus, err := repos.Alerts.Get(r.Context(), id)
+		if err != nil {
+			return err
+		}
+		if req.AssignedTo != nil || req.AssignedTeam != nil || req.DueAt != nil || req.ClearDueAt {
+			queueRepo, ok := repos.Alerts.(domain.AlertQueueMutationRepository)
+			if !ok {
+				return errAtomicMutationUnavailable
+			}
+			assignedTo, assignedTeam := req.AssignedTo, req.AssignedTeam
+			if assignedTo == nil {
+				value := currentAfterStatus.AssignedTo
+				assignedTo = &value
+			}
+			if assignedTeam == nil {
+				value := currentAfterStatus.AssignedTeam
+				assignedTeam = &value
+			}
+			dueAt := req.DueAt
+			if dueAt == nil && !req.ClearDueAt {
+				dueAt = currentAfterStatus.DueAt
+			}
+			expectedQueueUpdatedAt := req.ExpectedUpdatedAt
+			if req.Status != "" {
+				expectedQueueUpdatedAt = &currentAfterStatus.UpdatedAt
+			}
+			if err := queueRepo.UpdateQueue(r.Context(), id, assignedTo, assignedTeam, dueAt, expectedQueueUpdatedAt); err != nil {
+				return err
+			}
+		}
+		a, err = repos.Alerts.Get(r.Context(), id)
+		if err != nil {
+			return err
+		}
+		if req.Status != "" {
+			rationale := ""
+			if req.Rationale != nil {
+				rationale = strings.TrimSpace(*req.Rationale)
+			}
+			if rationale == "" && domain.IsAlertTerminal(req.Status) {
+				rationale = strings.TrimSpace(req.ResolvedBy)
+			}
+			if err := appendRequiredAlertDecision(r.Context(), r, repos, currentInTx, a, rationale); err != nil {
+				return err
+			}
+		}
+		if req.AssignedTo != nil || req.AssignedTeam != nil || req.DueAt != nil || req.ClearDueAt {
+			beforeJSON, _ := json.Marshal(map[string]any{"assigned_to": currentInTx.AssignedTo, "assigned_team": currentInTx.AssignedTeam, "due_at": currentInTx.DueAt})
+			afterJSON, _ := json.Marshal(map[string]any{"assigned_to": a.AssignedTo, "assigned_team": a.AssignedTeam, "due_at": a.DueAt})
+			setAuditDetail(r, "assignment_before", string(beforeJSON))
+			setAuditDetail(r, "assignment_after", string(afterJSON))
+		}
+		if err := repos.Audit.Create(r.Context(), &domain.AuditEntry{
+			UserID: resolveAuditUserID(r), Action: "alert_update", ResourceType: "alerts", ResourceID: id,
+			Details:   map[string]string{"correlation_id": correlationID(r), "status": string(a.Status)},
+			IPAddress: extractIP(r), UserAgent: r.UserAgent(), CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+		markAtomicAuditHandled(r)
+		return nil
+	}); err != nil {
+		writeAlertStatusError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, a)
+}
+
+func writeAlertStatusError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errAtomicMutationUnavailable) {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, err.Error())
+		return
+	}
+	var conflict *domain.ErrConflict
+	if errors.As(err, &conflict) {
+		writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, err.Error())
+		return
+	}
+	var notFound *domain.ErrNotFound
+	if errors.As(err, &notFound) {
+		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+		return
+	}
+	var invalid *domain.ErrInvalidStateTransition
+	if errors.As(err, &invalid) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, invalid.Error())
+		return
+	}
+	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 }

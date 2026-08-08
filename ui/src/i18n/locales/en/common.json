@@ -8,7 +8,9 @@
     "demoDataBadge": "Synthetic demo data"
   },
   "list": {
-    "allLoaded": "All records loaded"
+    "allLoaded": "All records loaded",
+    "previous": "Previous",
+    "next": "Next"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -137,13 +139,42 @@
     "escalated": "Escalated",
     "closed": "Closed",
     "reopened": "Reopened",
-    "str_filed": "STR filed"
+    "str_filed": "STR filed",
+    "str_candidate": "STR candidate"
   },
   "cases": {
     "title": "Cases",
     "count": "{{count}} items",
     "createButton": "Create new",
     "error": "Failed to fetch case data",
+    "queue": {
+      "title": "Work queue",
+      "status": "Status",
+      "allStatuses": "All active statuses",
+      "priority": "Priority",
+      "allPriorities": "All priorities",
+      "assignee": "Assignee",
+      "myWork": "My work",
+      "team": "Team",
+      "search": "Search",
+      "disposition": "Disposition",
+      "strCandidate": "STR candidate",
+      "allCandidates": "All candidate states",
+      "candidatesOnly": "Candidates only",
+      "nonCandidates": "Non-candidates",
+      "unassigned": "Unassigned",
+      "overdue": "Overdue",
+      "ageValue": "{{days}} days",
+	  "maxAge": "Max age (days)",
+      "dueAt": "Due",
+      "sla": "SLA",
+      "slaUnassigned": "No SLA",
+      "slaOverdue": "Overdue",
+      "slaOnTrack": "On track",
+      "updatedAt": "Last update",
+      "age": "Age",
+      "page": "Page"
+    },
     "form": {
       "title": "Create case",
       "customerId": "Customer ID",
@@ -172,13 +203,25 @@
     "error": "Failed to fetch case data",
     "conflict": "This case changed in another session. Review the current record before trying again.",
     "reload": "Reload current case",
+    "retry": "Retry",
+    "loading": "Loading…",
     "title": "Case detail",
     "info": {
       "title": "Case info",
       "customerId": "Customer ID",
       "assignedTo": "Assigned to",
+      "assignedTeam": "Team",
       "createdAt": "Created at",
-      "closedAt": "Closed at"
+      "closedAt": "Closed at",
+      "dueAt": "Due",
+      "disposition": "Disposition",
+      "rationale": "Rationale",
+      "strReport": "STR report",
+      "strSubmittedAt": "Submitted at",
+      "filingChannel": "Filing channel",
+      "filingDestination": "Filing destination",
+      "externalReference": "External reference",
+      "saveAssignment": "Save queue fields"
     },
     "summary": {
       "title": "Summary",
@@ -190,6 +233,12 @@
       "escalate": "Escalate",
       "close": "Close",
       "fileStr": "File as STR",
+      "markCandidate": "Mark STR candidate",
+      "closeRationale": "Closure rationale",
+      "closeRationaleRequired": "A non-empty closure rationale is required.",
+      "confirmClose": "Confirm case closure",
+      "confirmCloseText": "Close {{outcome}}? This case decision and rationale will be retained in the investigation file.",
+      "confirm": "Confirm",
       "rollback": "Roll back (to investigating)",
       "reinvestigate": "Resume investigation"
     },
@@ -205,12 +254,77 @@
       "title": "Related cases",
       "empty": "No related cases",
       "auto": "Auto-linked (same customer)",
-      "manual": "Manually linked"
+      "manual": "Manually linked",
+      "add": "Add related case",
+      "caseId": "Case ID",
+	  "search": "Search related cases",
+	  "results": "Eligible active cases",
+	  "directedNote": "Manual links are directed from this case to the other case. Automatic entries are same-customer history.",
+      "type": "Relationship type",
+      "rationale": "Link rationale",
+      "submit": "Add link",
+      "cancel": "Cancel",
+      "remove": "Remove link",
+      "correct": "Correct link",
+      "correctionReason": "Why is this link being corrected?",
+      "correctionRequired": "A correction rationale is required.",
+      "saveCorrection": "Save correction",
+      "removeReason": "Removal reason",
+      "removePrompt": "Why should this relationship be removed?",
+      "removeTitle": "Confirm relationship removal",
+      "removeConfirm": "Remove relationship",
+      "removeReasonRequired": "A removal reason is required.",
+      "typeLabel": "Type",
+      "rationaleLabel": "Rationale",
+      "createdByAt": "Created by {{actor}} on {{at}}",
+      "error": "Could not update related case links",
+      "more": "More than 200 eligible cases matched. Refine the search or enter a case ID directly."
     },
     "notes": {
       "title": "Notes",
       "empty": "No notes",
       "placeholder": "Add a note..."
+    },
+    "filing": {
+      "title": "File STR",
+      "report": "Submitted STR report",
+      "reportPlaceholder": "Select or enter report ID",
+      "channel": "Filing channel",
+      "destination": "Destination",
+      "externalReference": "External filing reference",
+      "submit": "Confirm filing",
+      "cancel": "Cancel",
+      "required": "A submitted report and all filing metadata are required.",
+      "loadError": "Could not load submitted STR reports",
+      "more": "More than 200 submitted reports matched. Enter a report ID directly if it is not listed."
+    },
+    "caseFile": {
+      "title": "Investigation file",
+      "export": "Export case file",
+      "exportError": "Could not export the case file. Please retry.",
+      "timeline": "Timeline",
+      "timelineEmpty": "No investigation events",
+      "evidence": "Evidence",
+      "evidenceEmpty": "No evidence recorded",
+      "evidenceDescription": "Description",
+      "evidenceSource": "Source",
+      "evidenceType": "Type",
+      "evidenceCollector": "Collected by",
+      "evidenceHash": "Integrity hash (optional)",
+      "evidenceAdd": "Add evidence",
+      "evidenceCorrect": "Correct evidence",
+      "evidenceCorrectionReason": "Correction reason",
+      "evidenceCorrectionRequired": "A correction reason is required.",
+      "evidenceCorrectionCancel": "Cancel correction",
+      "checklist": "Checklist",
+      "checklistEmpty": "No checklist items",
+      "workItems": "Work items",
+      "workItemsEmpty": "No work items",
+      "workTitle": "Work item title",
+      "workAdd": "Add work item",
+      "eventReason": "Reason"
+      ,"changeDetails": "View change details"
+      ,"workStatus": "Work item status"
     },
     "edd": {
       "stage3": "Stage 3: Transaction refusal recommended",
@@ -233,6 +347,29 @@
     "closed_false_positive": "Closed (false positive)"
   },
   "alerts": {
+    "queue": {
+      "title": "Work queue",
+      "status": "Status",
+      "allStatuses": "All active statuses",
+      "severity": "Severity",
+      "scenario": "Scenario",
+      "assignee": "Assignee",
+      "myWork": "My work",
+      "team": "Team",
+      "search": "Search",
+      "unassigned": "Unassigned",
+      "overdue": "Overdue",
+      "ageValue": "{{days}} days",
+	  "maxAge": "Max age (days)",
+      "dueAt": "Due",
+      "sla": "SLA",
+      "slaUnassigned": "No SLA",
+      "slaOverdue": "Overdue",
+      "slaOnTrack": "On track",
+      "updatedAt": "Last update",
+      "age": "Age",
+      "page": "Page"
+    },
     "title": "Alerts",
     "count": "{{count}} items",
     "error": "Failed to fetch alert data",
@@ -255,7 +392,10 @@
         "scenario": "Scenario",
         "score": "Score",
         "description": "Description",
-        "detectedAt": "Detected at"
+        "detectedAt": "Detected at",
+        "assignedTo": "Owner",
+        "dueAt": "Due",
+        "updatedAt": "Last update"
       },
       "empty": "No alerts"
     }
@@ -266,6 +406,7 @@
     "error": "Failed to fetch alert data",
     "conflict": "This alert changed in another session. Review the current record before trying again.",
     "reload": "Reload current alert",
+    "retry": "Retry",
     "title": "Alert detail",
     "info": {
       "title": "Alert info",
@@ -274,7 +415,11 @@
       "score": "Score",
       "detectedAt": "Detected at",
       "resolvedAt": "Resolved at",
-      "resolvedBy": "Resolved by"
+      "resolvedBy": "Resolved by",
+      "assignedTo": "Owner",
+      "assignedTeam": "Team",
+      "dueAt": "Due",
+      "saveAssignment": "Save queue fields"
     },
     "description": {
       "title": "Description",
@@ -285,13 +430,24 @@
       "startInvestigation": "Start investigation",
       "escalate": "Escalate",
       "closeTruePositive": "Close as true positive",
-      "closeFalsePositive": "Close as false positive"
+      "closeFalsePositive": "Close as false positive",
+      "reopen": "Reopen for investigation"
+    },
+    "decision": {
+      "title": "Confirm alert decision",
+      "confirm": "Apply {{outcome}} to this alert? The decision and rationale will be retained in history.",
+      "rationale": "Rationale",
+      "rationaleRequired": "A non-empty rationale is required.",
+      "confirmButton": "Confirm decision",
+      "cancel": "Cancel",
+      "noHistory": "No decision history"
     }
   },
   "audit": {
     "title": "Audit log",
     "count": "{{count}} items",
     "error": "Failed to fetch audit log",
+    "retry": "Retry",
     "action": {
       "create": "Create",
       "update": "Update",
@@ -721,19 +877,36 @@
       "title": "STR report created",
       "idLabel": "ID: {{id}}"
     },
+    "saved": {
+      "title": "Saved STR reports",
+      "source": "Alert: {{alert}}",
+      "open": "Open draft",
+      "empty": "No saved STR reports"
+    },
+    "status": {
+      "draft": "Draft",
+      "submitted": "Submitted"
+    },
     "export": {
       "csv": "CSV",
       "json": "JSON"
     },
     "form": {
       "title": "Create STR report",
-      "targetAlert": "Target alert",
+      "targetAlert": "Target alert and STR candidate case",
+      "caseLabel": "case {{id}}",
       "noAlerts": "No target alerts",
       "pointLabel": "Point of suspicious transaction",
       "pointPlaceholder": "Describe the reason for suspicion...",
       "createdByLabel": "Created by",
       "createdByPlaceholder": "Analyst name",
-      "submit": "Create STR report"
+      "submit": "Create STR report",
+      "draftTitle": "Review STR draft",
+      "draftId": "Draft ID: {{id}}",
+      "evidenceLabel": "Submission evidence",
+      "evidencePlaceholder": "Filing reference or confirmation ID",
+      "submitDraft": "Submit STR report",
+      "cancel": "Cancel"
     }
   },
   "system": {

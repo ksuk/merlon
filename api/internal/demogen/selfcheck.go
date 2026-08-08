@@ -238,17 +238,23 @@ func SelfCheckW2(r *Result) error {
 		if domain.IsCaseUnresolved(c.Status) && c.ClosedAt != nil {
 			errs = append(errs, fmt.Sprintf("active case %s carries closed_at", c.ID))
 		}
+		seenAlertIDs := make(map[string]struct{}, len(c.AlertIDs))
 		for _, alertID := range c.AlertIDs {
+			if _, duplicate := seenAlertIDs[alertID]; duplicate {
+				errs = append(errs, fmt.Sprintf("case %s contains duplicate alert %s", c.ID, alertID))
+				continue
+			}
+			seenAlertIDs[alertID] = struct{}{}
 			a, ok := alertsByID[alertID]
 			if !ok {
 				errs = append(errs, fmt.Sprintf("case %s references missing alert %s", c.ID, alertID))
 				continue
 			}
-			if domain.IsCaseTerminal(c.Status) && !domain.IsAlertTerminal(a.Status) {
-				errs = append(errs, fmt.Sprintf("terminal case %s references active alert %s", c.ID, alertID))
+			if a.CustomerID != c.CustomerID {
+				errs = append(errs, fmt.Sprintf("case %s and alert %s belong to different customers", c.ID, alertID))
 			}
-			if domain.IsCaseUnresolved(c.Status) && !domain.IsAlertUnresolved(a.Status) {
-				errs = append(errs, fmt.Sprintf("active case %s references non-active alert %s", c.ID, alertID))
+			if !domain.CompatibleCaseAlertState(c.Status, a.Status) {
+				errs = append(errs, fmt.Sprintf("case %s status %q is incompatible with alert %s status %q", c.ID, c.Status, alertID, a.Status))
 			}
 		}
 	}

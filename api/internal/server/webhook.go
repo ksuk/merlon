@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ksuk/merlon/api/internal/apierr"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -96,13 +97,35 @@ func sendWebhookRequest(ctx context.Context, rawURL string, body []byte, headers
 	return resp.StatusCode, nil
 }
 
-// deliverWebhook makes the first delivery attempt (attempt_count=1) for
-// event/eventID against hook, and persists a WebhookDelivery recording the
-// result. On failure it schedules attempt 2 via NextAttemptAt so the retry
-// worker (processDueRetries) picks it up (the HTTP API contract §3.1 exponential backoff).
+// deliverWebhook first persists a pending delivery intent. If the process
+// stops before the network request, the retry worker can resume the row after
+// restart. The event ID is stable across that retry, so receivers can safely
+// deduplicate an at-least-once delivery.
 func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventType, eventID string, body []byte) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	createdAt := time.Now().UTC()
+	nextAttempt := createdAt
+	d := &domain.WebhookDelivery{
+		ID:            generateID(),
+		WebhookID:     hook.ID,
+		Event:         event,
+		EventID:       eventID,
+		Payload:       string(body),
+		StatusCode:    0,
+		Success:       false,
+		AttemptCount:  0,
+		CreatedAt:     createdAt,
+		NextAttemptAt: &nextAttempt,
+	}
+	if s.webhooks == nil {
+		return
+	}
+	if err := s.webhooks.CreateDelivery(ctx, d); err != nil {
+		slog.ErrorContext(ctx, "webhook delivery intent persistence failed", "webhook_id", hook.ID, "event_id", eventID, "error", err)
+		return
+	}
 
 	headers := webhookHeaders(hook, event, eventID, body)
 	statusCode, err := sendWebhookRequest(ctx, hook.URL, body, headers)
@@ -111,26 +134,18 @@ func (s *Server) deliverWebhook(hook domain.Webhook, event domain.WebhookEventTy
 	if err != nil {
 		errMsg = err.Error()
 	}
-	success := err == nil && statusCode >= 200 && statusCode < 300
-
-	d := &domain.WebhookDelivery{
-		ID:           generateID(),
-		WebhookID:    hook.ID,
-		Event:        event,
-		EventID:      eventID,
-		Payload:      string(body),
-		StatusCode:   statusCode,
-		Success:      success,
-		Error:        errMsg,
-		AttemptCount: 1,
-		CreatedAt:    time.Now(),
-	}
-	if !success {
+	d.StatusCode = statusCode
+	d.Success = err == nil && statusCode >= 200 && statusCode < 300
+	d.Error = errMsg
+	d.AttemptCount = 1
+	if !d.Success {
 		next := time.Now().Add(computeBackoff(1))
 		d.NextAttemptAt = &next
+	} else {
+		d.NextAttemptAt = nil
 	}
-	if s.webhooks != nil {
-		s.webhooks.CreateDelivery(context.Background(), d)
+	if err := s.webhooks.UpdateDelivery(ctx, d); err != nil {
+		slog.ErrorContext(ctx, "webhook delivery result persistence failed", "webhook_id", hook.ID, "event_id", eventID, "error", err)
 	}
 }
 

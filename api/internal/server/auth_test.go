@@ -18,6 +18,8 @@ const testBootstrapToken = "test-bootstrap-token"
 func testServerWithAuth() *Server {
 	alerts := store.NewMemoryAlertRepo()
 	cases := store.NewMemoryCaseRepo()
+	caseInvestigation := store.NewMemoryCaseInvestigationRepo()
+	alertDecisions := store.NewMemoryAlertDecisionRepo()
 	return New(":0", Deps{
 		Customers:          store.NewMemoryCustomerRepo(),
 		Transactions:       store.NewMemoryTransactionRepo(),
@@ -29,6 +31,9 @@ func testServerWithAuth() *Server {
 		Audit:              store.NewMemoryAuditRepo(),
 		Cases:              cases,
 		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		Reports:            store.NewMemorySTRReportRepo(),
+		CaseInvestigation:  caseInvestigation,
+		AlertDecisions:     alertDecisions,
 		APIKeys:            store.NewMemoryAPIKeyRepo(),
 		BootstrapToken:     testBootstrapToken,
 	})
@@ -43,6 +48,8 @@ func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
 
 	alerts := store.NewMemoryAlertRepo()
 	cases := store.NewMemoryCaseRepo()
+	caseInvestigation := store.NewMemoryCaseInvestigationRepo()
+	alertDecisions := store.NewMemoryAlertDecisionRepo()
 	s := New(":0", Deps{
 		Customers:          store.NewMemoryCustomerRepo(),
 		Transactions:       store.NewMemoryTransactionRepo(),
@@ -54,6 +61,9 @@ func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
 		Audit:              store.NewMemoryAuditRepo(),
 		Cases:              cases,
 		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		Reports:            store.NewMemorySTRReportRepo(),
+		CaseInvestigation:  caseInvestigation,
+		AlertDecisions:     alertDecisions,
 		APIKeys:            store.NewMemoryAPIKeyRepo(),
 		BootstrapToken:     testBootstrapToken,
 		TokenIssuer:        issuer,

@@ -26,6 +26,7 @@ type Cursor struct {
 	ID        string
 	Sort      string
 	Rank      int
+	Filter    string
 }
 
 // EncodeCursor converts a Cursor into an opaque base64-encoded string.
@@ -33,6 +34,9 @@ func EncodeCursor(c Cursor) string {
 	raw := c.CreatedAt.UTC().Format(time.RFC3339Nano) + cursorSeparator + c.ID
 	if c.Sort == "risk" {
 		raw = "risk" + cursorSeparator + strconv.Itoa(c.Rank) + cursorSeparator + raw
+	}
+	if c.Filter != "" {
+		raw = "filter" + cursorSeparator + c.Filter + cursorSeparator + raw
 	}
 	return base64.URLEncoding.EncodeToString([]byte(raw))
 }
@@ -46,7 +50,12 @@ func DecodeCursor(s string) (Cursor, error) {
 
 	parts := strings.Split(string(raw), cursorSeparator)
 	var timestamp, id, sort string
+	filter := ""
 	rank := 0
+	if len(parts) >= 2 && parts[0] == "filter" {
+		filter = parts[1]
+		parts = parts[2:]
+	}
 	switch {
 	case len(parts) == 2:
 		timestamp, id = parts[0], parts[1]
@@ -69,7 +78,7 @@ func DecodeCursor(s string) (Cursor, error) {
 		return Cursor{}, fmt.Errorf("invalid cursor timestamp: %w", err)
 	}
 
-	return Cursor{CreatedAt: t, ID: id, Sort: sort, Rank: rank}, nil
+	return Cursor{CreatedAt: t, ID: id, Sort: sort, Rank: rank, Filter: filter}, nil
 }
 
 // PageRequest is a pagination request parsed from query parameters.
@@ -124,12 +133,12 @@ func toDomainCursor(c *Cursor) *domain.Cursor {
 	if c == nil {
 		return nil
 	}
-	return &domain.Cursor{CreatedAt: c.CreatedAt, ID: c.ID, Sort: c.Sort, Rank: c.Rank}
+	return &domain.Cursor{CreatedAt: c.CreatedAt, ID: c.ID, Sort: c.Sort, Rank: c.Rank, Filter: c.Filter}
 }
 
 // fromDomainCursor converts a domain.Cursor back to server.Cursor.
 func fromDomainCursor(c domain.Cursor) Cursor {
-	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID, Sort: c.Sort, Rank: c.Rank}
+	return Cursor{CreatedAt: c.CreatedAt, ID: c.ID, Sort: c.Sort, Rank: c.Rank, Filter: c.Filter}
 }
 
 // BuildPaginationMeta trims a slice fetched with limit+1 rows down to at most

@@ -65,6 +65,141 @@ func TestCreateCustomer(t *testing.T) {
 	}
 }
 
+func TestCreateCustomerAuditFailureRollsBackCustomer(t *testing.T) {
+	s := testServer()
+	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"EXT-AUDIT-FAIL","customer_type":"individual","country_code":"JP"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusCreated {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	customers, err := s.customers.List(context.Background(), 10, 0)
+	if err != nil {
+		t.Fatalf("list customers: %v", err)
+	}
+	if len(customers) != 0 {
+		t.Fatalf("customers after rollback = %d, want 0", len(customers))
+	}
+}
+
+func TestUpdateCustomerAuditFailureRollsBackCustomer(t *testing.T) {
+	s := testServer()
+	c := &domain.Customer{ID: generateID(), ExternalID: "EXT-UPDATE-AUDIT-FAIL", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.customers.Create(context.Background(), c); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	original := c.CountryCode
+	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+c.ID, strings.NewReader(`{"country_code":"US"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	stored, err := s.customers.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get customer: %v", err)
+	}
+	if stored.CountryCode != original {
+		t.Fatalf("country_code after rollback = %q, want %q", stored.CountryCode, original)
+	}
+}
+
+func TestScoreCustomerAuditFailureRollsBackScoreAndHistory(t *testing.T) {
+	s := testServer()
+	c := &domain.Customer{ID: generateID(), ExternalID: "EXT-SCORE-AUDIT-FAIL", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.customers.Create(context.Background(), c); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+c.ID+"/score", strings.NewReader(`{"rule_set_id":"test"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	stored, err := s.customers.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get customer: %v", err)
+	}
+	if stored.RiskScore != nil || stored.RiskTier != nil {
+		t.Fatalf("customer risk projection after rollback = score %v tier %v, want unset", stored.RiskScore, stored.RiskTier)
+	}
+	history, err := s.customers.ListScoreHistory(context.Background(), c.ID, 10)
+	if err != nil {
+		t.Fatalf("list score history: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("score history after rollback = %d, want 0", len(history))
+	}
+}
+
+func TestScoreCustomerOutboxFailureRollsBackScoreAndHistory(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
+	outbox := store.NewMemoryEventOutboxRepo()
+	want := errors.New("event outbox unavailable")
+	outbox.SetEnqueueFailure(want)
+	s := New(":0", Deps{
+		Customers:          customers,
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Reports:            store.NewMemorySTRReportRepo(),
+		Scoring:            &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		Events:             &fakeBus{},
+		EventOutbox:        outbox,
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"OUTBOX-FAIL","customer_type":"individual","country_code":"JP"}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create customer status = %d, body: %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	score := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(`{"rule_set_id":"test"}`))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, score)
+	if response.Code == http.StatusOK {
+		t.Fatalf("score status = %d, want failure when outbox enqueue fails", response.Code)
+	}
+	stored, err := customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.RiskScore != nil || stored.RiskTier != nil {
+		t.Fatalf("customer risk projection after outbox rollback = score %v tier %v", stored.RiskScore, stored.RiskTier)
+	}
+	history, err := customers.ListScoreHistory(context.Background(), created.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("score history after outbox rollback = %d, want 0", len(history))
+	}
+	pending, err := outbox.ListPending(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("outbox rows after rollback = %d, want 0", len(pending))
+	}
+}
+
 func TestCreateCustomerMissingExternalID(t *testing.T) {
 	s := testServer()
 

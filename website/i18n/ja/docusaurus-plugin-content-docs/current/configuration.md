@@ -51,6 +51,8 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_WHITELIST_MAX_VALID_DAYS` | `365` | ホワイトリストの最大有効期間。 |
 | `MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS` | `60` / `90` | EDD エスカレーションの閾値。 |
 | `MERLON_TM_SCENARIOS_PATH` | `tm_scenarios` | ディレクトリを管理下のソース管理に保管する。実行時ダイジェストは読み込まれた内容を識別するが、変更を承認するものではない。 |
+| `MERLON_OPERATOR_TEAMS` | 未設定 | 永続的な割当チーム一覧をカンマ区切りで指定する。キュー行を走査してチームを推測することはなく、認証済みの割当には設定値が必要となる。 |
+| `MERLON_CASE_PRIORITY_PATH` | `content/case_priority_v1.yaml` | 保存された CDD ティア／スコアからケース優先度への対応を定義するバージョン付き YAML。 |
 | `MERLON_TM_BATCH_SCHEDULE` | `02:00` | 取引モニタリングのバッチ評価を実行する日次時刻（`HH:MM`）。 |
 | `MERLON_TM_BATCH_TIMEZONE` | ローカルタイムゾーン | 本番環境では IANA タイムゾーンを明示的に設定する。 |
 | `MERLON_LOG_LEVEL` | `info` | `info` 以上を維持する。機密性の高いワークロードに debug ログを使用しないこと。 |

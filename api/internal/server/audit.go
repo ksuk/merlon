@@ -36,8 +36,9 @@ type auditDetailsKey struct{}
 // details to the generic audit entry without every handler needing its own
 // audit-writing logic.
 type auditDetailsSink struct {
-	mu      sync.Mutex
-	details map[string]string
+	mu             sync.Mutex
+	details        map[string]string
+	handledByRoute bool
 }
 
 func (s *auditDetailsSink) set(key, value string) {
@@ -60,6 +61,18 @@ func (s *auditDetailsSink) snapshot() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (s *auditDetailsSink) markHandledByRoute() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handledByRoute = true
+}
+
+func (s *auditDetailsSink) isHandledByRoute() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.handledByRoute
 }
 
 // setAuditDetail attaches a key/value pair to the audit log entry that will
@@ -87,6 +100,13 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		// (ALD-006: the export operation must be traceable even though it
 		// is a read).
 		if r.Method == http.MethodGet && r.URL.Path != "/api/v1/audit/export" {
+			return
+		}
+		// Atomic mutation handlers append their required audit/event record inside
+		// the same database transaction as the business row. Do not append a
+		// second best-effort record after the response; doing so would make a
+		// successful business mutation possible after an audit failure.
+		if sink.isHandledByRoute() {
 			return
 		}
 
@@ -136,6 +156,9 @@ func resolveAction(method, path string) string {
 		if strings.Contains(path, "/backtest") {
 			return "run_backtest"
 		}
+		if strings.Contains(path, "/reports/str/") && strings.HasSuffix(path, "/submit") {
+			return "submit_str"
+		}
 		if strings.Contains(path, "/reports/str") {
 			return "create_str"
 		}
@@ -162,11 +185,17 @@ func resolveAction(method, path string) string {
 		}
 		return "create"
 	case http.MethodPut:
+		if strings.Contains(path, "/reports/str/") {
+			return "update_str"
+		}
 		if strings.Contains(path, "/admin/retention-policies/") {
 			return "update_retention_policy"
 		}
 		return "update"
 	case http.MethodPatch:
+		if strings.Contains(path, "/reports/str/") {
+			return "update_str"
+		}
 		return "update_status"
 	case http.MethodDelete:
 		return "delete"
