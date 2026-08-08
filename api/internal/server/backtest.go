@@ -137,24 +137,18 @@ func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request)
 	_, hasMetadata := s.wave3.(domain.BacktestMetadataRepository)
 	var metadata *domain.BacktestMetadata
 	if _, ok := s.wave3.(domain.BacktestMetadataRepository); ok {
-		preview := map[string]any{"count": len(req.CustomerIDs), "sample_customer_ids": append([]string(nil), req.CustomerIDs...)}
-		// Keep the cohort preview useful to an operator: the customer count alone
-		// cannot distinguish an intentionally empty result from a cohort with no
-		// transactions.  This is additive and remains best-effort for adapters
-		// that do not expose the transaction repository.
-		if s.transactions != nil && len(req.CustomerIDs) > 0 {
-			transactionCount := 0
-			for _, customerID := range req.CustomerIDs {
-				if transactions, transactionErr := s.transactions.ListByCustomer(r.Context(), customerID, 1001, 0); transactionErr == nil {
-					transactionCount += len(transactions)
-				}
-			}
-			preview["transaction_count"] = transactionCount
+		// The stored cohort is resolved exactly as POST /backtests/preview
+		// resolves it, so the record of what ran and the numbers the operator
+		// approved are the same. The old inline version counted transactions
+		// only for an explicit id list, which left a filter or all-customer
+		// cohort recorded as count: 0 -- claiming an empty population for a
+		// run that was about to evaluate the whole book.
+		cohort, cohortErr := s.resolveBacktestCohort(r.Context(), req.CustomerIDs, req.CustomerFilter)
+		if cohortErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, cohortErr.Error())
+			return
 		}
-		if len(req.CustomerIDs) > 20 {
-			preview["sample_customer_ids"] = req.CustomerIDs[:20]
-		}
-		metadata = &domain.BacktestMetadata{JobID: job.ID, Rationale: req.Rationale, CohortPreview: preview, BaselineSnapshot: map[string]any{"rule_set_id": job.BaselineRuleSetID, "version": job.BaselineRuleVersion, "digest": stableDigest(baselineDefinition)}, CandidateSnapshot: map[string]any{"rule_set_id": job.CandidateRuleSetID, "version": job.CandidateRuleVersion, "digest": stableDigest(candidateDefinition)}, RerunOf: req.RerunOf, CreatedAt: now}
+		metadata = &domain.BacktestMetadata{JobID: job.ID, Rationale: req.Rationale, CohortPreview: cohort.preview(), BaselineSnapshot: map[string]any{"rule_set_id": job.BaselineRuleSetID, "version": job.BaselineRuleVersion, "digest": stableDigest(baselineDefinition)}, CandidateSnapshot: map[string]any{"rule_set_id": job.CandidateRuleSetID, "version": job.CandidateRuleVersion, "digest": stableDigest(candidateDefinition)}, RerunOf: req.RerunOf, CreatedAt: now}
 	}
 	persist := func(repos domain.AtomicMutationRepositories) error {
 		jobRepo := s.backtestJobs

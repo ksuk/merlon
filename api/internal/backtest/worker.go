@@ -193,7 +193,7 @@ func (w *Worker) snapshotCustomers(ctx context.Context, job *domain.BacktestJob)
 				if !job.SnapshotAt.IsZero() && c.CreatedAt.After(job.SnapshotAt) {
 					continue
 				}
-				if job.CustomerFilter == nil || matchesFilter(c, job.CustomerFilter) {
+				if job.CustomerFilter.Matches(c) {
 					ids = append(ids, c.ID)
 					scannedCustomers = append(scannedCustomers, c)
 				}
@@ -226,18 +226,6 @@ func (w *Worker) loadCustomersByID(ctx context.Context, ids []string) ([]domain.
 		out = append(out, *c)
 	}
 	return out, nil
-}
-func matchesFilter(c domain.Customer, f *domain.BacktestCustomerFilter) bool {
-	if f.RiskTier != "" && (c.RiskTier == nil || *c.RiskTier != f.RiskTier) {
-		return false
-	}
-	if f.Status != "" && c.EffectiveStatus() != f.Status {
-		return false
-	}
-	if f.CountryCode != "" && c.CountryCode != f.CountryCode {
-		return false
-	}
-	return true
 }
 func diffResult(base, cand *domain.BacktestResult) *domain.BacktestResult {
 	if base == nil || cand == nil {

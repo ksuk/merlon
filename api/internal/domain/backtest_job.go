@@ -25,6 +25,28 @@ type BacktestCustomerFilter struct {
 	CountryCode string         `json:"country_code,omitempty"`
 }
 
+// Matches reports whether a customer belongs to the filtered cohort. A nil
+// filter matches everyone.
+//
+// This lives on the domain type so the pre-execution preview and the worker
+// that actually runs the job cannot disagree about who is in the cohort --
+// a preview computed by different rules than the run is worse than no preview.
+func (f *BacktestCustomerFilter) Matches(c Customer) bool {
+	if f == nil {
+		return true
+	}
+	if f.RiskTier != "" && (c.RiskTier == nil || *c.RiskTier != f.RiskTier) {
+		return false
+	}
+	if f.Status != "" && c.EffectiveStatus() != f.Status {
+		return false
+	}
+	if f.CountryCode != "" && c.CountryCode != f.CountryCode {
+		return false
+	}
+	return true
+}
+
 type BacktestJob struct {
 	ID                   string                  `json:"id"`
 	Status               BacktestJobStatus       `json:"status"`
