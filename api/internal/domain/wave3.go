@@ -118,27 +118,37 @@ const (
 )
 
 type TargetManifest struct {
-	ID                string            `json:"id"`
-	Operation         string            `json:"operation"`
-	TargetMode        TargetMode        `json:"target_mode"`
-	CustomerIDs       []string          `json:"customer_ids"`
-	Filter            map[string]any    `json:"filter"`
-	SampleCustomerIDs []string          `json:"sample_customer_ids"`
-	TargetCount       int               `json:"target_count"`
-	Criteria          string            `json:"criteria"`
-	RuleSetID         string            `json:"rule_set_id,omitempty"`
-	RuleSetVersion    int               `json:"rule_set_version,omitempty"`
-	ConfigDigests     map[string]string `json:"config_digests,omitempty"`
-	Token             string            `json:"token,omitempty"`
-	IdempotencyKey    string            `json:"idempotency_key,omitempty"`
-	Rationale         string            `json:"rationale"`
-	Status            string            `json:"status"`
-	Version           int               `json:"version"`
-	ExpiresAt         time.Time         `json:"expires_at"`
-	CreatedBy         string            `json:"created_by"`
-	CreatedAt         time.Time         `json:"created_at"`
-	ConfirmedAt       *time.Time        `json:"confirmed_at,omitempty"`
-	RunID             string            `json:"run_id,omitempty"`
+	ID                string         `json:"id"`
+	Operation         string         `json:"operation"`
+	TargetMode        TargetMode     `json:"target_mode"`
+	CustomerIDs       []string       `json:"customer_ids"`
+	Filter            map[string]any `json:"filter"`
+	SampleCustomerIDs []string       `json:"sample_customer_ids"`
+	TargetCount       int            `json:"target_count"`
+	// ExcludedCount and ExcludedReasons account for customers that matched the
+	// selection but cannot be operated on. Without them target_count reads as
+	// "this is everyone you picked", and an operator cannot tell a small
+	// cohort from a large selection that was mostly dropped.
+	ExcludedCount   int            `json:"excluded_count"`
+	ExcludedReasons map[string]int `json:"excluded_reasons,omitempty"`
+	// ExpectedSideEffects names what confirming this run will do. It is
+	// derived from the operation rather than stored, because it describes the
+	// operation's behaviour today, not a fact about this manifest.
+	ExpectedSideEffects []string          `json:"expected_side_effects,omitempty"`
+	Criteria            string            `json:"criteria"`
+	RuleSetID           string            `json:"rule_set_id,omitempty"`
+	RuleSetVersion      int               `json:"rule_set_version,omitempty"`
+	ConfigDigests       map[string]string `json:"config_digests,omitempty"`
+	Token               string            `json:"token,omitempty"`
+	IdempotencyKey      string            `json:"idempotency_key,omitempty"`
+	Rationale           string            `json:"rationale"`
+	Status              string            `json:"status"`
+	Version             int               `json:"version"`
+	ExpiresAt           time.Time         `json:"expires_at"`
+	CreatedBy           string            `json:"created_by"`
+	CreatedAt           time.Time         `json:"created_at"`
+	ConfirmedAt         *time.Time        `json:"confirmed_at,omitempty"`
+	RunID               string            `json:"run_id,omitempty"`
 }
 
 type PendingEvaluationFilter struct {

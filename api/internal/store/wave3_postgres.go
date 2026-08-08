@@ -411,15 +411,15 @@ func (r *PgWave3Repo) CreateTargetManifest(ctx context.Context, m *domain.Target
 	if m.Token == "" {
 		m.Token = wave3ID()
 	}
-	_, err := r.pool.Exec(ctx, `INSERT INTO target_manifests(id,operation,target_mode,customer_ids,filter,sample_customer_ids,target_count,criteria,rule_set_id,rule_set_version,config_digests,token_hash,idempotency_key,rationale,status,version,expires_at,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,''),$14,$15,$16,$17,$18,$19)`, m.ID, m.Operation, m.TargetMode, wave3JSON(m.CustomerIDs), wave3JSON(m.Filter), wave3JSON(m.SampleCustomerIDs), m.TargetCount, m.Criteria, m.RuleSetID, m.RuleSetVersion, wave3JSON(m.ConfigDigests), tokenHash(m.Token), m.IdempotencyKey, m.Rationale, m.Status, m.Version, m.ExpiresAt, m.CreatedBy, m.CreatedAt)
+	_, err := r.pool.Exec(ctx, `INSERT INTO target_manifests(id,operation,target_mode,customer_ids,filter,sample_customer_ids,target_count,excluded_count,excluded_reasons,criteria,rule_set_id,rule_set_version,config_digests,token_hash,idempotency_key,rationale,status,version,expires_at,created_by,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,''),$16,$17,$18,$19,$20,$21)`, m.ID, m.Operation, m.TargetMode, wave3JSON(m.CustomerIDs), wave3JSON(m.Filter), wave3JSON(m.SampleCustomerIDs), m.TargetCount, m.ExcludedCount, wave3JSON(m.ExcludedReasons), m.Criteria, m.RuleSetID, m.RuleSetVersion, wave3JSON(m.ConfigDigests), tokenHash(m.Token), m.IdempotencyKey, m.Rationale, m.Status, m.Version, m.ExpiresAt, m.CreatedBy, m.CreatedAt)
 	return err
 }
 func (r *PgWave3Repo) GetTargetManifest(ctx context.Context, id string) (*domain.TargetManifest, error) {
 	var m domain.TargetManifest
-	var ids, filter, sample, digests []byte
+	var ids, filter, sample, digests, excludedReasons []byte
 	var confirmed *time.Time
 	var run *string
-	err := r.pool.QueryRow(ctx, `SELECT id::text,operation,target_mode,customer_ids,filter,sample_customer_ids,target_count,criteria,rule_set_id,rule_set_version,config_digests,'',COALESCE(idempotency_key,''),rationale,status,version,expires_at,created_by,created_at,confirmed_at,COALESCE(run_id::text,'') FROM target_manifests WHERE id=$1`, id).Scan(&m.ID, &m.Operation, &m.TargetMode, &ids, &filter, &sample, &m.TargetCount, &m.Criteria, &m.RuleSetID, &m.RuleSetVersion, &digests, &m.Token, &m.IdempotencyKey, &m.Rationale, &m.Status, &m.Version, &m.ExpiresAt, &m.CreatedBy, &m.CreatedAt, &confirmed, &run)
+	err := r.pool.QueryRow(ctx, `SELECT id::text,operation,target_mode,customer_ids,filter,sample_customer_ids,target_count,excluded_count,excluded_reasons,criteria,rule_set_id,rule_set_version,config_digests,'',COALESCE(idempotency_key,''),rationale,status,version,expires_at,created_by,created_at,confirmed_at,COALESCE(run_id::text,'') FROM target_manifests WHERE id=$1`, id).Scan(&m.ID, &m.Operation, &m.TargetMode, &ids, &filter, &sample, &m.TargetCount, &m.ExcludedCount, &excludedReasons, &m.Criteria, &m.RuleSetID, &m.RuleSetVersion, &digests, &m.Token, &m.IdempotencyKey, &m.Rationale, &m.Status, &m.Version, &m.ExpiresAt, &m.CreatedBy, &m.CreatedAt, &confirmed, &run)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &domain.ErrNotFound{Entity: "target_manifest", ID: id}
 	}
@@ -434,6 +434,7 @@ func (r *PgWave3Repo) GetTargetManifest(ctx context.Context, id string) (*domain
 	_ = json.Unmarshal(filter, &m.Filter)
 	_ = json.Unmarshal(sample, &m.SampleCustomerIDs)
 	_ = json.Unmarshal(digests, &m.ConfigDigests)
+	_ = json.Unmarshal(excludedReasons, &m.ExcludedReasons)
 	if m.CustomerIDs == nil {
 		m.CustomerIDs = []string{}
 	}

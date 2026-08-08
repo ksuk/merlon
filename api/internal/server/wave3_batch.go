@@ -115,6 +115,20 @@ func (s *Server) handlePreviewTargetManifest(w http.ResponseWriter, r *http.Requ
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "target exceeds the maximum of 10000 customers")
 		return
 	}
+	// Drop the customers this operation cannot act on before the population is
+	// pinned, and account for them. Leaving them in made target_count promise
+	// work the run would silently skip.
+	eligible, excluded, err := s.partitionEligibleTargets(r.Context(), ids, req.Operation)
+	if err != nil {
+		writeWave3Error(w, err)
+		return
+	}
+	if len(eligible) == 0 {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed,
+			"no target is eligible for this operation; the run would do nothing")
+		return
+	}
+	ids = eligible
 	sample := append([]string(nil), ids...)
 	if len(sample) > 20 {
 		sample = sample[:20]
@@ -133,7 +147,7 @@ func (s *Server) handlePreviewTargetManifest(w http.ResponseWriter, r *http.Requ
 		criteria = string(encoded)
 	}
 	token := generateID() + generateID()
-	manifest := &domain.TargetManifest{ID: generateID(), Operation: req.Operation, TargetMode: req.TargetMode, CustomerIDs: ids, Filter: req.Filter, SampleCustomerIDs: sample, TargetCount: len(ids), Criteria: criteria, RuleSetID: req.RuleSetID, RuleSetVersion: req.RuleSetVersion, ConfigDigests: copyStringMap(s.configDigests), Token: token, IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")), Rationale: req.Rationale, Status: "preview", Version: 1, ExpiresAt: time.Now().UTC().Add(ttl), CreatedBy: resolveAuditUserID(r), CreatedAt: time.Now().UTC()}
+	manifest := &domain.TargetManifest{ID: generateID(), Operation: req.Operation, TargetMode: req.TargetMode, CustomerIDs: ids, Filter: req.Filter, SampleCustomerIDs: sample, TargetCount: len(ids), ExcludedCount: totalExcluded(excluded), ExcludedReasons: excluded, ExpectedSideEffects: expectedSideEffects(req.Operation), Criteria: criteria, RuleSetID: req.RuleSetID, RuleSetVersion: req.RuleSetVersion, ConfigDigests: copyStringMap(s.configDigests), Token: token, IdempotencyKey: firstNonEmpty(req.IdempotencyKey, r.Header.Get("Idempotency-Key")), Rationale: req.Rationale, Status: "preview", Version: 1, ExpiresAt: time.Now().UTC().Add(ttl), CreatedBy: resolveAuditUserID(r), CreatedAt: time.Now().UTC()}
 	if err := repo.CreateTargetManifest(r.Context(), manifest); err != nil {
 		writeWave3Error(w, err)
 		return
@@ -381,6 +395,10 @@ func (s *Server) handleGetTargetManifest(w http.ResponseWriter, r *http.Request)
 	// The raw confirmation token is write-only: it is returned once from the
 	// preview response and never from a read or a later confirmation response.
 	m.Token = ""
+	// Side effects describe what the operation does now, so they are derived on
+	// read rather than frozen into the row. A manifest must not keep asserting
+	// behaviour the code no longer has.
+	m.ExpectedSideEffects = expectedSideEffects(m.Operation)
 	writeJSON(w, http.StatusOK, m)
 }
 
