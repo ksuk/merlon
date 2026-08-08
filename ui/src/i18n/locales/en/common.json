@@ -693,7 +693,14 @@
       "riskScore": "Risk score",
       "riskTier": "Risk tier",
       "unscored": "Unscored",
-      "lastScored": "Last scored"
+      "lastScored": "Last scored",
+      "recommended": "Recommended",
+      "inactiveRuleSet": "Inactive",
+      "matchedOn": "Matched on {{match}}",
+      "selectionPolicyVersion": "Rule selection policy {{version}}",
+      "tierReason": "Why this tier",
+      "tierThresholds": "Tier bands",
+      "notReconciled": "The factor contributions do not add up to the recorded score (difference {{delta}})"
     },
     "screening": {
       "title": "Screening result",
@@ -796,7 +803,8 @@
         "businessMeaning": "Business meaning"
       },
       "total": "Reconciled total: {{score}}",
-      "fallback": "Fallback / unresolved"
+      "fallback": "Fallback / unresolved",
+      "contributionTotal": "Sum of contributions: {{total}}"
     },
     "identityHistory": {
       "title": "Identity change history",
@@ -806,6 +814,31 @@
         "actor": "Actor",
         "changedFields": "Changed fields",
         "rationale": "Rationale"
+      }
+    },
+    "scoreDiff": {
+      "title": "What this scoring changed",
+      "score": "Score {{before}} to {{after}}",
+      "tier": "Tier {{before}} to {{after}}",
+      "factors": "{{count}} factors changed"
+    },
+    "override": {
+      "title": "Tier override awaiting approval",
+      "pendingNotice": "The customer is still on the computed tier. The proposed tier takes effect only once a second person approves it.",
+      "recorded": "A tier override from {{computed}} to {{proposed}} was recorded as a proposal awaiting approval.",
+      "computed": "Computed {{tier}}",
+      "proposed": "Proposed {{tier}}",
+      "reason": "Reason: {{reason}}",
+      "requestedBy": "Requested by {{actor}} at {{time}}",
+      "documents": "Supporting documents: {{documents}}",
+      "rationale": "Decision rationale",
+      "rationaleRequired": "A decision rationale is required",
+      "approve": "Approve",
+      "reject": "Reject",
+      "status": {
+        "pending_approval": "Awaiting approval",
+        "approved": "Approved",
+        "rejected": "Rejected"
       }
     }
   },

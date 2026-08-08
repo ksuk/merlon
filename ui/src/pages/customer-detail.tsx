@@ -12,7 +12,7 @@ import {
 import { CountrySelect, IdentityFields } from "@/components/identity-fields"
 import { useApi } from "@/hooks/use-api"
 import { usePolicy } from "@/hooks/use-policy"
-import { api, type Customer, type EDDCompletionStatus, type RiskTier, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
+import { api, type CDDScoreOverride, type Customer, type EDDCompletionStatus, type Factor, type RiskTier, type ScoreRecord, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
 import { identityRequirements } from "@/lib/identity"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
@@ -64,6 +64,27 @@ function identityValue(customer: { attributes: Record<string, unknown> }, key: s
   return typeof value === "string" ? value : ""
 }
 
+interface ScoreDiff {
+  before: { score?: number; tier?: RiskTier; factors: Factor[] }
+  after: ScoreRecord
+  pendingOverride?: CDDScoreOverride
+}
+
+// Factors whose contribution moved. contribution, not score: since Wave 3
+// score is the factor's own normalised value and contribution is its weighted
+// share of the total, so only the latter says what changed the result.
+function changedFactorNames(diff: ScoreDiff): string[] {
+  const before = new Map(diff.before.factors.map((factor) => [`${factor.axis}/${factor.name}`, factor.contribution ?? 0]))
+  const names: string[] = []
+  for (const factor of diff.after.factors ?? []) {
+    const key = `${factor.axis}/${factor.name}`
+    if ((before.get(key) ?? 0) !== (factor.contribution ?? 0)) names.push(factor.name)
+    before.delete(key)
+  }
+  for (const key of before.keys()) names.push(key.split("/")[1])
+  return names
+}
+
 function formatCountry(code: string, locale: string) {
   try { return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code } catch { return code }
 }
@@ -93,9 +114,25 @@ export function CustomerDetailPage() {
     useCallback(() => api.customers.investigation(id!), [id]),
     requestKey,
   )
-  const { data: cddRules } = useApi(
-    useCallback(() => api.rules.list({ type: "CDD_WEIGHT", activeOnly: true }), []),
+  // Which rule sets apply is a policy statement from the server, not the
+  // order the generic rule listing happened to return.
+  const { data: cddCandidates } = useApi(
+    useCallback(() => api.customers.cddRuleSets(id!), [id]),
+    requestKey,
   )
+  const { data: scoreOverrides } = useApi(
+    useCallback(() => api.customers.scoreOverrides(id!), [id]),
+    requestKey,
+  )
+  const { data: scoreExplanation } = useApi(
+    useCallback(() => api.customers.scoreExplanation(id!), [id]),
+    requestKey,
+  )
+  // Role decides whether the scoring and approval controls are offered at
+  // all. A deployment with authentication disabled answers with an error
+  // here, which leaves the controls visible exactly as before.
+  const { data: currentUser } = useApi(useCallback(() => api.auth.me(), []))
+  const readOnly = currentUser?.role === "viewer"
   const { data: kyc } = usePolicy("kyc_required_fields")
   const { data: eddPolicy } = usePolicy("edd")
   const { data: eddEvents } = useApi(
@@ -124,9 +161,18 @@ export function CustomerDetailPage() {
   const [eddCaseID, setEddCaseID] = useState("")
   const [eddSubmitting, setEddSubmitting] = useState(false)
   const [eddError, setEddError] = useState<string | null>(null)
+  const [scoreDiff, setScoreDiff] = useState<ScoreDiff | null>(null)
+  const [overrideRationale, setOverrideRationale] = useState<Record<string, string>>({})
+  const [decidingOverride, setDecidingOverride] = useState<string | null>(null)
   const statusRef = useRef<HTMLSelectElement>(null)
 
-  const effectiveRuleSet = selectedRuleSet || cddRules?.data?.[0]?.name || ""
+  // A deployment without the rule or override store answers these with an
+  // error payload rather than a list, so the shape is checked before use.
+  const candidates = Array.isArray(cddCandidates?.data) ? cddCandidates.data : []
+  const recommendedCandidate = candidates.find((candidate) => candidate.recommended)
+  const effectiveRuleSet = selectedRuleSet || recommendedCandidate?.id || ""
+  const pendingOverrides = (Array.isArray(scoreOverrides) ? scoreOverrides : []).filter((override) => override.status === "pending_approval")
+  const eddEventList = Array.isArray(eddEvents) ? eddEvents : []
   const { required: requiredIdentityFields, fields: identityFields } = identityRequirements(kyc?.document, customer?.customer_type ?? "")
 
   // The draft is seeded from the record at the moment editing starts, so a
@@ -155,13 +201,38 @@ export function CustomerDetailPage() {
     setScoring(true)
     setMutationError(null)
     try {
-      await api.customers.score(id, effectiveRuleSet, { rationale: scoreRationale.trim(), confirmed: true })
+      // Captured before the call so the panel can state what actually
+      // changed. A blind refresh left the operator to remember the previous
+      // score themselves.
+      const before = { score: customer?.risk_score, tier: customer?.risk_tier, factors: scores?.[0]?.factors ?? [] }
+      const response = await api.customers.score(id, effectiveRuleSet, { rationale: scoreRationale.trim(), confirmed: true })
+      setScoreDiff({ before, after: response.score, pendingOverride: response.pending_override })
       setScoreConfirmation(false)
       setRefreshVersion((version) => version + 1)
     } catch (err) {
       setMutationError(err instanceof Error ? err.message : String(err))
     } finally {
       setScoring(false)
+    }
+  }
+
+  async function handleOverrideDecision(override: CDDScoreOverride, reject: boolean) {
+    if (!id) return
+    const rationale = overrideRationale[override.id]?.trim() ?? ""
+    if (!rationale) {
+      setMutationError(t("customerDetail.override.rationaleRequired"))
+      return
+    }
+    setDecidingOverride(override.id)
+    setMutationError(null)
+    try {
+      await api.customers.decideScoreOverride(id, override.id, { rationale, expected_version: override.version, reject })
+      setOverrideRationale((current) => ({ ...current, [override.id]: "" }))
+      setRefreshVersion((version) => version + 1)
+    } catch (err) {
+      setMutationError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDecidingOverride(null)
     }
   }
 
@@ -384,10 +455,12 @@ export function CustomerDetailPage() {
                 <Search className={`h-4 w-4 ${screening ? "animate-pulse" : ""}`} />
                 {t("customerDetail.riskAssessment.screenButton")}
               </Button>
-              <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
-                <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
-                {scoreConfirmation ? t("customerDetail.riskAssessment.confirmScore") : t("customerDetail.riskAssessment.scoreButton")}
-              </Button>
+              {!readOnly && (
+                <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
+                  <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
+                  {scoreConfirmation ? t("customerDetail.riskAssessment.confirmScore") : t("customerDetail.riskAssessment.scoreButton")}
+                </Button>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -402,8 +475,28 @@ export function CustomerDetailPage() {
                 <label htmlFor="cdd-rule-set" className="text-muted-foreground">{t("customerDetail.riskAssessment.ruleSet")}</label>
                 <select id="cdd-rule-set" aria-label={t("customerDetail.riskAssessment.ruleSet")} value={effectiveRuleSet} onChange={(event) => { setSelectedRuleSet(event.target.value); setScoreConfirmation(false) }} className="w-full rounded-md border bg-background px-2 py-1">
                   <option value="">{t("customerDetail.riskAssessment.selectRuleSet")}</option>
-                  {(cddRules?.data ?? []).map((rule) => <option key={`${rule.name}-${rule.version}`} value={rule.name}>{rule.name} v{rule.version} · {rule.description ?? rule.name}</option>)}
+                  {candidates.map((candidate) => (
+                    <option key={`${candidate.id}-${candidate.version}`} value={candidate.id}>
+                      {candidate.name} v{candidate.version}
+                      {candidate.recommended ? ` · ${t("customerDetail.riskAssessment.recommended")}` : ""}
+                      {candidate.matched_on ? ` · ${candidate.matched_on}` : ""}
+                    </option>
+                  ))}
                 </select>
+                {candidates.length > 0 && (
+                  <ul className="space-y-0.5 text-xs text-muted-foreground">
+                    {candidates.map((candidate) => (
+                      <li key={candidate.id} className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono">{candidate.name}</span>
+                        {candidate.recommended && <Badge variant="low">{t("customerDetail.riskAssessment.recommended")}</Badge>}
+                        {!candidate.is_active && <Badge variant="secondary">{t("customerDetail.riskAssessment.inactiveRuleSet")}</Badge>}
+                        {candidate.matched_on && <span>{t("customerDetail.riskAssessment.matchedOn", { match: candidate.matched_on })}</span>}
+                        <span className="font-mono">{candidate.digest.slice(0, 12)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {cddCandidates?.policy_version && <p className="text-xs text-muted-foreground">{t("customerDetail.riskAssessment.selectionPolicyVersion", { version: cddCandidates.policy_version })}</p>}
               </div>
               <div className="space-y-1">
                 <label htmlFor="score-rationale" className="text-muted-foreground">{t("customerDetail.riskAssessment.rationale")}</label>
@@ -423,12 +516,90 @@ export function CustomerDetailPage() {
                 <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.lastScored")}</dt>
                 <dd>{customer.last_scored_at ? formatDateTime(customer.last_scored_at, i18n.language) : "-"}</dd>
               </div>
+              {scoreExplanation?.tier_reason && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.tierReason")}</dt>
+                  <dd className="text-right">{scoreExplanation.tier_reason}</dd>
+                </div>
+              )}
+              {scoreExplanation?.tier_thresholds && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.tierThresholds")}</dt>
+                  <dd className="text-right font-mono text-xs">{Object.entries(scoreExplanation.tier_thresholds).map(([tier, band]) => `${tier}: ${band[0]}-${band[1]}`).join(" / ")}</dd>
+                </div>
+              )}
+              {scoreExplanation?.reconciled === false && (
+                <p role="alert" className="text-sm text-destructive">
+                  {t("customerDetail.riskAssessment.notReconciled", { delta: (scoreExplanation.reconciliation_delta ?? 0).toFixed(4) })}
+                </p>
+              )}
             </dl>
           </CardContent>
         </Card>
       </div>
 
       {mutationError && <p role="alert" className="text-sm text-destructive">{mutationError}</p>}
+
+      {scoreDiff && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("customerDetail.scoreDiff.title")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p>{t("customerDetail.scoreDiff.score", { before: scoreDiff.before.score?.toFixed(1) ?? "-", after: scoreDiff.after.score.toFixed(1) })}</p>
+            <p>{t("customerDetail.scoreDiff.tier", {
+              before: scoreDiff.before.tier ? t(`customers.tier.${scoreDiff.before.tier}`) : "-",
+              after: t(`customers.tier.${scoreDiff.after.tier}`),
+            })}</p>
+            <p>{t("customerDetail.scoreDiff.factors", { count: changedFactorNames(scoreDiff).length })}</p>
+            {changedFactorNames(scoreDiff).length > 0 && <p className="font-mono text-xs">{changedFactorNames(scoreDiff).join(", ")}</p>}
+            {scoreDiff.pendingOverride && (
+              <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-950">
+                {t("customerDetail.override.recorded", {
+                  computed: t(`customers.tier.${scoreDiff.pendingOverride.computed_tier}`),
+                  proposed: t(`customers.tier.${scoreDiff.pendingOverride.proposed_tier}`),
+                })}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {pendingOverrides.length > 0 && (
+        <Card className="border-amber-300">
+          <CardHeader>
+            <CardTitle className="text-base">{t("customerDetail.override.title")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Until one of these is approved the customer's tier is still the
+                computed one; saying so is what makes the proposal legible. */}
+            <p className="text-sm text-muted-foreground">{t("customerDetail.override.pendingNotice")}</p>
+            {pendingOverrides.map((override) => (
+              <div key={override.id} className="space-y-2 rounded-md border p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant={TIER_VARIANT[override.computed_tier]}>{t("customerDetail.override.computed", { tier: t(`customers.tier.${override.computed_tier}`) })}</Badge>
+                  <span aria-hidden="true">→</span>
+                  <Badge variant={TIER_VARIANT[override.proposed_tier]}>{t("customerDetail.override.proposed", { tier: t(`customers.tier.${override.proposed_tier}`) })}</Badge>
+                  <Badge variant="outline">{t(`customerDetail.override.status.${override.status}`)}</Badge>
+                </div>
+                <p>{t("customerDetail.override.reason", { reason: override.reason })}</p>
+                <p className="text-xs text-muted-foreground">{t("customerDetail.override.requestedBy", { actor: override.requested_by, time: formatDateTime(override.requested_at, i18n.language) })}</p>
+                {(override.supporting_documents?.length ?? 0) > 0 && <p className="text-xs text-muted-foreground">{t("customerDetail.override.documents", { documents: override.supporting_documents?.join(", ") })}</p>}
+                {!readOnly && (
+                  <>
+                    <label htmlFor={`override-rationale-${override.id}`} className="mb-1 block text-xs font-medium">{t("customerDetail.override.rationale")}</label>
+                    <input id={`override-rationale-${override.id}`} aria-required="true" value={overrideRationale[override.id] ?? ""} onChange={(event) => setOverrideRationale((current) => ({ ...current, [override.id]: event.target.value }))} className="w-full rounded-md border bg-background px-2 py-1 text-sm" />
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={decidingOverride === override.id} onClick={() => handleOverrideDecision(override, false)}>{t("customerDetail.override.approve")}</Button>
+                      <Button size="sm" variant="outline" disabled={decidingOverride === override.id} onClick={() => handleOverrideDecision(override, true)}>{t("customerDetail.override.reject")}</Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -489,11 +660,11 @@ export function CustomerDetailPage() {
                     )}
                   </div>
                   {eddError && <p role="alert" className="text-sm text-destructive">{eddError}</p>}
-                  {(eddEvents?.length ?? 0) > 0 && (
+                  {eddEventList.length > 0 && (
                     <div>
                       <h3 className="mb-1 text-xs font-semibold">{t("customerDetail.investigation.eddEvents")}</h3>
                       <ul className="space-y-1 text-xs">
-                        {eddEvents?.map((event) => (
+                        {eddEventList.map((event) => (
                           <li key={event.id}>
                             {formatDateTime(event.created_at, i18n.language)} · {t(`customerDetail.investigation.eddEventType.${event.event_type}`, { defaultValue: event.event_type })} · {event.actor}
                             {event.rationale ? ` — ${event.rationale}` : ""}
@@ -622,7 +793,7 @@ export function CustomerDetailPage() {
           <CardTitle className="text-base">{t("customerDetail.identityHistory.title")}</CardTitle>
         </CardHeader>
         <CardContent>
-          {identityHistory?.data?.length ? (
+          {Array.isArray(identityHistory?.data) && identityHistory.data.length > 0 ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -724,6 +895,9 @@ export function CustomerDetailPage() {
               </TableBody>
             </Table>
             <p className="mt-2 text-xs text-muted-foreground">{t("customerDetail.scoreFactors.total", { score: scores[0].score.toFixed(2) })}</p>
+            {/* The sum is over contribution: score is now each factor's own
+                normalised value and no longer adds up to the total. */}
+            {scoreExplanation && <p className="text-xs text-muted-foreground">{t("customerDetail.scoreFactors.contributionTotal", { total: scoreExplanation.total_reconciled.toFixed(2) })}</p>}
           </CardContent>
         </Card>
       )}

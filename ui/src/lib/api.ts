@@ -707,11 +707,67 @@ export interface ScreeningResultHistoryEntry {
 
 export interface ScoreExplanation {
   score: ScoreRecord
+  // The sum of factors[].contribution. `reconciled` reports whether it agrees
+  // with the record's own score; before Wave 3 both fields held the same
+  // number, so the total could never disagree and never tested anything.
   total_reconciled: number
+  reconciled?: boolean
+  reconciliation_delta?: number
+  // Score bands the engine used to decide the tier, as [min, max] per tier.
+  // Absent when the configured engine cannot report them.
+  tier_thresholds?: Record<string, [number, number]>
+  tier_reason?: string
   rule_set_id: string
   rule_set_sha256: string
   priority: string
   deterministic: boolean
+}
+
+export interface CDDRuleSetCandidate {
+  id: string
+  name: string
+  version: number
+  is_active: boolean
+  digest: string
+  matched_on?: string
+  priority?: number
+  recommended: boolean
+}
+
+export interface CDDRuleSetCandidates {
+  data: CDDRuleSetCandidate[]
+  policy_version: string
+  // True when the server, not the caller, chooses the rule set.
+  selection_authority?: boolean
+}
+
+export type CDDOverrideStatus = "pending_approval" | "approved" | "rejected"
+
+export interface CDDScoreOverride {
+  id: string
+  customer_id: string
+  score_record_id?: string
+  proposed_tier: RiskTier
+  computed_tier: RiskTier
+  computed_score?: number
+  reason: string
+  evidence?: Record<string, unknown>
+  supporting_documents?: string[]
+  status: CDDOverrideStatus
+  requested_by: string
+  requested_at: string
+  decided_by?: string
+  decided_at?: string
+  decision_rationale?: string
+  version: number
+}
+
+// A score request that carried override evidence answers with the computed
+// record plus the proposal it parked for approval; without evidence the
+// record is returned bare. api.customers.score normalises both into this.
+export interface ScoreResponse {
+  score: ScoreRecord
+  pending_override?: CDDScoreOverride
 }
 
 export type EDDCompletionStatus = "not_required" | "open" | "overdue" | "escalated" | "completed"
@@ -1153,10 +1209,24 @@ export const api = {
       const query = qs.toString()
       return request<PaginatedResponse<CustomerIdentityHistoryEntry>>(`/customers/${encodeURIComponent(id)}/identity-history${query ? `?${query}` : ""}`)
     },
-    score: (id: string, ruleSetId: string, options?: { rule_set_version?: number; rationale?: string; override_evidence?: Record<string, unknown>; confirmed?: boolean }) =>
-      request<ScoreRecord>(`/customers/${encodeURIComponent(id)}/score`, {
+    score: async (id: string, ruleSetId: string, options?: { rule_set_version?: number; rationale?: string; override_evidence?: Record<string, unknown>; confirmed?: boolean }) => {
+      const body = await request<ScoreRecord | ScoreResponse>(`/customers/${encodeURIComponent(id)}/score`, {
         method: "POST",
         body: JSON.stringify({ rule_set_id: ruleSetId, ...options }),
+      })
+      // The envelope has no id of its own; a bare record always does.
+      return "id" in body ? { score: body } : body
+    },
+    cddRuleSets: (id: string) =>
+      request<CDDRuleSetCandidates>(`/customers/${encodeURIComponent(id)}/cdd-rule-sets`),
+    scoreOverrides: (id: string) =>
+      request<CDDScoreOverride[]>(`/customers/${encodeURIComponent(id)}/score-overrides`),
+    // The approver must not be the requester; the server answers 403 when
+    // they are the same person.
+    decideScoreOverride: (id: string, overrideId: string, data: { rationale: string; expected_version: number; reject?: boolean }) =>
+      request<CDDScoreOverride>(`/customers/${encodeURIComponent(id)}/score-overrides/${encodeURIComponent(overrideId)}/approve`, {
+        method: "POST",
+        body: JSON.stringify(data),
       }),
     screen: async (id: string, listIds: string[]) =>
       normalizeScreenResult(await request<ScreenResult>(`/customers/${encodeURIComponent(id)}/screen`, {

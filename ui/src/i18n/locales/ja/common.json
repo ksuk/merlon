@@ -693,7 +693,14 @@
       "riskScore": "リスクスコア",
       "riskTier": "リスクティア",
       "unscored": "未スコア",
-      "lastScored": "最終スコアリング"
+      "lastScored": "最終スコアリング",
+      "recommended": "推奨",
+      "inactiveRuleSet": "無効",
+      "matchedOn": "適用条件 {{match}}",
+      "selectionPolicyVersion": "ルールセット選択ポリシー版 {{version}}",
+      "tierReason": "ティア判定の根拠",
+      "tierThresholds": "ティア境界",
+      "notReconciled": "要因の寄与合計が記録済みスコアと一致しません（差分 {{delta}}）"
     },
     "screening": {
       "title": "スクリーニング結果",
@@ -796,7 +803,8 @@
         "businessMeaning": "業務上の意味"
       },
       "total": "整合した合計: {{score}}",
-      "fallback": "フォールバック / 未解決"
+      "fallback": "フォールバック / 未解決",
+      "contributionTotal": "寄与の合計: {{total}}"
     },
     "identityHistory": {
       "title": "identity 変更履歴",
@@ -806,6 +814,31 @@
         "actor": "実施者",
         "changedFields": "変更項目",
         "rationale": "理由"
+      }
+    },
+    "scoreDiff": {
+      "title": "今回のスコアリングによる変化",
+      "score": "スコア {{before}} → {{after}}",
+      "tier": "ティア {{before}} → {{after}}",
+      "factors": "変化した要因 {{count}} 件"
+    },
+    "override": {
+      "title": "承認待ちのティア上書き",
+      "pendingNotice": "顧客のティアは計算値のままです。提案ティアは第二者の承認後にのみ適用されます。",
+      "recorded": "{{computed}} から {{proposed}} へのティア上書きが、承認待ちの提案として記録されました。",
+      "computed": "計算値 {{tier}}",
+      "proposed": "提案 {{tier}}",
+      "reason": "理由: {{reason}}",
+      "requestedBy": "申請者 {{actor}}（{{time}}）",
+      "documents": "根拠資料: {{documents}}",
+      "rationale": "決裁理由",
+      "rationaleRequired": "決裁理由の入力が必要です",
+      "approve": "承認",
+      "reject": "却下",
+      "status": {
+        "pending_approval": "承認待ち",
+        "approved": "承認済",
+        "rejected": "却下"
       }
     }
   },
