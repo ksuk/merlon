@@ -1,3 +1,4 @@
+import { formatCountry } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -86,9 +87,6 @@ function changedFactorNames(diff: ScoreDiff): string[] {
   return names
 }
 
-function formatCountry(code: string, locale: string) {
-  try { return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code } catch { return code }
-}
 
 export function CustomerDetailPage() {
   const { t, i18n } = useTranslation()

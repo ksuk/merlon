@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
+import { formatCountry } from "@/lib/utils"
 import { TRAVEL_RULE_STATE_VARIANT, travelRuleStateOf } from "@/lib/travel-rule"
 import { ArrowLeft } from "lucide-react"
 import { useCallback } from "react"
@@ -70,6 +71,17 @@ export function TransactionDetailPage() {
     useCallback(() => investigationCustomerID ? api.customers.investigation(investigationCustomerID) : Promise.resolve(null), [investigationCustomerID]),
     investigationCustomerID,
   )
+  // Scoped on the server (#78). The previous version filtered the customer's
+  // investigation payload, which holds one page: a customer with more alerts
+  // than that page silently lost the ones this transaction actually raised.
+  const { data: relatedAlertPage } = useApi(
+    useCallback(() => id ? api.alerts.list({ transactionId: id, limit: 50 }) : Promise.resolve(null), [id]),
+    id,
+  )
+  const { data: relatedCasePage } = useApi(
+    useCallback(() => id ? api.cases.list({ transactionId: id, limit: 50 }) : Promise.resolve(null), [id]),
+    id,
+  )
 
   if (loading) {
     return (
@@ -93,9 +105,8 @@ export function TransactionDetailPage() {
 
   const assessment = txn.travel_rule_assessment
   const travelRuleState = travelRuleStateOf(txn)
-  const relatedAlerts = investigation?.alerts?.filter((alert) => alert.transaction_ids?.includes(txn.id)) ?? []
-  const relatedAlertIDs = new Set(relatedAlerts.map((alert) => alert.id))
-  const relatedCases = investigation?.cases?.filter((item) => item.alert_ids?.some((alertID) => relatedAlertIDs.has(alertID))) ?? []
+  const relatedAlerts = relatedAlertPage?.data ?? []
+  const relatedCases = relatedCasePage?.data ?? []
 
   return (
     <div className="space-y-6">
@@ -135,7 +146,10 @@ export function TransactionDetailPage() {
               {txn.account_id && (
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">{t("transactionDetail.info.accountId")}</dt>
-                  <dd><Link to={`/accounts/${txn.account_id}`} className="text-primary hover:underline font-mono">{txn.account_id}</Link></dd>
+                  {/* There is no /accounts route, so a link here lands on
+                      NotFound. The identifier is still what an investigator
+                      copies into the core banking system. */}
+                  <dd data-testid="transaction-account-id" className="font-mono">{txn.account_id}</dd>
                 </div>
               )}
               <div className="flex justify-between">
@@ -167,7 +181,10 @@ export function TransactionDetailPage() {
               {txn.counterparty_country && (
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">{t("transactionDetail.amountRoute.counterpartyCountry")}</dt>
-                  <dd>{txn.counterparty_country}</dd>
+                  <dd data-testid="transaction-counterparty-country" title={txn.counterparty_country}>
+                    {formatCountry(txn.counterparty_country, i18n.language)}{" "}
+                    <span className="text-xs text-muted-foreground">{txn.counterparty_country}</span>
+                  </dd>
                 </div>
               )}
               {txn.channel && (
@@ -267,31 +284,46 @@ export function TransactionDetailPage() {
         </Card>
       </div>
 
-      {(investigation && (relatedAlerts.length > 0 || relatedCases.length > 0)) && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t("transactionDetail.related.title")}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {relatedAlerts.length > 0 && (
-              <div>
-                <h3 className="mb-1 font-semibold">{t("transactionDetail.related.alerts")}</h3>
-                <ul className="list-inside list-disc">
-                  {relatedAlerts.map((alert) => <li key={alert.id}><Link to={`/alerts/${alert.id}`} className="text-primary hover:underline">{alert.id}</Link> · {alert.description}</li>)}
-                </ul>
-              </div>
+      <Card data-testid="transaction-related">
+        <CardHeader>
+          <CardTitle className="text-base">{t("transactionDetail.related.title")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div>
+            <h3 className="mb-1 font-semibold">{t("transactionDetail.related.alerts")}</h3>
+            {relatedAlerts.length === 0 ? (
+              <p className="text-muted-foreground">{t("transactionDetail.related.none")}</p>
+            ) : (
+              <ul className="space-y-1">
+                {relatedAlerts.map((alert) => (
+                  <li key={alert.id} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2">
+                    <Link to={`/alerts/${alert.id}`} className="text-primary hover:underline">{alert.scenario_id || alert.id}</Link>
+                    <Badge variant={alert.severity}>{t(`alertSeverity.${alert.severity}`, { defaultValue: alert.severity })}</Badge>
+                    <Badge variant="outline">{t(`alertStatus.${alert.status}`, { defaultValue: alert.status })}</Badge>
+                    <span className="ml-auto text-xs text-muted-foreground">{alert.description}</span>
+                  </li>
+                ))}
+              </ul>
             )}
-            {relatedCases.length > 0 && (
-              <div>
-                <h3 className="mb-1 font-semibold">{t("transactionDetail.related.cases")}</h3>
-                <ul className="list-inside list-disc">
-                  {relatedCases.map((item) => <li key={item.id}><Link to={`/cases/${item.id}`} className="text-primary hover:underline">{item.id}</Link> · {item.summary}</li>)}
-                </ul>
-              </div>
+          </div>
+          <div>
+            <h3 className="mb-1 font-semibold">{t("transactionDetail.related.cases")}</h3>
+            {relatedCases.length === 0 ? (
+              <p className="text-muted-foreground">{t("transactionDetail.related.none")}</p>
+            ) : (
+              <ul className="space-y-1">
+                {relatedCases.map((item) => (
+                  <li key={item.id} className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2">
+                    <Link to={`/cases/${item.id}`} className="text-primary hover:underline">{item.summary || item.id}</Link>
+                    <Badge variant={item.priority}>{t(`casePriority.${item.priority}`, { defaultValue: item.priority })}</Badge>
+                    <Badge variant="outline">{t(`caseStatus.${item.status}`, { defaultValue: item.status })}</Badge>
+                  </li>
+                ))}
+              </ul>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

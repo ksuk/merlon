@@ -1285,9 +1285,13 @@ export const api = {
     },
   },
   alerts: {
-    list: (params?: CursorPageParams & { customerId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; severity?: AlertSeverity; scenarioId?: string; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
+    list: (params?: CursorPageParams & { customerId?: string; transactionId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; severity?: AlertSeverity; scenarioId?: string; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
+      // Server-side transaction scoping (#78). Filtering a customer's page
+      // client side silently drops records once the customer has more than
+      // one page of alerts.
+      if (params?.transactionId) qs.set("transaction_id", params.transactionId)
       if (params?.status) qs.set("status", params.status)
       if (params?.active != null) qs.set("active", String(params.active))
       if (params?.terminal != null) qs.set("terminal", String(params.terminal))
@@ -1327,9 +1331,12 @@ export const api = {
       }),
   },
   cases: {
-    list: (params?: CursorPageParams & { customerId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; priority?: CasePriority; disposition?: string; strCandidate?: boolean; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
+    list: (params?: CursorPageParams & { customerId?: string; transactionId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; priority?: CasePriority; disposition?: string; strCandidate?: boolean; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
+      // The server resolves a transaction to its alerts and then to their
+      // cases (#78), so the join is not re-implemented per client.
+      if (params?.transactionId) qs.set("transaction_id", params.transactionId)
       if (params?.status) qs.set("status", params.status)
       if (params?.active != null) qs.set("active", String(params.active))
       if (params?.terminal != null) qs.set("terminal", String(params.terminal))

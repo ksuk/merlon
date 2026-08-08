@@ -709,7 +709,8 @@
     "related": {
       "title": "Related investigation records",
       "alerts": "Related alerts",
-      "cases": "Related cases"
+      "cases": "Related cases",
+      "none": "No related records"
     }
   },
   "customerDetail": {

@@ -709,7 +709,8 @@
     "related": {
       "title": "関連する調査記録",
       "alerts": "関連アラート",
-      "cases": "関連ケース"
+      "cases": "関連ケース",
+      "none": "関連レコードなし"
     }
   },
   "customerDetail": {

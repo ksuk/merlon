@@ -1,3 +1,4 @@
+import { formatCountry } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,7 +18,6 @@ const CUSTOMER_TYPE_KEYS: Record<string, string> = { individual: "individual", c
 
 function formatDate(iso: string, locale: string) { return new Date(iso).toLocaleDateString(locale) }
 function attribute(customer: Customer, key: string) { const value = customer.attributes?.[key]; return typeof value === "string" ? value : "" }
-function formatCountry(code: string, locale: string) { try { return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code } catch { return code } }
 
 export function CustomersPage() {
   const { t, i18n } = useTranslation()
