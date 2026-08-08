@@ -848,6 +848,15 @@ export interface CustomerIdentityHistoryEntry {
   created_at: string
 }
 
+export interface BacktestCohortPreview {
+  customer_count: number
+  transaction_count: number
+  transaction_counted: boolean
+  sample_customer_ids: string[]
+  empty: boolean
+  warnings: string[]
+}
+
 export interface PendingEvaluationStats {
   backlog: number
   by_status: Record<string, number>
@@ -1565,6 +1574,11 @@ export const api = {
     // Rule sets available for comparison, including inactive ones: a candidate
     // is compared before it is activated, so the generic rule listing's
     // active-only view could never offer it.
+    // Cohort preview *before* a job exists (#71). The count that used to be
+    // shown was computed while creating the job, so an operator learned the
+    // cohort was empty only after starting the comparison.
+    previewCohort: (data: { customer_ids?: string[]; customer_filter?: Record<string, unknown> }) =>
+      request<BacktestCohortPreview>("/backtests/preview", { method: "POST", body: JSON.stringify(data) }),
     discoverRules: (params?: CursorPageParams) => {
       const qs = buildCursorQuery(params)
       const query = qs.toString()

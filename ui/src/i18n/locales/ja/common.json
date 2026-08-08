@@ -1085,7 +1085,15 @@
           "affectedCustomers": "影響顧客"
         }
       }
-    }
+    },
+    "columnCustomers": "顧客数",
+    "columnTransactions": "取引数",
+    "columnAlerts": "アラート数",
+    "previewCohort": "対象コホートのプレビュー",
+    "previewCustomers": "顧客: {{count}}件",
+    "previewTransactions": "取引: {{count}}件",
+    "previewEmpty": "このコホートには比較対象がありません。",
+    "previewRun": "実行前にプレビュー"
   },
   "batch": {
     "title": "一括処理",

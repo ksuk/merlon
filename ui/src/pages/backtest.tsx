@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type AffectedBacktestCustomersPage, type BacktestDeltaKind, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
+import { api, type AffectedBacktestCustomersPage, type BacktestCohortPreview, type BacktestDeltaKind, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
 import { FlaskConical, Play, RotateCcw, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -31,6 +31,10 @@ export function BacktestPage() {
   const customers = page?.data
   const discoveredRules = discoveredRulesPage?.data ?? []
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  // #71: the cohort must be previewed before execution, not reported back
+  // from a job that has already started.
+  const [cohortPreview, setCohortPreview] = useState<BacktestCohortPreview | null>(null)
+  const [previewing, setPreviewing] = useState(false)
   const [running, setRunning] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
@@ -145,6 +149,17 @@ export function BacktestPage() {
         pollAbortRef.current = null
         setRunning(false)
       }
+    }
+  }
+
+  async function handlePreviewCohort() {
+    setPreviewing(true)
+    try {
+      setCohortPreview(await api.backtest.previewCohort({ customer_ids: selectedIds }))
+    } catch {
+      setCohortPreview(null)
+    } finally {
+      setPreviewing(false)
     }
   }
 
@@ -318,6 +333,9 @@ export function BacktestPage() {
             {customers && customers.length > 0 && <p className="text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" data-testid="backtest-preview-cohort" disabled={previewing || selectedIds.length === 0} onClick={() => void handlePreviewCohort()}>
+              {t("backtest.previewRun")}
+            </Button>
             <Button size="sm" disabled={running || cancelling || hasActiveJob || selectedIds.length === 0} onClick={handleRun}>
               <Play className="h-4 w-4" />
               {running ? t("backtest.form.running") : t("backtest.form.submit")}
@@ -335,6 +353,19 @@ export function BacktestPage() {
               </Button>
             )}
           </div>
+          {cohortPreview && (
+            <div data-testid="backtest-cohort-preview" className="rounded-md border p-3 text-sm">
+              <p className="font-medium">{t("backtest.previewCohort")}</p>
+              <p>{t("backtest.previewCustomers", { count: cohortPreview.customer_count })}</p>
+              <p>{t("backtest.previewTransactions", { count: cohortPreview.transaction_count })}</p>
+              {cohortPreview.empty && (
+                <p role="alert" className="text-destructive">{t("backtest.previewEmpty")}</p>
+              )}
+              {cohortPreview.warnings?.map((warning) => (
+                <p key={warning} role="alert" className="text-destructive">{warning}</p>
+              ))}
+            </div>
+          )}
           {job && (
             <div className="space-y-1 text-xs text-muted-foreground">
               {t("backtest.job.summary", {
@@ -493,6 +524,9 @@ function DeltaKindBadge({ kind }: { kind?: BacktestDeltaKind }) {
   )
 }
 
+// The three row labels were English literals, so a ja operator read
+// "Customers / Transactions / Alerts" in an otherwise localized comparison.
 function ComparisonColumn({ label, result }: { label: string; result?: BacktestResult }) {
-  return <div className="rounded-md border p-3"><h3 className="text-sm font-semibold">{label}</h3><dl className="mt-2 space-y-1 text-sm"><div className="flex justify-between"><dt className="text-muted-foreground">Customers</dt><dd>{result?.total_customers ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">Transactions</dt><dd>{result?.total_transactions ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">Alerts</dt><dd>{result?.total_alerts ?? "-"}</dd></div></dl></div>
+  const { t } = useTranslation()
+  return <div className="rounded-md border p-3"><h3 className="text-sm font-semibold">{label}</h3><dl className="mt-2 space-y-1 text-sm"><div className="flex justify-between"><dt className="text-muted-foreground">{t("backtest.columnCustomers")}</dt><dd>{result?.total_customers ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">{t("backtest.columnTransactions")}</dt><dd>{result?.total_transactions ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">{t("backtest.columnAlerts")}</dt><dd>{result?.total_alerts ?? "-"}</dd></div></dl></div>
 }

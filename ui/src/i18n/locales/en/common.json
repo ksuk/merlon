@@ -1085,7 +1085,15 @@
           "affectedCustomers": "Affected customers"
         }
       }
-    }
+    },
+    "columnCustomers": "Customers",
+    "columnTransactions": "Transactions",
+    "columnAlerts": "Alerts",
+    "previewCohort": "Preview cohort",
+    "previewCustomers": "Customers: {{count}}",
+    "previewTransactions": "Transactions: {{count}}",
+    "previewEmpty": "This cohort has nothing to compare.",
+    "previewRun": "Preview before running"
   },
   "batch": {
     "title": "Batch",
