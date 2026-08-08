@@ -737,11 +737,36 @@
       "eddRequired": "Enhanced due diligence is required",
       "eddStage": "Current EDD stage: {{stage}}",
       "eddElapsed": "Elapsed: {{days}} day(s)",
-      "eddNext": "Next escalation: {{stage}} ({{days}} day(s) remaining)",
-      "eddCompletion": "Completion status: {{status}}",
       "timeline": "Recent activity",
       "partial": "Some sources could not be loaded: {{sources}}",
-      "freshness": "Read model refreshed: {{time}}"
+      "freshness": "Read model refreshed: {{time}}",
+      "eddDueAt": "Due {{date}}",
+      "eddOverdue": "Overdue by {{days}} days",
+      "eddNextStage": "Next stage {{stage}} at {{date}}",
+      "eddCompletedAt": "Completed at {{date}}",
+      "eddPolicyVersion": "EDD policy version {{version}}",
+      "eddCase": "Open the linked case",
+      "eddCaseId": "Case ID",
+      "eddCaseRequired": "The EDD policy requires a linked case to complete this window",
+      "eddRationale": "Rationale",
+      "eddRationaleRequired": "A rationale is required",
+      "eddComplete": "Complete EDD",
+      "eddReopen": "Reopen EDD",
+      "eddEvents": "EDD history",
+      "eddStatus": {
+        "not_required": "Not required",
+        "open": "Open",
+        "overdue": "Overdue",
+        "escalated": "Escalated",
+        "completed": "Completed"
+      },
+      "eddEventType": {
+        "requested": "Requested",
+        "stage_escalated": "Escalated",
+        "completed": "Completed",
+        "reopened": "Reopened",
+        "closed_on_downgrade": "Closed on tier downgrade"
+      }
     },
     "attributes": {
       "title": "Attributes"

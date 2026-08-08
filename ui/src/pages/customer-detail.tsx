@@ -12,7 +12,7 @@ import {
 import { CountrySelect, IdentityFields } from "@/components/identity-fields"
 import { useApi } from "@/hooks/use-api"
 import { usePolicy } from "@/hooks/use-policy"
-import { api, type Customer, type RiskTier, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
+import { api, type Customer, type EDDCompletionStatus, type RiskTier, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
 import { identityRequirements } from "@/lib/identity"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
@@ -23,6 +23,25 @@ const TIER_VARIANT: Record<RiskTier, "low" | "medium" | "high"> = {
   low: "low",
   medium: "medium",
   high: "high",
+}
+
+// The five completion states an EDD window can be in. `overdue` and
+// `completed` did not exist before: a finished window and one 200 days late
+// both read as "open".
+const EDD_STATUS_VARIANT: Record<EDDCompletionStatus, "low" | "medium" | "high" | "critical" | "secondary"> = {
+  not_required: "secondary",
+  open: "medium",
+  overdue: "critical",
+  escalated: "critical",
+  completed: "low",
+}
+
+const EDD_STATUS_CLASS: Record<EDDCompletionStatus, string> = {
+  not_required: "border-muted bg-muted/40 text-foreground",
+  open: "border-amber-300 bg-amber-50 text-amber-950",
+  overdue: "border-red-300 bg-red-50 text-red-950",
+  escalated: "border-red-300 bg-red-50 text-red-950",
+  completed: "border-green-300 bg-green-50 text-green-950",
 }
 
 const CUSTOMER_TYPE_KEYS: Record<string, string> = {
@@ -78,6 +97,11 @@ export function CustomerDetailPage() {
     useCallback(() => api.rules.list({ type: "CDD_WEIGHT", activeOnly: true }), []),
   )
   const { data: kyc } = usePolicy("kyc_required_fields")
+  const { data: eddPolicy } = usePolicy("edd")
+  const { data: eddEvents } = useApi(
+    useCallback(() => api.customers.eddEvents(id!), [id]),
+    requestKey,
+  )
   const { data: identityHistory } = useApi(
     useCallback(() => api.customers.identityHistory(id!), [id]),
     requestKey,
@@ -96,6 +120,10 @@ export function CustomerDetailPage() {
   const [saving, setSaving] = useState(false)
   const [identityDraft, setIdentityDraft] = useState<Record<string, string>>({})
   const [countryDraft, setCountryDraft] = useState("")
+  const [eddRationale, setEddRationale] = useState("")
+  const [eddCaseID, setEddCaseID] = useState("")
+  const [eddSubmitting, setEddSubmitting] = useState(false)
+  const [eddError, setEddError] = useState<string | null>(null)
   const statusRef = useRef<HTMLSelectElement>(null)
 
   const effectiveRuleSet = selectedRuleSet || cddRules?.data?.[0]?.name || ""
@@ -134,6 +162,35 @@ export function CustomerDetailPage() {
       setMutationError(err instanceof Error ? err.message : String(err))
     } finally {
       setScoring(false)
+    }
+  }
+
+  async function handleEDDAction(action: "complete" | "reopen") {
+    if (!id) return
+    // The server enforces these; validating here keeps the operator from
+    // losing a typed rationale to a 400.
+    if (!eddRationale.trim()) {
+      setEddError(t("customerDetail.investigation.eddRationaleRequired"))
+      return
+    }
+    if (action === "complete" && eddPolicy?.document?.completion?.requires_case_link && !eddCaseID.trim()) {
+      setEddError(t("customerDetail.investigation.eddCaseRequired"))
+      return
+    }
+    setEddSubmitting(true)
+    setEddError(null)
+    try {
+      await api.customers.eddAction(id, action, {
+        rationale: eddRationale.trim(),
+        ...(action === "complete" && eddCaseID.trim() ? { case_id: eddCaseID.trim() } : {}),
+      })
+      setEddRationale("")
+      setEddCaseID("")
+      setRefreshVersion((version) => version + 1)
+    } catch (err) {
+      setEddError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setEddSubmitting(false)
     }
   }
 
@@ -216,6 +273,7 @@ export function CustomerDetailPage() {
     )
   }
 
+  const edd = investigation?.edd
   const matches = screenResult?.matches ?? []
   const durableMatches = durableScreening?.data ?? []
   const latestRun = screeningRuns?.data?.[0]
@@ -391,13 +449,59 @@ export function CustomerDetailPage() {
                   </div>
                 ))}
               </div>
-              {investigation.edd?.required && (
-                <div role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-                  <div className="font-semibold">{t("customerDetail.investigation.eddRequired")}</div>
-                  <div>{t("customerDetail.investigation.eddStage", { stage: investigation.edd.current_stage })}</div>
-                  <div>{t("customerDetail.investigation.eddElapsed", { days: investigation.edd.elapsed_days })}</div>
-                  <div>{t("customerDetail.investigation.eddNext", { stage: investigation.edd.next_stage, days: investigation.edd.remaining_days })}</div>
-                  <div>{t("customerDetail.investigation.eddCompletion", { status: investigation.edd.completion_status })}</div>
+              {edd && edd.completion_status !== "not_required" && (
+                <div role="status" className={`space-y-2 rounded-md border p-3 text-sm ${EDD_STATUS_CLASS[edd.completion_status]}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{t("customerDetail.investigation.eddRequired")}</span>
+                    <Badge variant={EDD_STATUS_VARIANT[edd.completion_status]}>{t(`customerDetail.investigation.eddStatus.${edd.completion_status}`)}</Badge>
+                    {edd.case_id && <Link to={`/cases/${edd.case_id}`} className="text-primary underline-offset-4 hover:underline">{t("customerDetail.investigation.eddCase")}</Link>}
+                  </div>
+                  {/* overdue_days, not remaining_days: the latter is clamped at
+                      zero, so a window 200 days late read the same as one due
+                      today. */}
+                  <div>{(edd.overdue_days ?? 0) > 0
+                    ? t("customerDetail.investigation.eddOverdue", { days: edd.overdue_days })
+                    : t("customerDetail.investigation.eddDueAt", { date: edd.due_at ? formatDateTime(edd.due_at, i18n.language) : "-" })}</div>
+                  <div>{t("customerDetail.investigation.eddStage", { stage: edd.current_stage })}</div>
+                  <div>{t("customerDetail.investigation.eddElapsed", { days: edd.elapsed_days ?? 0 })}</div>
+                  {edd.next_stage && edd.next_stage !== "none" && <div>{t("customerDetail.investigation.eddNextStage", { stage: edd.next_stage, date: edd.next_stage_at ? formatDateTime(edd.next_stage_at, i18n.language) : "-" })}</div>}
+                  {edd.completed_at && <div>{t("customerDetail.investigation.eddCompletedAt", { date: formatDateTime(edd.completed_at, i18n.language) })}</div>}
+                  {edd.policy_version && <div className="text-xs opacity-80">{t("customerDetail.investigation.eddPolicyVersion", { version: edd.policy_version })}</div>}
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="edd-rationale" className="mb-1 block text-xs font-medium">{t("customerDetail.investigation.eddRationale")}</label>
+                      <input id="edd-rationale" aria-required="true" value={eddRationale} onChange={(event) => setEddRationale(event.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm" />
+                    </div>
+                    <div>
+                      <label htmlFor="edd-case-id" className="mb-1 block text-xs font-medium">
+                        {t("customerDetail.investigation.eddCaseId")}
+                        {eddPolicy?.document?.completion?.requires_case_link && <span className="ml-1 text-destructive">*</span>}
+                      </label>
+                      <input id="edd-case-id" aria-required={Boolean(eddPolicy?.document?.completion?.requires_case_link)} value={eddCaseID} onChange={(event) => setEddCaseID(event.target.value)} className="w-full rounded-md border bg-background px-2 py-1 text-sm" />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {edd.completion_status === "completed" ? (
+                      <Button size="sm" variant="outline" disabled={eddSubmitting} onClick={() => handleEDDAction("reopen")}>{t("customerDetail.investigation.eddReopen")}</Button>
+                    ) : (
+                      <Button size="sm" variant="outline" disabled={eddSubmitting} onClick={() => handleEDDAction("complete")}>{t("customerDetail.investigation.eddComplete")}</Button>
+                    )}
+                  </div>
+                  {eddError && <p role="alert" className="text-sm text-destructive">{eddError}</p>}
+                  {(eddEvents?.length ?? 0) > 0 && (
+                    <div>
+                      <h3 className="mb-1 text-xs font-semibold">{t("customerDetail.investigation.eddEvents")}</h3>
+                      <ul className="space-y-1 text-xs">
+                        {eddEvents?.map((event) => (
+                          <li key={event.id}>
+                            {formatDateTime(event.created_at, i18n.language)} · {t(`customerDetail.investigation.eddEventType.${event.event_type}`, { defaultValue: event.event_type })} · {event.actor}
+                            {event.rationale ? ` — ${event.rationale}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               {(investigation.timeline?.length ?? 0) > 0 && (

@@ -737,11 +737,36 @@
       "eddRequired": "継続的顧客管理（EDD）が必要です",
       "eddStage": "EDDステージ: {{stage}}",
       "eddElapsed": "経過: {{days}}日",
-      "eddNext": "次のエスカレーション: {{stage}}（残り{{days}}日）",
-      "eddCompletion": "完了状態: {{status}}",
       "timeline": "最近のアクティビティ",
       "partial": "一部のデータソースを取得できませんでした: {{sources}}",
-      "freshness": "読取モデル更新日時: {{time}}"
+      "freshness": "読取モデル更新日時: {{time}}",
+      "eddDueAt": "期限 {{date}}",
+      "eddOverdue": "期限超過 {{days}} 日",
+      "eddNextStage": "次の段階 {{stage}}（{{date}}）",
+      "eddCompletedAt": "完了日時 {{date}}",
+      "eddPolicyVersion": "EDD ポリシー版 {{version}}",
+      "eddCase": "関連ケースを開く",
+      "eddCaseId": "ケース ID",
+      "eddCaseRequired": "EDD ポリシーにより、完了にはケースの紐付けが必要です",
+      "eddRationale": "理由",
+      "eddRationaleRequired": "理由の入力が必要です",
+      "eddComplete": "EDD を完了",
+      "eddReopen": "EDD を再開",
+      "eddEvents": "EDD 履歴",
+      "eddStatus": {
+        "not_required": "対象外",
+        "open": "実施中",
+        "overdue": "期限超過",
+        "escalated": "エスカレーション済",
+        "completed": "完了"
+      },
+      "eddEventType": {
+        "requested": "要求",
+        "stage_escalated": "段階エスカレーション",
+        "completed": "完了",
+        "reopened": "再開",
+        "closed_on_downgrade": "ティア引き下げによる終了"
+      }
     },
     "attributes": {
       "title": "属性"

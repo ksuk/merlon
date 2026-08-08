@@ -714,6 +714,45 @@ export interface ScoreExplanation {
   deterministic: boolean
 }
 
+export type EDDCompletionStatus = "not_required" | "open" | "overdue" | "escalated" | "completed"
+
+export interface EDDPanel {
+  required: boolean
+  requested_at?: string
+  stage1_last_sent_at?: string
+  stage2_notified_at?: string
+  stage3_notified_at?: string
+  completed_at?: string
+  closed_at?: string
+  close_reason?: string
+  current_stage: string
+  elapsed_days?: number
+  // remaining_days is clamped at zero and cannot express lateness; read
+  // overdue_days instead, which counts whole days past the due boundary.
+  remaining_days?: number
+  overdue_days?: number
+  due_at?: string
+  next_stage?: string
+  next_stage_at?: string
+  completion_status: EDDCompletionStatus
+  case_id?: string
+  policy_version?: string
+}
+
+export type EDDEventType = "requested" | "stage_escalated" | "completed" | "reopened" | "closed_on_downgrade"
+
+export interface EDDEvent {
+  id: string
+  customer_id: string
+  event_type: EDDEventType
+  stage?: string
+  rationale?: string
+  case_id?: string
+  actor: string
+  policy_version?: string
+  created_at: string
+}
+
 export interface CustomerIdentityHistoryEntry {
   id: string
   customer_id: string
@@ -732,7 +771,7 @@ export interface CustomerInvestigation {
   screening_results: ScreeningResultRecord[]
   score_history: ScoreRecord[]
   timeline?: Array<{ id: string; kind: string; entity_id: string; summary: string; created_at: string }>
-  edd?: { required: boolean; requested_at?: string; stage1_last_sent_at?: string; stage2_notified_at?: string; stage3_notified_at?: string; current_stage: string; elapsed_days: number; remaining_days: number; next_stage: string; next_stage_at?: string; completion_status: string }
+  edd?: EDDPanel
   pagination?: Record<string, PaginationMeta>
   freshness: string
   partial_failures: string[]
@@ -1103,6 +1142,12 @@ export const api = {
     },
     investigation: (id: string) =>
       request<CustomerInvestigation>(`/customers/${encodeURIComponent(id)}/investigation`),
+    // Closing or reopening an EDD window. rationale is required by the edd
+    // policy for a reopen and, by default, for a completion too.
+    eddAction: (id: string, action: "complete" | "reopen", data: { rationale: string; case_id?: string; expected_updated_at?: string }) =>
+      request<EDDPanel>(`/customers/${encodeURIComponent(id)}/edd/${action}`, { method: "POST", body: JSON.stringify(data) }),
+    eddEvents: (id: string) =>
+      request<EDDEvent[]>(`/customers/${encodeURIComponent(id)}/edd-events`),
     identityHistory: (id: string, params?: CursorPageParams) => {
       const qs = buildCursorQuery(params)
       const query = qs.toString()
