@@ -599,7 +599,15 @@
       "metadata": "メタデータJSON",
       "travelEvidence": "トラベルルール証跡JSON",
       "invalidJson": "メタデータと証跡は正しいJSONで入力してください。",
-      "submit": "登録"
+      "submit": "登録",
+      "travelThreshold": "{{amount}} {{currency}} 以上で適用（ポリシー {{version}}）",
+      "noEvidenceRequired": "この相手方区分では通知事項の入力は不要です",
+      "counterpartyTypeLabel": {
+        "vasp": "VASP",
+        "unhosted_wallet": "アンホステッドウォレット",
+        "unknown": "不明",
+        "exempt": "適用除外"
+      }
     },
     "direction": {
       "inbound": "入金",
@@ -613,7 +621,8 @@
         "amount": "金額",
         "counterpartyCountry": "相手先国",
         "channel": "チャネル",
-        "executedAt": "実行日時"
+        "executedAt": "実行日時",
+        "travelRule": "トラベルルール"
       },
       "empty": "取引データがありません"
     }
@@ -648,7 +657,54 @@
       "reason": "対象外理由",
       "counterparty": "カウンターパーティ",
       "metadata": "メタデータ",
-      "evidence": "トラベルルール証跡"
+      "evidence": "トラベルルール証跡",
+      "verdict": "サーバー判定",
+      "clientAssertion": "クライアント申告",
+      "notAsserted": "申告なし",
+      "threshold": "閾値",
+      "thresholdValue": "{{amount}} {{currency}}",
+      "reasonCode": "理由コード",
+      "missingFields": "不足している通知事項",
+      "assessedAt": "判定日時",
+      "conflict": "クライアント申告とポリシー判定が一致していません",
+      "conflictClient": "クライアント申告: {{value}}",
+      "conflictServer": "ポリシー判定: {{value}}",
+      "state": {
+        "not_assessed": "未評価",
+        "not_applicable": "該当なし",
+        "complete": "該当・通知事項充足",
+        "incomplete": "該当・通知事項不足"
+      },
+      "stateDescription": {
+        "not_assessed": "トラベルルールポリシー導入前に受け付けた取引のため、判定自体が行われていません。",
+        "not_applicable": "ポリシー判定の結果、この移転にトラベルルールは適用されません。",
+        "complete": "トラベルルールが適用され、必要な通知事項はすべて揃っています。",
+        "incomplete": "トラベルルールが適用されますが、必要な通知事項が不足しています。"
+      },
+      "reasonCodeLabel": {
+        "below_threshold": "閾値未満",
+        "non_covered_channel": "対象外チャネル",
+        "domestic_internal_transfer": "国内内部移転",
+        "fiat_only": "法定通貨のみ",
+        "exempt_counterparty": "適用除外の相手方",
+        "other": "その他"
+      },
+      "field": {
+        "counterparty_type": "相手方区分",
+        "originator": "送付人",
+        "beneficiary": "受取人",
+        "travel_rule_status": "申告ステータス",
+        "name": "氏名・名称",
+        "account_number": "口座番号",
+        "vasp_name": "VASP 名",
+        "originator_name": "送付人氏名",
+        "originator_account": "送付人口座番号",
+        "originator_vasp_name": "送付人側 VASP",
+        "beneficiary_name": "受取人氏名",
+        "beneficiary_account": "受取人口座番号",
+        "beneficiary_vasp_name": "受取人側 VASP",
+        "wallet_attribution_method": "ウォレット帰属確認方法"
+      }
     },
     "related": {
       "title": "関連する調査記録",

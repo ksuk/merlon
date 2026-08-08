@@ -337,11 +337,33 @@ export interface Transaction {
   counterparty?: Record<string, unknown>
   metadata?: Record<string, unknown>
   idempotency_key?: string
+  // What the submitting system asserted.
   travel_rule_applicable?: boolean
   travel_rule_evidence?: Record<string, unknown>
   travel_rule_not_applicable_reason?: string
+  travel_rule_not_applicable_reason_code?: string
+  // The server's own status, derived from the evidence present rather than
+  // from the client's assertion.
+  travel_rule_status?: "complete" | "incomplete" | "not_applicable"
+  // The recorded verdict. Null on transactions accepted before the policy
+  // existed: that is neither "not applicable" nor "unknown", it means the
+  // system never assessed this transaction at all.
+  travel_rule_assessment?: TravelRuleAssessment | null
   executed_at: string
   created_at: string
+}
+
+export interface TravelRuleAssessment {
+  policy_version: string
+  applicable: boolean
+  reason_code?: string
+  missing_fields?: string[]
+  threshold: number
+  currency: string
+  // The client's assertion and the policy's conclusion disagree; both are
+  // kept and a reviewer decides.
+  conflict?: boolean
+  evaluated_at: string
 }
 
 export interface ScoreRecord {
@@ -1375,7 +1397,7 @@ export const api = {
     listAll: (customerId: string) =>
       listAllPages((page) => api.transactions.list(customerId, page)),
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
-    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; executed_at: string }, idempotencyKey?: string) =>
+    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; travel_rule_not_applicable_reason_code?: string; executed_at: string }, idempotencyKey?: string) =>
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data), ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}) }),
   },
   audit: {

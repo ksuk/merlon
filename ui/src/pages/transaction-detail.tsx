@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
+import { TRAVEL_RULE_STATE_VARIANT, travelRuleStateOf } from "@/lib/travel-rule"
 import { ArrowLeft } from "lucide-react"
 import { useCallback } from "react"
 import { useTranslation } from "react-i18next"
@@ -19,6 +20,43 @@ function formatDateTime(iso: string, locale: string) {
 
 function formatAmount(amount: number, currency: string, locale: string) {
   return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount)
+}
+
+// A labelled, recursive renderer for the free-shape counterparty, evidence
+// and metadata payloads. Rendering them as JSON.stringify put raw braces in
+// front of an operator; rendering only known keys would silently drop
+// whatever an integration added.
+function StructuredValue({ value }: { value: unknown }) {
+  const { t } = useTranslation()
+  if (value === null || value === undefined || value === "") {
+    return <span className="text-muted-foreground">-</span>
+  }
+  if (typeof value === "boolean") {
+    return <span>{value ? t("transactionDetail.travelRule.yes") : t("transactionDetail.travelRule.no")}</span>
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="text-muted-foreground">-</span>
+    return (
+      <ul className="list-inside list-disc">
+        {value.map((item, index) => <li key={index}><StructuredValue value={item} /></li>)}
+      </ul>
+    )
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+    if (entries.length === 0) return <span className="text-muted-foreground">-</span>
+    return (
+      <dl className="space-y-1">
+        {entries.map(([key, child]) => (
+          <div key={key} className="flex justify-between gap-4">
+            <dt className="text-muted-foreground">{t(`transactionDetail.travelRule.field.${key}`, { defaultValue: key })}</dt>
+            <dd className="text-right"><StructuredValue value={child} /></dd>
+          </div>
+        ))}
+      </dl>
+    )
+  }
+  return <span>{String(value)}</span>
 }
 
 export function TransactionDetailPage() {
@@ -53,6 +91,8 @@ export function TransactionDetailPage() {
     )
   }
 
+  const assessment = txn.travel_rule_assessment
+  const travelRuleState = travelRuleStateOf(txn)
   const relatedAlerts = investigation?.alerts?.filter((alert) => alert.transaction_ids?.includes(txn.id)) ?? []
   const relatedAlertIDs = new Set(relatedAlerts.map((alert) => alert.id))
   const relatedCases = investigation?.cases?.filter((item) => item.alert_ids?.some((alertID) => relatedAlertIDs.has(alertID))) ?? []
@@ -154,32 +194,72 @@ export function TransactionDetailPage() {
           </CardHeader>
           <CardContent>
             <dl className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-muted-foreground">{t("transactionDetail.travelRule.applicable")}</dt>
-                <dd>{txn.travel_rule_applicable == null ? t("transactionDetail.travelRule.legacy") : txn.travel_rule_applicable ? t("transactionDetail.travelRule.yes") : t("transactionDetail.travelRule.no")}</dd>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t("transactionDetail.travelRule.verdict")}</dt>
+                <dd className="text-right">
+                  <Badge variant={TRAVEL_RULE_STATE_VARIANT[travelRuleState]}>{t(`transactionDetail.travelRule.state.${travelRuleState}`)}</Badge>
+                </dd>
               </div>
-              {txn.travel_rule_not_applicable_reason && (
+              <p className="text-xs text-muted-foreground">{t(`transactionDetail.travelRule.stateDescription.${travelRuleState}`)}</p>
+              {assessment && (
+                <>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">{t("transactionDetail.travelRule.threshold")}</dt>
+                    <dd className="text-right">{t("transactionDetail.travelRule.thresholdValue", { amount: assessment.threshold, currency: assessment.currency })}</dd>
+                  </div>
+                  {assessment.reason_code && (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">{t("transactionDetail.travelRule.reasonCode")}</dt>
+                      <dd className="text-right">{t(`transactionDetail.travelRule.reasonCodeLabel.${assessment.reason_code}`, { defaultValue: assessment.reason_code })}</dd>
+                    </div>
+                  )}
+                  {(assessment.missing_fields?.length ?? 0) > 0 && (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-muted-foreground">{t("transactionDetail.travelRule.missingFields")}</dt>
+                      <dd role="alert" className="text-right text-destructive">{assessment.missing_fields?.map((field) => t(`transactionDetail.travelRule.field.${field}`, { defaultValue: field })).join(", ")}</dd>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">{t("transactionDetail.travelRule.assessedAt")}</dt>
+                    <dd className="text-right">{formatDateTime(assessment.evaluated_at, i18n.language)} · {assessment.policy_version}</dd>
+                  </div>
+                  {assessment.conflict && (
+                    // Both readings are kept: the institution asserted one
+                    // thing and the configured policy implies another.
+                    <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-950">
+                      <div className="font-semibold">{t("transactionDetail.travelRule.conflict")}</div>
+                      <div>{t("transactionDetail.travelRule.conflictClient", { value: txn.travel_rule_applicable ? t("transactionDetail.travelRule.yes") : t("transactionDetail.travelRule.no") })}</div>
+                      <div>{t("transactionDetail.travelRule.conflictServer", { value: assessment.applicable ? t("transactionDetail.travelRule.yes") : t("transactionDetail.travelRule.no") })}</div>
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">{t("transactionDetail.travelRule.clientAssertion")}</dt>
+                <dd className="text-right">{txn.travel_rule_applicable == null ? t("transactionDetail.travelRule.notAsserted") : txn.travel_rule_applicable ? t("transactionDetail.travelRule.yes") : t("transactionDetail.travelRule.no")}</dd>
+              </div>
+              {(txn.travel_rule_not_applicable_reason || txn.travel_rule_not_applicable_reason_code) && (
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">{t("transactionDetail.travelRule.reason")}</dt>
-                  <dd className="text-right">{txn.travel_rule_not_applicable_reason}</dd>
+                  <dd className="text-right">{txn.travel_rule_not_applicable_reason_code ? t(`transactionDetail.travelRule.reasonCodeLabel.${txn.travel_rule_not_applicable_reason_code}`, { defaultValue: txn.travel_rule_not_applicable_reason_code }) : txn.travel_rule_not_applicable_reason}</dd>
                 </div>
               )}
               {txn.counterparty && (
                 <div>
                   <dt className="mb-1 text-muted-foreground">{t("transactionDetail.travelRule.counterparty")}</dt>
-                  <dd><pre className="overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(txn.counterparty, null, 2)}</pre></dd>
+                  <dd className="rounded bg-muted/50 p-2"><StructuredValue value={txn.counterparty} /></dd>
                 </div>
               )}
               {txn.travel_rule_evidence && (
                 <div>
                   <dt className="mb-1 text-muted-foreground">{t("transactionDetail.travelRule.evidence")}</dt>
-                  <dd><pre className="overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(txn.travel_rule_evidence, null, 2)}</pre></dd>
+                  <dd className="rounded bg-muted/50 p-2"><StructuredValue value={txn.travel_rule_evidence} /></dd>
                 </div>
               )}
               {txn.metadata && (
                 <div>
                   <dt className="mb-1 text-muted-foreground">{t("transactionDetail.travelRule.metadata")}</dt>
-                  <dd><pre className="overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(txn.metadata, null, 2)}</pre></dd>
+                  <dd className="rounded bg-muted/50 p-2"><StructuredValue value={txn.metadata} /></dd>
                 </div>
               )}
             </dl>

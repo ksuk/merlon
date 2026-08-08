@@ -599,7 +599,15 @@
       "metadata": "Metadata JSON",
       "travelEvidence": "Travel Rule evidence JSON",
       "invalidJson": "Metadata and evidence must be valid JSON.",
-      "submit": "Register"
+      "submit": "Register",
+      "travelThreshold": "Applies at or above {{amount}} {{currency}} (policy {{version}})",
+      "noEvidenceRequired": "This counterparty type requires no Travel Rule evidence",
+      "counterpartyTypeLabel": {
+        "vasp": "VASP",
+        "unhosted_wallet": "Unhosted wallet",
+        "unknown": "Unknown",
+        "exempt": "Exempt"
+      }
     },
     "direction": {
       "inbound": "Inbound",
@@ -613,7 +621,8 @@
         "amount": "Amount",
         "counterpartyCountry": "Counterparty country",
         "channel": "Channel",
-        "executedAt": "Executed at"
+        "executedAt": "Executed at",
+        "travelRule": "Travel Rule"
       },
       "empty": "No transaction data"
     }
@@ -648,7 +657,54 @@
       "reason": "Not-applicable reason",
       "counterparty": "Counterparty",
       "metadata": "Metadata",
-      "evidence": "Travel Rule evidence"
+      "evidence": "Travel Rule evidence",
+      "verdict": "Server verdict",
+      "clientAssertion": "Client assertion",
+      "notAsserted": "Not asserted",
+      "threshold": "Threshold",
+      "thresholdValue": "{{amount}} {{currency}}",
+      "reasonCode": "Reason code",
+      "missingFields": "Missing evidence",
+      "assessedAt": "Assessed at",
+      "conflict": "The client assertion and the policy assessment disagree",
+      "conflictClient": "Client asserted: {{value}}",
+      "conflictServer": "Policy assessed: {{value}}",
+      "state": {
+        "not_assessed": "Not assessed",
+        "not_applicable": "Not applicable",
+        "complete": "Applicable, evidence complete",
+        "incomplete": "Applicable, evidence missing"
+      },
+      "stateDescription": {
+        "not_assessed": "This transaction was accepted before the Travel Rule policy existed, so it has never been assessed.",
+        "not_applicable": "The policy concluded the Travel Rule does not apply to this transfer.",
+        "complete": "The Travel Rule applies and every required piece of evidence is present.",
+        "incomplete": "The Travel Rule applies and required evidence is missing."
+      },
+      "reasonCodeLabel": {
+        "below_threshold": "Below the threshold",
+        "non_covered_channel": "Channel not covered",
+        "domestic_internal_transfer": "Domestic internal transfer",
+        "fiat_only": "Fiat only",
+        "exempt_counterparty": "Exempt counterparty",
+        "other": "Other"
+      },
+      "field": {
+        "counterparty_type": "Counterparty type",
+        "originator": "Originator",
+        "beneficiary": "Beneficiary",
+        "travel_rule_status": "Declared status",
+        "name": "Name",
+        "account_number": "Account number",
+        "vasp_name": "VASP name",
+        "originator_name": "Originator name",
+        "originator_account": "Originator account",
+        "originator_vasp_name": "Originator VASP",
+        "beneficiary_name": "Beneficiary name",
+        "beneficiary_account": "Beneficiary account",
+        "beneficiary_vasp_name": "Beneficiary VASP",
+        "wallet_attribution_method": "Wallet attribution method"
+      }
     },
     "related": {
       "title": "Related investigation records",
