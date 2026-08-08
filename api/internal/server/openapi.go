@@ -83,6 +83,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/backtests/{id}/cancel":                               pathPOST("Cancel durable backtest job"),
 			"/api/v1/backtests/{id}/affected-customers":                   pathBacktestAffectedCustomers(),
 			"/api/v1/backtests/preview":                                   pathPOST("Preview the customer and transaction cohort a backtest would run over"),
+			"/api/v1/pending-evaluations/stats":                           pathGET("Pending evaluation backlog, oldest age, and failed/exhausted counts"),
 			"/api/v1/backtests/rules":                                     pathBacktestRules(),
 			"/api/v1/reports/str":                                         pathSTRReports(),
 			"/api/v1/reports/str/{id}":                                    pathSTRReport(),

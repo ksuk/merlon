@@ -446,6 +446,7 @@ func (s *Server) routes() {
 	// Pending engine evaluations (fail-alert recovery queue)
 	s.route("GET /api/v1/pending-evaluations", s.handleListPendingEvaluations)
 	s.routeHandler("GET /api/v1/pending-evaluations/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportPendingEvaluations)))
+	s.route("GET /api/v1/pending-evaluations/stats", s.handlePendingEvaluationStats)
 	s.route("GET /api/v1/pending-evaluations/{id}", s.handleGetPendingEvaluation)
 	s.route("GET /api/v1/pending-evaluations/{id}/history", s.handleListPendingHistory)
 	s.route("POST /api/v1/pending-evaluations/{id}/{action}", s.handleTransitionPending)

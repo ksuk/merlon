@@ -413,6 +413,26 @@ func (s *Server) handleListPendingEvaluations(w http.ResponseWriter, r *http.Req
 // parsePendingEvaluationFilter is shared by the queue listing and its export,
 // so the exported evidence covers exactly the rows the operator was looking at.
 // It returns a non-zero HTTP status with a message when the query is invalid.
+// handlePendingEvaluationStats answers the queue's stop condition: how much
+// undetected monitoring is outstanding and for how long (#73).
+//
+// The list endpoint returned a page and nothing else, so a UI could only
+// approximate the backlog from the rows it happened to load -- an
+// approximation that reads as "small" exactly when the backlog is large.
+func (s *Server) handlePendingEvaluationStats(w http.ResponseWriter, r *http.Request) {
+	repo, ok := s.pendingEvals.(domain.PendingEvaluationStatsRepository)
+	if !ok || s.pendingEvals == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "pending evaluation store not configured")
+		return
+	}
+	stats, err := repo.PendingEvaluationStats(r.Context(), time.Now().UTC())
+	if err != nil {
+		writeWave3Error(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func parsePendingEvaluationFilter(r *http.Request) (domain.PendingEvaluationFilter, int, string) {
 	filter := domain.PendingEvaluationFilter{CustomerID: r.URL.Query().Get("customer_id"), BatchRunID: r.URL.Query().Get("batch_run_id")}
 	if raw := firstNonEmpty(r.URL.Query().Get("created_from"), r.URL.Query().Get("from")); raw != "" {

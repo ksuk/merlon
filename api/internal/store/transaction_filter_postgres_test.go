@@ -123,3 +123,90 @@ func caseIDsOf(cases []domain.Case) []string {
 	}
 	return ids
 }
+
+// The memory store aggregates in Go and PostgreSQL aggregates in SQL. The
+// backlog is a stop condition an operator acts on, so the two must agree.
+//
+// The aggregate is global by design and the test database is shared, so the
+// assertion is on the delta this test's own rows introduce.
+func TestPostgresPendingEvaluationStatsMatchMemory(t *testing.T) {
+	pool := newTestPgPool(t)
+	ctx := context.Background()
+	pgRepo := NewPgPendingEvaluationRepo(pool)
+
+	var customerID string
+	if err := pool.QueryRow(ctx,
+		`INSERT INTO customers (external_id, customer_type, country_code, product_types, attributes)
+		 VALUES ($1, 'individual', 'JP', '{}', '{}') RETURNING id`, "pending-stats-"+newTestUUID(),
+	).Scan(&customerID); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+
+	now := time.Now().UTC()
+	before, err := pgRepo.PendingEvaluationStats(ctx, now)
+	if err != nil {
+		t.Fatalf("baseline stats: %v", err)
+	}
+
+	seed := []struct {
+		id      string
+		status  domain.PendingEvaluationStatus
+		age     time.Duration
+		retries int
+	}{
+		{newTestUUID(), domain.PendingEvaluationStatusPendingReview, 72 * time.Hour, 0},
+		{newTestUUID(), domain.PendingEvaluationStatusPendingReview, 2 * time.Hour, 5},
+		{newTestUUID(), domain.PendingEvaluationStatusFailed, 48 * time.Hour, 5},
+		{newTestUUID(), domain.PendingEvaluationStatusResolved, 96 * time.Hour, 1},
+	}
+	ids := make([]string, 0, len(seed))
+	memory := NewMemoryPendingEvaluationRepo()
+	for _, row := range seed {
+		ids = append(ids, row.id)
+		created := now.Add(-row.age)
+		if _, err := pool.Exec(ctx,
+			`INSERT INTO pending_evaluations (id, customer_id, transaction_ids, status, reason, retry_count, created_at, updated_at)
+			 VALUES ($1, $2, '{}', $3, 'engine unavailable', $4, $5, $5)`,
+			row.id, customerID, string(row.status), row.retries, created); err != nil {
+			t.Fatalf("create pending evaluation: %v", err)
+		}
+		if err := memory.Create(ctx, &domain.PendingEvaluation{
+			ID: row.id, CustomerID: customerID, Status: row.status,
+			Reason: "engine unavailable", RetryCount: row.retries,
+			CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		bg := context.Background()
+		pool.Exec(bg, `DELETE FROM pending_evaluations WHERE id = ANY($1::uuid[])`, ids)
+		pool.Exec(bg, `DELETE FROM customers WHERE id = $1`, customerID)
+	})
+
+	after, err := pgRepo.PendingEvaluationStats(ctx, now)
+	if err != nil {
+		t.Fatalf("postgres stats: %v", err)
+	}
+	memStats, err := memory.PendingEvaluationStats(ctx, now)
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+
+	if got := after.Backlog - before.Backlog; got != memStats.Backlog || got != 3 {
+		t.Errorf("backlog delta postgres=%d memory=%d, want 3 (2 pending + 1 failed, resolved excluded)", got, memStats.Backlog)
+	}
+	if got := after.Failed - before.Failed; got != memStats.Failed || got != 1 {
+		t.Errorf("failed delta postgres=%d memory=%d, want 1", got, memStats.Failed)
+	}
+	if got := after.Exhausted - before.Exhausted; got != memStats.Exhausted || got != 2 {
+		t.Errorf("exhausted delta postgres=%d memory=%d, want 2", got, memStats.Exhausted)
+	}
+	// The global oldest is at least as old as the oldest row this test added.
+	if after.OldestAgeSeconds < memStats.OldestAgeSeconds {
+		t.Errorf("oldest_age_seconds postgres=%d is younger than this test's oldest unresolved row (%d)", after.OldestAgeSeconds, memStats.OldestAgeSeconds)
+	}
+	if after.OldestCreatedAt == nil {
+		t.Error("oldest_created_at is nil with unresolved rows present")
+	}
+}

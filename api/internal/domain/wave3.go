@@ -215,6 +215,31 @@ type BatchRunFilter struct {
 	Cursor    *Cursor
 }
 
+// PendingEvaluationStats is the queue's stop condition: how much undetected
+// monitoring is outstanding, and for how long. Counting rows in a loaded page
+// cannot answer either question, and reads as a small backlog exactly when the
+// backlog is large enough to matter.
+type PendingEvaluationStats struct {
+	// Backlog counts unresolved work: PENDING_REVIEW plus PROCESSING plus
+	// FAILED. A FAILED record is still a monitoring gap -- the automatic
+	// budget gave up on it, nobody has closed it.
+	Backlog  int            `json:"backlog"`
+	ByStatus map[string]int `json:"by_status"`
+	Failed   int            `json:"failed"`
+	// Exhausted counts records whose automatic retry budget is spent, so only
+	// an operator with the whitelist:approve permission can revive them.
+	Exhausted int `json:"exhausted"`
+	// OldestCreatedAt is nil on an empty queue. An age of zero would read as
+	// "something arrived just now".
+	OldestCreatedAt  *time.Time `json:"oldest_created_at"`
+	OldestAgeSeconds int64      `json:"oldest_age_seconds"`
+	EvaluatedAt      time.Time  `json:"evaluated_at"`
+}
+
+type PendingEvaluationStatsRepository interface {
+	PendingEvaluationStats(ctx context.Context, asOf time.Time) (PendingEvaluationStats, error)
+}
+
 type BatchRunWorkflowRepository interface {
 	ListBatchRuns(ctx context.Context, filter BatchRunFilter, limit int) ([]BatchRun, error)
 	UpdateBatchRun(ctx context.Context, id string, status BatchRunStatus, resultCounts map[string]int, failure string) error
