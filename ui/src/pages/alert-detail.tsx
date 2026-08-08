@@ -34,8 +34,12 @@ export function AlertDetailPage() {
     escalated: t("alertStatus.escalated"),
     closed_true_positive: t("alertStatus.closed_true_positive"),
     closed_false_positive: t("alertStatus.closed_false_positive"),
+    suppressed: t("alertStatus.suppressed"),
   }
   const statusTransitions: Record<AlertStatus, { label: string; value: AlertStatus }[]> = {
+    // suppressed is whitelist/system-only: an operator PATCH cannot leave it,
+    // so the surface offers no transition out of it.
+    suppressed: [],
     open: [
       { label: t("alertDetail.transitions.startInvestigation"), value: "investigating" },
       { label: t("alertDetail.transitions.escalate"), value: "escalated" },
@@ -215,6 +219,13 @@ export function AlertDetailPage() {
           {severityLabels[alert.severity]}
         </Badge>
         <Badge variant="outline">{statusLabels[alert.status]}</Badge>
+        {alert.suppressed && (
+          <Badge variant="secondary" data-testid="alert-suppressed">
+            {alert.suppression_reason
+              ? t("alerts.suppressedReason", { reason: alert.suppression_reason })
+              : t("alertStatus.suppressed")}
+          </Badge>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

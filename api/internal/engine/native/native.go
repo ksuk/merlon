@@ -27,10 +27,11 @@ import (
 )
 
 type riskFactor struct {
-	Weight  float64            `yaml:"weight"`
-	Values  map[string]float64 `yaml:"values"`
-	Source  string             `yaml:"source"`
-	Applies []string           `yaml:"applies_to"`
+	Weight      float64            `yaml:"weight"`
+	Values      map[string]float64 `yaml:"values"`
+	Source      string             `yaml:"source"`
+	Description string             `yaml:"description"`
+	Applies     []string           `yaml:"applies_to"`
 }
 
 type cddConfig struct {
@@ -482,6 +483,35 @@ func (s scenario) listParam(name string) []string {
 }
 
 func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, ruleSetID string) (*domain.ScoreRecord, error) {
+	// Preserve the established native parity contract: an unversioned score
+	// reports the digest-pinned configuration loaded by the process, regardless
+	// of a legacy routing hint supplied by the caller.
+	return e.scoreCustomer(ctx, customer, e.cdd.PresetID, e.cdd, e.cddDigest)
+}
+
+// ScoreCustomerWithRuleSet evaluates a caller-selected immutable CDD
+// definition.  The definition is parsed and validated before it is used, and
+// the returned evidence is pinned to its digest and selected identifier.  The
+// live engine's TM/screening configuration is shared read-only; only the CDD
+// weight set is replaced for this scoring operation.
+func (e *Engine) ScoreCustomerWithRuleSet(ctx context.Context, customer *domain.Customer, ruleSetID string, definition []byte) (*domain.ScoreRecord, error) {
+	if strings.TrimSpace(ruleSetID) == "" {
+		return nil, fmt.Errorf("rule set id must not be empty")
+	}
+	var cdd cddConfig
+	if err := yaml.Unmarshal(definition, &cdd); err != nil {
+		return nil, fmt.Errorf("parse CDD rule set %q: %w", ruleSetID, err)
+	}
+	if err := normalizeCDD(&cdd); err != nil {
+		return nil, fmt.Errorf("normalize CDD rule set %q: %w", ruleSetID, err)
+	}
+	if err := validateCDD(cdd); err != nil {
+		return nil, fmt.Errorf("validate CDD rule set %q: %w", ruleSetID, err)
+	}
+	return e.scoreCustomer(ctx, customer, ruleSetID, cdd, digest(definition))
+}
+
+func (e *Engine) scoreCustomer(ctx context.Context, customer *domain.Customer, reportedRuleSetID string, cdd cddConfig, cddDigest string) (*domain.ScoreRecord, error) {
 	started := time.Now()
 	status := "ok"
 	defer func() {
@@ -499,8 +529,8 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		name string
 		f    riskFactor
 	}
-	factors := make([]pair, 0, len(e.cdd.RiskFactors))
-	for name, f := range e.cdd.RiskFactors {
+	factors := make([]pair, 0, len(cdd.RiskFactors))
+	for name, f := range cdd.RiskFactors {
 		if err := ctx.Err(); err != nil {
 			status = "error"
 			return nil, err
@@ -528,6 +558,7 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		attrs[k] = fmt.Sprint(v)
 	}
 	var total float64
+	usedFallback := false
 	resultFactors := make([]domain.Factor, 0, len(factors))
 	for _, p := range factors {
 		if err := ctx.Err(); err != nil {
@@ -537,6 +568,7 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		value, resolved := e.resolveFactor(p.name, p.f, customer, attrs)
 		if !resolved {
 			value = 5
+			usedFallback = true
 		}
 		contribution := p.f.Weight / weight * value
 		total += contribution
@@ -544,32 +576,81 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		if !resolved {
 			description += " (fallback: unresolved)"
 		}
-		resultFactors = append(resultFactors, domain.Factor{Name: p.name, Axis: p.name, Score: contribution, Description: description})
+		observed := factorObservedValue(p.name, customer, attrs)
+		rule := p.f.Source
+		if rule == "" {
+			rule = "values"
+		}
+		businessMeaning := p.f.Description
+		if businessMeaning == "" {
+			businessMeaning = "CDD factor " + p.name
+		}
+		// Score is the factor's own normalised value (0-10); Contribution is
+		// what it added to the total after weighting. They previously both held
+		// the contribution, which made the two fields indistinguishable and let
+		// any consumer that summed Score double-count the weighting -- including
+		// the score explanation's own reconciliation check, which therefore
+		// could never detect a mismatch.
+		resultFactors = append(resultFactors, domain.Factor{
+			Name: p.name, Axis: p.name, Score: value, Weight: p.f.Weight,
+			Contribution: contribution, Description: description, ObservedValue: observed,
+			BusinessMeaning: businessMeaning, Rule: rule, Fallback: !resolved,
+		})
 	}
 	tier := domain.RiskTierHigh
-	if th, ok := e.cdd.TierThresholds["LOW"]; ok && (th.Max == 0 || total < th.Max) {
+	if th, ok := cdd.TierThresholds["LOW"]; ok && (th.Max == 0 || total < th.Max) {
 		tier = domain.RiskTierLow
 	}
-	if th, ok := e.cdd.TierThresholds["MEDIUM"]; ok && total >= th.Min && (th.Max == 0 || total < th.Max) {
+	if th, ok := cdd.TierThresholds["MEDIUM"]; ok && total >= th.Min && (th.Max == 0 || total < th.Max) {
 		tier = domain.RiskTierMedium
 	}
-	// The scoring contract treats the request's rule_set_id as a routing
-	// hint and returns the loaded preset identifier. Keep the native path
-	// byte-compatible until versioned rule-set loading is introduced.
-	ruleSetID = e.cdd.PresetID
+	// Missing or unknown factor mappings are fail-alert conditions. Preserve
+	// the numeric score and factor-level fallback evidence, but never let an
+	// unresolved input produce a low/medium operational priority silently.
+	if usedFallback {
+		tier = domain.RiskTierHigh
+	}
+	if reportedRuleSetID == "" {
+		reportedRuleSetID = cdd.PresetID
+	}
 	now := time.Now().UTC()
-	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: ruleSetID, RuleSetSHA256: e.cddDigest, RuleSetVersion: fingerprint(e.cddDigest), ScoredAt: now}, nil
+	rationale := ""
+	if usedFallback {
+		rationale = "Fail-alert fallback applied for one or more unresolved CDD factors"
+	}
+	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: reportedRuleSetID, RuleSetSHA256: cddDigest, Rationale: rationale, ScoredAt: now}, nil
 }
-func fingerprint(s string) int {
-	if len(s) < 8 {
-		return 1
+
+// TierThresholds reports the active CDD configuration's score bands as
+// [min, max) pairs. A zero max means unbounded above.
+func (e *Engine) TierThresholds() map[string][2]float64 {
+	if len(e.cdd.TierThresholds) == 0 {
+		return nil
 	}
-	n, _ := strconv.ParseUint(s[:8], 16, 32)
-	n &= 0x7fffffff
-	if n == 0 {
-		n = 1
+	out := make(map[string][2]float64, len(e.cdd.TierThresholds))
+	for tier, band := range e.cdd.TierThresholds {
+		out[tier] = [2]float64{band.Min, band.Max}
 	}
-	return int(n)
+	return out
+}
+
+func factorObservedValue(name string, customer *domain.Customer, attrs map[string]string) string {
+	if value, ok := attrs[name]; ok {
+		return value
+	}
+	switch name {
+	case "customer_type":
+		return string(customer.CustomerType)
+	case "country_code":
+		return customer.CountryCode
+	case "product_type":
+		return strings.Join(customer.ProductTypes, ",")
+	case "risk_tier":
+		if customer.RiskTier != nil {
+			return string(*customer.RiskTier)
+		}
+	}
+	return ""
 }
 func (e *Engine) resolveFactor(name string, f riskFactor, c *domain.Customer, attrs map[string]string) (float64, bool) {
 	if f.Source == "country_risk_table" && e.country != nil {

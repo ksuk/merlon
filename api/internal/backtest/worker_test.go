@@ -232,3 +232,23 @@ func TestWorkerCancelsRunningEngineWhenJobIsCancelled(t *testing.T) {
 		t.Fatalf("cancelled job was overwritten: %+v", got)
 	}
 }
+
+func TestDiffResultReportsAddedAndRemovedCustomers(t *testing.T) {
+	base := &domain.BacktestResult{TotalCustomers: 2, TotalAlerts: 1, ScenarioResults: []domain.BacktestScenarioResult{{
+		ScenarioID: "scenario", AlertsGenerated: 1, AffectedCustomerIDs: []string{"c1", "c2"},
+	}}}
+	candidate := &domain.BacktestResult{TotalCustomers: 2, TotalAlerts: 2, ScenarioResults: []domain.BacktestScenarioResult{{
+		ScenarioID: "scenario", AlertsGenerated: 2, AffectedCustomerIDs: []string{"c2", "c3"},
+	}}}
+	delta := diffResult(base, candidate)
+	if delta == nil || len(delta.ScenarioResults) != 1 {
+		t.Fatalf("delta = %+v, want one scenario", delta)
+	}
+	got := delta.ScenarioResults[0]
+	if len(got.AddedCustomerIDs) != 1 || got.AddedCustomerIDs[0] != "c3" {
+		t.Fatalf("added customers = %v, want [c3]", got.AddedCustomerIDs)
+	}
+	if len(got.RemovedCustomerIDs) != 1 || got.RemovedCustomerIDs[0] != "c1" {
+		t.Fatalf("removed customers = %v, want [c1]", got.RemovedCustomerIDs)
+	}
+}

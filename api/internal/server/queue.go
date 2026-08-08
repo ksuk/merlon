@@ -57,7 +57,8 @@ func csvValues(raw string) []string {
 func parseAlertQueueFilter(r *http.Request) (domain.AlertQueueFilter, error) {
 	f := domain.AlertQueueFilter{
 		CustomerID: domain.CanonicalUUID(r.URL.Query().Get("customer_id")), ScenarioID: r.URL.Query().Get("scenario_id"),
-		Assignee: r.URL.Query().Get("assignee"), Team: r.URL.Query().Get("team"),
+		TransactionID: domain.CanonicalUUID(r.URL.Query().Get("transaction_id")),
+		Assignee:      r.URL.Query().Get("assignee"), Team: r.URL.Query().Get("team"),
 		Unassigned: r.URL.Query().Get("unassigned") == "true", Severity: domain.AlertSeverity(r.URL.Query().Get("severity")),
 		Search: r.URL.Query().Get("search"), Overdue: r.URL.Query().Get("overdue") == "true", AsOf: time.Now().UTC(),
 	}
@@ -199,13 +200,53 @@ func parseQueueAgeDays(raw, name string) (int, error) {
 
 func hasAlertQueueFilter(r *http.Request) bool {
 	q := r.URL.Query()
-	return q.Get("customer_id") != "" || q.Get("status") != "" || q.Get("active") != "" || q.Get("terminal") != "" || q.Get("assignee") != "" || q.Get("mine") != "" || q.Get("team") != "" || q.Get("unassigned") != "" || q.Get("severity") != "" || q.Get("scenario_id") != "" || q.Get("search") != "" || q.Get("overdue") != "" || q.Get("min_age_days") != "" || q.Get("max_age_days") != ""
+	return q.Get("customer_id") != "" || q.Get("status") != "" || q.Get("active") != "" || q.Get("terminal") != "" || q.Get("assignee") != "" || q.Get("mine") != "" || q.Get("team") != "" || q.Get("unassigned") != "" || q.Get("severity") != "" || q.Get("scenario_id") != "" || q.Get("transaction_id") != "" || q.Get("search") != "" || q.Get("overdue") != "" || q.Get("min_age_days") != "" || q.Get("max_age_days") != ""
 }
 
 func hasCaseQueueFilter(r *http.Request) bool {
 	q := r.URL.Query()
-	return q.Get("customer_id") != "" || q.Get("status") != "" || q.Get("active") != "" || q.Get("terminal") != "" || q.Get("assignee") != "" || q.Get("mine") != "" || q.Get("team") != "" || q.Get("unassigned") != "" || q.Get("priority") != "" || q.Get("disposition") != "" || q.Get("str_candidate") != "" || q.Get("search") != "" || q.Get("overdue") != "" || q.Get("min_age_days") != "" || q.Get("max_age_days") != ""
+	return q.Get("customer_id") != "" || q.Get("status") != "" || q.Get("active") != "" || q.Get("terminal") != "" || q.Get("assignee") != "" || q.Get("mine") != "" || q.Get("team") != "" || q.Get("unassigned") != "" || q.Get("priority") != "" || q.Get("disposition") != "" || q.Get("str_candidate") != "" || q.Get("transaction_id") != "" || q.Get("search") != "" || q.Get("overdue") != "" || q.Get("min_age_days") != "" || q.Get("max_age_days") != ""
 }
+
+// resolveCaseTransactionFilter turns ?transaction_id= into the alert-id filter
+// the case queue understands. Cases carry alert links, not transaction links,
+// so the join lives here rather than being re-implemented per store.
+//
+// The second return value is false when the transaction raised no alerts. The
+// caller must answer with an empty page: dropping the filter instead would
+// present every open case as related to the transaction.
+func (s *Server) resolveCaseTransactionFilter(r *http.Request, f domain.CaseQueueFilter) (domain.CaseQueueFilter, bool, error) {
+	transactionID := domain.CanonicalUUID(r.URL.Query().Get("transaction_id"))
+	if transactionID == "" {
+		return f, true, nil
+	}
+	queue, ok := s.alerts.(domain.AlertQueueRepository)
+	if !ok {
+		return f, false, fmt.Errorf("alert queue is not available to resolve transaction_id")
+	}
+	// Terminal alerts still explain why a case exists, so the lookup spans
+	// every status rather than the queue's active-only default.
+	alerts, err := queue.ListQueue(r.Context(), domain.AlertQueueFilter{
+		TransactionID: transactionID,
+		Statuses:      domain.AllAlertStatuses(),
+		AsOf:          time.Now().UTC(),
+	}, maxTransactionAlertFanout, 0)
+	if err != nil {
+		return f, false, err
+	}
+	if len(alerts) == 0 {
+		return f, false, nil
+	}
+	for _, a := range alerts {
+		f.AlertIDs = append(f.AlertIDs, a.ID)
+	}
+	return f, true, nil
+}
+
+// maxTransactionAlertFanout bounds the alert lookup behind a case
+// transaction_id filter. One transaction triggering more scenarios than this
+// is not a paging problem to solve here.
+const maxTransactionAlertFanout = 200
 
 func parseOffsetLimit(r *http.Request, fallback int) (int, int) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))

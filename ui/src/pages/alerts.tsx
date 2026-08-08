@@ -53,6 +53,7 @@ export function AlertsPage() {
     escalated: t("alertStatus.escalated"),
     closed_true_positive: t("alertStatus.closed_true_positive"),
     closed_false_positive: t("alertStatus.closed_false_positive"),
+    suppressed: t("alertStatus.suppressed"),
   }
   const [alerts, setAlerts] = useState<Alert[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -334,6 +335,14 @@ export function AlertsPage() {
                     <Badge variant="outline">
                       {statusLabels[a.status] ?? a.status}
                     </Badge>
+                    {/* A suppressed alert is withheld, not resolved. Showing
+                        the status without the reason leaves an operator with
+                        no way to tell why it is not in their queue. */}
+                    {a.suppressed && (
+                      <Badge variant="secondary" className="ml-1" title={a.suppression_reason}>
+                        {t("alertStatus.suppressed")}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-mono text-sm">{a.customer_id}</TableCell>
                   <TableCell className="font-mono text-sm">{a.scenario_id}</TableCell>

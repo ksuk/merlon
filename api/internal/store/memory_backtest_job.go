@@ -13,10 +13,17 @@ type MemoryBacktestJobRepo struct {
 	mu        sync.Mutex
 	data      map[string]*domain.BacktestJob
 	snapshots map[string][]string
+	// affected holds the completed job's per-scenario outcome rows, ordered by
+	// (customer_id, scenario_id) the way the PostgreSQL index returns them.
+	affected map[string][]domain.BacktestAffectedCustomer
 }
 
 func NewMemoryBacktestJobRepo() *MemoryBacktestJobRepo {
-	return &MemoryBacktestJobRepo{data: make(map[string]*domain.BacktestJob), snapshots: make(map[string][]string)}
+	return &MemoryBacktestJobRepo{
+		data:      make(map[string]*domain.BacktestJob),
+		snapshots: make(map[string][]string),
+		affected:  make(map[string][]domain.BacktestAffectedCustomer),
+	}
 }
 
 func cloneBacktestJob(j *domain.BacktestJob) *domain.BacktestJob {
@@ -53,6 +60,8 @@ func cloneBacktestResult(in *domain.BacktestResult) *domain.BacktestResult {
 	for i, scenario := range in.ScenarioResults {
 		out.ScenarioResults[i] = scenario
 		out.ScenarioResults[i].AffectedCustomerIDs = append([]string(nil), scenario.AffectedCustomerIDs...)
+		out.ScenarioResults[i].AddedCustomerIDs = append([]string(nil), scenario.AddedCustomerIDs...)
+		out.ScenarioResults[i].RemovedCustomerIDs = append([]string(nil), scenario.RemovedCustomerIDs...)
 	}
 	return &out
 }
@@ -171,7 +180,43 @@ func (r *MemoryBacktestJobRepo) Complete(_ context.Context, id string, baseline,
 	j.Baseline, j.Candidate, j.Delta = cloneBacktestResult(baseline), cloneBacktestResult(candidate), cloneBacktestResult(delta)
 	j.CompletedAt = &now
 	j.UpdatedAt = now
+	// Derived through the same domain function the PostgreSQL store uses, so
+	// the two cannot disagree about what a result means.
+	r.affected[id] = domain.BacktestAffectedCustomersFrom(id, candidate, delta)
 	return nil
+}
+
+func (r *MemoryBacktestJobRepo) ListBacktestAffectedCustomers(_ context.Context, filter domain.BacktestAffectedCustomerFilter, limit int) ([]domain.BacktestAffectedCustomer, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := []domain.BacktestAffectedCustomer{}
+	// r.affected is already ordered by (customer_id, scenario_id).
+	for _, row := range r.affected[filter.JobID] {
+		if filter.ScenarioID != "" && row.ScenarioID != filter.ScenarioID {
+			continue
+		}
+		if filter.AfterCustomerID != "" && row.CustomerID <= filter.AfterCustomerID {
+			continue
+		}
+		out = append(out, row)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *MemoryBacktestJobRepo) CountBacktestAffectedCustomers(_ context.Context, filter domain.BacktestAffectedCustomerFilter) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := map[string]bool{}
+	for _, row := range r.affected[filter.JobID] {
+		if filter.ScenarioID != "" && row.ScenarioID != filter.ScenarioID {
+			continue
+		}
+		seen[row.CustomerID] = true
+	}
+	return len(seen), nil
 }
 func (r *MemoryBacktestJobRepo) Fail(_ context.Context, id, reason string) error {
 	r.mu.Lock()

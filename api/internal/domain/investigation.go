@@ -174,16 +174,21 @@ type AlertBulkDispositionRepository interface {
 type AlertQueueFilter struct {
 	CustomerID string
 	ScenarioID string
-	Statuses   []AlertStatus
-	Assignee   string
-	Team       string
-	Unassigned bool
-	Severity   AlertSeverity
-	Search     string
-	Overdue    bool
-	MinAgeDays int
-	MaxAgeDays int
-	AsOf       time.Time
+	// TransactionID restricts the queue to alerts carrying this transaction in
+	// transaction_ids. It is what makes "what did this transaction trigger?"
+	// answerable server-side instead of by filtering a customer's page client
+	// side, which loses records as soon as the customer has more than one page.
+	TransactionID string
+	Statuses      []AlertStatus
+	Assignee      string
+	Team          string
+	Unassigned    bool
+	Severity      AlertSeverity
+	Search        string
+	Overdue       bool
+	MinAgeDays    int
+	MaxAgeDays    int
+	AsOf          time.Time
 }
 
 type AlertQueueRepository interface {
@@ -202,8 +207,13 @@ type AlertQueueMutationRepository interface {
 }
 
 type CaseQueueFilter struct {
-	CustomerID   string
-	Statuses     []CaseStatus
+	CustomerID string
+	Statuses   []CaseStatus
+	// AlertIDs restricts the queue to cases linked to any of these alerts.
+	// A transaction reaches its cases through the alerts it raised, so the
+	// HTTP layer resolves transaction_id into alert ids and passes them here
+	// rather than every store re-implementing that join.
+	AlertIDs     []string
 	Assignee     string
 	Team         string
 	Unassigned   bool

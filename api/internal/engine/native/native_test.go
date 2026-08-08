@@ -209,3 +209,83 @@ tier_thresholds: {LOW: {max: 2}, MEDIUM: {min: 2, max: 3}, HIGH: {min: 3}}
 		t.Fatalf("unknown=%+v err=%v", unknown, err)
 	}
 }
+
+func TestNativeScoreExplainsFactorsAndFailsAlertOnUnknownMapping(t *testing.T) {
+	dir := t.TempDir()
+	cdd := writeFixture(t, dir, "cdd.yaml", `schema_version: cdd_weight_v1
+preset_id: explainable
+risk_factors:
+  known:
+    weight: 0.5
+    description: "Configured known-factor meaning"
+    values: {v: 1}
+  unknown:
+    weight: 0.5
+    values: {known: 1}
+tier_thresholds: {LOW: {max: 2}, MEDIUM: {min: 2, max: 3.5}, HIGH: {min: 3.5}}
+`)
+	tmDir := filepath.Join(dir, "tm")
+	if err := os.Mkdir(tmDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, tmDir, "structuring.yaml", "scenario_id: tm_structuring_basic\nevaluation_mode: realtime\n")
+	e, err := New(cdd, tmDir, filepath.Join(dir, "missing-lists"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, err := e.ScoreCustomer(context.Background(), &domain.Customer{ID: "c1", CustomerType: domain.CustomerTypeIndividual, Attributes: map[string]any{"known": "v", "unknown": "not-configured"}}, "requested-rule")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if score.Tier != domain.RiskTierHigh || !strings.Contains(score.Rationale, "Fail-alert") {
+		t.Fatalf("score = %+v, want high fail-alert result", score)
+	}
+	if len(score.Factors) != 2 || score.Factors[0].BusinessMeaning == "" || score.Factors[1].BusinessMeaning == "" {
+		t.Fatalf("factor explanations = %+v", score.Factors)
+	}
+	var fallback domain.Factor
+	for _, factor := range score.Factors {
+		if factor.Name == "unknown" {
+			fallback = factor
+		}
+	}
+	if !fallback.Fallback || fallback.ObservedValue != "not-configured" {
+		t.Fatalf("fallback factor = %+v", fallback)
+	}
+}
+
+func TestNativeScoreCustomerWithRuleSetUsesSelectedCDDDefinition(t *testing.T) {
+	dir := t.TempDir()
+	cdd := writeFixture(t, dir, "cdd.yaml", `schema_version: cdd_weight_v1
+preset_id: active-cdd
+risk_factors:
+  customer_type:
+    weight: 1
+    values: {individual: 1}
+tier_thresholds: {LOW: {max: 2}, MEDIUM: {min: 2, max: 4}, HIGH: {min: 4}}
+`)
+	tmDir := filepath.Join(dir, "tm")
+	if err := os.Mkdir(tmDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, tmDir, "structuring.yaml", "scenario_id: tm_structuring_basic\nevaluation_mode: realtime\n")
+	e, err := New(cdd, tmDir, filepath.Join(dir, "missing-lists"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := []byte(`schema_version: cdd_weight_v1
+preset_id: selected-cdd
+risk_factors:
+  customer_type:
+    weight: 1
+    values: {individual: 5}
+tier_thresholds: {LOW: {max: 2}, MEDIUM: {min: 2, max: 4}, HIGH: {min: 4}}
+`)
+	score, err := e.ScoreCustomerWithRuleSet(context.Background(), &domain.Customer{ID: "selected", CustomerType: domain.CustomerTypeIndividual}, "approved-cdd", selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if score.RuleSetID != "approved-cdd" || score.Score != 5 || score.Tier != domain.RiskTierHigh || score.RuleSetSHA256 == "" {
+		t.Fatalf("selected CDD score = %+v", score)
+	}
+}

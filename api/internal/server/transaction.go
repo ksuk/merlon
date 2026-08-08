@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/apierr"
@@ -18,17 +20,23 @@ import (
 )
 
 type CreateTransactionRequest struct {
-	CustomerID          string                      `json:"customer_id"`
-	ExternalID          string                      `json:"external_id"`
-	Amount              float64                     `json:"amount"`
-	Currency            string                      `json:"currency"`
-	Direction           domain.TransactionDirection `json:"direction"`
-	CounterpartyID      string                      `json:"counterparty_id"`
-	CounterpartyCountry string                      `json:"counterparty_country"`
-	Channel             string                      `json:"channel"`
-	AccountID           *string                     `json:"account_id,omitempty"`
-	Counterparty        *domain.Counterparty        `json:"counterparty,omitempty"`
-	Metadata            map[string]any              `json:"metadata,omitempty"`
+	CustomerID                    string                      `json:"customer_id"`
+	ExternalID                    string                      `json:"external_id"`
+	Amount                        float64                     `json:"amount"`
+	Currency                      string                      `json:"currency"`
+	Direction                     domain.TransactionDirection `json:"direction"`
+	CounterpartyID                string                      `json:"counterparty_id"`
+	CounterpartyCountry           string                      `json:"counterparty_country"`
+	Channel                       string                      `json:"channel"`
+	AccountID                     *string                     `json:"account_id,omitempty"`
+	Counterparty                  *domain.Counterparty        `json:"counterparty,omitempty"`
+	Metadata                      map[string]any              `json:"metadata,omitempty"`
+	TravelRuleApplicable          *bool                       `json:"travel_rule_applicable,omitempty"`
+	TravelRuleEvidence            map[string]any              `json:"travel_rule_evidence,omitempty"`
+	TravelRuleNotApplicableReason string                      `json:"travel_rule_not_applicable_reason,omitempty"`
+	// TravelRuleNotApplicableReasonCode is the closed-enum companion. The
+	// free-text field above keeps being accepted and maps to `other`.
+	TravelRuleNotApplicableReasonCode string `json:"travel_rule_not_applicable_reason_code,omitempty"`
 	// Future event times are accepted intentionally for upstream clock skew
 	// and scheduled transactions. Realtime evaluation anchors its upper bound
 	// at max(now, ExecutedAt), so the accepted transaction is never omitted.
@@ -165,6 +173,14 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "counterparty.travel_rule_status must be one of: complete, incomplete, not_applicable")
 			return
 		}
+		if req.Counterparty.TravelRuleStatus == domain.TravelRuleNotApplicable && strings.TrimSpace(req.TravelRuleNotApplicableReason) == "" {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "travel_rule_not_applicable_reason is required when travel rule is not applicable")
+			return
+		}
+	}
+	if req.TravelRuleApplicable != nil && !*req.TravelRuleApplicable && strings.TrimSpace(req.TravelRuleNotApplicableReason) == "" {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "travel_rule_not_applicable_reason is required when travel_rule_applicable is false")
+		return
 	}
 
 	// Verify customer exists
@@ -192,34 +208,89 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	}
 
 	t := &domain.Transaction{
-		ID:                  generateID(),
-		CustomerID:          req.CustomerID,
-		ExternalID:          req.ExternalID,
-		Amount:              req.Amount,
-		Currency:            currency,
-		Direction:           req.Direction,
-		CounterpartyID:      req.CounterpartyID,
-		CounterpartyCountry: req.CounterpartyCountry,
-		Channel:             req.Channel,
-		AccountID:           req.AccountID,
-		Counterparty:        req.Counterparty,
-		Metadata:            req.Metadata,
-		ExecutedAt:          executedAt,
-		CreatedAt:           now,
+		ID:                            generateID(),
+		CustomerID:                    req.CustomerID,
+		ExternalID:                    req.ExternalID,
+		Amount:                        req.Amount,
+		Currency:                      currency,
+		Direction:                     req.Direction,
+		CounterpartyID:                req.CounterpartyID,
+		CounterpartyCountry:           req.CounterpartyCountry,
+		Channel:                       req.Channel,
+		AccountID:                     req.AccountID,
+		Counterparty:                  req.Counterparty,
+		Metadata:                      req.Metadata,
+		TravelRuleApplicable:          req.TravelRuleApplicable,
+		TravelRuleEvidence:            req.TravelRuleEvidence,
+		TravelRuleNotApplicableReason: req.TravelRuleNotApplicableReason,
+		ExecutedAt:                    executedAt,
+		CreatedAt:                     now,
+	}
+	if t.TravelRuleApplicable == nil && req.Counterparty != nil {
+		applicable := req.Counterparty.TravelRuleStatus != domain.TravelRuleNotApplicable
+		t.TravelRuleApplicable = &applicable
+	}
+	t.TravelRuleNotApplicableReasonCode = strings.TrimSpace(req.TravelRuleNotApplicableReasonCode)
+	// Every transaction is assessed, including one that arrives with no
+	// counterparty block at all: leaving those unassessed is what made an
+	// un-evaluated transaction indistinguishable from a pre-policy one.
+	travelRuleAssessment, assessed := s.assessTravelRule(w, t)
+	if !assessed {
+		return
 	}
 	// Idempotency-Key (the HTTP API contract §4.1): a resend using an already-used key is
 	// rejected with 409, independent of whether external_id also matches.
 	if key := r.Header.Get("Idempotency-Key"); key != "" {
 		t.IdempotencyKey = &key
+		if idem, ok := s.transactions.(domain.TransactionIdempotencyRepository); ok {
+			if existing, lookupErr := idem.GetByIdempotencyKey(r.Context(), key); lookupErr == nil && existing != nil {
+				if transactionEquivalent(existing, t) {
+					writeJSON(w, http.StatusOK, existing)
+				} else {
+					writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "idempotency key already used with different transaction")
+				}
+				return
+			} else if lookupErr != nil {
+				var notFound *domain.ErrNotFound
+				if !errors.As(lookupErr, &notFound) {
+					writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, lookupErr.Error())
+					return
+				}
+			}
+		}
 	}
 
-	if err := s.transactions.Create(r.Context(), t); err != nil {
+	if err := s.runAtomic(r.Context(), func(repos domain.AtomicMutationRepositories) error {
+		if repos.Transactions == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		if err := repos.Transactions.Create(r.Context(), t); err != nil {
+			return err
+		}
+		if err := appendRequiredMutationAudit(r.Context(), r, repos, "create_transaction", "transactions", t.ID, map[string]string{
+			"customer_id": t.CustomerID, "external_id": t.ExternalID,
+			"amount": strconv.FormatFloat(t.Amount, 'f', -1, 64), "currency": t.Currency,
+		}, t.CreatedAt); err != nil {
+			return err
+		}
+		if s.eventOutbox != nil {
+			if repos.EventOutbox == nil {
+				return errAtomicMutationUnavailable
+			}
+			payload, err := json.Marshal(map[string]any{"transaction_id": t.ID, "customer_id": t.CustomerID, "external_id": t.ExternalID, "created_at": t.CreatedAt})
+			if err != nil {
+				return err
+			}
+			return repos.EventOutbox.Enqueue(r.Context(), &domain.DurableEvent{ID: generateID(), Topic: "transaction.created", Payload: payload, ChainID: correlationID(r), CreatedAt: t.CreatedAt})
+		}
+		return nil
+	}); err != nil {
 		var conflict *domain.ErrConflict
 		if errors.As(err, &conflict) {
 			writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
 			return
 		}
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		writeAtomicMutationError(w, err)
 		return
 	}
 
@@ -229,7 +300,59 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	// silently dropping the transaction.
 	s.monitorCreatedTransaction(r.Context(), customer, t)
 
+	// A transaction the Travel Rule covers but whose required evidence has not
+	// arrived is a compliance gap, not a rejection: the transaction happened.
+	// It goes to the same PENDING_REVIEW queue an engine outage uses, so the
+	// gap is worked rather than noticed later.
+	if s.pendingEvals != nil && travelRuleAssessment.Applicable && len(travelRuleAssessment.MissingFields) > 0 &&
+		s.policies.TravelRule().RoutesIncompleteToReview() {
+		pending := &domain.PendingEvaluation{
+			ID: generateID(), CustomerID: t.CustomerID, TransactionIDs: []string{t.ID},
+			Status: domain.PendingEvaluationStatusPendingReview,
+			Reason: "travel_rule_incomplete: " + strings.Join(travelRuleAssessment.MissingFields, ", "),
+		}
+		if err := s.pendingEvals.Create(r.Context(), pending); err != nil {
+			slog.ErrorContext(r.Context(), "failed to queue incomplete travel rule evidence for review",
+				"transaction_id", t.ID, "error", err)
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, t)
+}
+
+func transactionEquivalent(existing, requested *domain.Transaction) bool {
+	if existing == nil || requested == nil {
+		return false
+	}
+	return domain.SameIdentifier(existing.CustomerID, requested.CustomerID) &&
+		existing.ExternalID == requested.ExternalID &&
+		existing.Amount == requested.Amount &&
+		strings.EqualFold(existing.Currency, requested.Currency) &&
+		existing.Direction == requested.Direction &&
+		existing.CounterpartyID == requested.CounterpartyID &&
+		strings.EqualFold(existing.CounterpartyCountry, requested.CounterpartyCountry) &&
+		strings.EqualFold(existing.Channel, requested.Channel) &&
+		sameStringPointer(existing.AccountID, requested.AccountID) &&
+		reflect.DeepEqual(existing.Counterparty, requested.Counterparty) &&
+		reflect.DeepEqual(existing.Metadata, requested.Metadata) &&
+		sameBoolPointer(existing.TravelRuleApplicable, requested.TravelRuleApplicable) &&
+		reflect.DeepEqual(existing.TravelRuleEvidence, requested.TravelRuleEvidence) &&
+		existing.TravelRuleNotApplicableReason == requested.TravelRuleNotApplicableReason &&
+		existing.ExecutedAt.Equal(requested.ExecutedAt)
+}
+
+func sameStringPointer(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func sameBoolPointer(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain.Customer, created *domain.Transaction) {

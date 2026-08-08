@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Webhook,
+  ShieldAlert,
+  RotateCcw,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router"
@@ -27,6 +29,8 @@ const navItems = [
   { to: "/cases", labelKey: "nav.cases", icon: FolderOpen },
   { to: "/transactions", labelKey: "nav.transactions", icon: ArrowLeftRight },
   { to: "/batch", labelKey: "nav.batch", icon: Layers },
+  { to: "/screening-queue", labelKey: "nav.screeningQueue", icon: ShieldAlert },
+  { to: "/pending-evaluations", labelKey: "nav.pendingEvaluations", icon: RotateCcw },
   { to: "/reports", labelKey: "nav.reports", icon: FileText },
   { to: "/backtest", labelKey: "nav.backtest", icon: FlaskConical },
   { to: "/webhooks", labelKey: "nav.webhooks", icon: Webhook },

@@ -1,12 +1,12 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +22,8 @@ type createBacktestJobRequest struct {
 	ScenarioIDs        []string                       `json:"scenario_ids,omitempty"`
 	BaselineRuleSetID  string                         `json:"baseline_rule_set_id"`
 	CandidateRuleSetID string                         `json:"candidate_rule_set_id"`
+	Rationale          string                         `json:"rationale"`
+	RerunOf            string                         `json:"rerun_of,omitempty"`
 }
 
 func parseBacktestUTC(value string) (time.Time, error) {
@@ -96,6 +98,10 @@ func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request)
 	if req.BaselineRuleSetID == "" {
 		req.BaselineRuleSetID = "active"
 	}
+	if req.BaselineRuleSetID == req.CandidateRuleSetID {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "baseline_rule_set_id and candidate_rule_set_id must differ")
+		return
+	}
 	resolveRule := func(id string) (json.RawMessage, int, error) {
 		if id == "" || id == "active" {
 			return nil, 0, nil
@@ -128,8 +134,49 @@ func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request)
 	}
 	now := time.Now().UTC()
 	job := &domain.BacktestJob{ID: generateID(), Status: domain.BacktestJobQueued, From: from, To: to, CustomerIDs: req.CustomerIDs, CustomerFilter: req.CustomerFilter, ScenarioIDs: req.ScenarioIDs, BaselineRuleSetID: req.BaselineRuleSetID, CandidateRuleSetID: req.CandidateRuleSetID, BaselineRuleVersion: baselineVersion, CandidateRuleVersion: candidateVersion, BaselineRuleDefinition: baselineDefinition, CandidateRuleDefinition: candidateDefinition, ConfigDigests: copyStringMap(s.configDigests), SnapshotAt: now, CreatedAt: now, UpdatedAt: now}
-	if err := s.backtestJobs.Create(r.Context(), job); err != nil {
-		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+	_, hasMetadata := s.wave3.(domain.BacktestMetadataRepository)
+	var metadata *domain.BacktestMetadata
+	if _, ok := s.wave3.(domain.BacktestMetadataRepository); ok {
+		// The stored cohort is resolved exactly as POST /backtests/preview
+		// resolves it, so the record of what ran and the numbers the operator
+		// approved are the same. The old inline version counted transactions
+		// only for an explicit id list, which left a filter or all-customer
+		// cohort recorded as count: 0 -- claiming an empty population for a
+		// run that was about to evaluate the whole book.
+		cohort, cohortErr := s.resolveBacktestCohort(r.Context(), req.CustomerIDs, req.CustomerFilter)
+		if cohortErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, cohortErr.Error())
+			return
+		}
+		metadata = &domain.BacktestMetadata{JobID: job.ID, Rationale: req.Rationale, CohortPreview: cohort.preview(), BaselineSnapshot: map[string]any{"rule_set_id": job.BaselineRuleSetID, "version": job.BaselineRuleVersion, "digest": stableDigest(baselineDefinition)}, CandidateSnapshot: map[string]any{"rule_set_id": job.CandidateRuleSetID, "version": job.CandidateRuleVersion, "digest": stableDigest(candidateDefinition)}, RerunOf: req.RerunOf, CreatedAt: now}
+	}
+	persist := func(repos domain.AtomicMutationRepositories) error {
+		jobRepo := s.backtestJobs
+		if repos.BacktestJobs != nil {
+			jobRepo = repos.BacktestJobs
+		}
+		if err := jobRepo.Create(r.Context(), job); err != nil {
+			return err
+		}
+		if metadata != nil {
+			wave3Repo, ok := repos.Wave3.(domain.BacktestMetadataRepository)
+			if !ok {
+				return fmt.Errorf("backtest metadata repository is not transaction-bound")
+			}
+			if err := wave3Repo.SaveBacktestMetadata(r.Context(), metadata); err != nil {
+				return fmt.Errorf("backtest metadata persistence failed: %w", err)
+			}
+		}
+		return nil
+	}
+	var persistErr error
+	if s.atomic != nil && (hasMetadata || s.backtestJobs != nil) {
+		persistErr = s.runAtomic(r.Context(), persist)
+	} else {
+		persistErr = persist(domain.AtomicMutationRepositories{})
+	}
+	if persistErr != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, persistErr.Error())
 		return
 	}
 	w.Header().Set("Location", "/api/v1/backtests/"+job.ID)
@@ -173,6 +220,11 @@ func (s *Server) handleGetBacktestJob(w http.ResponseWriter, r *http.Request) {
 		writeBacktestRepositoryError(w, err)
 		return
 	}
+	if metadataRepo, ok := s.wave3.(domain.BacktestMetadataRepository); ok {
+		if metadata, metadataErr := metadataRepo.GetBacktestMetadata(r.Context(), job.ID); metadataErr == nil {
+			job.Metadata = metadata
+		}
+	}
 	writeJSON(w, http.StatusOK, job)
 }
 func (s *Server) handleCancelBacktestJob(w http.ResponseWriter, r *http.Request) {
@@ -196,35 +248,121 @@ func (s *Server) handleBacktestAffectedCustomers(w http.ResponseWriter, r *http.
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "durable backtest jobs not configured")
 		return
 	}
-	job, err := s.backtestJobs.Get(r.Context(), r.PathValue("id"))
+	jobID := r.PathValue("id")
+	job, err := s.backtestJobs.Get(r.Context(), jobID)
 	if err != nil {
 		writeBacktestRepositoryError(w, err)
 		return
 	}
-	var ids []string
-	if job.Candidate != nil {
-		for _, sr := range job.Candidate.ScenarioResults {
-			ids = append(ids, sr.AffectedCustomerIDs...)
-		}
-	}
-	sort.Strings(ids)
-	ids = uniqueStrings(ids)
-	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if offset < 0 {
-		offset = 0
-	}
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	if offset > len(ids) {
-		offset = len(ids)
+	scenarioID := strings.TrimSpace(r.URL.Query().Get("scenario_id"))
+
+	rows, total, err := s.backtestAffectedCustomers(r.Context(), job, scenarioID, r.URL.Query().Get("cursor"), limit)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
 	}
-	end := offset + limit
-	if end > len(ids) {
-		end = len(ids)
+
+	// data stays a plain id array: this route predates Wave 3 and clients read
+	// it that way. delta_kinds is the additive half, keyed by the ids in data.
+	ids := make([]string, 0, len(rows))
+	for _, id := range orderedCustomerIDs(rows) {
+		ids = append(ids, id)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": ids[offset:end], "pagination": map[string]any{"limit": limit, "offset": offset, "total": len(ids)}})
+	kinds := domain.AggregateBacktestDeltaKinds(rows)
+	response := map[string]any{
+		"data":        ids,
+		"delta_kinds": kinds,
+		"rows":        rows,
+		"pagination":  map[string]any{"limit": limit, "total": total, "has_more": len(ids) == limit && total > 0},
+	}
+	if len(ids) == limit {
+		response["pagination"].(map[string]any)["next_cursor"] = ids[len(ids)-1]
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+// backtestAffectedCustomers reads one keyset page of durable outcome rows.
+// Jobs completed before migration 051 have no rows, so the pre-existing
+// derivation from the stored result is kept as a fallback: an old job must not
+// start reporting an empty population.
+func (s *Server) backtestAffectedCustomers(ctx context.Context, job *domain.BacktestJob, scenarioID, cursor string, limit int) ([]domain.BacktestAffectedCustomer, int, error) {
+	repo, ok := s.backtestJobs.(domain.BacktestAffectedCustomerRepository)
+	if ok {
+		filter := domain.BacktestAffectedCustomerFilter{JobID: job.ID, ScenarioID: scenarioID, AfterCustomerID: cursor}
+		total, err := repo.CountBacktestAffectedCustomers(ctx, filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		if total > 0 {
+			// A customer can hold several scenario rows, so read generously and
+			// trim on the customer boundary rather than the row boundary.
+			rows, err := repo.ListBacktestAffectedCustomers(ctx, filter, limit*maxScenariosPerCustomerPage)
+			if err != nil {
+				return nil, 0, err
+			}
+			return trimToCustomerLimit(rows, limit), total, nil
+		}
+	}
+	rows := domain.BacktestAffectedCustomersFrom(job.ID, job.Candidate, job.Delta)
+	if scenarioID != "" {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.ScenarioID == scenarioID {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
+	total := len(orderedCustomerIDs(rows))
+	if cursor != "" {
+		after := rows[:0]
+		for _, row := range rows {
+			if row.CustomerID > cursor {
+				after = append(after, row)
+			}
+		}
+		rows = after
+	}
+	return trimToCustomerLimit(rows, limit), total, nil
+}
+
+// maxScenariosPerCustomerPage bounds the over-read that keeps whole customers
+// on one page. A customer matching more scenarios than this still appears;
+// only some of its scenario rows spill to the next page.
+const maxScenariosPerCustomerPage = 8
+
+// trimToCustomerLimit cuts a row page at a customer boundary so a customer's
+// scenario rows are never split in a way that would let the cursor skip them.
+func trimToCustomerLimit(rows []domain.BacktestAffectedCustomer, limit int) []domain.BacktestAffectedCustomer {
+	seen := 0
+	var current string
+	for i, row := range rows {
+		if row.CustomerID != current {
+			if seen == limit {
+				return rows[:i]
+			}
+			current = row.CustomerID
+			seen++
+		}
+	}
+	return rows
+}
+
+// orderedCustomerIDs lists each customer once, in row order.
+func orderedCustomerIDs(rows []domain.BacktestAffectedCustomer) []string {
+	out := make([]string, 0, len(rows))
+	var current string
+	for _, row := range rows {
+		if row.CustomerID != current {
+			out = append(out, row.CustomerID)
+			current = row.CustomerID
+		}
+	}
+	return out
 }
 
 func writeBacktestRepositoryError(w http.ResponseWriter, err error) {
@@ -239,16 +377,6 @@ func writeBacktestRepositoryError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-}
-
-func uniqueStrings(in []string) []string {
-	out := []string{}
-	for _, v := range in {
-		if len(out) == 0 || out[len(out)-1] != v {
-			out = append(out, v)
-		}
-	}
-	return out
 }
 
 const maxBacktestCustomers = 100

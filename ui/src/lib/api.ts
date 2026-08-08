@@ -100,6 +100,11 @@ export interface ScreeningListFreshnessStat {
   list_type: string
   stale_days: number
   needs_operational_alert: boolean
+  operational_state?: "never_imported" | "ready" | "stale" | "unreadable" | "failed" | "unavailable"
+  last_attempt_at?: string
+  last_success_at?: string
+  age_seconds?: number
+  diagnostic?: string
 }
 
 export interface DashboardStats {
@@ -113,11 +118,18 @@ export interface DashboardStats {
   recent_transactions: number
   recent_transactions_window_hours: number
   screening_list_freshness?: ScreeningListFreshnessStat[]
+  // Every source the readiness policy marks required is usable. False means
+  // customers are being screened against an incomplete picture.
+  screening_ready?: boolean
+  screening_degraded_sources?: string[]
 }
 
 export type RiskTier = "low" | "medium" | "high"
 export type AlertSeverity = "low" | "medium" | "high" | "critical"
-export type AlertStatus = "open" | "investigating" | "escalated" | "closed_true_positive" | "closed_false_positive"
+// suppressed is whitelist/system-only: an operator PATCH cannot reach it, but
+// the UI must be able to render an alert that is in it. Omitting it made a
+// suppressed alert fall through every status label as an unknown string.
+export type AlertStatus = "open" | "investigating" | "escalated" | "closed_true_positive" | "closed_false_positive" | "suppressed"
 export type CaseStatus =
   | "open"
   | "new"
@@ -134,10 +146,16 @@ export interface Customer {
   customer_type: string
   country_code: string
   product_types: string[]
-  attributes: Record<string, string>
+  status?: "active" | "dormant" | "frozen" | "closed"
+  attributes: Record<string, unknown>
   risk_score?: number
   risk_tier?: RiskTier
   last_scored_at?: string
+  // Required identity attributes this record does not carry, per the
+  // kyc_required_fields policy for its type. Recomputed on read and absent
+  // when nothing is missing.
+  kyc_missing_fields?: string[]
+  kyc_policy_version?: string
   created_at: string
   updated_at: string
   // EDD 3段階エスカレーション（the case-management workflow §EDD未実施継続時の段階的
@@ -167,6 +185,11 @@ export interface Alert {
   due_at?: string
   disposition?: string
   disposition_rationale?: string
+  // Set when a whitelist entry or a prior false-positive determination
+  // withheld the alert from the default queue. The alert still exists; the
+  // reason is what tells an operator why it is not in front of them.
+  suppressed?: boolean
+  suppression_reason?: string
 }
 
 export interface Case {
@@ -318,8 +341,37 @@ export interface Transaction {
   counterparty_id?: string
   counterparty_country?: string
   channel?: string
+  account_id?: string
+  counterparty?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  idempotency_key?: string
+  // What the submitting system asserted.
+  travel_rule_applicable?: boolean
+  travel_rule_evidence?: Record<string, unknown>
+  travel_rule_not_applicable_reason?: string
+  travel_rule_not_applicable_reason_code?: string
+  // The server's own status, derived from the evidence present rather than
+  // from the client's assertion.
+  travel_rule_status?: "complete" | "incomplete" | "not_applicable"
+  // The recorded verdict. Null on transactions accepted before the policy
+  // existed: that is neither "not applicable" nor "unknown", it means the
+  // system never assessed this transaction at all.
+  travel_rule_assessment?: TravelRuleAssessment | null
   executed_at: string
   created_at: string
+}
+
+export interface TravelRuleAssessment {
+  policy_version: string
+  applicable: boolean
+  reason_code?: string
+  missing_fields?: string[]
+  threshold: number
+  currency: string
+  // The client's assertion and the policy's conclusion disagree; both are
+  // kept and a reviewer decides.
+  conflict?: boolean
+  evaluated_at: string
 }
 
 export interface ScoreRecord {
@@ -330,14 +382,24 @@ export interface ScoreRecord {
   factors: Factor[]
   rule_set_id: string
   rule_set_version: number
+  rule_set_sha256?: string
+  rationale?: string
+  actor?: string
+  override_evidence?: Record<string, unknown>
   scored_at: string
 }
 
 export interface Factor {
-  name: string
-  axis: string
-  score: number
-  description: string
+	name: string
+	axis: string
+	score: number
+	description: string
+	business_meaning?: string
+	weight?: number
+	contribution?: number
+	observed_value?: string
+	rule?: string
+	fallback?: boolean
 }
 
 export interface AuditEntry {
@@ -482,6 +544,30 @@ export interface BacktestJob {
   error?: string
   created_at: string
   updated_at: string
+  metadata?: {
+    rationale: string
+    cohort_preview: Record<string, unknown>
+    baseline_snapshot: Record<string, unknown>
+    candidate_snapshot: Record<string, unknown>
+    rerun_of?: string
+  }
+}
+
+// A customer the candidate rule set starts alerting on (added), stops
+// alerting on (removed), or treats identically (unchanged). `mixed` only
+// appears in the aggregate: added by one scenario and removed by another.
+export type BacktestDeltaKind = "added" | "removed" | "unchanged" | "mixed"
+
+export interface BacktestAffectedCustomer {
+  job_id: string
+  scenario_id: string
+  customer_id: string
+  delta_kind: Exclude<BacktestDeltaKind, "mixed">
+}
+
+export interface AffectedBacktestCustomersPage extends PaginatedResponse<string> {
+  delta_kinds?: Record<string, BacktestDeltaKind>
+  rows?: BacktestAffectedCustomer[]
 }
 
 export interface BacktestScenarioResult {
@@ -491,6 +577,8 @@ export interface BacktestScenarioResult {
   medium_severity_count: number
   low_severity_count: number
   affected_customer_ids: string[]
+  added_customer_ids?: string[]
+  removed_customer_ids?: string[]
 }
 
 export type Role = "admin" | "analyst" | "viewer"
@@ -531,6 +619,268 @@ export interface ScreenResult {
   matches: ScreenMatch[]
   lists_checked: number
   screened_at: string
+  run_id?: string
+  result_ids?: string[]
+}
+
+export type ScreeningResultStatus = "NEW" | "REVIEWING" | "TRUE_POSITIVE" | "FALSE_POSITIVE"
+
+export interface ScreeningResultRecord {
+  id: string
+  customer_id: string
+  list_id: string
+  list_type: string
+  entry_id: string
+  matched_name: string
+  similarity: number
+  status: ScreeningResultStatus
+  false_positive_reason?: string
+  reviewed_by?: string
+  reviewed_at?: string
+  screened_at: string
+  created_at: string
+  run_id?: string
+  suppressed: boolean
+  suppression_reason?: string
+  match_evidence?: Record<string, unknown>
+  case_id?: string
+  // A required watchlist source was not ready when this run started, so the
+  // absence of a hit is not evidence that the customer is clear.
+  degraded?: boolean
+  degraded_sources?: string[]
+  version: number
+  updated_at: string
+}
+
+export interface ScreeningRun {
+  id: string
+  customer_id: string
+  list_ids: string[]
+  config_digests: Record<string, string>
+  status: "running" | "completed" | "failed" | "partial"
+  result_count: number
+  error?: string
+  actor: string
+  degraded?: boolean
+  degraded_sources?: string[]
+  started_at: string
+  completed_at?: string
+  created_at: string
+}
+
+export interface ScreeningSourceStatus {
+  list_id: string
+  list_type: string
+  configured: boolean
+  operational_state: "never_imported" | "ready" | "stale" | "unreadable" | "failed" | "unavailable"
+  last_attempt_at?: string
+  last_failure_at?: string
+  last_success_at?: string
+  age_seconds?: number
+  freshness_threshold_seconds: number
+  consecutive_failures: number
+  diagnostic?: string
+}
+
+export interface ScreeningSourceDirectory {
+  data: ScreeningSourceStatus[]
+  configured_count: number
+  ready_count: number
+  unready_count: number
+  // screening_ready only counts sources the readiness policy marks required,
+  // so a stale optional source (pep_provider by default) leaves it true.
+  screening_ready: boolean
+  degraded_sources?: string[]
+  policy_version?: string
+}
+
+export interface PendingEvaluation {
+  id: string
+  customer_id: string
+  transaction_ids: string[]
+  alert_ids?: string[]
+  status: "PENDING_REVIEW" | "PROCESSING" | "RESOLVED" | "FAILED"
+  reason: string
+  batch_run_id?: string
+  retry_count: number
+  resolved_at?: string
+  last_attempt_at?: string
+  next_retry_at?: string
+  escalated_at?: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PendingEvaluationHistoryEntry {
+  id: string
+  pending_evaluation_id: string
+  from_status: PendingEvaluation["status"]
+  to_status: PendingEvaluation["status"]
+  action: string
+  reason: string
+  actor: string
+  retry_count: number
+  created_at: string
+}
+
+export interface ScreeningResultHistoryEntry {
+  id: string
+  screening_result_id: string
+  from_status: ScreeningResultStatus
+  to_status: ScreeningResultStatus
+  rationale: string
+  actor: string
+  version: number
+  created_at: string
+}
+
+export interface ScoreExplanation {
+  score: ScoreRecord
+  // The sum of factors[].contribution. `reconciled` reports whether it agrees
+  // with the record's own score; before Wave 3 both fields held the same
+  // number, so the total could never disagree and never tested anything.
+  total_reconciled: number
+  reconciled?: boolean
+  reconciliation_delta?: number
+  // Score bands the engine used to decide the tier, as [min, max] per tier.
+  // Absent when the configured engine cannot report them.
+  tier_thresholds?: Record<string, [number, number]>
+  tier_reason?: string
+  rule_set_id: string
+  rule_set_sha256: string
+  priority: string
+  deterministic: boolean
+}
+
+export interface CDDRuleSetCandidate {
+  id: string
+  name: string
+  version: number
+  is_active: boolean
+  digest: string
+  matched_on?: string
+  priority?: number
+  recommended: boolean
+}
+
+export interface CDDRuleSetCandidates {
+  data: CDDRuleSetCandidate[]
+  policy_version: string
+  // True when the server, not the caller, chooses the rule set.
+  selection_authority?: boolean
+}
+
+export type CDDOverrideStatus = "pending_approval" | "approved" | "rejected"
+
+export interface CDDScoreOverride {
+  id: string
+  customer_id: string
+  score_record_id?: string
+  proposed_tier: RiskTier
+  computed_tier: RiskTier
+  computed_score?: number
+  reason: string
+  evidence?: Record<string, unknown>
+  supporting_documents?: string[]
+  status: CDDOverrideStatus
+  requested_by: string
+  requested_at: string
+  decided_by?: string
+  decided_at?: string
+  decision_rationale?: string
+  version: number
+}
+
+// A score request that carried override evidence answers with the computed
+// record plus the proposal it parked for approval; without evidence the
+// record is returned bare. api.customers.score normalises both into this.
+export interface ScoreResponse {
+  score: ScoreRecord
+  pending_override?: CDDScoreOverride
+}
+
+export type EDDCompletionStatus = "not_required" | "open" | "overdue" | "escalated" | "completed"
+
+export interface EDDPanel {
+  required: boolean
+  requested_at?: string
+  stage1_last_sent_at?: string
+  stage2_notified_at?: string
+  stage3_notified_at?: string
+  completed_at?: string
+  closed_at?: string
+  close_reason?: string
+  current_stage: string
+  elapsed_days?: number
+  // remaining_days is clamped at zero and cannot express lateness; read
+  // overdue_days instead, which counts whole days past the due boundary.
+  remaining_days?: number
+  overdue_days?: number
+  due_at?: string
+  next_stage?: string
+  next_stage_at?: string
+  completion_status: EDDCompletionStatus
+  case_id?: string
+  policy_version?: string
+}
+
+export type EDDEventType = "requested" | "stage_escalated" | "completed" | "reopened" | "closed_on_downgrade"
+
+export interface EDDEvent {
+  id: string
+  customer_id: string
+  event_type: EDDEventType
+  stage?: string
+  rationale?: string
+  case_id?: string
+  actor: string
+  policy_version?: string
+  created_at: string
+}
+
+export interface CustomerIdentityHistoryEntry {
+  id: string
+  customer_id: string
+  changed_fields: Record<string, unknown>
+  actor: string
+  rationale: string
+  created_at: string
+}
+
+export interface BacktestCohortPreview {
+  customer_count: number
+  transaction_count: number
+  transaction_counted: boolean
+  sample_customer_ids: string[]
+  empty: boolean
+  warnings: string[]
+}
+
+export interface PendingEvaluationStats {
+  backlog: number
+  by_status: Record<string, number>
+  failed: number
+  exhausted: number
+  // null on an empty queue: an age of zero would read as "just arrived".
+  oldest_created_at: string | null
+  oldest_age_seconds: number
+  evaluated_at: string
+}
+
+export interface CustomerInvestigation {
+  customer: Customer
+  counts: Record<string, number>
+  transactions: Transaction[]
+  alerts: Alert[]
+  cases: Case[]
+  screening_results: ScreeningResultRecord[]
+  score_history: ScoreRecord[]
+  timeline?: Array<{ id: string; kind: string; entity_id: string; summary: string; created_at: string }>
+  edd?: EDDPanel
+  pagination?: Record<string, PaginationMeta>
+  freshness: string
+  partial_failures: string[]
 }
 
 function normalizeScreenResult(result: ScreenResult): ScreenResult {
@@ -589,6 +939,46 @@ export interface BatchMonitorResponse {
   alerts_total: number
   results: BatchMonitorResult[]
   duration: string
+}
+
+export interface TargetManifest {
+  id: string
+  operation: string
+  target_mode: "selected" | "filter" | "all"
+  customer_ids: string[]
+  sample_customer_ids: string[]
+  target_count: number
+  // How many customers matched the selection but cannot be operated on, and
+  // why. Without these, target_count reads as "everyone you picked".
+  excluded_count?: number
+  excluded_reasons?: Record<string, number>
+  // What confirming this run will do, derived server-side from the operation.
+  expected_side_effects?: string[]
+  rule_set_id?: string
+  rule_set_version?: number
+  criteria: string
+  token?: string
+  status: "preview" | "confirmed" | "consumed" | "expired"
+  version: number
+  expires_at: string
+  created_at: string
+  confirmed_at?: string
+}
+
+export interface BatchRun {
+  id: string
+  job_type: string
+  operation: string
+  status: "running" | "completed" | "failed" | "partial" | "cancelled"
+  parameters: Record<string, unknown>
+  target_manifest_id: string
+  result_counts: Record<string, number>
+  customer_outcomes?: Record<string, { customer_id: string; status: "succeeded" | "failed" | "queued" | "error"; alert_ids?: string[]; error?: string; attempt: number; updated_at: string }>
+  error?: string
+  rerun_of?: string
+  started_at: string
+  completed_at?: string
+  updated_at: string
 }
 
 export interface SystemInfo {
@@ -730,8 +1120,108 @@ export interface WhitelistReview {
   created_at: string
 }
 
+// The five policy documents the server loads at startup (ADR-0016). Every
+// threshold, required field, stage schedule and reason code the UI shows must
+// come from here rather than from a constant in a page, so the screen cannot
+// state a rule the server does not apply.
+export type PolicyName =
+  | "kyc_required_fields"
+  | "edd"
+  | "cdd_rule_selection"
+  | "travel_rule"
+  | "screening_readiness"
+
+export interface PolicyDescriptor {
+  name: PolicyName
+  schema_version: string
+  policy_version: string
+  digest: string
+  source: "file" | "default"
+}
+
+export interface KYCTypeRequirements {
+  required: string[]
+  recommended?: string[]
+}
+
+export interface KYCRequiredFieldsPolicy {
+  schema_version: string
+  policy_version: string
+  enforcement: "warn" | "reject"
+  defaults: KYCTypeRequirements
+  types: Record<string, KYCTypeRequirements>
+}
+
+export interface EDDPolicyStage {
+  name: string
+  after_days: number
+  action: string
+  case_priority?: CasePriority
+}
+
+export interface EDDPolicyDocument {
+  schema_version: string
+  policy_version: string
+  trigger_tiers: RiskTier[]
+  stages: EDDPolicyStage[]
+  due_days: number
+  completion: { requires_rationale: boolean; requires_case_link: boolean }
+  tier_downgrade: string
+}
+
+export interface CDDRuleSelectionPolicyDocument {
+  schema_version: string
+  policy_version: string
+  default_rule_set_id: string
+  selection_authority: string
+  rules: { match: Record<string, string[] | undefined>; rule_set_id: string; priority: number }[]
+}
+
+export type CounterpartyType = "vasp" | "unhosted_wallet" | "unknown" | "exempt"
+
+export interface TravelRulePolicyDocument {
+  schema_version: string
+  policy_version: string
+  threshold_amount: number
+  threshold_currency: string
+  covered_channels: string[]
+  covered_directions: string[]
+  applicable_counterparty_types: CounterpartyType[]
+  required_evidence_fields: Record<string, string[]>
+  not_applicable_reasons: string[]
+  assertion_authority: string
+  incomplete_routing: string
+}
+
+export interface ScreeningReadinessPolicyDocument {
+  schema_version: string
+  policy_version: string
+  default_freshness_seconds: number
+  mark_runs_degraded: boolean
+  gate_screening_runs: boolean
+  sources: { list_id: string; required: boolean; freshness_seconds?: number }[]
+}
+
+interface PolicyDocumentByName {
+  kyc_required_fields: KYCRequiredFieldsPolicy
+  edd: EDDPolicyDocument
+  cdd_rule_selection: CDDRuleSelectionPolicyDocument
+  travel_rule: TravelRulePolicyDocument
+  screening_readiness: ScreeningReadinessPolicyDocument
+}
+
+export interface PolicyDocument<N extends PolicyName = PolicyName> extends PolicyDescriptor {
+  name: N
+  document: PolicyDocumentByName[N]
+}
+
 export const api = {
   dashboard: () => request<DashboardStats>("/dashboard"),
+  policies: {
+    list: () => request<{ data: PolicyDescriptor[] }>("/policies"),
+    get: <N extends PolicyName>(name: N) =>
+      request<PolicyDocument<N>>(`/policies/${encodeURIComponent(name)}`),
+  },
   customers: {
     list: (params?: CursorPageParams & { search?: string }) => {
       const qs = buildCursorQuery(params)
@@ -742,27 +1232,102 @@ export const api = {
     listAll: (params?: { search?: string }) =>
       listAllPages((page) => api.customers.list({ ...params, ...page })),
     get: (id: string) => request<Customer>(`/customers/${encodeURIComponent(id)}`),
-    create: (data: { external_id: string; customer_type: string; country_code: string; product_types: string[]; attributes: Record<string, string> }) =>
+    create: (data: { external_id: string; customer_type: string; country_code: string; product_types: string[]; attributes: Record<string, unknown>; identity?: Record<string, unknown> }) =>
       request<Customer>("/customers", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: { country_code?: string; product_types?: string[]; attributes?: Record<string, string> }) =>
+    update: (id: string, data: { country_code?: string; status?: Customer["status"]; product_types?: string[]; attributes?: Record<string, unknown>; identity?: Record<string, unknown>; rationale?: string; expected_updated_at?: string }) =>
       request<Customer>(`/customers/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
     scoreHistory: (id: string) =>
       request<ScoreRecord[]>(`/customers/${encodeURIComponent(id)}/scores`),
-    score: (id: string, ruleSetId: string) =>
-      request<ScoreRecord>(`/customers/${encodeURIComponent(id)}/score`, {
+    scoreExplanation: (id: string, scoreId?: string) => {
+      const suffix = scoreId ? `/scores/${encodeURIComponent(scoreId)}/explanation` : "/score-explanation"
+      return request<ScoreExplanation>(`/customers/${encodeURIComponent(id)}${suffix}`)
+    },
+    screeningResults: (id: string, params?: CursorPageParams & { status?: ScreeningResultStatus; listId?: string }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.listId) qs.set("list_id", params.listId)
+      const query = qs.toString()
+      return request<PaginatedResponse<ScreeningResultRecord>>(`/customers/${encodeURIComponent(id)}/screening-results${query ? `?${query}` : ""}`)
+    },
+    screeningRuns: (id: string, params?: CursorPageParams) => {
+      const qs = buildCursorQuery(params)
+      qs.set("customer_id", id)
+      return request<PaginatedResponse<ScreeningRun>>(`/screening/runs?${qs.toString()}`)
+    },
+    investigation: (id: string) =>
+      request<CustomerInvestigation>(`/customers/${encodeURIComponent(id)}/investigation`),
+    // Closing or reopening an EDD window. rationale is required by the edd
+    // policy for a reopen and, by default, for a completion too.
+    eddAction: (id: string, action: "complete" | "reopen", data: { rationale: string; case_id?: string; expected_updated_at?: string }) =>
+      request<EDDPanel>(`/customers/${encodeURIComponent(id)}/edd/${action}`, { method: "POST", body: JSON.stringify(data) }),
+    eddEvents: (id: string) =>
+      request<EDDEvent[]>(`/customers/${encodeURIComponent(id)}/edd-events`),
+    identityHistory: (id: string, params?: CursorPageParams) => {
+      const qs = buildCursorQuery(params)
+      const query = qs.toString()
+      return request<PaginatedResponse<CustomerIdentityHistoryEntry>>(`/customers/${encodeURIComponent(id)}/identity-history${query ? `?${query}` : ""}`)
+    },
+    score: async (id: string, ruleSetId: string, options?: { rule_set_version?: number; rationale?: string; override_evidence?: Record<string, unknown>; confirmed?: boolean }) => {
+      const body = await request<ScoreRecord | ScoreResponse>(`/customers/${encodeURIComponent(id)}/score`, {
         method: "POST",
-        body: JSON.stringify({ rule_set_id: ruleSetId }),
+        body: JSON.stringify({ rule_set_id: ruleSetId, ...options }),
+      })
+      // The envelope has no id of its own; a bare record always does.
+      return "id" in body ? { score: body } : body
+    },
+    cddRuleSets: (id: string) =>
+      request<CDDRuleSetCandidates>(`/customers/${encodeURIComponent(id)}/cdd-rule-sets`),
+    scoreOverrides: (id: string) =>
+      request<CDDScoreOverride[]>(`/customers/${encodeURIComponent(id)}/score-overrides`),
+    // The approver must not be the requester; the server answers 403 when
+    // they are the same person.
+    decideScoreOverride: (id: string, overrideId: string, data: { rationale: string; expected_version: number; reject?: boolean }) =>
+      request<CDDScoreOverride>(`/customers/${encodeURIComponent(id)}/score-overrides/${encodeURIComponent(overrideId)}/approve`, {
+        method: "POST",
+        body: JSON.stringify(data),
       }),
     screen: async (id: string, listIds: string[]) =>
       normalizeScreenResult(await request<ScreenResult>(`/customers/${encodeURIComponent(id)}/screen`, {
         method: "POST",
         body: JSON.stringify({ list_ids: listIds }),
       })),
+    reviewScreeningResult: (resultId: string, data: { status: ScreeningResultStatus; false_positive_reason?: string; rationale?: string; expected_version: number }) =>
+      request<{ result: ScreeningResultRecord; case_id?: string; case_created: boolean }>(`/screening/results/${encodeURIComponent(resultId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
   },
-  alerts: {
-    list: (params?: CursorPageParams & { customerId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; severity?: AlertSeverity; scenarioId?: string; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
+  screening: {
+    // Omitting `suppressed` returns both suppressed and unsuppressed hits,
+    // which is the historical queue contents; pass false to hide repeat false
+    // positives and true to audit what was hidden.
+    results: (params?: CursorPageParams & { customerId?: string; status?: ScreeningResultStatus; listId?: string; suppressed?: boolean }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.listId) qs.set("list_id", params.listId)
+      if (params?.suppressed != null) qs.set("suppressed", String(params.suppressed))
+      const query = qs.toString()
+      return request<PaginatedResponse<ScreeningResultRecord>>(`/screening/results${query ? `?${query}` : ""}`)
+    },
+    getResult: (id: string) => request<ScreeningResultRecord>(`/screening/results/${encodeURIComponent(id)}`),
+    history: (id: string) => request<ScreeningResultHistoryEntry[]>(`/screening/results/${encodeURIComponent(id)}/history`),
+    sources: (params?: { freshnessThresholdSeconds?: number; sourceIds?: string[] }) => {
+      const qs = new URLSearchParams()
+      if (params?.sourceIds?.length) qs.set("source_ids", params.sourceIds.join(","))
+      if (params?.freshnessThresholdSeconds != null) qs.set("freshness_threshold_seconds", String(params.freshnessThresholdSeconds))
+      const query = qs.toString()
+      return request<ScreeningSourceDirectory>(`/screening/sources${query ? `?${query}` : ""}`)
+    },
+  },
+  alerts: {
+    list: (params?: CursorPageParams & { customerId?: string; transactionId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; severity?: AlertSeverity; scenarioId?: string; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      // Server-side transaction scoping (#78). Filtering a customer's page
+      // client side silently drops records once the customer has more than
+      // one page of alerts.
+      if (params?.transactionId) qs.set("transaction_id", params.transactionId)
       if (params?.status) qs.set("status", params.status)
       if (params?.active != null) qs.set("active", String(params.active))
       if (params?.terminal != null) qs.set("terminal", String(params.terminal))
@@ -802,9 +1367,12 @@ export const api = {
       }),
   },
   cases: {
-    list: (params?: CursorPageParams & { customerId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; priority?: CasePriority; disposition?: string; strCandidate?: boolean; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
+    list: (params?: CursorPageParams & { customerId?: string; transactionId?: string; status?: string; active?: boolean; terminal?: boolean; assignee?: string; mine?: boolean; team?: string; unassigned?: boolean; priority?: CasePriority; disposition?: string; strCandidate?: boolean; search?: string; overdue?: boolean; minAgeDays?: number; maxAgeDays?: number }) => {
       const qs = buildCursorQuery(params)
       if (params?.customerId) qs.set("customer_id", params.customerId)
+      // The server resolves a transaction to its alerts and then to their
+      // cases (#78), so the join is not re-implemented per client.
+      if (params?.transactionId) qs.set("transaction_id", params.transactionId)
       if (params?.status) qs.set("status", params.status)
       if (params?.active != null) qs.set("active", String(params.active))
       if (params?.terminal != null) qs.set("terminal", String(params.terminal))
@@ -872,8 +1440,8 @@ export const api = {
     listAll: (customerId: string) =>
       listAllPages((page) => api.transactions.list(customerId, page)),
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
-    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; executed_at: string }) =>
-      request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data) }),
+    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; travel_rule_not_applicable_reason_code?: string; executed_at: string }, idempotencyKey?: string) =>
+      request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data), ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}) }),
   },
   audit: {
     list: (params?: AuditListParams) => {
@@ -895,13 +1463,53 @@ export const api = {
     score: (customerIds?: string[]) =>
       request<BatchScoreResponse>("/batch/score", {
         method: "POST",
-        body: JSON.stringify({ customer_ids: customerIds }),
+        body: JSON.stringify({ customer_ids: customerIds, target_mode: customerIds?.length ? "selected" : "all" }),
       }),
     monitor: (customerIds?: string[]) =>
       request<BatchMonitorResponse>("/batch/monitor", {
         method: "POST",
-        body: JSON.stringify({ customer_ids: customerIds }),
+        body: JSON.stringify({ customer_ids: customerIds, target_mode: customerIds?.length ? "selected" : "all" }),
       }),
+    preview: (data: { operation: string; target_mode: "selected" | "all"; customer_ids?: string[]; rationale?: string }) =>
+      request<TargetManifest>("/batch/targets/preview", { method: "POST", body: JSON.stringify(data) }),
+    confirm: (id: string, token: string, expectedVersion: number, rationale?: string) =>
+      request<TargetManifest>(`/batch/targets/${encodeURIComponent(id)}/confirm`, { method: "POST", body: JSON.stringify({ token, expected_version: expectedVersion, rationale }) }),
+    runs: (params?: CursorPageParams & { operation?: string; status?: string }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.operation) qs.set("operation", params.operation)
+      if (params?.status) qs.set("status", params.status)
+      const query = qs.toString()
+      return request<PaginatedResponse<BatchRun>>(`/batch/runs${query ? `?${query}` : ""}`)
+    },
+    createRun: (data: { operation: string; target_manifest_id: string; parameters?: Record<string, unknown>; rationale: string; idempotency_key?: string }) =>
+      request<BatchRun>("/batch/runs", { method: "POST", body: JSON.stringify(data), ...(data.idempotency_key ? { headers: { "Idempotency-Key": data.idempotency_key } } : {}) }),
+    getRun: (id: string) => request<BatchRun>(`/batch/runs/${encodeURIComponent(id)}`),
+    rerun: (id: string) => request<BatchRun>(`/batch/runs/${encodeURIComponent(id)}/rerun`, { method: "POST" }),
+    // The server has had POST /batch/runs/{id}/cancel since the durable run
+    // work landed; there was no client for it, so a long run could be started
+    // and not stopped.
+    cancel: (id: string) => request<BatchRun>(`/batch/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+  },
+  pending: {
+    // Backlog, oldest age and failed/exhausted counts: the stop conditions
+    // #73 asks for. A page of rows cannot answer any of them.
+    stats: () => request<PendingEvaluationStats>("/pending-evaluations/stats"),
+    list: (params?: CursorPageParams & { status?: string; customerId?: string; batchRunId?: string; createdFrom?: string; createdTo?: string; minAgeDays?: number; maxAgeDays?: number }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.batchRunId) qs.set("batch_run_id", params.batchRunId)
+      if (params?.createdFrom) qs.set("created_from", params.createdFrom)
+      if (params?.createdTo) qs.set("created_to", params.createdTo)
+      if (params?.minAgeDays != null) qs.set("min_age_days", String(params.minAgeDays))
+      if (params?.maxAgeDays != null) qs.set("max_age_days", String(params.maxAgeDays))
+      const query = qs.toString()
+      return request<PaginatedResponse<PendingEvaluation>>(`/pending-evaluations${query ? `?${query}` : ""}`)
+    },
+    get: (id: string) => request<PendingEvaluation>(`/pending-evaluations/${encodeURIComponent(id)}`),
+    history: (id: string) => request<PendingEvaluationHistoryEntry[]>(`/pending-evaluations/${encodeURIComponent(id)}/history`),
+    transition: (id: string, action: "retry" | "resolve" | "escalate", data: { reason: string; expected_version: number }) =>
+      request<PendingEvaluation>(`/pending-evaluations/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify(data) }),
   },
   reports: {
     list: (
@@ -954,10 +1562,35 @@ export const api = {
       `${BASE}/reports/str/export?alert_id=${encodeURIComponent(alertId)}&format=${format}`,
   },
   backtest: {
-    create: async (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string }, signal?: AbortSignal) =>
+    create: async (input: { from: string; to: string; customer_ids?: string[]; scenario_ids?: string[]; baseline_rule_set_id: string; candidate_rule_set_id: string; rationale?: string; rerun_of?: string }, signal?: AbortSignal) =>
       normalizeBacktestJob(await request<BacktestJob>("/backtests", { method: "POST", body: JSON.stringify(input), signal })),
     get: async (id: string, signal?: AbortSignal) =>
       normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}`, { signal })),
+    list: (params?: CursorPageParams) => {
+      const qs = buildCursorQuery(params)
+      const query = qs.toString()
+      return request<PaginatedResponse<BacktestJob>>(`/backtests${query ? `?${query}` : ""}`).then((page) => ({ ...page, data: page.data.map(normalizeBacktestJob) }))
+    },
+    // Rule sets available for comparison, including inactive ones: a candidate
+    // is compared before it is activated, so the generic rule listing's
+    // active-only view could never offer it.
+    // Cohort preview *before* a job exists (#71). The count that used to be
+    // shown was computed while creating the job, so an operator learned the
+    // cohort was empty only after starting the comparison.
+    previewCohort: (data: { customer_ids?: string[]; customer_filter?: Record<string, unknown> }) =>
+      request<BacktestCohortPreview>("/backtests/preview", { method: "POST", body: JSON.stringify(data) }),
+    discoverRules: (params?: CursorPageParams) => {
+      const qs = buildCursorQuery(params)
+      const query = qs.toString()
+      return request<PaginatedResponse<RuleDefinition>>(`/backtests/rules${query ? `?${query}` : ""}`)
+    },
+    discoverAllRules: () => listAllPages((page) => api.backtest.discoverRules(page)),
+    affectedCustomers: (id: string, params?: CursorPageParams & { scenarioId?: string }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
+      const query = qs.toString()
+      return request<AffectedBacktestCustomersPage>(`/backtests/${encodeURIComponent(id)}/affected-customers${query ? `?${query}` : ""}`)
+    },
     cancel: async (id: string) =>
       normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" })),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>

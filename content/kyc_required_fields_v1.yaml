@@ -1,0 +1,77 @@
+schema_version: kyc_required_fields_v1
+policy_version: "2026-08-06-default"
+# warn: 不足があっても登録を受理し、Warning ヘッダと kyc_missing_fields で
+#       報告する。既存の連携を壊さずにポリシーを導入できる。
+# reject: 不足があれば 400 で拒否する。
+enforcement: warn
+# types に該当がない顧客タイプはこの defaults に落ちる。
+defaults:
+  required:
+    - name
+  recommended:
+    - name_kana
+    - address
+types:
+  individual:
+    required:
+      - name
+      - date_of_birth
+      - address
+    recommended:
+      - name_kana
+      - occupation
+      - nationality
+  corporate_domestic:
+    required:
+      - name
+      - address
+      - corporate_number
+      - representative_name
+    recommended:
+      - name_kana
+      - industry
+  corporate_foreign:
+    required:
+      - name
+      - address
+      - jurisdiction
+      - representative_name
+    recommended:
+      - beneficial_owners
+      - industry
+  trust:
+    required:
+      - name
+      - trust_parties
+    recommended:
+      - address
+      - jurisdiction
+  partnership:
+    required:
+      - name
+      - address
+      - representative_name
+    recommended:
+      - beneficial_owners
+  npo:
+    required:
+      - name
+      - address
+      - representative_name
+    recommended:
+      - name_kana
+  # 犯収法上の取引時確認義務は原則免除されるため、識別に必要な最小限のみを
+  # 必須とする。制裁リスト照合は顧客タイプに関わらず実施される。
+  government:
+    required:
+      - name
+      - jurisdiction
+    recommended:
+      - address
+  foreign_legal_arrangement:
+    required:
+      - name
+      - jurisdiction
+      - trust_parties
+    recommended:
+      - address
