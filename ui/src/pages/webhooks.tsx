@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { PagePurpose } from "@/components/page-purpose"
 import { useApi } from "@/hooks/use-api"
 import { api, type WebhookDLQEntry, type WebhookDelivery, type WebhookEventType } from "@/lib/api"
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react"
@@ -44,6 +45,7 @@ export function WebhooksPage() {
   const urlRef = useRef<HTMLInputElement>(null)
   const [selectedEvents, setSelectedEvents] = useState<WebhookEventType[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([])
   const [loadingDeliveries, setLoadingDeliveries] = useState(false)
 
@@ -95,7 +97,12 @@ export function WebhooksPage() {
     }
   }
 
+  // Deletion is confirmed in place rather than performed on the first click.
+  // The confirmation names the endpoint that stops receiving events, because
+  // an operator scanning a list of similar URLs cannot otherwise tell which
+  // row they are about to silence.
   async function handleDelete(id: string) {
+    setPendingDelete(null)
     await api.webhooks.delete(id)
     window.location.reload()
   }
@@ -145,6 +152,18 @@ export function WebhooksPage() {
           </Button>
         )}
       </div>
+
+      <PagePurpose
+        capabilityId="webhooks.manage"
+        bodyKey="webhooks.purpose.body"
+        points={[
+          "webhooks.purpose.consumers",
+          "webhooks.purpose.delivery",
+          "webhooks.purpose.payload",
+          "webhooks.purpose.removal",
+          "webhooks.purpose.owner",
+        ]}
+      />
 
       <div className="flex gap-2 border-b">
         <button
@@ -288,11 +307,33 @@ export function WebhooksPage() {
                       {expandedId === w.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       {t("webhooks.entry.deliveries")}
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(w.id)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t("webhooks.entry.deleteLabel")}
+                      title={t("webhooks.entry.deleteLabel")}
+                      onClick={() => setPendingDelete(w.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
+                {pendingDelete === w.id && (
+                  <div role="alertdialog" aria-label={t("webhooks.entry.confirmTitle")} className="mt-3 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+                    <p className="text-sm font-medium">{t("webhooks.entry.confirmTitle")}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {t("webhooks.entry.confirmDetail", { url: w.url, count: w.events.length })}
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      <Button size="sm" variant="destructive" onClick={() => void handleDelete(w.id)}>
+                        {t("webhooks.entry.confirmDelete")}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setPendingDelete(null)}>
+                        {t("webhooks.entry.cancelDelete")}
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {expandedId === w.id && (
                   <div className="mt-3 border-t pt-3">
                     {loadingDeliveries ? (

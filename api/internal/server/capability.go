@@ -114,7 +114,7 @@ var capabilityCatalog = []capabilityEntry{
 		// planned, so the omission is stated rather than left to be discovered.
 		id:       "retention.manage",
 		surfaces: []string{surfaceAPI},
-		docsURL:  "/docs/operations/retention",
+		docsURL:  "/docs/compliance/data-retention",
 		present:  func(s *Server) bool { return s.retention != nil },
 	},
 	{
@@ -162,7 +162,7 @@ var capabilityCatalog = []capabilityEntry{
 		id:         "audit.read",
 		permission: auth.PermAuditRead,
 		surfaces:   []string{surfaceUI, surfaceAPI},
-		docsURL:    "/docs/compliance/audit",
+		docsURL:    "/docs/auth",
 		present:    func(s *Server) bool { return s.audit != nil },
 	},
 	{
@@ -183,7 +183,7 @@ var capabilityCatalog = []capabilityEntry{
 		id:         "batch.execute.large",
 		permission: auth.PermBatchExecuteLarge,
 		surfaces:   []string{surfaceUI, surfaceAPI},
-		docsURL:    "/docs/operations/batch",
+		docsURL:    "/docs/operations/worker-mode",
 		present:    func(s *Server) bool { return s.batchRuns != nil },
 	},
 }

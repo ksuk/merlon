@@ -4,6 +4,7 @@ import { Outlet } from "react-router"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { LanguageSwitcher } from "./language-switcher"
+import { SessionMenu } from "./session-menu"
 import { Sidebar } from "./sidebar"
 
 function PageLoader() {
@@ -40,6 +41,7 @@ export function AppLayout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b px-6">
           <DemoDataBadge />
+          <SessionMenu />
           <LanguageSwitcher />
         </header>
         <main className="flex-1 overflow-y-auto bg-background p-6">

@@ -5,7 +5,29 @@
     "switcherLabel": "言語"
   },
   "layout": {
-    "demoDataBadge": "合成デモデータ"
+    "demoDataBadge": "合成デモデータ",
+    "session": {
+      "logout": "ログアウト",
+      "loggingOut": "ログアウト中…",
+      "logoutFailed": "ログアウトの完了を確認できませんでした。サインイン画面へ戻りました。",
+      "role": {
+        "admin": "管理者",
+        "analyst": "アナリスト",
+        "viewer": "閲覧者"
+      },
+      "userState": {
+        "loading": "セッションを読み込み中…",
+        "identified": "サインイン済み",
+        "not_configured": "ユーザー管理が未設定です",
+        "unauthenticated": "ユーザーセッションなし",
+        "failed": "セッションの取得に失敗しました"
+      },
+      "authMode": {
+        "disabled": "認証無効",
+        "apiKeyOnly": "APIキー認証",
+        "hint": "このデプロイが呼び出し元をどう認証するかを示します。"
+      }
+    }
   },
   "list": {
     "allLoaded": "すべてのレコードを読み込みました",
@@ -30,7 +52,8 @@
     "config": "設定検証",
     "audit": "監査ログ",
     "system": "システム",
-    "tagline": "AML/CFT Compliance Platform"
+    "tagline": "AML/CFT Compliance Platform",
+    "users": "ユーザー"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -1337,7 +1360,15 @@
       "lastUsed": " | 最終使用: {{date}}"
     },
     "revoke": "無効化",
-    "empty": "APIキーが登録されていません"
+    "empty": "APIキーが登録されていません",
+    "purpose": {
+      "body": "API キーは、人がサインインしていない状態で動作する機械的な呼び出し元（取り込みアダプター、定期ジョブ、スクリプト）を認証します。ユーザーアカウントの代わりではありません。",
+      "consumers": "想定利用者: 自組織が運用するサーバーサイド連携。ブラウザーへ渡したキーは漏洩した認証情報と同じです。",
+      "permission": "キーに割り当てたロールは、そのキーで行われるすべてのリクエストのロールになります。用途に足る最小のロールを発行してください。",
+      "display": "シークレットは作成時に一度だけ表示され、以後は取得できません。",
+      "revocation": "キーの失効は即時に反映され、取り消せません。そのキーを使っている連携は停止します。",
+      "owner": "運用責任者: このデプロイを運用する管理者。"
+    }
   },
   "reports": {
     "title": "STRレポート",
@@ -1501,7 +1532,12 @@
     },
     "entry": {
       "createdAt": "作成: {{date}}",
-      "deliveries": "配信履歴"
+      "deliveries": "配信履歴",
+      "deleteLabel": "この Webhook を削除",
+      "confirmTitle": "この Webhook を削除しますか？",
+      "confirmDetail": "{{url}} への以後の配信は即座に停止します。購読中のイベント種別 {{count}} 件が削除されます。",
+      "confirmDelete": "削除する",
+      "cancelDelete": "キャンセル"
     },
     "deliveries": {
       "table": {
@@ -1516,7 +1552,15 @@
       "failure": "失敗",
       "empty": "配信履歴がありません"
     },
-    "empty": "Webhookが登録されていません"
+    "empty": "Webhookが登録されていません",
+    "purpose": {
+      "body": "Webhook は AML イベントを Merlon から自組織のシステム（チケットキュー、チャットチャンネル、下流のケース管理）へ送出します。送出専用であり、Merlon が応答を指示として読み取ることはありません。",
+      "consumers": "想定利用者: 自組織が管理する HTTPS エンドポイント。POST を受け取り、その正当性を検証できること。",
+      "delivery": "配信はバックオフ付きで再試行されます。成功しなかった配信は本ページのデッドレターキューに入り、再処理できます。",
+      "payload": "ペイロードはイベント種別と対象レコードの識別子を伝えるものであり、API でレコード本体を読む代わりにはなりません。",
+      "removal": "Webhook を削除すると以後の配信は即座に停止します。キューまたはデッドレターキューに残っている配信が、削除済みエンドポイントへ再送されることはありません。",
+      "owner": "運用責任者: 受信側システムを運用する管理者。"
+    }
   },
   "whitelist": {
     "title": "ホワイトリスト",
@@ -1558,5 +1602,26 @@
     "hours": "{{count}}時間",
     "minutes": "{{count}}分",
     "days": "{{count}}日"
+  },
+  "capability": {
+    "availability": {
+      "available": "利用可能",
+      "not_configured": "未設定",
+      "forbidden": "権限なし",
+      "unsupported": "非対応",
+      "degraded": "劣化",
+      "unavailable": "利用不可"
+    },
+    "reason": {
+      "dependency_not_configured": "このデプロイでは当該機能が設定されていません。",
+      "permission_required": "あなたのロールには必要な権限がありません。",
+      "authentication_required": "この機能を使うにはサインインしてください。",
+      "capability_lookup_failed": "ケイパビリティ契約を読み取れなかったため、可用性は不明です。",
+      "unknown_capability": "このサーバーは当該機能を説明していません。"
+    },
+    "apiOnly": "この機能は API のみで提供されます。",
+    "documentation": "ドキュメント",
+    "purposeLabel": "この画面の目的",
+    "stateLabel": "可用性"
   }
 }

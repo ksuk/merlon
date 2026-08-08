@@ -988,10 +988,48 @@ export interface SystemInfo {
   features: Record<string, boolean>
 }
 
+// AuthMode names how the deployment authenticates callers. "disabled" is an
+// evaluation deployment with no roles at all: the shell must show that state
+// rather than let it read as a normal authenticated session (ADR-0024).
+export type AuthMode = "disabled" | "api_key_only" | "session"
+
+export type CapabilityAvailability =
+  | "available"
+  | "not_configured"
+  | "forbidden"
+  | "unsupported"
+  | "degraded"
+  | "unavailable"
+
+export interface CapabilityDescriptor {
+  id: string
+  availability: CapabilityAvailability
+  required_permission?: string
+  surfaces: ("ui" | "api")[]
+  reason_code?: string
+  docs_url?: string
+  checked_at: string
+  expires_at?: string | null
+}
+
+export interface Capabilities {
+  auth_mode: AuthMode
+  user_id?: string
+  role?: Role
+  permissions: string[]
+  checked_at: string
+  data: CapabilityDescriptor[]
+}
+
 export interface AuthUser {
   id: string
   email: string
   role: Role
+  // Additive CAP-01 fields. Absent on a deployment running an older API, which
+  // is why every consumer treats them as optional rather than assuming a shape.
+  auth_mode?: AuthMode
+  roles?: string[]
+  permissions?: string[]
 }
 
 export interface User {
@@ -1665,6 +1703,7 @@ export const api = {
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),
+    capabilities: () => request<Capabilities>("/system/capabilities"),
   },
   whitelist: {
     list: (status?: WhitelistEntryStatus) => {

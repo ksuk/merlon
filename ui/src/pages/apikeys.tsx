@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PagePurpose } from "@/components/page-purpose"
 import { useApi } from "@/hooks/use-api"
 import { api, type Role } from "@/lib/api"
 import { Copy, Key, Plus, ShieldOff } from "lucide-react"
@@ -70,6 +71,18 @@ export function APIKeysPage() {
           {t("apikeys.createButton")}
         </Button>
       </div>
+
+      <PagePurpose
+        capabilityId="api_keys.manage"
+        bodyKey="apikeys.purpose.body"
+        points={[
+          "apikeys.purpose.consumers",
+          "apikeys.purpose.permission",
+          "apikeys.purpose.display",
+          "apikeys.purpose.revocation",
+          "apikeys.purpose.owner",
+        ]}
+      />
 
       {newKey && (
         <Card className="border-amber-200 bg-amber-50">

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -177,6 +179,25 @@ func TestCapabilityCatalogIsDerivedFromRolePermissions(t *testing.T) {
 		}
 		if c.docsURL == "" {
 			t.Errorf("capability %q has no docs_url; an API-only capability without documentation is an unexplained omission", c.id)
+		}
+	}
+}
+
+// TestCapabilityDocsURLsResolveToShippedPages keeps the "explicitly documented
+// API-only capability" promise honest. A docs_url that 404s is the same
+// unexplained omission the catalog exists to remove, and nothing else in the
+// build would notice a renamed page.
+func TestCapabilityDocsURLsResolveToShippedPages(t *testing.T) {
+	const docsPrefix = "/docs/"
+	for _, c := range capabilityCatalog {
+		if !strings.HasPrefix(c.docsURL, docsPrefix) {
+			t.Errorf("capability %q docs_url %q is not a documentation path", c.id, c.docsURL)
+			continue
+		}
+		// The test binary runs in api/internal/server.
+		page := filepath.Join("..", "..", "..", "docs", filepath.FromSlash(strings.TrimPrefix(c.docsURL, docsPrefix))+".md")
+		if _, err := os.Stat(page); err != nil {
+			t.Errorf("capability %q points at %q, but %s does not exist", c.id, c.docsURL, page)
 		}
 	}
 }

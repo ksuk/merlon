@@ -1,7 +1,8 @@
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useApi } from "@/hooks/use-api"
+import { useCan, useSession } from "@/hooks/use-session"
+import { CapabilityNotice } from "@/components/capability-notice"
 import { cn } from "@/lib/utils"
 import { api, type RuleDefinition, type RuleType } from "@/lib/api"
 import { translateApiError } from "@/lib/errors"
@@ -24,8 +25,12 @@ export function RulesPage() {
   function ruleTypeLabel(rt: RuleType) {
     return ruleTypes.find((entry) => entry.value === rt)?.label ?? rt
   }
-  const { data: user } = useApi(api.auth.me)
-  const isAdmin = user?.role === "admin"
+  // rule:write is the permission the server enforces on every write route.
+  // Reading it from the capability contract keeps the affordance and the
+  // enforcement derived from one source instead of two role literals.
+  const { user } = useSession()
+  const canWriteRules = useCan("rules.write")
+  const isAdmin = canWriteRules
 
   const [typeFilter, setTypeFilter] = useState<RuleType | "">("")
   const [activeOnly, setActiveOnly] = useState(false)
@@ -127,7 +132,7 @@ export function RulesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("rules.title")}</h1>
-        {isAdmin && (
+        {isAdmin ? (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setShowImport(!showImport)}>
               <FileUp className="h-4 w-4" />
@@ -138,6 +143,8 @@ export function RulesPage() {
               {t("rules.actions.create")}
             </Button>
           </div>
+        ) : (
+          <CapabilityNotice capabilityId="rules.write" />
         )}
       </div>
 

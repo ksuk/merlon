@@ -5,7 +5,29 @@
     "switcherLabel": "Language"
   },
   "layout": {
-    "demoDataBadge": "Synthetic demo data"
+    "demoDataBadge": "Synthetic demo data",
+    "session": {
+      "logout": "Sign out",
+      "loggingOut": "Signing out…",
+      "logoutFailed": "Sign-out could not be confirmed. You have been returned to the sign-in screen.",
+      "role": {
+        "admin": "Administrator",
+        "analyst": "Analyst",
+        "viewer": "Viewer"
+      },
+      "userState": {
+        "loading": "Loading session…",
+        "identified": "Signed in",
+        "not_configured": "No user directory configured",
+        "unauthenticated": "No user session",
+        "failed": "Session lookup failed"
+      },
+      "authMode": {
+        "disabled": "Authentication disabled",
+        "apiKeyOnly": "API key authentication",
+        "hint": "How this deployment authenticates callers."
+      }
+    }
   },
   "list": {
     "allLoaded": "All records loaded",
@@ -30,7 +52,8 @@
     "config": "Config validation",
     "audit": "Audit log",
     "system": "System",
-    "tagline": "AML/CFT Compliance Platform"
+    "tagline": "AML/CFT Compliance Platform",
+    "users": "Users"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1337,7 +1360,15 @@
       "lastUsed": " | Last used: {{date}}"
     },
     "revoke": "Revoke",
-    "empty": "No API keys registered"
+    "empty": "No API keys registered",
+    "purpose": {
+      "body": "API keys authenticate machine callers — ingestion adapters, scheduled jobs and scripts — that act without a person signed in. They are not a substitute for a user account.",
+      "consumers": "Intended consumers: server-side integrations you operate. A key sent to a browser is a disclosed credential.",
+      "permission": "The role assigned to a key is the role every request made with it carries. Issue the narrowest role that does the job.",
+      "display": "The secret is displayed once, at creation, and is never retrievable afterwards.",
+      "revocation": "Revoking a key takes effect immediately and cannot be undone. Any integration still using it stops working.",
+      "owner": "Operational owner: the administrator who runs this deployment."
+    }
   },
   "reports": {
     "title": "STR reports",
@@ -1501,7 +1532,12 @@
     },
     "entry": {
       "createdAt": "Created: {{date}}",
-      "deliveries": "Delivery history"
+      "deliveries": "Delivery history",
+      "deleteLabel": "Delete this webhook",
+      "confirmTitle": "Delete this webhook?",
+      "confirmDetail": "Future deliveries to {{url}} stop immediately. {{count}} subscribed event types are removed.",
+      "confirmDelete": "Delete",
+      "cancelDelete": "Cancel"
     },
     "deliveries": {
       "table": {
@@ -1516,7 +1552,15 @@
       "failure": "Failed",
       "empty": "No delivery history"
     },
-    "empty": "No webhooks registered"
+    "empty": "No webhooks registered",
+    "purpose": {
+      "body": "Webhooks push AML events out of Merlon to a system you operate — a ticketing queue, a chat channel, a downstream case system. They are outbound only; Merlon never reads a reply as instruction.",
+      "consumers": "Intended consumers: an HTTPS endpoint you control that can accept an unauthenticated-looking POST and verify it.",
+      "delivery": "Delivery is retried with backoff. A delivery that never succeeds lands in the dead-letter queue on this page, where it can be reprocessed.",
+      "payload": "Each payload names the event type and the affected record identifiers; it is not a substitute for reading the record through the API.",
+      "removal": "Deleting a webhook stops future deliveries immediately. Deliveries already queued or in the dead-letter queue are not replayed to a deleted endpoint.",
+      "owner": "Operational owner: the administrator who runs the receiving system."
+    }
   },
   "whitelist": {
     "title": "Whitelist",
@@ -1558,5 +1602,26 @@
     "hours": "{{count}}h",
     "minutes": "{{count}}m",
     "days": "{{count}}d"
+  },
+  "capability": {
+    "availability": {
+      "available": "Available",
+      "not_configured": "Not configured",
+      "forbidden": "Not permitted",
+      "unsupported": "Not supported",
+      "degraded": "Degraded",
+      "unavailable": "Unavailable"
+    },
+    "reason": {
+      "dependency_not_configured": "This deployment has not configured the function.",
+      "permission_required": "Your role does not hold the required permission.",
+      "authentication_required": "Sign in to use this function.",
+      "capability_lookup_failed": "The capability contract could not be read, so availability is unknown.",
+      "unknown_capability": "This server did not describe the function."
+    },
+    "apiOnly": "This function is supported through the API only.",
+    "documentation": "Documentation",
+    "purposeLabel": "What this screen is for",
+    "stateLabel": "Availability"
   }
 }
