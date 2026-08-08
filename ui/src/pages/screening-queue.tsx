@@ -1,3 +1,4 @@
+import { CursorPager, useCursorPager } from "@/components/cursor-pager"
 import { formatDuration } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,12 +22,13 @@ export function ScreeningQueuePage() {
   const [acting, setActing] = useState<string | null>(null)
   const [rationale, setRationale] = useState<Record<string, string>>({})
   const [actionError, setActionError] = useState<string | null>(null)
+  const pager = useCursorPager(`${status}:${showSuppressed}:${refreshKey}`)
   const { data: page, loading, error } = useApi(
     // Suppressed hits are repeat false positives an operator already decided
     // on; they are hidden by default and shown on request so what was hidden
     // stays auditable.
-    () => api.screening.results({ status: status || undefined, suppressed: showSuppressed ? undefined : false, limit: 50 }),
-    `${status}:${showSuppressed}:${refreshKey}`,
+    () => api.screening.results({ status: status || undefined, suppressed: showSuppressed ? undefined : false, limit: 50, cursor: pager.cursor || undefined }),
+    pager.requestKey,
   )
   const { data: sources, error: sourcesError } = useApi(() => api.screening.sources(), refreshKey)
   const { data: readiness } = usePolicy("screening_readiness")
@@ -163,6 +165,7 @@ export function ScreeningQueuePage() {
               </Table>
             </div>
           )}
+          <CursorPager pager={pager} nextCursor={page?.pagination?.next_cursor} loading={loading} testId="screening-queue-pager" />
         </CardContent>
       </Card>
     </div>

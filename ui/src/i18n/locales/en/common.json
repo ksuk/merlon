@@ -759,7 +759,9 @@
       "selectionPolicyVersion": "Rule selection policy {{version}}",
       "tierReason": "Why this tier",
       "tierThresholds": "Tier bands",
-      "notReconciled": "The factor contributions do not add up to the recorded score (difference {{delta}})"
+      "notReconciled": "The factor contributions do not add up to the recorded score (difference {{delta}})",
+      "appliedRuleSet": "Applied rule set",
+      "pinnedDigest": "Pinned digest"
     },
     "screening": {
       "title": "Screening result",

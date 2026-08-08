@@ -759,7 +759,9 @@
       "selectionPolicyVersion": "ルールセット選択ポリシー版 {{version}}",
       "tierReason": "ティア判定の根拠",
       "tierThresholds": "ティア境界",
-      "notReconciled": "要因の寄与合計が記録済みスコアと一致しません（差分 {{delta}}）"
+      "notReconciled": "要因の寄与合計が記録済みスコアと一致しません（差分 {{delta}}）",
+      "appliedRuleSet": "適用ルールセット",
+      "pinnedDigest": "固定ダイジェスト"
     },
     "screening": {
       "title": "スクリーニング結果",

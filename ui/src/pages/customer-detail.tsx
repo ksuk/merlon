@@ -1,4 +1,4 @@
-import { formatCountry } from "@/lib/utils"
+import { customerStatusVariant, formatCountry } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -429,7 +429,7 @@ export function CustomerDetailPage() {
                   ) : <span title={customer.country_code}>{formatCountry(customer.country_code, i18n.language)}</span>}
                 </dd>
               </div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">{t("customerDetail.basicInfo.status")}</dt><dd>{editing ? <select aria-label={t("customerDetail.basicInfo.status")} ref={statusRef} defaultValue={customer.status ?? "active"} className="rounded-md border bg-background px-2 py-1 text-sm"><option value="active">{t("customers.status.active")}</option><option value="dormant">{t("customers.status.dormant")}</option><option value="frozen">{t("customers.status.frozen")}</option><option value="closed">{t("customers.status.closed")}</option></select> : <Badge variant="outline">{t(`customers.status.${customer.status ?? "active"}`, { defaultValue: customer.status ?? "active" })}</Badge>}</dd></div>
+              <div className="flex justify-between"><dt className="text-muted-foreground">{t("customerDetail.basicInfo.status")}</dt><dd>{editing ? <select aria-label={t("customerDetail.basicInfo.status")} ref={statusRef} defaultValue={customer.status ?? "active"} className="rounded-md border bg-background px-2 py-1 text-sm"><option value="active">{t("customers.status.active")}</option><option value="dormant">{t("customers.status.dormant")}</option><option value="frozen">{t("customers.status.frozen")}</option><option value="closed">{t("customers.status.closed")}</option></select> : <Badge data-testid="customer-status" variant={customerStatusVariant(customer.status)}>{t(`customers.status.${customer.status ?? "active"}`, { defaultValue: customer.status ?? "active" })}</Badge>}</dd></div>
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("customerDetail.basicInfo.products")}</dt>
                 <dd>{customer.product_types?.join(", ") || "-"}</dd>
@@ -515,6 +515,18 @@ export function CustomerDetailPage() {
                 <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.lastScored")}</dt>
                 <dd>{customer.last_scored_at ? formatDateTime(customer.last_scored_at, i18n.language) : "-"}</dd>
               </div>
+              {/* The digest of the rule set that actually produced this score.
+                  Without it an explanation names a rule set by id, and a rule
+                  set edited since cannot be told from the one that ran. */}
+              {scoreExplanation?.rule_set_id && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.appliedRuleSet")}</dt>
+                  <dd className="text-right font-mono text-xs" data-testid="score-applied-rule-set">
+                    {scoreExplanation.rule_set_id}
+                    {scoreExplanation.rule_set_sha256 ? ` · ${scoreExplanation.rule_set_sha256.slice(0, 12)}` : ""}
+                  </dd>
+                </div>
+              )}
               {scoreExplanation?.tier_reason && (
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">{t("customerDetail.riskAssessment.tierReason")}</dt>

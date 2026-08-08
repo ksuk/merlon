@@ -31,3 +31,26 @@ export function formatDuration(seconds: number, t: (key: string, opts?: Record<s
   if (abs >= 3600) return t("duration.hours", { count: Math.round(abs / 3600) })
   return t("duration.minutes", { count: Math.round(abs / 60) })
 }
+
+// customerStatusVariant maps a lifecycle state onto a badge colour.
+//
+// Every state rendered as `outline` before, so a frozen, dormant or closed
+// customer was visually identical to an active one -- the exact confusion #75
+// asks to remove, on a field that decides whether the customer is evaluated at
+// all.
+export function customerStatusVariant(
+  status: string | undefined,
+): "low" | "medium" | "critical" | "secondary" {
+  switch (status ?? "active") {
+    case "active":
+      return "low"
+    case "dormant":
+      return "secondary"
+    case "frozen":
+      return "critical"
+    case "closed":
+      return "medium"
+    default:
+      return "secondary"
+  }
+}
