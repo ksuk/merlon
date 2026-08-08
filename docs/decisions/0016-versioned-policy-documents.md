@@ -36,7 +36,7 @@
 | `edd_policy_v1` | DR-14。段階スケジュールの唯一の出典 |
 | `cdd_rule_selection_v1` | DR-15。適用可否を宣言的なマッチ規則にする |
 | `travel_rule_v1` | DR-16。ADR-0017 参照 |
-| `screening_readiness_v1` | ソース一覧と、ソースごとの鮮度窓 |
+| `screening_readiness_v1` | DR-09。ソース一覧、ソースごとの鮮度窓、未 import の許容可否 |
 
 `policy.Set` は **nil レシーバを許容**する。`s.policies.KYC()` は nil のときコード内既定値を返す。
 
