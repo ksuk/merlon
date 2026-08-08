@@ -12,9 +12,14 @@ import {
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { Plus } from "lucide-react"
-import { useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
+
+const EMPTY_TRANSACTION_PAGE = {
+  data: [],
+  pagination: { has_more: false },
+}
 
 const DIRECTION_VARIANT: Record<string, "low" | "high" | "secondary"> = {
   inbound: "low",
@@ -32,8 +37,17 @@ function formatAmount(amount: number, currency: string, locale: string) {
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation()
-  const { data: page, loading, error } = useApi(api.transactions.list)
-  const transactions = page?.data
+  const [selectedCustomerId, setSelectedCustomerId] = useState("")
+  const { data: customerPage, loading: customersLoading, error: customersError } = useApi(api.customers.listAll)
+  const fetchTransactions = useCallback(
+    () => selectedCustomerId
+      ? api.transactions.listAll(selectedCustomerId)
+      : Promise.resolve(EMPTY_TRANSACTION_PAGE),
+    [selectedCustomerId],
+  )
+  const { data: page, loading, error } = useApi(fetchTransactions, selectedCustomerId)
+  const customers = customerPage?.data ?? []
+  const transactions = selectedCustomerId ? (page?.data ?? []) : []
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [direction, setDirection] = useState("inbound")
@@ -69,14 +83,6 @@ export function TransactionsPage() {
     }
   }
 
-  if (loading) {
-    return <TableSkeleton />
-  }
-
-  if (error) {
-    return <p className="p-12 text-center text-destructive">{t("transactions.error")}</p>
-  }
-
   const DIRECTIONS = ["inbound", "outbound", "internal"] as const
 
   return (
@@ -94,6 +100,43 @@ export function TransactionsPage() {
         </div>
       </div>
 
+      <div className="rounded-xl border bg-card p-4">
+        <label htmlFor="transaction-customer-selector" className="mb-2 block text-sm font-medium">
+          {t("transactions.customerSelector")}
+        </label>
+        <select
+          id="transaction-customer-selector"
+          aria-label={t("transactions.customerSelector")}
+          value={selectedCustomerId}
+          onChange={(e) => setSelectedCustomerId(e.target.value)}
+          disabled={customersLoading || Boolean(customersError)}
+          className="w-full max-w-md rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="">
+            {customersLoading
+              ? t("transactions.customerSelectorLoading")
+              : t("transactions.customerSelectorPlaceholder")}
+          </option>
+          {customers.map((customer) => (
+            <option key={customer.id} value={customer.id}>
+              {customer.external_id} ({customer.id})
+            </option>
+          ))}
+        </select>
+        {customersError && (
+          <p className="mt-2 text-sm text-destructive">{t("transactions.customerSelectorError")}</p>
+        )}
+        {!selectedCustomerId && !customersError && (
+          <p className="mt-2 text-sm text-muted-foreground">{t("transactions.customerSelectorPrompt")}</p>
+        )}
+      </div>
+
+      {error && (
+        <div role="alert" className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+          {t("transactions.error")}
+        </div>
+      )}
+
       {showForm && (
         <Card>
           <CardHeader>
@@ -103,7 +146,7 @@ export function TransactionsPage() {
             <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
               <div>
                 <label className="mb-1 block text-xs font-medium">{t("transactions.form.customerId")}</label>
-                <input ref={custRef} required placeholder="cust-001"
+                <input key={selectedCustomerId} ref={custRef} required defaultValue={selectedCustomerId} placeholder="cust-001"
                   className="w-32 rounded-md border bg-background px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
               </div>
               <div>
@@ -148,50 +191,52 @@ export function TransactionsPage() {
         </Card>
       )}
 
-      <div className="rounded-xl border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("transactions.table.header.direction")}</TableHead>
-              <TableHead>{t("transactions.table.header.customerId")}</TableHead>
-              <TableHead>{t("transactions.table.header.amount")}</TableHead>
-              <TableHead>{t("transactions.table.header.counterpartyCountry")}</TableHead>
-              <TableHead>{t("transactions.table.header.channel")}</TableHead>
-              <TableHead>{t("transactions.table.header.executedAt")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {transactions && transactions.length > 0 ? (
-              transactions.map((tx) => (
-                <TableRow key={tx.id}>
-                  <TableCell>
-                    <Link to={`/transactions/${tx.id}`} className="hover:underline">
-                      <Badge variant={DIRECTION_VARIANT[tx.direction] ?? "secondary"}>
-                        {t(`transactions.direction.${tx.direction}`, { defaultValue: tx.direction })}
-                      </Badge>
-                    </Link>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    <Link to={`/customers/${tx.customer_id}`} className="text-primary hover:underline">
-                      {tx.customer_id}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="font-mono">{formatAmount(tx.amount, tx.currency, i18n.language)}</TableCell>
-                  <TableCell>{tx.counterparty_country || "-"}</TableCell>
-                  <TableCell>{tx.channel || "-"}</TableCell>
-                  <TableCell className="whitespace-nowrap">{formatDateTime(tx.executed_at, i18n.language)}</TableCell>
-                </TableRow>
-              ))
-            ) : (
+      {loading ? <TableSkeleton /> : (
+        <div className="rounded-xl border">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                  {t("transactions.table.empty")}
-                </TableCell>
+                <TableHead>{t("transactions.table.header.direction")}</TableHead>
+                <TableHead>{t("transactions.table.header.customerId")}</TableHead>
+                <TableHead>{t("transactions.table.header.amount")}</TableHead>
+                <TableHead>{t("transactions.table.header.counterpartyCountry")}</TableHead>
+                <TableHead>{t("transactions.table.header.channel")}</TableHead>
+                <TableHead>{t("transactions.table.header.executedAt")}</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {transactions.length > 0 ? (
+                transactions.map((tx) => (
+                  <TableRow key={tx.id}>
+                    <TableCell>
+                      <Link to={`/transactions/${tx.id}`} className="hover:underline">
+                        <Badge variant={DIRECTION_VARIANT[tx.direction] ?? "secondary"}>
+                          {t(`transactions.direction.${tx.direction}`, { defaultValue: tx.direction })}
+                        </Badge>
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-mono text-sm">
+                      <Link to={`/customers/${tx.customer_id}`} className="text-primary hover:underline">
+                        {tx.customer_id}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-mono">{formatAmount(tx.amount, tx.currency, i18n.language)}</TableCell>
+                    <TableCell>{tx.counterparty_country || "-"}</TableCell>
+                    <TableCell>{tx.channel || "-"}</TableCell>
+                    <TableCell className="whitespace-nowrap">{formatDateTime(tx.executed_at, i18n.language)}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                    {t("transactions.table.empty")}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   )
 }

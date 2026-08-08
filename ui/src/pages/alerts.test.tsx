@@ -47,6 +47,37 @@ test("shows empty state when no alerts", async () => {
   expect(await screen.findByText("アラートがありません")).toBeDefined()
 })
 
+test("loads an alert from the second cursor page", async () => {
+  const secondAlert = { ...sampleAlert, id: "a2", description: "2ページ目のアラート" }
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    if (String(input).includes("cursor=page-2")) {
+      return paginatedResponse([secondAlert])
+    }
+    return new Response(JSON.stringify({
+      data: [sampleAlert],
+      pagination: { has_more: true, next_cursor: "page-2" },
+    }), { status: 200, headers: { "Content-Type": "application/json" } })
+  })
+
+  await renderWithRouter(<AlertsPage />)
+
+  expect(await screen.findByText("2ページ目のアラート")).toBeDefined()
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("cursor=page-2"))).toBe(true)
+})
+
+test("renders critical alerts before lower-risk alerts", async () => {
+  const low = { ...sampleAlert, id: "low", severity: "low", description: "低リスク" }
+  const critical = { ...sampleAlert, id: "critical", severity: "critical", description: "重大リスク" }
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([low, critical]))
+
+  await renderWithRouter(<AlertsPage />)
+
+  await screen.findByText("重大リスク")
+  const rows = screen.getAllByRole("row").slice(1)
+  expect(rows[0]).toHaveTextContent("重大リスク")
+  expect(rows[1]).toHaveTextContent("低リスク")
+})
+
 test("bulk close requires a reason before submitting", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([sampleAlert]))
 

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -42,7 +43,7 @@ func customerCursor(c domain.Customer) Cursor {
 }
 
 func (s *Server) handleListCustomers(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("cursor") != "" {
+	if useCursorPagination(r) {
 		s.handleListCustomersCursor(w, r)
 		return
 	}
@@ -57,7 +58,18 @@ func (s *Server) handleListCustomersCursor(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	customers, err := s.customers.ListByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	var customers []domain.Customer
+	if search == "" {
+		customers, err = s.customers.ListByCursor(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor))
+	} else {
+		searchRepo, ok := s.customers.(domain.CustomerSearchRepository)
+		if !ok {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "customer search is not configured")
+			return
+		}
+		customers, err = searchRepo.ListByCursorSearch(r.Context(), pageReq.Limit+1, toDomainCursor(pageReq.Cursor), search)
+	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
@@ -78,7 +90,19 @@ func (s *Server) handleListCustomersOffset(w http.ResponseWriter, r *http.Reques
 		limit = 20
 	}
 
-	customers, err := s.customers.List(r.Context(), limit+1, offset)
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	var customers []domain.Customer
+	var err error
+	if search == "" {
+		customers, err = s.customers.List(r.Context(), limit+1, offset)
+	} else {
+		searchRepo, ok := s.customers.(domain.CustomerSearchRepository)
+		if !ok {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "customer search is not configured")
+			return
+		}
+		customers, err = searchRepo.ListSearch(r.Context(), search, limit+1, offset)
+	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return

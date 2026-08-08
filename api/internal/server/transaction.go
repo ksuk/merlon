@@ -68,7 +68,7 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if r.URL.Query().Get("cursor") != "" {
+	if useCursorPagination(r) {
 		s.handleListTransactionsCursor(w, r, customerID)
 		return
 	}

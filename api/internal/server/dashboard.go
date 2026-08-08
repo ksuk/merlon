@@ -4,55 +4,78 @@ import (
 	"context"
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/screening"
 )
 
+const dashboardRecentTransactionWindow = 24 * time.Hour
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	stats := domain.DashboardStats{
-		CustomersByRiskTier: make(map[string]int),
-		AlertsByStatus:      make(map[string]int),
-		AlertsBySeverity:    make(map[string]int),
-		CasesByStatus:       make(map[string]int),
+		CustomersByRiskTier:           make(map[string]int),
+		AlertsByStatus:                make(map[string]int),
+		AlertsBySeverity:              make(map[string]int),
+		CasesByStatus:                 make(map[string]int),
+		RecentTransactionsWindowHours: int(dashboardRecentTransactionWindow / time.Hour),
 	}
 
-	customers, err := s.customers.List(ctx, 10000, 0)
+	customerDashboard, ok := s.customers.(domain.CustomerDashboardRepository)
+	if !ok {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "customer dashboard aggregate is not configured")
+		return
+	}
+	customerCounts, err := customerDashboard.DashboardRiskTierCounts(ctx)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	stats.TotalCustomers = len(customers)
-	for _, c := range customers {
-		tier := "unscored"
-		if c.RiskTier != nil {
-			tier = string(*c.RiskTier)
-		}
-		stats.CustomersByRiskTier[tier]++
+	stats.CustomersByRiskTier = customerCounts
+	for _, count := range customerCounts {
+		stats.TotalCustomers += count
 	}
 
-	openAlerts, err := s.alerts.ListOpen(ctx, 10000, 0)
+	alertDashboard, ok := s.alerts.(domain.AlertDashboardRepository)
+	if !ok {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "alert dashboard aggregate is not configured")
+		return
+	}
+	alertStatusCounts, alertSeverityCounts, err := alertDashboard.DashboardUnresolvedCounts(ctx)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	for _, a := range openAlerts {
-		stats.AlertsByStatus[string(a.Status)]++
-		stats.AlertsBySeverity[string(a.Severity)]++
-		stats.TotalAlerts++
+	stats.AlertsByStatus = alertStatusCounts
+	stats.AlertsBySeverity = alertSeverityCounts
+	for _, count := range alertStatusCounts {
+		stats.TotalAlerts += count
 	}
 
 	if s.cases != nil {
-		cases, err := s.cases.ListOpen(ctx, 10000, 0)
+		caseDashboard, ok := s.cases.(domain.CaseDashboardRepository)
+		if !ok {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "case dashboard aggregate is not configured")
+			return
+		}
+		caseStatusCounts, err := caseDashboard.DashboardUnresolvedCounts(ctx)
 		if err != nil {
 			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
-		stats.TotalCases = len(cases)
-		for _, c := range cases {
-			stats.CasesByStatus[string(c.Status)]++
+		stats.CasesByStatus = caseStatusCounts
+		for _, count := range caseStatusCounts {
+			stats.TotalCases += count
+		}
+	}
+
+	if transactionDashboard, ok := s.transactions.(domain.TransactionDashboardRepository); ok {
+		stats.RecentTransactions, err = transactionDashboard.CountExecutedSince(ctx, time.Now().UTC().Add(-dashboardRecentTransactionWindow))
+		if err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
 		}
 	}
 

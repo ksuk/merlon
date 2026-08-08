@@ -7,6 +7,9 @@
   "layout": {
     "demoDataBadge": "Synthetic demo data"
   },
+  "list": {
+    "allLoaded": "All records loaded"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "customers": "Customers",
@@ -35,7 +38,7 @@
       "alertsDescription": "Open",
       "cases": "Cases",
       "casesDescription": "Open",
-      "recentTransactions": "Recent transactions",
+      "recentTransactions": "Recent transactions (last {{hours}} hours)",
       "whitelistExpiringSoon": "Whitelist expiring soon",
       "whitelistExpiringSoonDescription": "Within {{days}} days"
     },
@@ -167,6 +170,8 @@
     "backToList": "Back to case list",
     "back": "Back",
     "error": "Failed to fetch case data",
+    "conflict": "This case changed in another session. Review the current record before trying again.",
+    "reload": "Reload current case",
     "title": "Case detail",
     "info": {
       "title": "Case info",
@@ -259,6 +264,8 @@
     "backToList": "Back to alert list",
     "back": "Back",
     "error": "Failed to fetch alert data",
+    "conflict": "This alert changed in another session. Review the current record before trying again.",
+    "reload": "Reload current alert",
     "title": "Alert detail",
     "info": {
       "title": "Alert info",
@@ -352,6 +359,11 @@
     "count": "{{count}} items",
     "createButton": "Register new",
     "error": "Failed to fetch transaction data",
+    "customerSelector": "Customer scope",
+    "customerSelectorPlaceholder": "Select a customer before loading transactions",
+    "customerSelectorLoading": "Loading customers...",
+    "customerSelectorError": "Failed to load customers. You can still register or recover a transaction by entering a customer ID below.",
+    "customerSelectorPrompt": "Select a customer to load its transactions.",
     "form": {
       "title": "Register transaction",
       "customerId": "Customer ID",
@@ -557,6 +569,7 @@
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Backtest description...",
       "targetCustomers": "Target customers",
+      "noCustomers": "No customers available",
       "selectAll": "Select all",
       "deselectAll": "Deselect all",
       "from": "From (UTC)",
@@ -594,6 +607,7 @@
       "transactions": "Transactions",
       "alerts": "Alerts generated",
       "executionTime": "Execution time",
+      "empty": "No scenario findings were generated. This is a valid empty result.",
       "table": {
         "header": {
           "scenario": "Scenario",
@@ -613,6 +627,7 @@
       "title": "Target customers",
       "selectedCount": "{{count}} selected",
       "allTargeted": "All customers targeted (none selected)",
+      "noCustomers": "No customers available",
       "selectAll": "Select all",
       "deselectAll": "Deselect all"
     },
@@ -642,12 +657,26 @@
       "stats": {
         "total": "Total",
         "succeeded": "Succeeded",
+        "failed": "Failed",
+        "queuedForReview": "Queued for review",
         "alertsTotal": "Alerts generated",
         "duration": "Duration"
+      },
+      "duration": "Duration: {{duration}}",
+      "reviewRequired": {
+        "badge": "Review required",
+        "title": "Monitoring did not complete cleanly",
+        "description": "{{count}} customer(s) were queued as PENDING_REVIEW. Stop treating this run as successful and recover them after the engine is available."
+      },
+      "row": {
+        "pendingReview": "PENDING_REVIEW",
+        "completed": "Completed",
+        "pendingReason": "Evaluation was deferred; recovery is required."
       },
       "table": {
         "header": {
           "customerId": "Customer ID",
+          "status": "Status",
           "alertsRaised": "Alerts raised",
           "error": "Error"
         }

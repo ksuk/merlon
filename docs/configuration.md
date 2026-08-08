@@ -27,6 +27,8 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_JWT_SECRET` | unset | Development fallback only. Do not set in production when using local-user authentication. |
 | `MERLON_BOOTSTRAP_TOKEN` | unset | One-time setup secret. Rotate or remove immediately after the first administrator/API key is created. |
 | `MERLON_POSTGRES_PASSWORD` | unset | Compose-only development password. Use a secret manager in production. |
+| `MERLON_API_HOST_PORT` | `8080` | Compose-only host port for the API. The standard topology binds it on the host; the demo topology limits it to `127.0.0.1`. The container always listens on `8080`. |
+| `MERLON_DB_HOST_PORT` | `5432` | Compose test overlay only. Publishes PostgreSQL on `127.0.0.1`; the standard and demo topologies do not publish a database host port. |
 | `MERLON_AUTH_ENABLED` | `false` | Must be `true` in production. |
 | `MERLON_SEED` | `false` | Development/demo data only; must be `false` in production. |
 | `MERLON_DEMO_DATA_DIR` | unset | Directory holding a full generated demo dataset, loaded when `MERLON_SEED` is enabled. Falls back to the built-in sample if the directory is incomplete. Development/demo only. |

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
 import { api, type CasePriority } from "@/lib/api"
+import { compareRiskValues } from "@/lib/risk"
 import { Plus } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -44,8 +45,10 @@ export function CasesPage() {
     reopened: t("caseStatus.reopened"),
     str_filed: t("caseStatus.str_filed"),
   }
-  const { data: page, loading, error } = useApi(api.cases.list)
+  const { data: page, loading, error } = useApi(api.cases.listAll)
   const cases = page?.data
+    ? [...page.data].sort((left, right) => compareRiskValues({ risk: left.priority, created_at: left.created_at, id: left.id }, { risk: right.priority, created_at: right.created_at, id: right.id }))
+    : undefined
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [priority, setPriority] = useState<CasePriority>("medium")
@@ -190,6 +193,7 @@ export function CasesPage() {
           </TableBody>
         </Table>
       </div>
+      {cases && <p className="text-center text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
     </div>
   )
 }

@@ -242,6 +242,7 @@ func main() {
 		deps.Alerts = store.NewPgAlertRepo(pool)
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
+		deps.CaseAlertLifecycle = store.NewPgCaseAlertLifecycleRepo(pool)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
@@ -255,11 +256,14 @@ func main() {
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
 		memCustomers := store.NewMemoryCustomerRepo()
+		memAlerts := store.NewMemoryAlertRepo()
+		memCases := store.NewMemoryCaseRepo()
 		deps.Customers = memCustomers
 		deps.Transactions = store.NewMemoryTransactionRepo()
-		deps.Alerts = store.NewMemoryAlertRepo()
+		deps.Alerts = memAlerts
 		deps.Audit = store.NewMemoryAuditRepo()
-		deps.Cases = store.NewMemoryCaseRepo()
+		deps.Cases = memCases
+		deps.CaseAlertLifecycle = store.NewMemoryCaseAlertLifecycleRepo(memCases, memAlerts)
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()

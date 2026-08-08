@@ -7,6 +7,9 @@
   "layout": {
     "demoDataBadge": "合成デモデータ"
   },
+  "list": {
+    "allLoaded": "すべてのレコードを読み込みました"
+  },
   "nav": {
     "dashboard": "ダッシュボード",
     "customers": "顧客",
@@ -35,7 +38,7 @@
       "alertsDescription": "未解決",
       "cases": "ケース",
       "casesDescription": "オープン",
-      "recentTransactions": "直近の取引",
+      "recentTransactions": "直近の取引（過去{{hours}}時間）",
       "whitelistExpiringSoon": "ホワイトリスト期限切れ間近",
       "whitelistExpiringSoonDescription": "{{days}}日以内"
     },
@@ -167,6 +170,8 @@
     "backToList": "ケース一覧に戻る",
     "back": "戻る",
     "error": "ケースデータの取得に失敗しました",
+    "conflict": "別のセッションでケースが更新されました。現在の内容を確認してから再試行してください。",
+    "reload": "現在のケースを再読み込み",
     "title": "ケース詳細",
     "info": {
       "title": "ケース情報",
@@ -259,6 +264,8 @@
     "backToList": "アラート一覧に戻る",
     "back": "戻る",
     "error": "アラートデータの取得に失敗しました",
+    "conflict": "別のセッションでアラートが更新されました。現在の内容を確認してから再試行してください。",
+    "reload": "現在のアラートを再読み込み",
     "title": "アラート詳細",
     "info": {
       "title": "アラート情報",
@@ -352,6 +359,11 @@
     "count": "{{count}} 件",
     "createButton": "新規登録",
     "error": "取引データの取得に失敗しました",
+    "customerSelector": "顧客スコープ",
+    "customerSelectorPlaceholder": "取引を読み込む顧客を選択してください",
+    "customerSelectorLoading": "顧客を読み込み中…",
+    "customerSelectorError": "顧客の読み込みに失敗しました。下の顧客ID入力欄から取引の登録・復旧を続行できます。",
+    "customerSelectorPrompt": "顧客を選択すると、その顧客の取引を読み込みます。",
     "form": {
       "title": "取引登録",
       "customerId": "顧客ID",
@@ -557,6 +569,7 @@
       "descriptionLabel": "説明",
       "descriptionPlaceholder": "バックテストの説明...",
       "targetCustomers": "対象顧客",
+      "noCustomers": "利用可能な顧客がありません",
       "selectAll": "全選択",
       "deselectAll": "全解除",
       "from": "開始日時（UTC）",
@@ -594,6 +607,7 @@
       "transactions": "取引数",
       "alerts": "生成アラート",
       "executionTime": "実行時間",
+      "empty": "該当するシナリオ結果はありません。これは有効な空の結果です。",
       "table": {
         "header": {
           "scenario": "シナリオ",
@@ -613,6 +627,7 @@
       "title": "対象顧客",
       "selectedCount": "{{count}}件選択中",
       "allTargeted": "全顧客が対象（未選択時）",
+      "noCustomers": "利用可能な顧客がありません",
       "selectAll": "全選択",
       "deselectAll": "全解除"
     },
@@ -642,12 +657,26 @@
       "stats": {
         "total": "合計",
         "succeeded": "成功",
+        "failed": "失敗",
+        "queuedForReview": "要確認キュー",
         "alertsTotal": "生成アラート",
         "duration": "実行時間"
+      },
+      "duration": "実行時間: {{duration}}",
+      "reviewRequired": {
+        "badge": "要確認",
+        "title": "モニタリングは正常完了していません",
+        "description": "{{count}}件の顧客がPENDING_REVIEWにキューされました。この実行を成功扱いにせず、エンジン復旧後に再処理してください。"
+      },
+      "row": {
+        "pendingReview": "PENDING_REVIEW",
+        "completed": "完了",
+        "pendingReason": "評価が保留されています。復旧処理が必要です。"
       },
       "table": {
         "header": {
           "customerId": "顧客ID",
+          "status": "状態",
           "alertsRaised": "生成アラート数",
           "error": "エラー"
         }

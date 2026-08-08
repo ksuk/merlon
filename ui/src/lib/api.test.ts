@@ -58,7 +58,7 @@ test.each([
   ["customers", () => api.customers.list()],
   ["alerts", () => api.alerts.list()],
   ["cases", () => api.cases.list()],
-  ["transactions", () => api.transactions.list()],
+  ["transactions", () => api.transactions.list("c1")],
 ])("%s.list returns the paginated envelope, not a bare array", async (_name, list) => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(
@@ -72,6 +72,84 @@ test.each([
   expect(Array.isArray(page.data)).toBe(true)
   expect(page.data).toHaveLength(1)
   expect(page.pagination.has_more).toBe(false)
+})
+
+test("transactions.list always sends its required customer scope", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
+  )
+
+  await api.transactions.list("c1")
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/transactions?customer_id=c1",
+    expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+  )
+})
+
+test("list clients propagate cursor, limit, and search parameters", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
+  )
+
+  await api.customers.list({ search: "TARGET", cursor: "next page", limit: 2 })
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/v1/customers?cursor=next+page&limit=2&search=TARGET",
+    expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+  )
+})
+
+test("listAllPages follows the next cursor and keeps the envelope", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        data: [{ id: "first" }],
+        pagination: { has_more: true, next_cursor: "cursor-2" },
+      }), { status: 200 }),
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({
+        data: [{ id: "second" }],
+        pagination: { has_more: false },
+      }), { status: 200 }),
+    )
+
+  const page = await api.customers.listAll({ search: "needle" })
+
+  expect(page.data.map((customer) => customer.id)).toEqual(["first", "second"])
+  expect(page.pagination).toEqual({ has_more: false })
+  expect(String(fetchMock.mock.calls[0][0])).toContain("limit=200")
+  expect(String(fetchMock.mock.calls[0][0])).toContain("search=needle")
+  expect(String(fetchMock.mock.calls[1][0])).toContain("cursor=cursor-2")
+  expect(String(fetchMock.mock.calls[1][0])).toContain("search=needle")
+})
+
+test("alert and case queue traversals request the explicit risk sort", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    new Response(JSON.stringify({ data: [], pagination: { has_more: false } }), { status: 200 }),
+  )
+
+  await api.alerts.listAll()
+  await api.cases.listAll()
+
+  expect(String(fetchMock.mock.calls[0][0])).toContain("sort=risk")
+  expect(String(fetchMock.mock.calls[1][0])).toContain("sort=risk")
+})
+
+test("alert and case mutations send the observed updated_at token", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+    new Response(JSON.stringify({ id: "updated" }), { status: 200 }),
+  )
+  const expectedUpdatedAt = "2026-08-02T00:00:00.000000Z"
+
+  await api.alerts.updateStatus("a1", "investigating", expectedUpdatedAt)
+  await api.cases.update("case1", { status: "investigating", expected_updated_at: expectedUpdatedAt })
+
+  const alertBody = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+  const caseBody = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)
+  expect(alertBody).toEqual({ status: "investigating", expected_updated_at: expectedUpdatedAt })
+  expect(caseBody).toEqual({ status: "investigating", expected_updated_at: expectedUpdatedAt })
 })
 
 // The counterpart: these are served with writeJSON, not writePaginatedJSON, so
@@ -88,4 +166,47 @@ test.each([
   )
 
   expect(Array.isArray(await fetchList())).toBe(true)
+})
+
+test("customers.screen normalizes legacy null matches", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        customer_id: "c1",
+        hit: false,
+        matches: null,
+        lists_checked: 2,
+        screened_at: "2026-08-02T00:00:00Z",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  )
+
+  const result = await api.customers.screen("c1", [])
+
+  expect(result.matches).toEqual([])
+})
+
+test("backtest.get normalizes legacy null scenario results", async () => {
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        id: "job-1",
+        status: "completed",
+        candidate: {
+          backtest_id: "backtest-1",
+          total_transactions: 0,
+          total_customers: 0,
+          total_alerts: 0,
+          scenario_results: null,
+          execution_time_ms: 0,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ),
+  )
+
+  const job = await api.backtest.get("job-1")
+
+  expect(job.candidate?.scenario_results).toEqual([])
 })

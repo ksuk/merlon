@@ -118,7 +118,7 @@ func TestUpdateAlertStatus(t *testing.T) {
 	cust := createTestCustomer(t, s)
 	alert := seedAlert(t, s, cust.ID)
 
-	body := `{"status":"closed_false_positive","resolved_by":"analyst@example.com"}`
+	body := `{"status":"investigating"}`
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -128,6 +128,18 @@ func TestUpdateAlertStatus(t *testing.T) {
 	}
 
 	var updated domain.Alert
+	json.NewDecoder(rec.Body).Decode(&updated)
+	if updated.Status != domain.AlertStatusInvestigating {
+		t.Fatalf("status = %q, want %q before terminal close", updated.Status, domain.AlertStatusInvestigating)
+	}
+
+	body = `{"status":"closed_false_positive","resolved_by":"analyst@example.com"}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("terminal close status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
 	json.NewDecoder(rec.Body).Decode(&updated)
 
 	if updated.Status != domain.AlertStatusClosedFalsePositive {
@@ -149,6 +161,21 @@ func TestUpdateAlertStatusNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
+}
+
+func TestUpdateAlertStatusRejectsDirectTerminalClose(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(`{"status":"closed_false_positive","resolved_by":"analyst@example.com"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	assertErrorCode(t, rec, "invalid_state_transition")
 }
 
 // TestAlertStatusUpdateOptimisticLock verifies a PATCH supplying the
@@ -176,7 +203,7 @@ func TestAlertStatusUpdateOptimisticLock(t *testing.T) {
 
 	// A second client submits an update using the now-stale updated_at it
 	// read before the update above.
-	staleBody := `{"status":"closed_false_positive","expected_updated_at":"` + alert.UpdatedAt.Format(time.RFC3339Nano) + `"}`
+	staleBody := `{"status":"closed_false_positive","resolved_by":"analyst@example.com","expected_updated_at":"` + alert.UpdatedAt.Format(time.RFC3339Nano) + `"}`
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(staleBody))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -224,6 +251,43 @@ func TestHandleListAlerts_CursorPagination(t *testing.T) {
 	}
 	if meta2.HasMore {
 		t.Error("expected has_more = false on second page")
+	}
+}
+
+func TestHandleListAlerts_RiskSortRanksCriticalFirst(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	severities := []domain.AlertSeverity{
+		domain.AlertSeverityLow,
+		domain.AlertSeverityMedium,
+		domain.AlertSeverityHigh,
+		domain.AlertSeverityCritical,
+	}
+	for i, severity := range severities {
+		if err := s.alerts.Create(context.Background(), &domain.Alert{
+			ID: fmt.Sprintf("risk-api-alert-%d", i), CustomerID: cust.ID, Severity: severity,
+			Status: domain.AlertStatusOpen, CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create alert: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/alerts?sort=risk&limit=4", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	alerts, meta := decodeListResponse[domain.Alert](t, rec.Body)
+	if meta.HasMore {
+		t.Error("has_more = true, want false")
+	}
+	want := []string{"risk-api-alert-3", "risk-api-alert-2", "risk-api-alert-1", "risk-api-alert-0"}
+	for i, id := range want {
+		if alerts[i].ID != id {
+			t.Errorf("alerts[%d].ID = %q, want %q", i, alerts[i].ID, id)
+		}
 	}
 }
 

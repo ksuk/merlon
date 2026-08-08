@@ -35,6 +35,18 @@ password, bootstrap token, and development JWT signing secret, so the copy in
 step two is not optional — without it, startup stops before Merlon can serve
 the login flow.
 
+The default API host port is `8080`. If that port is already in use, choose a
+different project name and host port before starting the stack:
+
+```bash
+MERLON_API_HOST_PORT=18050 \
+  docker compose -p merlon-local-18050 -f docker-compose.yml up --build
+```
+
+When using an override, replace `:8080` with `:18050` in the URLs below. The
+standard topology does not publish PostgreSQL to the host; use the documented
+test overlay only when a local test client needs a loopback database port.
+
 Wait for this line:
 
 ```

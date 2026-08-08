@@ -56,6 +56,9 @@ func TestHandleBulkCloseAlerts_FiltersByScenarioPeriodSeverity(t *testing.T) {
 	outOfWindow := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
 	match := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, inWindow)
+	if err := s.alerts.UpdateStatus(context.Background(), match.ID, domain.AlertStatusInvestigating, ""); err != nil {
+		t.Fatalf("advance matching alert: %v", err)
+	}
 	wrongScenario := seedAlertWith(t, s, cust.ID, "rapid_movement", domain.AlertSeverityHigh, inWindow)
 	wrongSeverity := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityLow, inWindow)
 	wrongPeriod := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, outOfWindow)
@@ -109,6 +112,11 @@ func TestHandleBulkCloseAlerts_RecordsIndividualAuditEntries(t *testing.T) {
 	now := time.Now()
 	a1 := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, now)
 	a2 := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, now)
+	for _, a := range []domain.Alert{a1, a2} {
+		if err := s.alerts.UpdateStatus(context.Background(), a.ID, domain.AlertStatusInvestigating, ""); err != nil {
+			t.Fatalf("advance alert %s: %v", a.ID, err)
+		}
+	}
 
 	body, _ := json.Marshal(bulkCloseAlertsRequest{
 		ScenarioID: "structuring_basic",

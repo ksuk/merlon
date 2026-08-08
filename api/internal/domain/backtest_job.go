@@ -58,6 +58,29 @@ type BacktestJob struct {
 	UpdatedAt               time.Time         `json:"updated_at"`
 }
 
+// MarshalJSON keeps empty backtest result collections as arrays. This applies
+// both to the immediate backtest response and to completed durable jobs whose
+// candidate/baseline/delta results contain no scenario findings.
+func (r BacktestResult) MarshalJSON() ([]byte, error) {
+	type backtestResult BacktestResult
+	normalized := backtestResult(r)
+	if normalized.ScenarioResults == nil {
+		normalized.ScenarioResults = []BacktestScenarioResult{}
+	}
+	return json.Marshal(normalized)
+}
+
+// MarshalJSON applies the same collection contract to each scenario result
+// when it is serialized as part of a backtest result.
+func (r BacktestScenarioResult) MarshalJSON() ([]byte, error) {
+	type backtestScenarioResult BacktestScenarioResult
+	normalized := backtestScenarioResult(r)
+	if normalized.AffectedCustomerIDs == nil {
+		normalized.AffectedCustomerIDs = []string{}
+	}
+	return json.Marshal(normalized)
+}
+
 type BacktestJobRepository interface {
 	Create(ctx context.Context, job *BacktestJob) error
 	Get(ctx context.Context, id string) (*BacktestJob, error)

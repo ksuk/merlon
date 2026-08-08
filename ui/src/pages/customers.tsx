@@ -39,8 +39,6 @@ export function CustomersPage() {
     { value: "corporate_domestic", label: t("customers.type.corporateDomestic") },
     { value: "corporate_foreign", label: t("customers.type.corporateForeign") },
   ]
-  const { data: page, loading, error } = useApi(api.customers.list)
-  const customers = page?.data
   const [showForm, setShowForm] = useState(false)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState("")
@@ -48,6 +46,11 @@ export function CustomersPage() {
   const extIdRef = useRef<HTMLInputElement>(null)
   const countryRef = useRef<HTMLInputElement>(null)
   const [customerType, setCustomerType] = useState("individual")
+  const { data: page, loading, error } = useApi(
+    () => api.customers.listAll({ search: filter }),
+    filter,
+  )
+  const customers = page?.data
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -77,12 +80,7 @@ export function CustomersPage() {
     return <p className="p-12 text-center text-destructive">{t("customers.error")}</p>
   }
 
-  const filtered = customers?.filter((c) => {
-    const matchText = !filter || c.external_id.toLowerCase().includes(filter.toLowerCase()) ||
-      (c.attributes?.name ?? "").includes(filter) || c.country_code.toLowerCase().includes(filter.toLowerCase())
-    const matchTier = !tierFilter || (c.risk_tier ?? "") === tierFilter
-    return matchText && matchTier
-  })
+  const filtered = customers?.filter((c) => !tierFilter || (c.risk_tier ?? "") === tierFilter)
 
   return (
     <div className="space-y-6">
@@ -194,6 +192,7 @@ export function CustomersPage() {
           </TableBody>
         </Table>
       </div>
+      {customers && <p className="text-center text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
     </div>
   )
 }

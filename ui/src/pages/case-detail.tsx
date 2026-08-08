@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
-import { api, type CasePriority, type CaseStatus, type Customer, type RelatedCase } from "@/lib/api"
+import { ApiError, api, type CasePriority, type CaseStatus, type Customer, type RelatedCase } from "@/lib/api"
 import { translateApiError } from "@/lib/errors"
 import { ArrowLeft, Send } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -74,6 +74,7 @@ export function CaseDetailPage() {
     useCallback(() => api.cases.get(id!), [id]),
   )
   const [updating, setUpdating] = useState(false)
+  const [conflictError, setConflictError] = useState<string | null>(null)
   const [addingNote, setAddingNote] = useState(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
@@ -102,10 +103,16 @@ export function CaseDetailPage() {
   async function handleStatusChange(status: CaseStatus) {
     if (!id) return
     setUpdating(true)
+    setConflictError(null)
     try {
-      await api.cases.update(id, { status })
+      await api.cases.update(id, { status, expected_updated_at: caseData!.updated_at })
       window.location.reload()
-    } catch {
+    } catch (err) {
+      setConflictError(
+        err instanceof ApiError && err.status === 409
+          ? t("caseDetail.conflict")
+          : translateApiError(err, t),
+      )
       setUpdating(false)
     }
   }
@@ -115,11 +122,20 @@ export function CaseDetailPage() {
     if (!id || !reopenReason.trim()) return
     setReopening(true)
     setReopenError(null)
+    setConflictError(null)
     try {
-      await api.cases.update(id, { status: "reopened", reason: reopenReason.trim() })
+      await api.cases.update(id, {
+        status: "reopened",
+        reason: reopenReason.trim(),
+        expected_updated_at: caseData!.updated_at,
+      })
       window.location.reload()
     } catch (err) {
-      setReopenError(translateApiError(err, t))
+      if (err instanceof ApiError && err.status === 409) {
+        setConflictError(t("caseDetail.conflict"))
+      } else {
+        setReopenError(translateApiError(err, t))
+      }
       setReopening(false)
     }
   }
@@ -240,6 +256,14 @@ export function CaseDetailPage() {
             <CardTitle className="text-base">{t("caseDetail.transitions.title")}</CardTitle>
           </CardHeader>
           <CardContent>
+            {conflictError && (
+              <div role="alert" className="mb-3 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+                <p>{conflictError}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => window.location.reload()}>
+                  {t("caseDetail.reload")}
+                </Button>
+              </div>
+            )}
             <div className="flex gap-2">
               {transitions.map((transition) => (
                 <Button

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/casemgmt"
@@ -27,6 +28,10 @@ type UpdateAlertStatusRequest struct {
 
 func alertCursor(a domain.Alert) Cursor {
 	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID}
+}
+
+func alertRiskCursor(a domain.Alert) Cursor {
+	return Cursor{CreatedAt: a.CreatedAt, ID: a.ID, Sort: "risk", Rank: domain.AlertSeverityRank(a.Severity)}
 }
 
 // recordAlertCreated increments merlon_alerts_total (OPS-003, the operational design
@@ -57,7 +62,7 @@ func (s *Server) consolidateAlertIntoCase(ctx context.Context, a *domain.Alert) 
 func (s *Server) handleListAlerts(w http.ResponseWriter, r *http.Request) {
 	customerID := r.URL.Query().Get("customer_id")
 
-	if r.URL.Query().Get("cursor") != "" {
+	if useCursorPagination(r) {
 		s.handleListAlertsCursor(w, r, customerID)
 		return
 	}
@@ -74,19 +79,36 @@ func (s *Server) handleListAlertsCursor(w http.ResponseWriter, r *http.Request, 
 
 	fetchLimit := pageReq.Limit + 1
 	after := toDomainCursor(pageReq.Cursor)
+	riskSorted := r.URL.Query().Get("sort") == "risk"
+	if pageReq.Cursor != nil && ((riskSorted && pageReq.Cursor.Sort != "risk") || (!riskSorted && pageReq.Cursor.Sort == "risk")) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "cursor sort does not match request sort")
+		return
+	}
 
 	var alerts []domain.Alert
 	if customerID != "" {
-		alerts, err = s.alerts.ListByCustomerCursor(r.Context(), customerID, fetchLimit, after)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListByCustomerRiskCursor(r.Context(), customerID, fetchLimit, after)
+		} else {
+			alerts, err = s.alerts.ListByCustomerCursor(r.Context(), customerID, fetchLimit, after)
+		}
 	} else {
-		alerts, err = s.alerts.ListOpenByCursor(r.Context(), fetchLimit, after)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListOpenByRiskCursor(r.Context(), fetchLimit, after)
+		} else {
+			alerts, err = s.alerts.ListOpenByCursor(r.Context(), fetchLimit, after)
+		}
 	}
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
-	page, meta := BuildPaginationMeta(alerts, pageReq.Limit, alertCursor)
+	cursorOf := alertCursor
+	if riskSorted {
+		cursorOf = alertRiskCursor
+	}
+	page, meta := BuildPaginationMeta(alerts, pageReq.Limit, cursorOf)
 	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
@@ -105,11 +127,20 @@ func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, 
 		alerts []domain.Alert
 		err    error
 	)
+	riskSorted := r.URL.Query().Get("sort") == "risk"
 
 	if customerID != "" {
-		alerts, err = s.alerts.ListByCustomer(r.Context(), customerID, limit+1, offset)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListByCustomerRisk(r.Context(), customerID, limit+1, offset)
+		} else {
+			alerts, err = s.alerts.ListByCustomer(r.Context(), customerID, limit+1, offset)
+		}
 	} else {
-		alerts, err = s.alerts.ListOpen(r.Context(), limit+1, offset)
+		if riskRepo, ok := s.alerts.(domain.AlertRiskSortRepository); riskSorted && ok {
+			alerts, err = riskRepo.ListOpenByRisk(r.Context(), limit+1, offset)
+		} else {
+			alerts, err = s.alerts.ListOpen(r.Context(), limit+1, offset)
+		}
 	}
 
 	if err != nil {
@@ -121,7 +152,11 @@ func (s *Server) handleListAlertsOffset(w http.ResponseWriter, r *http.Request, 
 		setOffsetDeprecationHeaders(w)
 	}
 
-	page, meta := BuildPaginationMeta(alerts, limit, alertCursor)
+	cursorOf := alertCursor
+	if riskSorted {
+		cursorOf = alertRiskCursor
+	}
+	page, meta := BuildPaginationMeta(alerts, limit, cursorOf)
 	writePaginatedJSON(w, http.StatusOK, page, meta)
 }
 
@@ -154,6 +189,27 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	current, err := s.alerts.Get(r.Context(), id)
+	if err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+			return
+		}
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+	if !domain.ValidAlertStatusTransition(current.Status, req.Status) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, "invalid alert status transition")
+		return
+	}
+	if domain.IsAlertTerminal(req.Status) && strings.TrimSpace(req.ResolvedBy) == "" {
+		// Keep the legacy request field for compatibility, but never make the
+		// UI invent an actor. A blank value is completed from the authenticated
+		// request principal (or the explicit anonymous development principal).
+		req.ResolvedBy = resolveAuditUserID(r)
+	}
+
 	if req.ExpectedUpdatedAt != nil {
 		if err := s.alerts.UpdateStatusIfUnmodified(r.Context(), id, req.Status, req.ResolvedBy, *req.ExpectedUpdatedAt); err != nil {
 			var conflict *domain.ErrConflict
@@ -166,6 +222,11 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 				writeError(w, http.StatusNotFound, err.Error())
 				return
 			}
+			var invalid *domain.ErrInvalidStateTransition
+			if errors.As(err, &invalid) {
+				writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, invalid.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -173,6 +234,11 @@ func (s *Server) handleUpdateAlertStatus(w http.ResponseWriter, r *http.Request)
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
 			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
+			return
+		}
+		var invalid *domain.ErrInvalidStateTransition
+		if errors.As(err, &invalid) {
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeInvalidStateTransition, invalid.Error())
 			return
 		}
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())

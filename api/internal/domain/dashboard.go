@@ -9,6 +9,10 @@ type DashboardStats struct {
 	CasesByStatus       map[string]int `json:"cases_by_status"`
 	TotalCases          int            `json:"total_cases"`
 	RecentTransactions  int            `json:"recent_transactions"`
+	// RecentTransactionsWindowHours documents the fixed rolling window used
+	// for RecentTransactions. Keeping the definition on the response prevents
+	// the UI from presenting an unlabeled aggregate with an ambiguous scope.
+	RecentTransactionsWindowHours int `json:"recent_transactions_window_hours"`
 
 	// ScreeningListFreshness reports each configured sanctions/PEP list's
 	// staleness (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示

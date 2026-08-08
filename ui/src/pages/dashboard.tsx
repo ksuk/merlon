@@ -115,7 +115,7 @@ export function DashboardPage() {
           description={t("dashboard.stats.casesDescription")}
         />
         <StatCard
-          title={t("dashboard.stats.recentTransactions")}
+          title={t("dashboard.stats.recentTransactions", { hours: stats.recent_transactions_window_hours ?? 24 })}
           value={stats.recent_transactions}
           icon={ArrowLeftRight}
         />

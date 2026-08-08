@@ -102,6 +102,8 @@ export function CustomerDetailPage() {
     )
   }
 
+  const matches = screenResult?.matches ?? []
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -226,7 +228,7 @@ export function CustomerDetailPage() {
                 time: formatDateTime(screenResult.screened_at, i18n.language),
               })}
             </p>
-            {screenResult.matches.length > 0 && (
+            {matches.length > 0 && (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -238,7 +240,7 @@ export function CustomerDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {screenResult.matches.map((m, i) => (
+                  {matches.map((m, i) => (
                     <TableRow key={i}>
                       <TableCell className="font-mono text-xs">{m.list_id}</TableCell>
                       <TableCell>{m.matched_name}</TableCell>

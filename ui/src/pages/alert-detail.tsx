@@ -2,7 +2,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
-import { api, type AlertSeverity, type AlertStatus } from "@/lib/api"
+import { ApiError, api, type AlertSeverity, type AlertStatus } from "@/lib/api"
+import { translateApiError } from "@/lib/errors"
 import { ArrowLeft } from "lucide-react"
 import { useCallback, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -56,14 +57,21 @@ export function AlertDetailPage() {
     useCallback(() => api.alerts.get(id!), [id]),
   )
   const [updating, setUpdating] = useState(false)
+  const [conflictError, setConflictError] = useState<string | null>(null)
 
   async function handleStatusChange(status: AlertStatus) {
     if (!id) return
     setUpdating(true)
+    setConflictError(null)
     try {
-      await api.alerts.updateStatus(id, status)
+      await api.alerts.updateStatus(id, status, alert!.updated_at)
       window.location.reload()
-    } catch {
+    } catch (err) {
+      setConflictError(
+        err instanceof ApiError && err.status === 409
+          ? t("alertDetail.conflict")
+          : translateApiError(err, t),
+      )
       setUpdating(false)
     }
   }
@@ -180,6 +188,14 @@ export function AlertDetailPage() {
             <CardTitle className="text-base">{t("alertDetail.transitions.title")}</CardTitle>
           </CardHeader>
           <CardContent>
+            {conflictError && (
+              <div role="alert" className="mb-3 rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">
+                <p>{conflictError}</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => window.location.reload()}>
+                  {t("alertDetail.reload")}
+                </Button>
+              </div>
+            )}
             <div className="flex gap-2">
               {transitions.map((transition) => (
                 <Button

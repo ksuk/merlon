@@ -56,6 +56,22 @@ func ValidCaseStatusTransition(from, to CaseStatus) bool {
 	return false
 }
 
+// IsCaseUnresolved reports whether a case belongs in the active operator
+// queue. The legacy "open" value is retained as an active alias of "new".
+func IsCaseUnresolved(status CaseStatus) bool {
+	switch normalizeCaseStatus(status) {
+	case CaseStatusNew, CaseStatusInvestigating, CaseStatusEscalated, CaseStatusReopened:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsCaseTerminal reports whether a case has reached a terminal disposition.
+func IsCaseTerminal(status CaseStatus) bool {
+	return status == CaseStatusClosed || status == CaseStatusStrFiled
+}
+
 type CasePriority string
 
 const (
@@ -94,6 +110,8 @@ type CaseNote struct {
 type CaseRepository interface {
 	Get(ctx context.Context, id string) (*Case, error)
 	ListByCustomer(ctx context.Context, customerID string) ([]Case, error)
+	ListByCustomerOffset(ctx context.Context, customerID string, limit, offset int) ([]Case, error)
+	ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Case, error)
 	ListOpen(ctx context.Context, limit, offset int) ([]Case, error)
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
 	Create(ctx context.Context, c *Case) error

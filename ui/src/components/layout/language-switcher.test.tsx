@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { beforeEach, expect, test } from "vitest"
-import { LANGUAGE_STORAGE_KEY } from "@/i18n"
+import { changeLanguage, LANGUAGE_STORAGE_KEY } from "@/i18n"
 import { renderWithI18n } from "@/test/i18n-test-utils"
 import { LanguageSwitcher } from "./language-switcher"
 
@@ -9,8 +9,8 @@ beforeEach(() => {
 })
 
 test("renders all supported languages", async () => {
-  const { i18n } = await renderWithI18n(<LanguageSwitcher />)
-  await act(() => i18n.changeLanguage("en"))
+  await renderWithI18n(<LanguageSwitcher />)
+  await act(() => changeLanguage("en"))
 
   const select = screen.getByRole("combobox")
   const options = within(select).getAllByRole("option")
@@ -21,7 +21,7 @@ test("renders all supported languages", async () => {
 
 test("changes language without page reload", async () => {
   const { i18n } = await renderWithI18n(<LanguageSwitcher />)
-  await act(() => i18n.changeLanguage("en"))
+  await act(() => changeLanguage("en"))
 
   const select = screen.getByRole("combobox")
   fireEvent.change(select, { target: { value: "ja" } })
@@ -31,8 +31,8 @@ test("changes language without page reload", async () => {
 })
 
 test("persists selection to localStorage", async () => {
-  const { i18n } = await renderWithI18n(<LanguageSwitcher />)
-  await act(() => i18n.changeLanguage("en"))
+  await renderWithI18n(<LanguageSwitcher />)
+  await act(() => changeLanguage("en"))
 
   const select = screen.getByRole("combobox")
   fireEvent.change(select, { target: { value: "ja" } })

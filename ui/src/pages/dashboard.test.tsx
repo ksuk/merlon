@@ -31,6 +31,7 @@ test("renders stat cards after data loads", async () => {
         cases_by_status: { open: 2 },
         total_cases: 2,
         recent_transactions: 42,
+        recent_transactions_window_hours: 24,
       }),
     ),
   )

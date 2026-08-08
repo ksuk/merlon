@@ -11,6 +11,11 @@ import (
 type Cursor struct {
 	CreatedAt time.Time
 	ID        string
+	// Sort identifies an additive queue sort variant. Empty preserves the
+	// API-03 created_at/id cursor contract; "risk" adds the rank as the
+	// primary key for alert/case operator queues.
+	Sort string
+	Rank int
 }
 
 type CustomerRepository interface {
@@ -35,6 +40,22 @@ type CustomerRepository interface {
 	UpdateStatus(ctx context.Context, id string, status CustomerStatus, reason string) (*Customer, error)
 }
 
+// CustomerSearchRepository is the optional cursor/offset search capability
+// used by the operator list. Keeping search separate preserves the stable
+// CustomerRepository contract for adapters that do not expose server-side
+// search yet.
+type CustomerSearchRepository interface {
+	ListByCursorSearch(ctx context.Context, limit int, after *Cursor, search string) ([]Customer, error)
+	ListSearch(ctx context.Context, search string, limit, offset int) ([]Customer, error)
+}
+
+// CustomerDashboardRepository exposes aggregate reads used by the dashboard.
+// It is optional so adapters can adopt the read model without changing the
+// CRUD CustomerRepository contract.
+type CustomerDashboardRepository interface {
+	DashboardRiskTierCounts(ctx context.Context) (map[string]int, error)
+}
+
 type TransactionRepository interface {
 	Get(ctx context.Context, id string) (*Transaction, error)
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Transaction, error)
@@ -47,6 +68,12 @@ type TransactionRepository interface {
 // a created_at snapshot, and carries an explicit half-open event window.
 type TransactionHistoryRepository interface {
 	ListByCustomerEventRange(ctx context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *TransactionEventCursor) ([]Transaction, error)
+}
+
+// TransactionDashboardRepository provides a bounded aggregate for the
+// dashboard's documented recent-transaction window.
+type TransactionDashboardRepository interface {
+	CountExecutedSince(ctx context.Context, since time.Time) (int, error)
 }
 
 type TransactionEventCursor struct {
@@ -97,6 +124,56 @@ type AlertRepository interface {
 	EscalateSeverity(ctx context.Context, id string, severity AlertSeverity) error
 }
 
+// AlertDashboardRepository provides unresolved alert aggregates without
+// materializing a capped list in the request handler.
+type AlertDashboardRepository interface {
+	DashboardUnresolvedCounts(ctx context.Context) (byStatus, bySeverity map[string]int, err error)
+}
+
+// AlertRiskSortRepository is the additive risk-ranked queue capability. The
+// base AlertRepository retains the API-03 created_at/id list contract.
+type AlertRiskSortRepository interface {
+	ListByCustomerRisk(ctx context.Context, customerID string, limit, offset int) ([]Alert, error)
+	ListByCustomerRiskCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Alert, error)
+	ListOpenByRisk(ctx context.Context, limit, offset int) ([]Alert, error)
+	ListOpenByRiskCursor(ctx context.Context, limit int, after *Cursor) ([]Alert, error)
+}
+
+// AlertStatusTransition is one alert update coordinated with a case update.
+// From and ExpectedUpdatedAt make the operation safe against a concurrent
+// operator changing a linked alert between the case read and the commit. When
+// From and To are equal, the entry is validation-only: the linked alert is
+// rechecked in the same transaction but not mutated.
+type AlertStatusTransition struct {
+	ID                string
+	From              AlertStatus
+	To                AlertStatus
+	ResolvedBy        string
+	ExpectedUpdatedAt time.Time
+}
+
+// CaseAlertLifecycleRepository applies a case transition and any linked alert
+// transitions in one transaction. Implementations must apply no mutation when
+// any expected version or compatibility check fails.
+type CaseAlertLifecycleRepository interface {
+	UpdateCaseAndAlerts(ctx context.Context, c *Case, expectedUpdatedAt time.Time, alerts []AlertStatusTransition) error
+}
+
+// CaseDashboardRepository provides unresolved case aggregates without
+// materializing a capped list in the request handler.
+type CaseDashboardRepository interface {
+	DashboardUnresolvedCounts(ctx context.Context) (map[string]int, error)
+}
+
+// CaseRiskSortRepository is the additive risk-ranked queue capability. The
+// base CaseRepository retains the API-03 created_at/id list contract.
+type CaseRiskSortRepository interface {
+	ListByCustomerRiskOffset(ctx context.Context, customerID string, limit, offset int) ([]Case, error)
+	ListByCustomerRiskCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Case, error)
+	ListOpenByRisk(ctx context.Context, limit, offset int) ([]Case, error)
+	ListOpenByRiskCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
+}
+
 type ErrNotFound struct {
 	Entity string
 	ID     string
@@ -118,4 +195,17 @@ type ErrConflict struct {
 
 func (e *ErrConflict) Error() string {
 	return e.Entity + " conflict: " + e.ID + ": " + e.Reason
+}
+
+// ErrInvalidStateTransition is returned when a caller attempts a lifecycle
+// edge that the domain contract does not permit.
+type ErrInvalidStateTransition struct {
+	Entity string
+	ID     string
+	From   string
+	To     string
+}
+
+func (e *ErrInvalidStateTransition) Error() string {
+	return e.Entity + " invalid state transition: " + e.From + " -> " + e.To
 }

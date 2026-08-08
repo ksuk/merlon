@@ -253,6 +253,9 @@ func TestBatchMonitor_EngineDown_QueuesPendingReview(t *testing.T) {
 	if resp.QueuedForReview != 1 {
 		t.Errorf("queued_for_review = %d, want 1", resp.QueuedForReview)
 	}
+	if len(resp.Results) != 1 || !resp.Results[0].PendingReview {
+		t.Fatalf("results = %+v, want one pending_review result", resp.Results)
+	}
 
 	queued, err := pending.ListByStatus(context.Background(), domain.PendingEvaluationStatusPendingReview, 10, 0)
 	if err != nil {

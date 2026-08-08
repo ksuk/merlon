@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -163,6 +165,44 @@ func TestHandleListCases_CursorPagination(t *testing.T) {
 	}
 }
 
+func TestHandleListCases_RiskSortRanksCriticalFirst(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	priorities := []domain.CasePriority{
+		domain.CasePriorityLow,
+		domain.CasePriorityMedium,
+		domain.CasePriorityHigh,
+		domain.CasePriorityCritical,
+	}
+	for i, priority := range priorities {
+		if err := s.cases.Create(context.Background(), &domain.Case{
+			ID: fmt.Sprintf("risk-api-case-%d", i), CustomerID: cust.ID,
+			Status: domain.CaseStatusInvestigating, Priority: priority,
+			Summary: "risk queue test", CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create case: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cases?sort=risk&limit=4", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	cases, meta := decodeListResponse[domain.Case](t, rec.Body)
+	if meta.HasMore {
+		t.Error("has_more = true, want false")
+	}
+	want := []string{"risk-api-case-3", "risk-api-case-2", "risk-api-case-1", "risk-api-case-0"}
+	for i, id := range want {
+		if cases[i].ID != id {
+			t.Errorf("cases[%d].ID = %q, want %q", i, cases[i].ID, id)
+		}
+	}
+}
+
 func TestUpdateCase(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)
@@ -191,6 +231,71 @@ func TestUpdateCase(t *testing.T) {
 	}
 	if updated.AssignedTo != "senior_analyst" {
 		t.Errorf("assigned_to = %q, want %q", updated.AssignedTo, "senior_analyst")
+	}
+}
+
+func TestUpdateCaseAdvancesLinkedAlertAtomically(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	now := time.Now()
+	caseRecord := &domain.Case{
+		ID: "case-linked-active", CustomerID: cust.ID, AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusNew, Priority: domain.CasePriorityMedium,
+		Summary: "linked lifecycle", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseRecord.ID, strings.NewReader(`{"status":"investigating"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updatedCase, err := s.cases.Get(context.Background(), caseRecord.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedAlert, err := s.alerts.Get(context.Background(), alert.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedCase.Status != domain.CaseStatusInvestigating || updatedAlert.Status != domain.AlertStatusInvestigating {
+		t.Fatalf("case/alert lifecycle = (%q, %q), want investigating/investigating", updatedCase.Status, updatedAlert.Status)
+	}
+	if updatedAlert.ResolvedAt != nil || updatedAlert.ResolvedBy != "" {
+		t.Fatalf("active linked alert retained resolution metadata: %+v", updatedAlert)
+	}
+}
+
+func TestUpdateCaseRejectsTerminalWithActiveLinkedAlert(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	now := time.Now()
+	caseRecord := &domain.Case{
+		ID: "case-linked-close", CustomerID: cust.ID, AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityMedium,
+		Summary: "linked close", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseRecord.ID, strings.NewReader(`{"status":"closed"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+
+	unchangedCase, _ := s.cases.Get(context.Background(), caseRecord.ID)
+	unchangedAlert, _ := s.alerts.Get(context.Background(), alert.ID)
+	if unchangedCase.Status != domain.CaseStatusInvestigating || unchangedAlert.Status != domain.AlertStatusOpen {
+		t.Fatalf("rejected close changed state: case=%q alert=%q", unchangedCase.Status, unchangedAlert.Status)
 	}
 }
 

@@ -164,7 +164,7 @@ func finalizeCases(anchor time.Time, seeds []caseSeed) ([]domain.Case, []caseNot
 			CreatedAt:  createdAt,
 			UpdatedAt:  createdAt,
 		}
-		if s.Status == domain.CaseStatusClosed {
+		if domain.IsCaseTerminal(s.Status) {
 			closedAt := createdAt.Add(48 * time.Hour)
 			c.ClosedAt = &closedAt
 			c.UpdatedAt = closedAt
@@ -179,7 +179,7 @@ func finalizeCases(anchor time.Time, seeds []caseSeed) ([]domain.Case, []caseNot
 				CaseID:    caseID,
 				ID:        fmt.Sprintf("demo-note-%s-%02d", caseID[len("demo-case-"):], n+1),
 				Author:    noteAuthor,
-				Content:   caseNoteContent(s.Summary, n, noteCount),
+				Content:   caseNoteContent(s.Summary, s.Status, n, noteCount),
 				CreatedAt: noteAt,
 			})
 		}
@@ -187,11 +187,14 @@ func finalizeCases(anchor time.Time, seeds []caseSeed) ([]domain.Case, []caseNot
 	return cases, notes
 }
 
-func caseNoteContent(summary string, n, total int) string {
+func caseNoteContent(summary string, status domain.CaseStatus, n, total int) string {
 	switch {
 	case n == 0:
 		return "アラート内容を確認。" + summary
 	case n == total-1:
+		if !domain.IsCaseTerminal(status) {
+			return "調査継続。追加の関連取引・顧客属性を確認中。"
+		}
 		return "調査完了。判定結果を記録しクローズ処理。"
 	default:
 		return "追加調査を実施。関連取引・顧客属性を確認中。"

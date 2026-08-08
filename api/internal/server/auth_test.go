@@ -16,18 +16,21 @@ import (
 const testBootstrapToken = "test-bootstrap-token"
 
 func testServerWithAuth() *Server {
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
 	return New(":0", Deps{
-		Customers:      store.NewMemoryCustomerRepo(),
-		Transactions:   store.NewMemoryTransactionRepo(),
-		Alerts:         store.NewMemoryAlertRepo(),
-		Scoring:        &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
-		Monitoring:     &engine.MockMonitoringEngine{},
-		Screening:      &engine.MockScreeningEngine{},
-		Backtest:       &engine.MockBacktestEngine{},
-		Audit:          store.NewMemoryAuditRepo(),
-		Cases:          store.NewMemoryCaseRepo(),
-		APIKeys:        store.NewMemoryAPIKeyRepo(),
-		BootstrapToken: testBootstrapToken,
+		Customers:          store.NewMemoryCustomerRepo(),
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Scoring:            &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Backtest:           &engine.MockBacktestEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		APIKeys:            store.NewMemoryAPIKeyRepo(),
+		BootstrapToken:     testBootstrapToken,
 	})
 }
 
@@ -38,19 +41,22 @@ func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
 		t.Fatalf("NewHS256Issuer: %v", err)
 	}
 
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
 	s := New(":0", Deps{
-		Customers:      store.NewMemoryCustomerRepo(),
-		Transactions:   store.NewMemoryTransactionRepo(),
-		Alerts:         store.NewMemoryAlertRepo(),
-		Scoring:        &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
-		Monitoring:     &engine.MockMonitoringEngine{},
-		Screening:      &engine.MockScreeningEngine{},
-		Backtest:       &engine.MockBacktestEngine{},
-		Audit:          store.NewMemoryAuditRepo(),
-		Cases:          store.NewMemoryCaseRepo(),
-		APIKeys:        store.NewMemoryAPIKeyRepo(),
-		BootstrapToken: testBootstrapToken,
-		TokenIssuer:    issuer,
+		Customers:          store.NewMemoryCustomerRepo(),
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Scoring:            &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Backtest:           &engine.MockBacktestEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		APIKeys:            store.NewMemoryAPIKeyRepo(),
+		BootstrapToken:     testBootstrapToken,
+		TokenIssuer:        issuer,
 	})
 	return s, issuer
 }

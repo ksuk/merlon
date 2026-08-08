@@ -22,7 +22,7 @@ function isAbortError(error: unknown) {
 
 export function BacktestPage() {
   const { t } = useTranslation()
-  const { data: page, loading, error } = useApi(api.customers.list)
+  const { data: page, loading, error } = useApi(api.customers.listAll)
   const customers = page?.data
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [running, setRunning] = useState(false)
@@ -199,6 +199,7 @@ export function BacktestPage() {
   }
 
   const hasActiveJob = job?.status === "queued" || job?.status === "running"
+  const scenarioResults = result?.scenario_results ?? []
 
   if (loading) {
     return (
@@ -257,19 +258,22 @@ export function BacktestPage() {
               </Button>
             </div>
             <div className="max-h-48 space-y-1 overflow-y-auto">
-              {customers?.map((c: Customer) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => toggleCustomer(c.id)}
-                  className={`flex w-full items-center gap-3 rounded-md border p-2 text-left text-sm transition-colors ${selectedIds.includes(c.id) ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
-                >
-                  <div className={`h-3 w-3 rounded-sm border ${selectedIds.includes(c.id) ? "border-primary bg-primary" : "border-input"}`} />
-                  <span className="font-mono text-xs">{c.external_id}</span>
-                  <span className="text-muted-foreground">{c.country_code}</span>
-                </button>
-              ))}
+              {customers?.length === 0 ? (
+                <p role="status" className="text-sm text-muted-foreground">{t("backtest.form.noCustomers")}</p>
+              ) : customers?.map((c: Customer) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleCustomer(c.id)}
+                    className={`flex w-full items-center gap-3 rounded-md border p-2 text-left text-sm transition-colors ${selectedIds.includes(c.id) ? "border-primary bg-primary/5" : "hover:bg-accent"}`}
+                  >
+                    <div className={`h-3 w-3 rounded-sm border ${selectedIds.includes(c.id) ? "border-primary bg-primary" : "border-input"}`} />
+                    <span className="font-mono text-xs">{c.external_id}</span>
+                    <span className="text-muted-foreground">{c.country_code}</span>
+                  </button>
+                ))}
             </div>
+            {customers && customers.length > 0 && <p className="text-xs text-muted-foreground">{t("list.allLoaded")}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" disabled={running || cancelling || hasActiveJob || selectedIds.length === 0} onClick={handleRun}>
@@ -332,7 +336,11 @@ export function BacktestPage() {
               </div>
             </div>
 
-            {result.scenario_results.length > 0 && (
+            {scenarioResults.length === 0 ? (
+              <p role="status" className="text-sm text-muted-foreground">
+                {t("backtest.result.empty")}
+              </p>
+            ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -345,7 +353,7 @@ export function BacktestPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {result.scenario_results.map((s) => (
+                  {scenarioResults.map((s) => (
                     <TableRow key={s.scenario_id}>
                       <TableCell className="font-mono text-xs">{s.scenario_id}</TableCell>
                       <TableCell className="text-right">{s.alerts_generated}</TableCell>

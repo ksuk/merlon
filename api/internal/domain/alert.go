@@ -28,6 +28,47 @@ const (
 	AlertStatusSuppressed AlertStatus = "suppressed"
 )
 
+// IsAlertUnresolved reports whether an alert belongs in an operator's active
+// queue. Keep this set explicit: unknown future values must not silently look
+// unresolved (fail-alert is enforced by rejecting unsupported transitions).
+func IsAlertUnresolved(status AlertStatus) bool {
+	switch status {
+	case AlertStatusOpen, AlertStatusInvestigating, AlertStatusEscalated:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsAlertTerminal reports whether an alert has an immutable operator
+// disposition. Terminal alerts cannot be moved to another status; a later
+// correction is represented by a new decision event in the lifecycle work.
+func IsAlertTerminal(status AlertStatus) bool {
+	switch status {
+	case AlertStatusClosedTruePositive, AlertStatusClosedFalsePositive:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidAlertStatusTransition encodes the Wave 1 operator lifecycle. Direct
+// open -> terminal close remains deliberately disabled until DR-02 is
+// resolved; terminal rationale/confirmation is added by the later
+// disposition-event work.
+func ValidAlertStatusTransition(from, to AlertStatus) bool {
+	switch from {
+	case AlertStatusOpen:
+		return to == AlertStatusInvestigating || to == AlertStatusEscalated
+	case AlertStatusInvestigating:
+		return to == AlertStatusEscalated || IsAlertTerminal(to)
+	case AlertStatusEscalated:
+		return to == AlertStatusInvestigating || IsAlertTerminal(to)
+	default:
+		return false
+	}
+}
+
 type Alert struct {
 	ID             string        `json:"id"`
 	CustomerID     string        `json:"customer_id"`

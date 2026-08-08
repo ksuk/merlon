@@ -44,6 +44,7 @@ type Server struct {
 	backtestJobs             domain.BacktestJobRepository
 	audit                    domain.AuditRepository
 	cases                    domain.CaseRepository
+	caseAlertLifecycle       domain.CaseAlertLifecycleRepository
 	apikeys                  domain.APIKeyRepository
 	webhooks                 domain.WebhookRepository
 	configEngine             engine.ConfigEngine
@@ -94,29 +95,30 @@ type Server struct {
 }
 
 type Deps struct {
-	Customers         domain.CustomerRepository
-	Transactions      domain.TransactionRepository
-	Alerts            domain.AlertRepository
-	Scoring           engine.ScoringEngine
-	Monitoring        engine.MonitoringEngine
-	Screening         engine.ScreeningEngine
-	Backtest          engine.BacktestEngine
-	BacktestJobs      domain.BacktestJobRepository
-	Audit             domain.AuditRepository
-	Cases             domain.CaseRepository
-	APIKeys           domain.APIKeyRepository
-	Webhooks          domain.WebhookRepository
-	Config            engine.ConfigEngine
-	EngineHealth      engine.HealthChecker
-	RateLimit         int
-	TrustedProxyCIDRs []netip.Prefix
-	BootstrapToken    string
-	TokenIssuer       *auth.TokenIssuer
-	Denylist          auth.Denylist
-	Users             domain.UserRepository
-	RefreshTokens     domain.RefreshTokenRepository
-	Rules             domain.RuleRepository
-	Whitelist         domain.WhitelistRepository
+	Customers          domain.CustomerRepository
+	Transactions       domain.TransactionRepository
+	Alerts             domain.AlertRepository
+	Scoring            engine.ScoringEngine
+	Monitoring         engine.MonitoringEngine
+	Screening          engine.ScreeningEngine
+	Backtest           engine.BacktestEngine
+	BacktestJobs       domain.BacktestJobRepository
+	Audit              domain.AuditRepository
+	Cases              domain.CaseRepository
+	CaseAlertLifecycle domain.CaseAlertLifecycleRepository
+	APIKeys            domain.APIKeyRepository
+	Webhooks           domain.WebhookRepository
+	Config             engine.ConfigEngine
+	EngineHealth       engine.HealthChecker
+	RateLimit          int
+	TrustedProxyCIDRs  []netip.Prefix
+	BootstrapToken     string
+	TokenIssuer        *auth.TokenIssuer
+	Denylist           auth.Denylist
+	Users              domain.UserRepository
+	RefreshTokens      domain.RefreshTokenRepository
+	Rules              domain.RuleRepository
+	Whitelist          domain.WhitelistRepository
 	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
 	// when positive; zero/negative falls back to the default.
 	WhitelistMaxValidDays  int
@@ -163,6 +165,7 @@ func New(addr string, deps Deps) *Server {
 		backtestJobs:             deps.BacktestJobs,
 		audit:                    deps.Audit,
 		cases:                    deps.Cases,
+		caseAlertLifecycle:       deps.CaseAlertLifecycle,
 		apikeys:                  deps.APIKeys,
 		webhooks:                 deps.Webhooks,
 		configEngine:             deps.Config,

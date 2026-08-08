@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +64,55 @@ func sortAndPageByCursor[T any](items []T, limit int, after *domain.Cursor, crea
 	return items
 }
 
+// sortAndPageByRiskCursor orders a queue by explicit risk rank, then by the
+// API-03 deterministic created_at/id tie-breakers. The cursor carries the
+// rank so keyset traversal cannot skip a lower-risk item after a page break.
+func sortAndPageByRiskCursor[T any](items []T, limit int, after *domain.Cursor, rank func(T) int, createdAt func(T) time.Time, id func(T) string) []T {
+	sort.Slice(items, func(i, j int) bool {
+		ri, rj := rank(items[i]), rank(items[j])
+		if ri != rj {
+			return ri > rj
+		}
+		ci, cj := createdAt(items[i]), createdAt(items[j])
+		if !ci.Equal(cj) {
+			return ci.After(cj)
+		}
+		return id(items[i]) > id(items[j])
+	})
+
+	if after != nil {
+		filtered := make([]T, 0, len(items))
+		for _, it := range items {
+			r := rank(it)
+			createdBefore := createdAt(it).Before(after.CreatedAt)
+			sameCreatedBeforeID := createdAt(it).Equal(after.CreatedAt) && id(it) < after.ID
+			if r < after.Rank || (r == after.Rank && (createdBefore || sameCreatedBeforeID)) {
+				filtered = append(filtered, it)
+			}
+		}
+		items = filtered
+	}
+
+	if limit >= 0 && limit < len(items) {
+		items = items[:limit]
+	}
+	return items
+}
+
+func sortByRiskDesc[T any](items []T, rank func(T) int, createdAt func(T) time.Time, id func(T) string) {
+	sort.Slice(items, func(i, j int) bool {
+		ri, rj := rank(items[i]), rank(items[j])
+		if ri != rj {
+			return ri > rj
+		}
+		ci, cj := createdAt(items[i]), createdAt(items[j])
+		if !ci.Equal(cj) {
+			return ci.After(cj)
+		}
+		return id(items[i]) > id(items[j])
+	})
+}
+
 type MemoryCustomerRepo struct {
 	mu       sync.RWMutex
 	data     map[string]*domain.Customer
@@ -115,12 +165,79 @@ func (r *MemoryCustomerRepo) List(_ context.Context, limit, offset int) ([]domai
 	return pageByOffset(all, limit, offset), nil
 }
 
+// DashboardRiskTierCounts returns a complete aggregate rather than relying
+// on the dashboard's former 10,000-row list cap. A missing tier is exposed as
+// "unscored", matching the dashboard's customer-level presentation.
+func (r *MemoryCustomerRepo) DashboardRiskTierCounts(_ context.Context) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, c := range r.data {
+		tier := "unscored"
+		if c.RiskTier != nil {
+			tier = string(*c.RiskTier)
+		}
+		counts[tier]++
+	}
+	return counts, nil
+}
+
 func (r *MemoryCustomerRepo) ListByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Customer, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var all []domain.Customer
 	for _, c := range r.data {
 		all = append(all, *c)
+	}
+	return sortAndPageByCursor(all, limit, after,
+		func(c domain.Customer) time.Time { return c.CreatedAt },
+		func(c domain.Customer) string { return c.ID },
+	), nil
+}
+
+func customerMatchesSearch(c domain.Customer, search string) bool {
+	needle := strings.ToLower(strings.TrimSpace(search))
+	if needle == "" {
+		return true
+	}
+	if strings.Contains(strings.ToLower(c.ID), needle) ||
+		strings.Contains(strings.ToLower(c.ExternalID), needle) ||
+		strings.Contains(strings.ToLower(c.CountryCode), needle) {
+		return true
+	}
+	for key, value := range c.Attributes {
+		if strings.Contains(strings.ToLower(key), needle) || strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *MemoryCustomerRepo) ListSearch(_ context.Context, search string, limit, offset int) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Customer
+	for _, c := range r.data {
+		if customerMatchesSearch(*c, search) {
+			all = append(all, *c)
+		}
+	}
+	sortByCreatedAtDesc(all,
+		func(c domain.Customer) time.Time { return c.CreatedAt },
+		func(c domain.Customer) string { return c.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
+func (r *MemoryCustomerRepo) ListByCursorSearch(_ context.Context, limit int, after *domain.Cursor, search string) ([]domain.Customer, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Customer
+	for _, c := range r.data {
+		if customerMatchesSearch(*c, search) {
+			all = append(all, *c)
+		}
 	}
 	return sortAndPageByCursor(all, limit, after,
 		func(c domain.Customer) time.Time { return c.CreatedAt },
@@ -242,6 +359,19 @@ func (r *MemoryTransactionRepo) ListByCustomerCursor(_ context.Context, customer
 	), nil
 }
 
+func (r *MemoryTransactionRepo) CountExecutedSince(_ context.Context, since time.Time) (int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for _, t := range r.data {
+		if !t.ExecutedAt.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (r *MemoryTransactionRepo) ListByCustomerEventRange(_ context.Context, customerID string, from, to, createdBefore time.Time, limit int, after *domain.TransactionEventCursor) ([]domain.Transaction, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -318,16 +448,48 @@ func (r *MemoryAlertRepo) ListByCustomer(_ context.Context, customerID string, l
 	return pageByOffset(all, limit, offset), nil
 }
 
+func (r *MemoryAlertRepo) ListByCustomerRisk(_ context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Alert
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
+	}
+	sortByRiskDesc(all,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return pageByOffset(all, limit, offset), nil
+}
+
 func (r *MemoryAlertRepo) ListOpen(_ context.Context, limit, offset int) ([]domain.Alert, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var open []domain.Alert
 	for _, a := range r.data {
-		if a.Status == domain.AlertStatusOpen {
+		if domain.IsAlertUnresolved(a.Status) {
 			open = append(open, *a)
 		}
 	}
 	sortByCreatedAtDesc(open,
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	)
+	return pageByOffset(open, limit, offset), nil
+}
+
+func (r *MemoryAlertRepo) ListOpenByRisk(_ context.Context, limit, offset int) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Alert
+	for _, a := range r.data {
+		if domain.IsAlertUnresolved(a.Status) {
+			open = append(open, *a)
+		}
+	}
+	sortByRiskDesc(open,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
 		func(a domain.Alert) time.Time { return a.CreatedAt },
 		func(a domain.Alert) string { return a.ID },
 	)
@@ -347,12 +509,26 @@ func (r *MemoryAlertRepo) ListByCustomerCursor(_ context.Context, customerID str
 	), nil
 }
 
+func (r *MemoryAlertRepo) ListByCustomerRiskCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var all []domain.Alert
+	for _, id := range r.byCustomer[customerID] {
+		all = append(all, *r.data[id])
+	}
+	return sortAndPageByRiskCursor(all, limit, after,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	), nil
+}
+
 func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var open []domain.Alert
 	for _, a := range r.data {
-		if a.Status == domain.AlertStatusOpen {
+		if domain.IsAlertUnresolved(a.Status) {
 			open = append(open, *a)
 		}
 	}
@@ -360,6 +536,38 @@ func (r *MemoryAlertRepo) ListOpenByCursor(_ context.Context, limit int, after *
 		func(a domain.Alert) time.Time { return a.CreatedAt },
 		func(a domain.Alert) string { return a.ID },
 	), nil
+}
+
+func (r *MemoryAlertRepo) ListOpenByRiskCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Alert, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Alert
+	for _, a := range r.data {
+		if domain.IsAlertUnresolved(a.Status) {
+			open = append(open, *a)
+		}
+	}
+	return sortAndPageByRiskCursor(open, limit, after,
+		func(a domain.Alert) int { return domain.AlertSeverityRank(a.Severity) },
+		func(a domain.Alert) time.Time { return a.CreatedAt },
+		func(a domain.Alert) string { return a.ID },
+	), nil
+}
+
+func (r *MemoryAlertRepo) DashboardUnresolvedCounts(_ context.Context) (map[string]int, map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	byStatus := make(map[string]int)
+	bySeverity := make(map[string]int)
+	for _, a := range r.data {
+		switch a.Status {
+		case domain.AlertStatusOpen, domain.AlertStatusInvestigating, domain.AlertStatusEscalated:
+			byStatus[string(a.Status)]++
+			bySeverity[string(a.Severity)]++
+		}
+	}
+	return byStatus, bySeverity, nil
 }
 
 func (r *MemoryAlertRepo) ListByFilter(_ context.Context, f domain.AlertBulkFilter) ([]domain.Alert, error) {
@@ -451,12 +659,7 @@ func (r *MemoryAlertRepo) UpdateStatus(_ context.Context, id string, status doma
 	if !ok {
 		return &domain.ErrNotFound{Entity: "alert", ID: id}
 	}
-	a.Status = status
-	a.ResolvedBy = resolvedBy
-	now := time.Now()
-	a.ResolvedAt = &now
-	a.UpdatedAt = now
-	return nil
+	return updateMemoryAlertStatus(a, status, resolvedBy)
 }
 
 // UpdateStatusIfUnmodified is UpdateStatus guarded by an optimistic-lock
@@ -471,10 +674,26 @@ func (r *MemoryAlertRepo) UpdateStatusIfUnmodified(_ context.Context, id string,
 	if !a.UpdatedAt.Equal(expectedUpdatedAt) {
 		return &domain.ErrConflict{Entity: "alert", ID: id, Reason: "updated_at mismatch"}
 	}
-	a.Status = status
-	a.ResolvedBy = resolvedBy
+	return updateMemoryAlertStatus(a, status, resolvedBy)
+}
+
+func updateMemoryAlertStatus(a *domain.Alert, status domain.AlertStatus, resolvedBy string) error {
+	if !domain.ValidAlertStatusTransition(a.Status, status) {
+		return &domain.ErrInvalidStateTransition{Entity: "alert", ID: a.ID, From: string(a.Status), To: string(status)}
+	}
+	if domain.IsAlertTerminal(status) && strings.TrimSpace(resolvedBy) == "" {
+		return fmt.Errorf("resolved_by is required for terminal alert status")
+	}
+
 	now := time.Now()
-	a.ResolvedAt = &now
+	a.Status = status
+	if domain.IsAlertTerminal(status) {
+		a.ResolvedBy = resolvedBy
+		a.ResolvedAt = &now
+	} else {
+		a.ResolvedBy = ""
+		a.ResolvedAt = nil
+	}
 	a.UpdatedAt = now
 	return nil
 }
@@ -612,7 +831,67 @@ func (r *MemoryCaseRepo) ListByCustomer(_ context.Context, customerID string) ([
 			result = append(result, *c)
 		}
 	}
+	sortByCreatedAtDesc(result,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
 	return result, nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerOffset(_ context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
+	result, err := r.ListByCustomer(context.Background(), customerID)
+	if err != nil {
+		return nil, err
+	}
+	return pageByOffset(result, limit, offset), nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerRiskOffset(_ context.Context, customerID string, limit, offset int) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	sortByRiskDesc(result,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
+	return pageByOffset(result, limit, offset), nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	return sortAndPageByCursor(result, limit, after,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
+}
+
+func (r *MemoryCaseRepo) ListByCustomerRiskCursor(_ context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var result []domain.Case
+	for _, c := range r.data {
+		if c.CustomerID == customerID {
+			result = append(result, *c)
+		}
+	}
+	return sortAndPageByRiskCursor(result, limit, after,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
 }
 
 func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domain.Case, error) {
@@ -620,11 +899,28 @@ func (r *MemoryCaseRepo) ListOpen(_ context.Context, limit, offset int) ([]domai
 	defer r.mu.RUnlock()
 	var open []domain.Case
 	for _, c := range r.data {
-		if c.Status != domain.CaseStatusClosed {
+		if domain.IsCaseUnresolved(c.Status) {
 			open = append(open, *c)
 		}
 	}
 	sortByCreatedAtDesc(open,
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	)
+	return pageByOffset(open, limit, offset), nil
+}
+
+func (r *MemoryCaseRepo) ListOpenByRisk(_ context.Context, limit, offset int) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Case
+	for _, c := range r.data {
+		if domain.IsCaseUnresolved(c.Status) {
+			open = append(open, *c)
+		}
+	}
+	sortByRiskDesc(open,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
 		func(c domain.Case) time.Time { return c.CreatedAt },
 		func(c domain.Case) string { return c.ID },
 	)
@@ -636,7 +932,7 @@ func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *d
 	defer r.mu.RUnlock()
 	var open []domain.Case
 	for _, c := range r.data {
-		if c.Status != domain.CaseStatusClosed {
+		if domain.IsCaseUnresolved(c.Status) {
 			open = append(open, *c)
 		}
 	}
@@ -644,6 +940,35 @@ func (r *MemoryCaseRepo) ListOpenByCursor(_ context.Context, limit int, after *d
 		func(c domain.Case) time.Time { return c.CreatedAt },
 		func(c domain.Case) string { return c.ID },
 	), nil
+}
+
+func (r *MemoryCaseRepo) ListOpenByRiskCursor(_ context.Context, limit int, after *domain.Cursor) ([]domain.Case, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var open []domain.Case
+	for _, c := range r.data {
+		if domain.IsCaseUnresolved(c.Status) {
+			open = append(open, *c)
+		}
+	}
+	return sortAndPageByRiskCursor(open, limit, after,
+		func(c domain.Case) int { return domain.CasePriorityRank(c.Priority) },
+		func(c domain.Case) time.Time { return c.CreatedAt },
+		func(c domain.Case) string { return c.ID },
+	), nil
+}
+
+func (r *MemoryCaseRepo) DashboardUnresolvedCounts(_ context.Context) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	counts := make(map[string]int)
+	for _, c := range r.data {
+		if domain.IsCaseUnresolved(c.Status) {
+			counts[string(c.Status)]++
+		}
+	}
+	return counts, nil
 }
 
 func (r *MemoryCaseRepo) Create(_ context.Context, c *domain.Case) error {
@@ -656,8 +981,12 @@ func (r *MemoryCaseRepo) Create(_ context.Context, c *domain.Case) error {
 func (r *MemoryCaseRepo) Update(_ context.Context, c *domain.Case) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.data[c.ID]; !ok {
+	existing, ok := r.data[c.ID]
+	if !ok {
 		return &domain.ErrNotFound{Entity: "case", ID: c.ID}
+	}
+	if existing.Status != c.Status && !domain.ValidCaseStatusTransition(existing.Status, c.Status) {
+		return &domain.ErrInvalidStateTransition{Entity: "case", ID: c.ID, From: string(existing.Status), To: string(c.Status)}
 	}
 	c.UpdatedAt = time.Now()
 	r.data[c.ID] = c
@@ -675,6 +1004,9 @@ func (r *MemoryCaseRepo) UpdateIfUnmodified(_ context.Context, c *domain.Case, e
 	}
 	if !existing.UpdatedAt.Equal(expectedUpdatedAt) {
 		return &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "updated_at mismatch"}
+	}
+	if existing.Status != c.Status && !domain.ValidCaseStatusTransition(existing.Status, c.Status) {
+		return &domain.ErrInvalidStateTransition{Entity: "case", ID: c.ID, From: string(existing.Status), To: string(c.Status)}
 	}
 	c.UpdatedAt = time.Now()
 	r.data[c.ID] = c
