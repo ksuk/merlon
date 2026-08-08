@@ -445,7 +445,7 @@ func (s *Server) routes() {
 
 	// Pending engine evaluations (fail-alert recovery queue)
 	s.route("GET /api/v1/pending-evaluations", s.handleListPendingEvaluations)
-	s.routeHandler("GET /api/v1/pending-evaluations/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportPendingEvaluations)))
+	s.routeHandler("GET /api/v1/pending-evaluations/export", s.requireRolePermission(auth.PermAuditRead, s.handleExportPendingEvaluations))
 	s.route("GET /api/v1/pending-evaluations/stats", s.handlePendingEvaluationStats)
 	s.route("GET /api/v1/pending-evaluations/{id}", s.handleGetPendingEvaluation)
 	s.route("GET /api/v1/pending-evaluations/{id}/history", s.handleListPendingHistory)
@@ -493,7 +493,7 @@ func (s *Server) routes() {
 	// full filtered result set in one response, a higher-risk action than
 	// browsing a page at a time).
 	s.route("GET /api/v1/audit", s.handleListAuditLogs)
-	s.routeHandler("GET /api/v1/audit/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportAuditLogs)))
+	s.routeHandler("GET /api/v1/audit/export", s.requireRolePermission(auth.PermAuditRead, s.handleExportAuditLogs))
 
 	// Config validation
 	s.route("POST /api/v1/config/validate", s.handleValidateConfig)
@@ -504,11 +504,11 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/rules", s.handleListRules)
 	s.route("GET /api/v1/rules/{id}", s.handleGetRule)
 	s.route("GET /api/v1/rules/{id}/export", s.handleExportRule)
-	s.routeHandler("POST /api/v1/rules", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleCreateRule)))
-	s.routeHandler("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
-	s.routeHandler("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
-	s.routeHandler("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
-	s.routeHandler("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
+	s.routeHandler("POST /api/v1/rules", s.requireRolePermission(auth.PermRuleWrite, s.handleCreateRule))
+	s.routeHandler("PUT /api/v1/rules/{id}", s.requireRolePermission(auth.PermRuleWrite, s.handleUpdateRule))
+	s.routeHandler("POST /api/v1/rules/{id}/activate", s.requireRolePermission(auth.PermRuleWrite, s.handleActivateRule))
+	s.routeHandler("POST /api/v1/rules/{id}/deactivate", s.requireRolePermission(auth.PermRuleWrite, s.handleDeactivateRule))
+	s.routeHandler("POST /api/v1/rules/import", s.requireRolePermission(auth.PermRuleWrite, s.handleImportRules))
 
 	// Whitelist (whitelist.md §1, §3.1): reads are open to all roles; request
 	// and revoke require auth.PermWhitelistRequest, approve requires the
@@ -526,6 +526,11 @@ func (s *Server) routes() {
 	// System info
 	s.route("GET /api/v1/system/info", s.handleSystemInfo)
 	s.route("GET /api/v1/system/config-digests", s.handleConfigDigests)
+
+	// Capability contract (CAP-01, ADR-0024). Readable by any authenticated
+	// caller: it reports what this deployment offers and why a function is
+	// unavailable, never the content of a function the caller may not use.
+	s.route("GET /api/v1/system/capabilities", s.handleCapabilities)
 
 	// Policy documents (ADR-0016). Read-only: policies are edited as files
 	// and reloaded on restart, never mutated through the API.

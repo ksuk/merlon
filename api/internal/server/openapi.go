@@ -35,6 +35,9 @@ func BuildOpenAPISpec() map[string]any {
 	for name, schema := range wave3Schemas() {
 		schemas[name] = schema
 	}
+	for name, schema := range wave4Schemas() {
+		schemas[name] = schema
+	}
 	spec := map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -128,6 +131,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/audit":                                               pathAuditLogs(),
 			"/api/v1/audit/export":                                        pathExportAuditLogs(),
 			"/api/v1/system/config-digests":                               pathGET("Get loaded configuration digests"),
+			"/api/v1/system/capabilities":                                 pathCapabilities(),
 			"/api/v1/policies":                                            pathPolicies(),
 			"/api/v1/policies/{policy}":                                   pathPolicy(),
 			"/api/v1/accounts":                                            pathAccountCreate(),
@@ -912,6 +916,34 @@ func wave3Schemas() map[string]any {
 		"PaginatedBatchRuns":          objectSchema(map[string]any{"data": arraySchema(schemaRef("BatchRun")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
 		"PaginatedTransactions":       objectSchema(map[string]any{"data": arraySchema(schemaRef("Transaction")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
 	}
+}
+
+// wave4Schemas documents the operator-readiness contracts added in Wave 4.
+func wave4Schemas() map[string]any {
+	return map[string]any{
+		"CapabilityDescriptor": objectSchema(map[string]any{
+			"id":                  map[string]any{"type": "string", "description": "Stable capability identifier"},
+			"availability":        map[string]any{"type": "string", "enum": []string{"available", "not_configured", "forbidden", "unsupported", "degraded", "unavailable"}},
+			"required_permission": map[string]any{"type": "string", "description": "The auth.RolePermissions grant this capability needs; absent when the capability is not permission-gated"},
+			"surfaces":            arraySchema(map[string]any{"type": "string", "enum": []string{"ui", "api"}}),
+			"reason_code":         map[string]any{"type": "string", "description": "Stable machine reason the capability is not available. Never carries configuration detail, endpoint names or credentials."},
+			"docs_url":            map[string]any{"type": "string"},
+			"checked_at":          map[string]any{"type": "string", "format": "date-time"},
+			"expires_at":          map[string]any{"type": "string", "format": "date-time", "nullable": true},
+		}, "id", "availability", "surfaces", "checked_at"),
+		"Capabilities": objectSchema(map[string]any{
+			"auth_mode":   map[string]any{"type": "string", "enum": []string{"disabled", "api_key_only", "session"}, "description": "How this deployment authenticates callers. disabled means every capability is available because no role exists to refuse one (ADR-0024)."},
+			"user_id":     map[string]any{"type": "string"},
+			"role":        map[string]any{"type": "string"},
+			"permissions": arraySchema(map[string]any{"type": "string"}),
+			"checked_at":  map[string]any{"type": "string", "format": "date-time"},
+			"data":        arraySchema(schemaRef("CapabilityDescriptor")),
+		}, "auth_mode", "permissions", "checked_at", "data"),
+	}
+}
+
+func pathCapabilities() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get the server-sourced capability contract", nil, nil, "200", "Capability availability for the calling principal", schemaRef("Capabilities"), "401", "500")}
 }
 
 func publicOperation(operation map[string]any) map[string]any {

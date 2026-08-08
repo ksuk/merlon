@@ -363,13 +363,22 @@ func (s *Server) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 // requireRolePermission gates a route on a fine-grained permission, but only
 // where authentication is actually configured.
 //
-// auth.RequirePermission refuses any request without a role, which is right
-// for the audit export (evidence a roleless caller should never receive) and
-// wrong here: a single-tenant deployment that runs without authentication has
-// no roles at all, and refusing every score would disable the product rather
-// than enforce a control. Whether roles exist is a property of the
-// deployment (s.apikeys, the same condition authMiddleware uses), never of an
-// individual request.
+// auth.RequirePermission refuses any request without a role. That is wrong
+// here: a single-tenant deployment that runs without authentication has no
+// roles at all, and refusing every score would disable the product rather than
+// enforce a control. Whether roles exist is a property of the deployment
+// (s.apikeys, the same condition authMiddleware uses), never of an individual
+// request.
+//
+// This is now the only permission gate on the API surface. The audit and
+// pending-evaluation exports previously used the strict variant, reasoning that
+// bulk evidence should never reach a roleless caller — but in an auth-disabled
+// deployment authMiddleware already passes every request through, so the
+// paginated list of the same records was open while its export was refused.
+// A control that stops nothing is not a control, and ADR-0024 requires such a
+// deployment to report every capability as available; a capability contract
+// that says available while the route answers 403 is exactly the untruth Wave 4
+// exists to remove. Enforcement in an authenticated deployment is unchanged.
 func (s *Server) requireRolePermission(p auth.Permission, next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.apikeys != nil {
