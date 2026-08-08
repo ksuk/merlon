@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -337,23 +338,77 @@ func (s *Server) handleCustomerInvestigation(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, out)
 }
 
+// scoreExplanationPageSize is how many history rows are read per page while
+// looking for a named score record.
+const scoreExplanationPageSize = 200
+
+// scoreExplanationMaxPages bounds the walk. A customer with more rescores than
+// this has a scoring loop, not an explanation to find.
+const scoreExplanationMaxPages = 50
+
+// findScoreRecord returns the newest record, or the one with the given id.
+//
+// It pages rather than reading a single window: the previous version read the
+// newest 200 and 404ed on anything older, so for a frequently rescored
+// customer -- exactly the one whose history a reviewer walks -- the API said
+// "not found" for a record it holds.
+func (s *Server) findScoreRecord(ctx context.Context, customerID, scoreID string) (*domain.ScoreRecord, error) {
+	if scoreID == "" {
+		records, err := s.customers.ListScoreHistory(ctx, customerID, 1)
+		if err != nil {
+			return nil, err
+		}
+		if len(records) == 0 {
+			return nil, nil
+		}
+		return &records[0], nil
+	}
+	pager, ok := s.customers.(domain.CustomerScoreCursorRepository)
+	if !ok {
+		records, err := s.customers.ListScoreHistory(ctx, customerID, scoreExplanationPageSize)
+		if err != nil {
+			return nil, err
+		}
+		for i := range records {
+			if records[i].ID == scoreID {
+				return &records[i], nil
+			}
+		}
+		return nil, nil
+	}
+	var after *domain.Cursor
+	for page := 0; page < scoreExplanationMaxPages; page++ {
+		records, err := pager.ListScoreHistoryCursor(ctx, customerID, scoreExplanationPageSize, after)
+		if err != nil {
+			return nil, err
+		}
+		if len(records) == 0 {
+			return nil, nil
+		}
+		for i := range records {
+			if records[i].ID == scoreID {
+				return &records[i], nil
+			}
+		}
+		if len(records) < scoreExplanationPageSize {
+			return nil, nil
+		}
+		last := records[len(records)-1]
+		after = &domain.Cursor{CreatedAt: last.ScoredAt, ID: last.ID}
+	}
+	return nil, nil
+}
+
 func (s *Server) handleScoreExplanation(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	records, err := s.customers.ListScoreHistory(r.Context(), id, 200)
-	if err != nil {
-		writeWave3Error(w, err)
-		return
-	}
 	scoreID := r.URL.Query().Get("score_id")
 	if scoreID == "" {
 		scoreID = r.PathValue("scoreID")
 	}
-	var selected *domain.ScoreRecord
-	for i := range records {
-		if scoreID == "" || records[i].ID == scoreID {
-			selected = &records[i]
-			break
-		}
+	selected, err := s.findScoreRecord(r.Context(), id, scoreID)
+	if err != nil {
+		writeWave3Error(w, err)
+		return
 	}
 	if selected == nil {
 		writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "score record not found")
@@ -385,7 +440,11 @@ func (s *Server) handleScoreExplanation(w http.ResponseWriter, r *http.Request) 
 		thresholds = reporter.TierThresholds()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"score": selected, "total_reconciled": sum,
+		// score_id names the record that was explained. Without it a caller
+		// that asked for "the latest" cannot tell which score it got back, so
+		// an explanation cannot be cited against a specific decision.
+		"score_id": selected.ID,
+		"score":    selected, "total_reconciled": sum,
 		"reconciled":           reconciled,
 		"reconciliation_delta": delta,
 		"tier_thresholds":      thresholds,
