@@ -1,3 +1,4 @@
+import { formatDuration } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -94,13 +95,30 @@ export function ScreeningQueuePage() {
               </p>
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader><TableRow><TableHead>{t("screeningQueue.sources.listId")}</TableHead><TableHead>{t("screeningQueue.sources.requirement")}</TableHead><TableHead>{t("screeningQueue.sources.state")}</TableHead><TableHead>{t("screeningQueue.sources.lastSuccess")}</TableHead><TableHead>{t("screeningQueue.sources.diagnostic")}</TableHead></TableRow></TableHeader>
+                  <TableHeader><TableRow><TableHead>{t("screeningQueue.sources.listId")}</TableHead><TableHead>{t("screeningQueue.sources.requirement")}</TableHead><TableHead>{t("screeningQueue.sources.state")}</TableHead><TableHead>{t("screeningQueue.sources.lastSuccess")}</TableHead><TableHead>{t("screeningQueue.sources.lastAttempt")}</TableHead><TableHead>{t("screeningQueue.sources.age")}</TableHead><TableHead>{t("screeningQueue.sources.failures")}</TableHead><TableHead>{t("screeningQueue.sources.diagnostic")}</TableHead></TableRow></TableHeader>
                   <TableBody>{sources.data.map((source) => (
                     <TableRow key={source.list_id}>
                       <TableCell className="font-mono text-xs">{source.list_id}<div className="text-xs text-muted-foreground">{source.list_type}</div></TableCell>
                       <TableCell><Badge variant={requiredSources.has(source.list_id) ? "outline" : "secondary"}>{requiredSources.has(source.list_id) ? t("screeningQueue.sources.required") : t("screeningQueue.sources.optional")}</Badge></TableCell>
                       <TableCell><Badge variant={source.operational_state === "ready" ? "low" : requiredSources.has(source.list_id) ? "critical" : "medium"}>{t(`screeningQueue.sources.operationalState.${source.operational_state}`, { defaultValue: source.operational_state })}</Badge></TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">{source.last_success_at ? new Date(source.last_success_at).toLocaleString(i18n.language) : "-"}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{source.last_success_at ? new Date(source.last_success_at).toLocaleString(i18n.language) : t("screeningQueue.sources.never")}</TableCell>
+                      {/* Last attempt separate from last success: a source
+                          that is being tried every hour and failing every time
+                          looks identical to an abandoned one when only the
+                          last success is shown. */}
+                      <TableCell className="whitespace-nowrap text-xs" data-testid={`source-last-attempt-${source.list_id}`}>{source.last_attempt_at ? new Date(source.last_attempt_at).toLocaleString(i18n.language) : t("screeningQueue.sources.never")}</TableCell>
+                      {/* Age against the configured threshold, not age alone:
+                          "26 hours" means nothing without the window it is
+                          being judged against. */}
+                      <TableCell className="whitespace-nowrap text-xs" data-testid={`source-age-${source.list_id}`}>
+                        {source.age_seconds == null
+                          ? "-"
+                          : t("screeningQueue.sources.ageOverThreshold", {
+                              age: formatDuration(source.age_seconds, t),
+                              threshold: formatDuration(source.freshness_threshold_seconds, t),
+                            })}
+                      </TableCell>
+                      <TableCell className="text-xs" data-testid={`source-failures-${source.list_id}`}>{source.consecutive_failures ?? 0}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{source.diagnostic ?? "-"}</TableCell>
                     </TableRow>
                   ))}</TableBody>

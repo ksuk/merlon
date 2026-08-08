@@ -126,7 +126,10 @@ export interface DashboardStats {
 
 export type RiskTier = "low" | "medium" | "high"
 export type AlertSeverity = "low" | "medium" | "high" | "critical"
-export type AlertStatus = "open" | "investigating" | "escalated" | "closed_true_positive" | "closed_false_positive"
+// suppressed is whitelist/system-only: an operator PATCH cannot reach it, but
+// the UI must be able to render an alert that is in it. Omitting it made a
+// suppressed alert fall through every status label as an unknown string.
+export type AlertStatus = "open" | "investigating" | "escalated" | "closed_true_positive" | "closed_false_positive" | "suppressed"
 export type CaseStatus =
   | "open"
   | "new"
@@ -182,6 +185,11 @@ export interface Alert {
   due_at?: string
   disposition?: string
   disposition_rationale?: string
+  // Set when a whitelist entry or a prior false-positive determination
+  // withheld the alert from the default queue. The alert still exists; the
+  // reason is what tells an operator why it is not in front of them.
+  suppressed?: boolean
+  suppression_reason?: string
 }
 
 export interface Case {

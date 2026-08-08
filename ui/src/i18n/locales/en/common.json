@@ -398,7 +398,8 @@
     "investigating": "Investigating",
     "escalated": "Escalated",
     "closed_true_positive": "Closed (true positive)",
-    "closed_false_positive": "Closed (false positive)"
+    "closed_false_positive": "Closed (false positive)",
+    "suppressed": "Suppressed"
   },
   "alerts": {
     "queue": {
@@ -452,7 +453,8 @@
         "updatedAt": "Last update"
       },
       "empty": "No alerts"
-    }
+    },
+    "suppressedReason": "Suppressed: {{reason}}"
   },
   "alertDetail": {
     "backToList": "Back to alert list",
@@ -1243,7 +1245,13 @@
         "unreadable": "Unreadable",
         "failed": "Failed",
         "unavailable": "Unavailable"
-      }
+      },
+      "lastAttempt": "Last attempt",
+      "age": "Age",
+      "threshold": "Threshold",
+      "failures": "Consecutive failures",
+      "never": "Never",
+      "ageOverThreshold": "{{age}} (threshold {{threshold}})"
     }
   },
   "pendingEvaluations": {
@@ -1520,5 +1528,10 @@
       "approveDisabledTitle": "The requester cannot approve their own request"
     },
     "empty": "No whitelist entries"
+  },
+  "duration": {
+    "hours": "{{count}}h",
+    "minutes": "{{count}}m",
+    "days": "{{count}}d"
   }
 }

@@ -398,7 +398,8 @@
     "investigating": "調査中",
     "escalated": "エスカレーション",
     "closed_true_positive": "完了(真陽性)",
-    "closed_false_positive": "完了(偽陽性)"
+    "closed_false_positive": "完了(偽陽性)",
+    "suppressed": "抑制済み"
   },
   "alerts": {
     "queue": {
@@ -452,7 +453,8 @@
         "updatedAt": "最終更新"
       },
       "empty": "アラートがありません"
-    }
+    },
+    "suppressedReason": "抑制: {{reason}}"
   },
   "alertDetail": {
     "backToList": "アラート一覧に戻る",
@@ -1243,7 +1245,13 @@
         "unreadable": "読み取り不可",
         "failed": "取込失敗",
         "unavailable": "利用不可"
-      }
+      },
+      "lastAttempt": "最終試行",
+      "age": "経過",
+      "threshold": "閾値",
+      "failures": "連続失敗",
+      "never": "未実施",
+      "ageOverThreshold": "{{age}}（閾値 {{threshold}}）"
     }
   },
   "pendingEvaluations": {
@@ -1520,5 +1528,10 @@
       "approveDisabledTitle": "申請者自身は承認できません"
     },
     "empty": "ホワイトリストエントリがありません"
+  },
+  "duration": {
+    "hours": "{{count}}時間",
+    "minutes": "{{count}}分",
+    "days": "{{count}}日"
   }
 }
