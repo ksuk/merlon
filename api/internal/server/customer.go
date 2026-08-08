@@ -389,6 +389,29 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// cdd_rule_selection_v1 declares who picks the rule set. Under server
+	// authority the policy's choice is the configured answer, so naming a
+	// different one is a deliberate departure from the configuration and is
+	// treated like any other override: allowed, but attributable (ADR-0019).
+	//
+	// Under client authority, and wherever the policy resolves to nothing (the
+	// shipped default has no rules and no default_rule_set_id, meaning "use
+	// the single active CDD_WEIGHT rule"), there is no policy choice to depart
+	// from and selection stays ordinary use.
+	selection := s.policies.CDDRuleSelection()
+	policyChoice := ""
+	if selection.ServerResolves() {
+		policyChoice = strings.TrimSpace(selection.Resolve(c))
+	}
+	selectionOverride := policyChoice != "" &&
+		strings.TrimSpace(req.RuleSetID) != "" &&
+		!domain.SameIdentifier(policyChoice, req.RuleSetID)
+	if selectionOverride && strings.TrimSpace(req.Rationale) == "" {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed,
+			"rationale is required to score against a rule set other than the one the selection policy resolves")
+		return
+	}
+
 	var record *domain.ScoreRecord
 	var selectedRule *domain.RuleDefinition
 	if strings.TrimSpace(req.RuleSetID) != "" {
@@ -531,11 +554,21 @@ func (s *Server) handleScoreCustomer(w http.ResponseWriter, r *http.Request) {
 				return fmt.Errorf("record score override proposal: %w", err)
 			}
 		}
-		if err := appendRequiredMutationAudit(r.Context(), r, repos, "score_customer", "customers", c.ID, map[string]string{
+		scoreAudit := map[string]string{
 			"rule_set_id": record.RuleSetID,
 			"score":       strconv.FormatFloat(record.Score, 'f', -1, 64),
 			"tier":        string(record.Tier),
-		}, record.ScoredAt); err != nil {
+		}
+		if selectionOverride {
+			// Both readings, not just the winner: a reviewer must be able to
+			// see that the configured policy would have scored this customer
+			// under a different rule set.
+			scoreAudit["cdd_rule_set_policy_choice"] = policyChoice
+			scoreAudit["cdd_rule_set_selected"] = record.RuleSetID
+			scoreAudit["cdd_rule_set_selection_policy_version"] = selection.Version()
+			scoreAudit["cdd_rule_set_override_rationale"] = strings.TrimSpace(req.Rationale)
+		}
+		if err := appendRequiredMutationAudit(r.Context(), r, repos, "score_customer", "customers", c.ID, scoreAudit, record.ScoredAt); err != nil {
 			return err
 		}
 		if s.eventOutbox != nil {
