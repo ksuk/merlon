@@ -260,15 +260,17 @@ func (r *MemoryWave3Repo) ReviewScreeningResult(_ context.Context, id string, to
 	}
 	caseID := result.CaseID
 	caseCreated := false
-	if to == domain.ScreeningResultStatusTruePositive && caseID == "" {
+	// The case id and the caseCreated flag are only claimed when a case was
+	// actually written. Minting an id with no case repository wired told the
+	// caller a critical case existed for a confirmed sanctions hit when none
+	// did -- the one outcome a screening review must never report falsely.
+	if to == domain.ScreeningResultStatusTruePositive && caseID == "" && r.cases != nil {
 		caseID = wave3ID()
-		if r.cases != nil {
-			now := time.Now().UTC()
-			caseRecord := &domain.Case{ID: caseID, CustomerID: result.CustomerID, Status: domain.CaseStatusNew, Priority: domain.CasePriorityCritical, Summary: "Screening true positive: " + result.MatchedName + " matched " + result.ListID + " (" + result.ListType + ")", CreatedAt: now, UpdatedAt: now}
-			if err := r.cases.Create(context.Background(), caseRecord); err != nil {
-				*result = previous
-				return nil, err
-			}
+		now := time.Now().UTC()
+		caseRecord := &domain.Case{ID: caseID, CustomerID: result.CustomerID, Status: domain.CaseStatusNew, Priority: domain.CasePriorityCritical, Summary: "Screening true positive: " + result.MatchedName + " matched " + result.ListID + " (" + result.ListType + ")", CreatedAt: now, UpdatedAt: now}
+		if err := r.cases.Create(context.Background(), caseRecord); err != nil {
+			*result = previous
+			return nil, err
 		}
 		caseCreated = true
 	}

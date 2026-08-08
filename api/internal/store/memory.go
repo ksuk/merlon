@@ -201,6 +201,16 @@ func (r *MemoryCustomerRepo) ListByCursor(_ context.Context, limit int, after *d
 	), nil
 }
 
+// searchableCustomerAttributes is the closed set of attributes customer search
+// reaches. It mirrors the columns named in PgCustomerRepo.ListSearch exactly.
+//
+// This used to match any attribute key or value, which broke parity with
+// PostgreSQL in both directions: a search that found a customer here missed it
+// in production, and a term could reach arbitrary PII-bearing attributes -- an
+// occupation, a nationality, a free-text note -- that the SQL side
+// deliberately excludes. Adding a searchable attribute means changing both.
+var searchableCustomerAttributes = []string{"name", "name_ja", "name_kana", "address"}
+
 func customerMatchesSearch(c domain.Customer, search string) bool {
 	needle := strings.ToLower(strings.TrimSpace(search))
 	if needle == "" {
@@ -211,8 +221,12 @@ func customerMatchesSearch(c domain.Customer, search string) bool {
 		strings.Contains(strings.ToLower(c.CountryCode), needle) {
 		return true
 	}
-	for key, value := range c.Attributes {
-		if strings.Contains(strings.ToLower(key), needle) || strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
+	for _, key := range searchableCustomerAttributes {
+		value, ok := c.Attributes[key]
+		if !ok {
+			continue
+		}
+		if strings.Contains(strings.ToLower(fmt.Sprint(value)), needle) {
 			return true
 		}
 	}
