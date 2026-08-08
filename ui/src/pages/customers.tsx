@@ -2,7 +2,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { CountrySelect, IdentityFields } from "@/components/identity-fields"
 import { useApi } from "@/hooks/use-api"
+import { usePolicy } from "@/hooks/use-policy"
 import { api, type Customer, type RiskTier } from "@/lib/api"
 import { Plus } from "lucide-react"
 import { useState } from "react"
@@ -27,11 +29,9 @@ export function CustomersPage() {
   const [externalId, setExternalId] = useState("")
   const [customerType, setCustomerType] = useState<string>("individual")
   const [country, setCountry] = useState("")
-  const [name, setName] = useState("")
-  const [nameJa, setNameJa] = useState("")
-  const [nameKana, setNameKana] = useState("")
-  const [address, setAddress] = useState("")
+  const [identity, setIdentity] = useState<Record<string, string>>({})
   const [products, setProducts] = useState("")
+  const { data: kyc } = usePolicy("kyc_required_fields")
   const { data: page, loading, error } = useApi(() => api.customers.listAll({ search: filter }), filter)
   const customers = page?.data
   const filtered = customers?.filter((customer) => !tierFilter || (customer.risk_tier ?? "") === tierFilter)
@@ -42,7 +42,8 @@ export function CustomersPage() {
     setCreating(true)
     setFormError(null)
     try {
-      await api.customers.create({ external_id: externalId.trim(), customer_type: customerType, country_code: country.trim().toUpperCase(), product_types: products.split(",").map((item) => item.trim()).filter(Boolean), attributes: {}, identity: { name: name.trim() || undefined, name_ja: nameJa.trim() || undefined, name_kana: nameKana.trim() || undefined, address: address.trim() || undefined } })
+      const identityPayload = Object.fromEntries(Object.entries(identity).map(([key, value]) => [key, value.trim()]).filter(([, value]) => value !== ""))
+      await api.customers.create({ external_id: externalId.trim(), customer_type: customerType, country_code: country.trim().toUpperCase(), product_types: products.split(",").map((item) => item.trim()).filter(Boolean), attributes: {}, identity: identityPayload })
       window.location.reload()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err))
@@ -59,12 +60,10 @@ export function CustomersPage() {
       {showForm && <Card><CardHeader><CardTitle className="text-base">{t("customers.form.title")}</CardTitle></CardHeader><CardContent><form onSubmit={handleCreate} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Field id="customer-external-id" label={t("customers.form.externalId")} value={externalId} onChange={setExternalId} required placeholder="EXT-001" />
         <div><label htmlFor="customer-type" className="mb-1 block text-xs font-medium">{t("customers.form.type")}</label><select id="customer-type" value={customerType} onChange={(event) => setCustomerType(event.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm">{CUSTOMER_TYPES.map((type) => <option key={type} value={type}>{t(`customers.type.${CUSTOMER_TYPE_KEYS[type]}`, { defaultValue: type })}</option>)}</select></div>
-        <Field id="customer-country" label={t("customers.form.countryCode")} value={country} onChange={setCountry} required placeholder="JP" maxLength={2} />
-        <Field id="customer-name" label={t("customers.form.name")} value={name} onChange={setName} placeholder="Name" />
-        <Field id="customer-name-ja" label={t("customers.form.nameJa")} value={nameJa} onChange={setNameJa} placeholder={t("customers.form.nameJa")} />
-        <Field id="customer-name-kana" label={t("customers.form.nameKana")} value={nameKana} onChange={setNameKana} placeholder={t("customers.form.nameKana")} />
-        <Field id="customer-address" label={t("customers.form.address")} value={address} onChange={setAddress} placeholder={t("customers.form.addressPlaceholder")} className="sm:col-span-2" />
+        <div><label htmlFor="customer-country" className="mb-1 block text-xs font-medium">{t("customers.form.countryCode")}</label><CountrySelect id="customer-country" label={t("customers.form.countryCode")} value={country} onChange={setCountry} className="w-full" /></div>
+        <IdentityFields customerType={customerType} policy={kyc?.document} values={identity} onChange={(field, value) => setIdentity((current) => ({ ...current, [field]: value }))} idPrefix="customer-identity" />
         <Field id="customer-products" label={t("customers.form.products")} value={products} onChange={setProducts} placeholder="crypto, remittance" />
+        <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">{kyc ? t("customers.form.kycPolicyVersion", { version: kyc.policy_version }) : t("customers.form.kycPolicyLoading")}</p>
         <div className="flex items-end"><Button type="submit" size="sm" disabled={creating}>{t("customers.form.submit")}</Button></div>
       </form></CardContent></Card>}
       <div className="flex gap-2"><div><label htmlFor="customer-search" className="sr-only">{t("customers.search.placeholder")}</label><input id="customer-search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder={t("customers.search.placeholder")} className="max-w-xs rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" /></div><label htmlFor="customer-tier-filter" className="sr-only">{t("customers.filter.allTiers")}</label><select id="customer-tier-filter" value={tierFilter} onChange={(event) => setTierFilter(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm"><option value="">{t("customers.filter.allTiers")}</option><option value="low">{t("customers.tier.low")}</option><option value="medium">{t("customers.tier.medium")}</option><option value="high">{t("customers.tier.high")}</option></select></div>

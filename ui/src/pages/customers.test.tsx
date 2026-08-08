@@ -14,7 +14,10 @@ beforeEach(() => {
 })
 
 test("renders customer table with data", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
+  // A fresh Response per call: the page reads the customer list and the
+  // kyc_required_fields policy, and a single Response body can only be read
+  // once.
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
     paginatedResponse([
         {
           id: "c1",
@@ -42,7 +45,7 @@ test("renders customer table with data", async () => {
 })
 
 test("shows empty state when no customers", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(paginatedResponse([]))
+  vi.spyOn(globalThis, "fetch").mockImplementation(async () => paginatedResponse([]))
 
   await renderWithRouter(<CustomersPage />)
 

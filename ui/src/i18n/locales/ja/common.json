@@ -113,7 +113,9 @@
       "address": "住所",
       "addressPlaceholder": "登録住所",
       "products": "商品（カンマ区切り）",
-      "submit": "作成"
+      "submit": "作成",
+      "kycPolicyVersion": "本人特定事項は kyc_required_fields {{version}} に基づきます",
+      "kycPolicyLoading": "本人特定事項の要件を読み込み中"
     },
     "search": {
       "placeholder": "ID・名前・国コードで検索..."
@@ -160,6 +162,22 @@
       },
       "unscored": "未スコア",
       "empty": "顧客データがありません"
+    },
+    "identityField": {
+      "requiredHint": "この顧客タイプでは必須",
+      "name": "氏名・名称",
+      "name_ja": "日本語名",
+      "name_kana": "カナ",
+      "address": "住所・所在地",
+      "date_of_birth": "生年月日",
+      "occupation": "職業",
+      "nationality": "国籍",
+      "corporate_number": "法人番号",
+      "representative_name": "代表者名",
+      "jurisdiction": "設立準拠法域",
+      "industry": "業種",
+      "beneficial_owners": "実質的支配者",
+      "trust_parties": "信託関係人"
     }
   },
   "casePriority": {
@@ -658,7 +676,9 @@
       "cancel": "編集を閉じる",
       "products": "プロダクト",
       "createdAt": "作成日",
-      "updatedAt": "更新日"
+      "updatedAt": "更新日",
+      "kycMissing": "未取得の必須項目",
+      "kycPolicyVersion": "本人特定事項ポリシー版"
     },
     "riskAssessment": {
       "title": "リスク評価",
@@ -752,6 +772,16 @@
       },
       "total": "整合した合計: {{score}}",
       "fallback": "フォールバック / 未解決"
+    },
+    "identityHistory": {
+      "title": "identity 変更履歴",
+      "empty": "identity の変更履歴はありません",
+      "table": {
+        "changedAt": "変更日時",
+        "actor": "実施者",
+        "changedFields": "変更項目",
+        "rationale": "理由"
+      }
     }
   },
   "notFound": {

@@ -148,6 +148,11 @@ export interface Customer {
   risk_score?: number
   risk_tier?: RiskTier
   last_scored_at?: string
+  // Required identity attributes this record does not carry, per the
+  // kyc_required_fields policy for its type. Recomputed on read and absent
+  // when nothing is missing.
+  kyc_missing_fields?: string[]
+  kyc_policy_version?: string
   created_at: string
   updated_at: string
   // EDD 3段階エスカレーション（the case-management workflow §EDD未実施継続時の段階的

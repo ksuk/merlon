@@ -113,7 +113,9 @@
       "address": "Address",
       "addressPlaceholder": "Registered address",
       "products": "Products (comma separated)",
-      "submit": "Create"
+      "submit": "Create",
+      "kycPolicyVersion": "Identity requirements from kyc_required_fields {{version}}",
+      "kycPolicyLoading": "Loading identity requirements"
     },
     "search": {
       "placeholder": "Search by ID, name, or country code..."
@@ -160,6 +162,22 @@
       },
       "unscored": "Unscored",
       "empty": "No customer data"
+    },
+    "identityField": {
+      "requiredHint": "Required for this customer type",
+      "name": "Name",
+      "name_ja": "Name (Japanese)",
+      "name_kana": "Name (kana)",
+      "address": "Address",
+      "date_of_birth": "Date of birth",
+      "occupation": "Occupation",
+      "nationality": "Nationality",
+      "corporate_number": "Corporate number",
+      "representative_name": "Representative name",
+      "jurisdiction": "Jurisdiction",
+      "industry": "Industry",
+      "beneficial_owners": "Beneficial owners",
+      "trust_parties": "Trust parties"
     }
   },
   "casePriority": {
@@ -658,7 +676,9 @@
       "cancel": "Close edit",
       "products": "Products",
       "createdAt": "Created at",
-      "updatedAt": "Updated at"
+      "updatedAt": "Updated at",
+      "kycMissing": "Missing required identity fields",
+      "kycPolicyVersion": "Identity policy version"
     },
     "riskAssessment": {
       "title": "Risk assessment",
@@ -752,6 +772,16 @@
       },
       "total": "Reconciled total: {{score}}",
       "fallback": "Fallback / unresolved"
+    },
+    "identityHistory": {
+      "title": "Identity change history",
+      "empty": "No identity changes recorded",
+      "table": {
+        "changedAt": "Changed at",
+        "actor": "Actor",
+        "changedFields": "Changed fields",
+        "rationale": "Rationale"
+      }
     }
   },
   "notFound": {

@@ -9,8 +9,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { CountrySelect, IdentityFields } from "@/components/identity-fields"
 import { useApi } from "@/hooks/use-api"
+import { usePolicy } from "@/hooks/use-policy"
 import { api, type Customer, type RiskTier, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
+import { identityRequirements } from "@/lib/identity"
 import { ArrowLeft, Pencil, RefreshCw, Search } from "lucide-react"
 import { useCallback, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -74,6 +77,11 @@ export function CustomerDetailPage() {
   const { data: cddRules } = useApi(
     useCallback(() => api.rules.list({ type: "CDD_WEIGHT", activeOnly: true }), []),
   )
+  const { data: kyc } = usePolicy("kyc_required_fields")
+  const { data: identityHistory } = useApi(
+    useCallback(() => api.customers.identityHistory(id!), [id]),
+    requestKey,
+  )
   const [scoring, setScoring] = useState(false)
   const [screening, setScreening] = useState(false)
   const [screenResult, setScreenResult] = useState<ScreenResult | null>(null)
@@ -86,14 +94,21 @@ export function CustomerDetailPage() {
   const [reviewReason, setReviewReason] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const countryRef = useRef<HTMLInputElement>(null)
+  const [identityDraft, setIdentityDraft] = useState<Record<string, string>>({})
+  const [countryDraft, setCountryDraft] = useState("")
   const statusRef = useRef<HTMLSelectElement>(null)
-  const nameRef = useRef<HTMLInputElement>(null)
-  const nameJaRef = useRef<HTMLInputElement>(null)
-  const nameKanaRef = useRef<HTMLInputElement>(null)
-  const addressRef = useRef<HTMLInputElement>(null)
 
   const effectiveRuleSet = selectedRuleSet || cddRules?.data?.[0]?.name || ""
+  const { required: requiredIdentityFields, fields: identityFields } = identityRequirements(kyc?.document, customer?.customer_type ?? "")
+
+  // The draft is seeded from the record at the moment editing starts, so a
+  // background refresh cannot overwrite what the operator is typing.
+  function startEditing() {
+    if (!customer) return
+    setIdentityDraft(Object.fromEntries(identityFields.map((field) => [field, identityValue(customer, field)])))
+    setCountryDraft(customer.country_code)
+    setEditing(true)
+  }
 
   async function handleScore() {
     if (!id) return
@@ -159,19 +174,16 @@ export function CustomerDetailPage() {
   }
 
   async function handleSave() {
-    if (!id || !customer || !countryRef.current) return
+    if (!id || !customer) return
     setSaving(true)
     setMutationError(null)
     try {
       await api.customers.update(id, {
-        country_code: countryRef.current.value.trim().toUpperCase(),
+        country_code: countryDraft.trim().toUpperCase(),
         status: statusRef.current?.value as Customer["status"],
-        identity: {
-          name: nameRef.current?.value.trim() || null,
-          name_ja: nameJaRef.current?.value.trim() || null,
-          name_kana: nameKanaRef.current?.value.trim() || null,
-          address: addressRef.current?.value.trim() || null,
-        },
+        // A cleared field is sent as null so the server removes it rather
+        // than keeping the previous value.
+        identity: Object.fromEntries(Object.entries(identityDraft).map(([field, value]) => [field, value.trim() || null])),
         rationale: t("customerDetail.basicInfo.identityRationale"),
         expected_updated_at: customer.updated_at,
       })
@@ -231,7 +243,7 @@ export function CustomerDetailPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">{t("customerDetail.basicInfo.title")}</CardTitle>
-            <Button size="sm" variant="ghost" aria-label={editing ? t("customerDetail.basicInfo.cancel") : t("customerDetail.basicInfo.edit")} onClick={() => setEditing(!editing)}>
+            <Button size="sm" variant="ghost" aria-label={editing ? t("customerDetail.basicInfo.cancel") : t("customerDetail.basicInfo.edit")} onClick={() => editing ? setEditing(false) : startEditing()}>
               <Pencil className="h-4 w-4" />
             </Button>
           </CardHeader>
@@ -249,29 +261,39 @@ export function CustomerDetailPage() {
                   })}
                 </dd>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.name")}</dt>
-                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.name")} ref={nameRef} defaultValue={identityValue(customer, "name")} className="w-48 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "name") || "-"}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.nameJa")}</dt>
-                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.nameJa")} ref={nameJaRef} defaultValue={identityValue(customer, "name_ja")} className="w-48 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "name_ja") || "-"}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.nameKana")}</dt>
-                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.nameKana")} ref={nameKanaRef} defaultValue={identityValue(customer, "name_kana")} className="w-48 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "name_kana") || "-"}</dd>
-              </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">{t("customerDetail.basicInfo.address")}</dt>
-                <dd className="text-right">{editing ? <input aria-label={t("customerDetail.basicInfo.address")} ref={addressRef} defaultValue={identityValue(customer, "address")} className="w-64 rounded-md border bg-background px-2 py-1 text-sm" /> : identityValue(customer, "address") || "-"}</dd>
-              </div>
+              {editing ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <IdentityFields customerType={customer.customer_type} policy={kyc?.document} values={identityDraft} onChange={(field, value) => setIdentityDraft((current) => ({ ...current, [field]: value }))} idPrefix="customer-detail-identity" />
+                </div>
+              ) : (
+                identityFields.map((field) => (
+                  <div key={field} className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">
+                      {t(`customers.identityField.${field}`, { defaultValue: field })}
+                      {requiredIdentityFields.has(field) && <span className="ml-1 text-destructive" title={t("customers.identityField.requiredHint")}>*</span>}
+                    </dt>
+                    <dd className="text-right">{identityValue(customer, field) || "-"}</dd>
+                  </div>
+                ))
+              )}
+              {(customer.kyc_missing_fields?.length ?? 0) > 0 && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("customerDetail.basicInfo.kycMissing")}</dt>
+                  <dd role="alert" className="text-right text-destructive">{customer.kyc_missing_fields?.map((field) => t(`customers.identityField.${field}`, { defaultValue: field })).join(", ")}</dd>
+                </div>
+              )}
+              {customer.kyc_policy_version && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{t("customerDetail.basicInfo.kycPolicyVersion")}</dt>
+                  <dd className="text-right font-mono text-xs">{customer.kyc_policy_version}</dd>
+                </div>
+              )}
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">{t("customerDetail.basicInfo.countryCode")}</dt>
                 <dd>
                   {editing ? (
                     <div className="flex gap-2">
-                        <input aria-label={t("customerDetail.basicInfo.countryCode")} ref={countryRef} defaultValue={customer.country_code} maxLength={2}
-                        className="w-16 rounded-md border bg-background px-2 py-1 text-sm uppercase focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+                      <CountrySelect id="customer-detail-country" label={t("customerDetail.basicInfo.countryCode")} value={countryDraft} onChange={setCountryDraft} />
                       <Button size="sm" variant="outline" onClick={handleSave} disabled={saving}>
                         {t("customerDetail.basicInfo.save")}
                       </Button>
@@ -490,6 +512,38 @@ export function CustomerDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{t("customerDetail.identityHistory.title")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {identityHistory?.data?.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("customerDetail.identityHistory.table.changedAt")}</TableHead>
+                  <TableHead>{t("customerDetail.identityHistory.table.actor")}</TableHead>
+                  <TableHead>{t("customerDetail.identityHistory.table.changedFields")}</TableHead>
+                  <TableHead>{t("customerDetail.identityHistory.table.rationale")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {identityHistory.data.map((entry) => (
+                  <TableRow key={entry.id}>
+                    <TableCell className="whitespace-nowrap text-xs">{formatDateTime(entry.created_at, i18n.language)}</TableCell>
+                    <TableCell className="font-mono text-xs">{entry.actor}</TableCell>
+                    <TableCell className="text-xs">{Object.keys(entry.changed_fields ?? {}).map((field) => t(`customers.identityField.${field}`, { defaultValue: field })).join(", ") || "-"}</TableCell>
+                    <TableCell className="text-xs">{entry.rationale || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("customerDetail.identityHistory.empty")}</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
