@@ -848,6 +848,17 @@ export interface CustomerIdentityHistoryEntry {
   created_at: string
 }
 
+export interface PendingEvaluationStats {
+  backlog: number
+  by_status: Record<string, number>
+  failed: number
+  exhausted: number
+  // null on an empty queue: an age of zero would read as "just arrived".
+  oldest_created_at: string | null
+  oldest_age_seconds: number
+  evaluated_at: string
+}
+
 export interface CustomerInvestigation {
   customer: Customer
   counts: Record<string, number>
@@ -928,6 +939,14 @@ export interface TargetManifest {
   customer_ids: string[]
   sample_customer_ids: string[]
   target_count: number
+  // How many customers matched the selection but cannot be operated on, and
+  // why. Without these, target_count reads as "everyone you picked".
+  excluded_count?: number
+  excluded_reasons?: Record<string, number>
+  // What confirming this run will do, derived server-side from the operation.
+  expected_side_effects?: string[]
+  rule_set_id?: string
+  rule_set_version?: number
   criteria: string
   token?: string
   status: "preview" | "confirmed" | "consumed" | "expired"
@@ -1457,8 +1476,15 @@ export const api = {
       request<BatchRun>("/batch/runs", { method: "POST", body: JSON.stringify(data), ...(data.idempotency_key ? { headers: { "Idempotency-Key": data.idempotency_key } } : {}) }),
     getRun: (id: string) => request<BatchRun>(`/batch/runs/${encodeURIComponent(id)}`),
     rerun: (id: string) => request<BatchRun>(`/batch/runs/${encodeURIComponent(id)}/rerun`, { method: "POST" }),
+    // The server has had POST /batch/runs/{id}/cancel since the durable run
+    // work landed; there was no client for it, so a long run could be started
+    // and not stopped.
+    cancel: (id: string) => request<BatchRun>(`/batch/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
   },
   pending: {
+    // Backlog, oldest age and failed/exhausted counts: the stop conditions
+    // #73 asks for. A page of rows cannot answer any of them.
+    stats: () => request<PendingEvaluationStats>("/pending-evaluations/stats"),
     list: (params?: CursorPageParams & { status?: string; customerId?: string; batchRunId?: string; createdFrom?: string; createdTo?: string; minAgeDays?: number; maxAgeDays?: number }) => {
       const qs = buildCursorQuery(params)
       if (params?.status) qs.set("status", params.status)

@@ -1183,7 +1183,17 @@
           "error": "エラー"
         }
       }
-    }
+    },
+    "excluded": "除外",
+    "excludedReason": "{{reason}}: {{count}}件",
+    "sideEffects": "この実行が行うこと",
+    "sample": "対象サンプル",
+    "ruleSet": "ルールセット",
+    "cancel": "実行をキャンセル",
+    "cancelled": "実行をキャンセルしました",
+    "reviewQueueLink": "要レビューキューを開く",
+    "historyStatus": "ステータス",
+    "historyOperation": "操作"
   },
   "screeningQueue": {
     "title": "スクリーニング確認キュー",
@@ -1281,7 +1291,12 @@
     "retryAction": "再試行",
     "resolveAction": "解決",
     "escalateAction": "エスカレーション",
-    "history": "履歴"
+    "history": "履歴",
+    "backlog": "滞留件数",
+    "oldest": "最古",
+    "failedCount": "失敗",
+    "exhaustedCount": "自動再試行の上限到達",
+    "stopCondition": "キュー状況"
   },
   "apikeys": {
     "title": "APIキー管理",

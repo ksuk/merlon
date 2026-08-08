@@ -1183,7 +1183,17 @@
           "error": "Error"
         }
       }
-    }
+    },
+    "excluded": "Excluded",
+    "excludedReason": "{{reason}}: {{count}}",
+    "sideEffects": "This run will",
+    "sample": "Sample targets",
+    "ruleSet": "Rule set",
+    "cancel": "Cancel run",
+    "cancelled": "Run cancelled",
+    "reviewQueueLink": "Open the pending-review queue",
+    "historyStatus": "Status",
+    "historyOperation": "Operation"
   },
   "screeningQueue": {
     "title": "Screening review queue",
@@ -1281,7 +1291,12 @@
     "retryAction": "Retry",
     "resolveAction": "Resolve",
     "escalateAction": "Escalate",
-    "history": "History"
+    "history": "History",
+    "backlog": "Backlog",
+    "oldest": "Oldest",
+    "failedCount": "Failed",
+    "exhaustedCount": "Retry budget spent",
+    "stopCondition": "Queue status"
   },
   "apikeys": {
     "title": "API keys",
