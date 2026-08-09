@@ -1,8 +1,9 @@
 import { Suspense } from "react"
 import { useTranslation } from "react-i18next"
-import { Outlet } from "react-router"
+import { Outlet, useLocation } from "react-router"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
+import { ErrorBoundary } from "@/components/error-boundary"
 import { LanguageSwitcher } from "./language-switcher"
 import { SessionMenu } from "./session-menu"
 import { Sidebar } from "./sidebar"
@@ -35,6 +36,8 @@ function DemoDataBadge() {
 }
 
 export function AppLayout() {
+  const location = useLocation()
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -45,9 +48,15 @@ export function AppLayout() {
           <LanguageSwitcher />
         </header>
         <main className="flex-1 overflow-y-auto bg-background p-6">
-          <Suspense fallback={<PageLoader />}>
-            <Outlet />
-          </Suspense>
+          {/* Containment at the route boundary, not around the whole shell: a
+              page that throws must not take the navigation, the session or the
+              operator's sense of where they are with it (#85). The path resets
+              the boundary, so moving to another screen recovers. */}
+          <ErrorBoundary resetKey={location.pathname}>
+            <Suspense fallback={<PageLoader />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

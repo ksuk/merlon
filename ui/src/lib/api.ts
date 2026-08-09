@@ -11,16 +11,57 @@ function getCookie(name: string): string | null {
 // alongside the human-readable message, so callers can branch on `code`
 // (Contract Stability) and translate via errors.{code} instead of matching
 // on message wording, which may change or be translated server-side.
+/**
+ * OperationState says whether the request the client sent actually ran.
+ *
+ * The client is the only party that knows this: the server knows the failure
+ * class, but only the caller knows whether it sent a mutation and whether the
+ * response ever arrived. A mutation whose outcome is unknown must not be
+ * retried silently (ERR-01).
+ */
+export type OperationState = "not_started" | "completed" | "unknown"
+
 export class ApiError extends Error {
   status: number
   code?: string
+  /** Correlates this failure with the server log; safe to show and to quote. */
+  requestId?: string
+  /**
+   * Whether repeating an identical request could plausibly succeed. This is a
+   * property of the failure class; whether repeating is *safe* additionally
+   * depends on operationState.
+   */
+  retryable: boolean
+  operationState: OperationState
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    options?: { requestId?: string; retryable?: boolean; operationState?: OperationState },
+  ) {
     super(message)
     this.name = "ApiError"
     this.status = status
     this.code = code
+    this.requestId = options?.requestId
+    this.retryable = options?.retryable ?? false
+    this.operationState = options?.operationState ?? "not_started"
   }
+}
+
+/**
+ * operationStateFor decides what the caller may assume about a failed request.
+ *
+ * A response with a status means the server reached a decision, so a mutation
+ * it refused did not run. Everything else -- a 5xx, a timeout, a dropped
+ * connection -- leaves a mutation in an unknown state, and presenting that as
+ * "not started" is how an operator ends up filing a report twice.
+ */
+function operationStateFor(method: string, status: number): OperationState {
+  const mutating = method !== "GET" && method !== "HEAD"
+  if (!mutating) return "not_started"
+  return status >= 500 ? "unknown" : "not_started"
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -39,18 +80,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.text()
     let message = body
     let code: string | undefined
+    let requestId: string | undefined
+    let retryableFlag = false
     try {
       const parsed: unknown = JSON.parse(body)
       if (parsed && typeof parsed === "object") {
-        const { error, error_code } = parsed as { error?: unknown; error_code?: unknown }
+        const { error, error_code, request_id, retryable } = parsed as {
+          error?: unknown
+          error_code?: unknown
+          request_id?: unknown
+          retryable?: unknown
+        }
         if (typeof error === "string") message = error
         if (typeof error_code === "string") code = error_code
+        if (typeof request_id === "string") requestId = request_id
+        if (typeof retryable === "boolean") retryableFlag = retryable
       }
     } catch {
       // Response body was not JSON (e.g. a proxy error page); fall back to
       // the raw text as the message.
     }
-    throw new ApiError(message, res.status, code)
+    throw new ApiError(message, res.status, code, {
+      // The header is the fallback: a proxy error page carries no JSON body but
+      // the identifier still reached the client.
+      requestId: requestId ?? res.headers.get("X-Request-ID") ?? undefined,
+      retryable: retryableFlag,
+      operationState: operationStateFor(method, res.status),
+    })
   }
   return res.json()
 }
@@ -69,17 +125,30 @@ async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
     const body = await res.text()
     let message = body
     let code: string | undefined
+    let requestId: string | undefined
+    let retryableFlag = false
     try {
       const parsed: unknown = JSON.parse(body)
       if (parsed && typeof parsed === "object") {
-        const errorBody = parsed as { error?: unknown; error_code?: unknown }
+        const errorBody = parsed as {
+          error?: unknown
+          error_code?: unknown
+          request_id?: unknown
+          retryable?: unknown
+        }
         if (typeof errorBody.error === "string") message = errorBody.error
         if (typeof errorBody.error_code === "string") code = errorBody.error_code
+        if (typeof errorBody.request_id === "string") requestId = errorBody.request_id
+        if (typeof errorBody.retryable === "boolean") retryableFlag = errorBody.retryable
       }
     } catch {
       // Keep a proxy/plain-text error useful to the operator.
     }
-    throw new ApiError(message, res.status, code)
+    throw new ApiError(message, res.status, code, {
+      requestId: requestId ?? res.headers.get("X-Request-ID") ?? undefined,
+      retryable: retryableFlag,
+      operationState: operationStateFor(method, res.status),
+    })
   }
   return res.blob()
 }

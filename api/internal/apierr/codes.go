@@ -23,3 +23,19 @@ const (
 	// that configure a minimum retention period. No handler emits it yet.
 	CodeRetentionShortenForbidden Code = "retention_shorten_forbidden"
 )
+
+// Retryable reports whether repeating an identical request could plausibly
+// succeed.
+//
+// This is a property of the failure class alone. A validation error will fail
+// again unchanged; a dependency outage or a rate limit may not. Whether it is
+// *safe* to retry is a separate question that depends on whether the request
+// mutated anything, and only the caller knows that (ERR-01).
+func Retryable(code Code) bool {
+	switch code {
+	case CodeServiceUnavailable, CodeRateLimited, CodeInternal, CodeEngineError:
+		return true
+	default:
+		return false
+	}
+}

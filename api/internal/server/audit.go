@@ -287,7 +287,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	filter, pageReq, err := parseAuditListFilter(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
@@ -307,7 +307,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 // (ALD-005).
 func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if s.audit == nil {
-		writeError(w, http.StatusServiceUnavailable, "audit not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "audit not configured")
 		return
 	}
 
@@ -316,7 +316,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 		format = "csv"
 	}
 	if format != "csv" && format != "json" {
-		writeError(w, http.StatusBadRequest, "unsupported format: "+format)
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "unsupported format: "+format)
 		return
 	}
 
@@ -333,7 +333,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("since"); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid since: "+err.Error())
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid since: "+err.Error())
 			return
 		}
 		filter.Since = &t
@@ -341,7 +341,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("until"); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid until: "+err.Error())
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid until: "+err.Error())
 			return
 		}
 		filter.Until = &t
@@ -349,7 +349,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.audit.List(r.Context(), filter)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

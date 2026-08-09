@@ -1,4 +1,5 @@
 import { customerStatusVariant, formatCountry } from "@/lib/utils"
+import { formatDateTime } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -59,9 +60,6 @@ const CUSTOMER_TYPE_KEYS: Record<string, string> = {
   foreign_legal_arrangement: "foreignLegalArrangement",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 function identityValue(customer: { attributes: Record<string, unknown> }, key: string) {
   const value = customer.attributes?.[key]

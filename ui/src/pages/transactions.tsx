@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatAmount, formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -29,13 +30,7 @@ const DIRECTION_VARIANT: Record<string, "low" | "high" | "secondary"> = {
   internal: "secondary",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
-function formatAmount(amount: number, currency: string, locale: string) {
-  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount)
-}
 
 // The list showed the raw customer UUID, which identifies nothing to a
 // reviewer. The id stays reachable as the link's title attribute.

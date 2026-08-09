@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -16,9 +17,6 @@ import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function WebhooksPage() {
   const { t, i18n } = useTranslation()

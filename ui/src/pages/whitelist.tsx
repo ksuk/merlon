@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -24,9 +25,6 @@ const STATUS_VARIANTS: Record<WhitelistEntryStatus, "medium" | "low" | "secondar
   revoked: "destructive",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function WhitelistPage() {
   const { t, i18n } = useTranslation()

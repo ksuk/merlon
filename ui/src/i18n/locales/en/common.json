@@ -508,9 +508,11 @@
         "detectedAt": "Detected at",
         "assignedTo": "Owner",
         "dueAt": "Due",
-        "updatedAt": "Last update"
+        "updatedAt": "Last update",
+        "select": "Selection"
       },
-      "empty": "No alerts"
+      "empty": "No alerts",
+      "selectRow": "Select alert {{id}}"
     },
     "suppressedReason": "Suppressed: {{reason}}"
   },
@@ -998,7 +1000,9 @@
   },
   "errorBoundary": {
     "title": "An error occurred",
-    "retry": "Retry"
+    "retry": "Retry",
+    "description": "This screen could not be displayed. The rest of the application is still usable.",
+    "goHome": "Go to dashboard"
   },
   "errors": {
     "not_found": "The requested resource was not found.",
@@ -1013,7 +1017,10 @@
     "service_unavailable": "This feature is not currently available.",
     "engine_error": "The scoring engine could not process this request.",
     "retention_shorten_forbidden": "The retention period cannot be shortened below the regulatory minimum.",
-    "unknown": "An unexpected error occurred."
+    "unknown": "An unexpected error occurred.",
+    "requestId": "Support reference: {{id}}",
+    "retry": "Try again",
+    "mutationUnknown": "The server did not confirm whether this action was applied. Check the record before repeating it."
   },
   "authGate": {
     "checking": "Checking your session",

@@ -13,13 +13,13 @@ import (
 
 func (s *Server) handleListRetentionPolicies(w http.ResponseWriter, r *http.Request) {
 	if s.retention == nil {
-		writeError(w, http.StatusServiceUnavailable, "retention policy management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "retention policy management not configured")
 		return
 	}
 
 	policies, err := s.retention.List(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if policies == nil {
@@ -38,7 +38,7 @@ type updateRetentionPolicyRequest struct {
 // from making all records immediately eligible for purge.
 func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Request) {
 	if s.retention == nil {
-		writeError(w, http.StatusServiceUnavailable, "retention policy management not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "retention policy management not configured")
 		return
 	}
 
@@ -46,11 +46,11 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 
 	var req updateRetentionPolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 	if req.RetentionDays <= 0 {
-		writeError(w, http.StatusBadRequest, (&domain.ErrInvalidRetentionDays{Days: req.RetentionDays}).Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, (&domain.ErrInvalidRetentionDays{Days: req.RetentionDays}).Error())
 		return
 	}
 
@@ -58,10 +58,10 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -71,7 +71,7 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 			RequestedDays: req.RetentionDays,
 			MinDays:       *existing.MinRetentionDays,
 		}
-		writeError(w, http.StatusBadRequest, shorten.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, shorten.Error())
 		return
 	}
 	if s.audit == nil {
@@ -97,15 +97,15 @@ func (s *Server) handleUpdateRetentionPolicy(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var shorten *domain.ErrRetentionShorten
 		if errors.As(err, &shorten) {
-			writeError(w, http.StatusBadRequest, shorten.Error())
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, shorten.Error())
 			return
 		}
 		var nf *domain.ErrNotFound
 		if errors.As(err, &nf) {
-			writeError(w, http.StatusNotFound, nf.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, nf.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCan, useSession } from "@/hooks/use-session"
@@ -11,9 +12,6 @@ import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { Link } from "react-router"
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function RulesPage() {
   const { t, i18n } = useTranslation()

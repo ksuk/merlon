@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PagePurpose } from "@/components/page-purpose"
@@ -8,9 +9,6 @@ import { Copy, Key, Plus, ShieldOff } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function APIKeysPage() {
   const { t, i18n } = useTranslation()

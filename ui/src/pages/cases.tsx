@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -25,9 +26,6 @@ const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critic
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 function formatAge(iso: string, label: (key: string, options?: Record<string, unknown>) => string, now: number) {
   const days = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 86400000))
@@ -277,7 +275,7 @@ export function CasesPage() {
           <TableBody>
             {cases && cases.length > 0 ? (
               cases.map((c) => (
-                <TableRow key={c.id} className="cursor-pointer">
+                <TableRow key={c.id}>
                   <TableCell>
                     <Link to={`/cases/${c.id}`}>
                       <Badge variant={PRIORITY_VARIANT[c.priority]}>

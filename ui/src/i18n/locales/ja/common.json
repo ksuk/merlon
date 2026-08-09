@@ -508,9 +508,11 @@
         "detectedAt": "検出日時",
         "assignedTo": "担当者",
         "dueAt": "期限",
-        "updatedAt": "最終更新"
+        "updatedAt": "最終更新",
+        "select": "選択"
       },
-      "empty": "アラートがありません"
+      "empty": "アラートがありません",
+      "selectRow": "アラート {{id}} を選択"
     },
     "suppressedReason": "抑制: {{reason}}"
   },
@@ -998,7 +1000,9 @@
   },
   "errorBoundary": {
     "title": "エラーが発生しました",
-    "retry": "再試行"
+    "retry": "再試行",
+    "description": "この画面を表示できませんでした。アプリケーションの他の部分は引き続き利用できます。",
+    "goHome": "ダッシュボードへ"
   },
   "errors": {
     "not_found": "対象のリソースが見つかりません。",
@@ -1013,7 +1017,10 @@
     "service_unavailable": "この機能は現在利用できません。",
     "engine_error": "スコアリングエンジンがこのリクエストを処理できませんでした。",
     "retention_shorten_forbidden": "保持期間を規定の最低期間より短縮することはできません。",
-    "unknown": "予期しないエラーが発生しました。"
+    "unknown": "予期しないエラーが発生しました。",
+    "requestId": "サポート参照番号: {{id}}",
+    "retry": "再試行",
+    "mutationUnknown": "この操作が適用されたかどうかをサーバーは確認していません。繰り返す前にレコードを確認してください。"
   },
   "authGate": {
     "checking": "セッションを確認しています",
