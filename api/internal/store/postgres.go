@@ -29,7 +29,7 @@ func NewPgCustomerRepo(pool DBTX, encryptor *crypto.Encryptor) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool, encryptor: encryptor}
 }
 
-const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, anonymized_at`
+const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, edd_completed_at, edd_closed_at, COALESCE(edd_close_reason,''), COALESCE(edd_case_id::text,''), anonymized_at`
 
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
 	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1 AND purge_marked_at IS NULL`, domain.CanonicalUUID(id))
@@ -51,6 +51,7 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+		&c.EddCompletedAt, &c.EddClosedAt, &c.EddCloseReason, &c.EddCaseID,
 		&c.AnonymizedAt,
 	)
 	if err != nil {
@@ -88,6 +89,7 @@ func scanCustomerRows(rows pgx.Rows, encryptor *crypto.Encryptor) (domain.Custom
 		&c.RiskScore, &riskTier, &c.LastScoredAt,
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
+		&c.EddCompletedAt, &c.EddClosedAt, &c.EddCloseReason, &c.EddCaseID,
 		&c.AnonymizedAt,
 	); err != nil {
 		return c, err
@@ -189,7 +191,7 @@ func (r *PgCustomerRepo) ListSearch(ctx context.Context, search string, limit, o
 	rows, err := r.pool.Query(ctx,
 		`SELECT `+customerColumns+` FROM customers
 		 WHERE purge_marked_at IS NULL
-		 AND (id::text ILIKE $1 OR external_id ILIKE $1 OR country_code ILIKE $1 OR attributes->>'name' ILIKE $1)
+		 AND (id::text ILIKE $1 OR external_id ILIKE $1 OR country_code ILIKE $1 OR attributes->>'name' ILIKE $1 OR attributes->>'name_ja' ILIKE $1 OR attributes->>'name_kana' ILIKE $1 OR attributes->>'address' ILIKE $1)
 		 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		pattern, limit, offset,
 	)
@@ -213,7 +215,7 @@ func (r *PgCustomerRepo) ListByCursorSearch(ctx context.Context, limit int, afte
 	pattern := "%" + search + "%"
 	baseQuery := `SELECT ` + customerColumns + ` FROM customers
 		WHERE purge_marked_at IS NULL
-		AND (id::text ILIKE $1 OR external_id ILIKE $1 OR country_code ILIKE $1 OR attributes->>'name' ILIKE $1)`
+		AND (id::text ILIKE $1 OR external_id ILIKE $1 OR country_code ILIKE $1 OR attributes->>'name' ILIKE $1 OR attributes->>'name_ja' ILIKE $1 OR attributes->>'name_kana' ILIKE $1 OR attributes->>'address' ILIKE $1)`
 
 	var (
 		rows pgx.Rows
@@ -279,13 +281,14 @@ func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 		productTypes = []string{}
 	}
 	_, err = r.pool.Exec(ctx,
-		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, edd_completed_at, edd_closed_at, edd_close_reason, edd_case_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,'')::uuid)`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
 		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
+		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID,
 	)
 	return err
 }
@@ -303,18 +306,55 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	}
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, anonymized_at=$16 WHERE id=$1`,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$17, edd_closed_at=$18, edd_close_reason=NULLIF($19,''), edd_case_id=NULLIF($20,'')::uuid, anonymized_at=$16 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
 		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
 		c.AnonymizedAt,
+		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID,
 	)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
+	}
+	return nil
+}
+
+func (r *PgCustomerRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Customer, expectedUpdatedAt time.Time) error {
+	c.ID = domain.CanonicalUUID(c.ID)
+	encryptedAttrs, err := encryptDirectPII(r.encryptor, c.Attributes)
+	if err != nil {
+		return err
+	}
+	attrs, _ := json.Marshal(encryptedAttrs)
+	productTypes := c.ProductTypes
+	if productTypes == nil {
+		productTypes = []string{}
+	}
+	c.UpdatedAt = time.Now().UTC()
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$18, edd_closed_at=$19, edd_close_reason=NULLIF($20,''), edd_case_id=NULLIF($21,'')::uuid, anonymized_at=$16 WHERE id=$1 AND updated_at=$17`,
+		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
+		productTypes, attrs, c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
+		c.UpdatedAt, c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
+		c.AnonymizedAt, expectedUpdatedAt,
+		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		current, getErr := r.Get(ctx, c.ID)
+		if getErr != nil {
+			return getErr
+		}
+		if !current.UpdatedAt.Equal(expectedUpdatedAt) {
+			return &domain.ErrConflict{Entity: "customer", ID: c.ID, Reason: "updated_at does not match the version read by the client"}
+		}
 		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
 	}
 	return nil
@@ -343,10 +383,10 @@ func (r *PgCustomerRepo) SaveScoreRecord(ctx context.Context, rec *domain.ScoreR
 	rec.CustomerID = domain.CanonicalUUID(rec.CustomerID)
 	factors, _ := json.Marshal(rec.Factors)
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO customer_score_history (id, customer_id, score, tier, factors, rule_set_id, rule_set_version, rule_set_sha256, scored_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		`INSERT INTO customer_score_history (id, customer_id, score, tier, factors, rule_set_id, rule_set_version, rule_set_sha256, rationale, actor, override_evidence, factor_explanations, scored_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		rec.ID, rec.CustomerID, rec.Score, string(rec.Tier),
-		factors, rec.RuleSetID, rec.RuleSetVersion, nullableString(rec.RuleSetSHA256), rec.ScoredAt,
+		factors, rec.RuleSetID, rec.RuleSetVersion, nullableString(rec.RuleSetSHA256), rec.Rationale, rec.Actor, wave3JSON(rec.OverrideEvidence), factors, rec.ScoredAt,
 	)
 	return err
 }
@@ -354,7 +394,7 @@ func (r *PgCustomerRepo) SaveScoreRecord(ctx context.Context, rec *domain.ScoreR
 func (r *PgCustomerRepo) ListScoreHistory(ctx context.Context, customerID string, limit int) ([]domain.ScoreRecord, error) {
 	customerID = domain.CanonicalUUID(customerID)
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, customer_id, score, tier, factors, rule_set_id, rule_set_version, rule_set_sha256, scored_at
+		`SELECT id, customer_id, score, tier, factors, rule_set_id, rule_set_version, rule_set_sha256, rationale, actor, override_evidence, factor_explanations, scored_at
 		FROM customer_score_history WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY scored_at DESC LIMIT $2`,
 		customerID, limit,
 	)
@@ -367,10 +407,10 @@ func (r *PgCustomerRepo) ListScoreHistory(ctx context.Context, customerID string
 	for rows.Next() {
 		var rec domain.ScoreRecord
 		var tier string
-		var factors []byte
+		var factors, overrideEvidence, factorExplanations []byte
 		if err := rows.Scan(
 			&rec.ID, &rec.CustomerID, &rec.Score, &tier,
-			&factors, &rec.RuleSetID, &rec.RuleSetVersion, &rec.RuleSetSHA256, &rec.ScoredAt,
+			&factors, &rec.RuleSetID, &rec.RuleSetVersion, &rec.RuleSetSHA256, &rec.Rationale, &rec.Actor, &overrideEvidence, &factorExplanations, &rec.ScoredAt,
 		); err != nil {
 			return nil, err
 		}
@@ -380,6 +420,49 @@ func (r *PgCustomerRepo) ListScoreHistory(ctx context.Context, customerID string
 		if len(factors) > 0 {
 			json.Unmarshal(factors, &rec.Factors)
 		}
+		if len(overrideEvidence) > 0 {
+			json.Unmarshal(overrideEvidence, &rec.OverrideEvidence)
+		}
+		records = append(records, rec)
+	}
+	return records, rows.Err()
+}
+
+func (r *PgCustomerRepo) CountScoreHistory(ctx context.Context, customerID string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM customer_score_history WHERE customer_id=$1 AND purge_marked_at IS NULL`, domain.CanonicalUUID(customerID)).Scan(&count)
+	return count, err
+}
+
+func (r *PgCustomerRepo) ListScoreHistoryCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.ScoreRecord, error) {
+	customerID = domain.CanonicalUUID(customerID)
+	query := `SELECT id, customer_id, score, tier, factors, rule_set_id, rule_set_version, rule_set_sha256, rationale, actor, override_evidence, factor_explanations, scored_at FROM customer_score_history WHERE customer_id=$1 AND purge_marked_at IS NULL`
+	args := []any{customerID}
+	if after != nil {
+		query += ` AND (scored_at,id)<($2,$3)`
+		args = append(args, after.CreatedAt, after.ID)
+	}
+	query += fmt.Sprintf(` ORDER BY scored_at DESC,id DESC LIMIT $%d`, len(args)+1)
+	args = append(args, limit)
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []domain.ScoreRecord
+	for rows.Next() {
+		var rec domain.ScoreRecord
+		var tier string
+		var factors, overrideEvidence, factorExplanations []byte
+		if err := rows.Scan(&rec.ID, &rec.CustomerID, &rec.Score, &tier, &factors, &rec.RuleSetID, &rec.RuleSetVersion, &rec.RuleSetSHA256, &rec.Rationale, &rec.Actor, &overrideEvidence, &factorExplanations, &rec.ScoredAt); err != nil {
+			return nil, err
+		}
+		rec.ID = domain.CanonicalUUID(rec.ID)
+		rec.CustomerID = domain.CanonicalUUID(rec.CustomerID)
+		rec.Tier = domain.RiskTier(tier)
+		_ = json.Unmarshal(factors, &rec.Factors)
+		_ = json.Unmarshal(overrideEvidence, &rec.OverrideEvidence)
+		_ = json.Unmarshal(factorExplanations, &rec.Factors)
 		records = append(records, rec)
 	}
 	return records, rows.Err()
@@ -403,18 +486,20 @@ func NewPgTransactionRepo(pool DBTX) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at"
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, COALESCE(travel_rule_not_applicable_reason_code,''), COALESCE(travel_rule_status,''), travel_rule_assessment"
 
 func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
 	var counterpartyID, counterpartyCountry, channel *string
-	var counterpartyJSON, metadataJSON []byte
+	var counterpartyJSON, metadataJSON, travelRuleEvidence, travelRuleAssessment []byte
+	var travelRuleReason *string
 	err := row.Scan(
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
 		&t.Direction, &counterpartyID, &counterpartyCountry,
 		&channel, &t.AccountID, &counterpartyJSON, &metadataJSON,
 		&t.IdempotencyKey,
-		&t.ExecutedAt, &t.CreatedAt,
+		&t.ExecutedAt, &t.CreatedAt, &t.TravelRuleApplicable, &travelRuleEvidence, &travelRuleReason,
+		&t.TravelRuleNotApplicableReasonCode, &t.TravelRuleStatus, &travelRuleAssessment,
 	)
 	if err != nil {
 		return t, err
@@ -440,6 +525,19 @@ func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 			return t, err
 		}
 	}
+	if len(travelRuleEvidence) > 0 {
+		if err := json.Unmarshal(travelRuleEvidence, &t.TravelRuleEvidence); err != nil {
+			return t, err
+		}
+	}
+	if travelRuleReason != nil {
+		t.TravelRuleNotApplicableReason = *travelRuleReason
+	}
+	if len(travelRuleAssessment) > 0 {
+		if err := json.Unmarshal(travelRuleAssessment, &t.TravelRuleAssessment); err != nil {
+			return t, err
+		}
+	}
 	return t, nil
 }
 
@@ -451,6 +549,17 @@ func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transac
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &domain.ErrNotFound{Entity: "transaction", ID: id}
 		}
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *PgTransactionRepo) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transaction, error) {
+	t, err := scanTransaction(r.pool.QueryRow(ctx, `SELECT `+transactionColumns+` FROM transactions WHERE idempotency_key=$1 AND purge_marked_at IS NULL`, key))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, &domain.ErrNotFound{Entity: "transaction", ID: key}
+	}
+	if err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -477,6 +586,12 @@ func (r *PgTransactionRepo) ListByCustomer(ctx context.Context, customerID strin
 		txns = append(txns, t)
 	}
 	return txns, rows.Err()
+}
+
+func (r *PgTransactionRepo) CountByCustomer(ctx context.Context, customerID string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM transactions WHERE customer_id=$1 AND purge_marked_at IS NULL`, domain.CanonicalUUID(customerID)).Scan(&count)
+	return count, err
 }
 
 func (r *PgTransactionRepo) ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *domain.Cursor) ([]domain.Transaction, error) {
@@ -567,11 +682,12 @@ func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) e
 	}
 
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, travel_rule_not_applicable_reason_code, travel_rule_status, travel_rule_assessment)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,''), $21)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
 		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
-		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.IdempotencyKey, t.ExecutedAt, t.CreatedAt,
+		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.IdempotencyKey, t.ExecutedAt, t.CreatedAt, t.TravelRuleApplicable, wave3JSON(t.TravelRuleEvidence), t.TravelRuleNotApplicableReason,
+		t.TravelRuleNotApplicableReasonCode, t.TravelRuleStatus, wave3JSON(t.TravelRuleAssessment),
 	)
 	if err != nil && isIdempotencyKeyViolation(err) {
 		return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "idempotency key already used"}
@@ -601,7 +717,7 @@ func NewPgAlertRepo(pool DBTX) *PgAlertRepo {
 // alertColumns includes suppressed/suppression_reason (WL-004, additive
 // columns from migrations/010_whitelist.sql) and aggregation_window_start/
 // batch_run_id/batch_reviewed_at (WS-5 Task4, migrations/012_alert_dedup.sql).
-const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, batch_reviewed_at, assigned_to, assigned_team, due_at, disposition, disposition_rationale"
+const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, batch_reviewed_at, assigned_to, assigned_team, due_at, disposition, disposition_rationale, provenance_captured, provenance_config_digests, provenance_engine_version, provenance_evaluation_mode, provenance_evaluated_at, provenance_window_from, provenance_window_to, provenance_applied_threshold"
 
 const alertRiskRankSQL = `CASE severity::text
 	WHEN 'critical' THEN 4
@@ -619,6 +735,11 @@ func scanAlertRow(row interface {
 	var batchRunID *string
 	var resolvedBy *string
 	var assignedTo, assignedTeam, disposition, dispositionRationale *string
+	var provenanceCaptured bool
+	var provenanceDigests map[string]string
+	var provenanceEngineVersion, provenanceMode *string
+	var provenanceEvaluatedAt, provenanceWindowFrom, provenanceWindowTo *time.Time
+	var provenanceThreshold *float64
 	if err := row.Scan(
 		&a.ID, &a.CustomerID, &a.ScenarioID,
 		&a.Severity, &a.Status, &score, &description,
@@ -628,8 +749,30 @@ func scanAlertRow(row interface {
 		&a.Suppressed, &suppressionReason,
 		&a.AggregationWindowStart, &batchRunID, &a.BatchReviewedAt,
 		&assignedTo, &assignedTeam, &a.DueAt, &disposition, &dispositionRationale,
+		&provenanceCaptured, &provenanceDigests, &provenanceEngineVersion, &provenanceMode,
+		&provenanceEvaluatedAt, &provenanceWindowFrom, &provenanceWindowTo, &provenanceThreshold,
 	); err != nil {
 		return err
+	}
+	// An alert written before migration 057 has provenance_captured false. It
+	// stays nil here so the API can say "not captured" rather than presenting an
+	// empty record as if the detection had been evaluated with no configuration.
+	if provenanceCaptured {
+		a.Provenance = &domain.AlertProvenance{
+			ScenarioID:       a.ScenarioID,
+			ConfigDigests:    provenanceDigests,
+			EvaluatedAt:      provenanceEvaluatedAt,
+			WindowFrom:       provenanceWindowFrom,
+			WindowTo:         provenanceWindowTo,
+			AppliedThreshold: provenanceThreshold,
+			Availability:     domain.ProvenanceAvailable,
+		}
+		if provenanceEngineVersion != nil {
+			a.Provenance.EngineVersion = *provenanceEngineVersion
+		}
+		if provenanceMode != nil {
+			a.Provenance.EvaluationMode = *provenanceMode
+		}
 	}
 	if score != nil {
 		a.Score = *score
@@ -697,6 +840,12 @@ func (r *PgAlertRepo) ListByCustomer(ctx context.Context, customerID string, lim
 		FROM alerts WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
 		customerID, limit, offset,
 	)
+}
+
+func (r *PgAlertRepo) CountByCustomer(ctx context.Context, customerID string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM alerts WHERE customer_id=$1 AND purge_marked_at IS NULL`, domain.CanonicalUUID(customerID)).Scan(&count)
+	return count, err
 }
 
 func (r *PgAlertRepo) ListByCustomerRisk(ctx context.Context, customerID string, limit, offset int) ([]domain.Alert, error) {
@@ -875,9 +1024,10 @@ func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 	for i := range a.TransactionIDs {
 		a.TransactionIDs[i] = domain.CanonicalUUID(a.TransactionIDs[i])
 	}
+	prov := alertProvenanceInsertArgs(a.Provenance)
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, assigned_to, assigned_team, due_at, disposition, disposition_rationale)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, assigned_to, assigned_team, due_at, disposition, disposition_rationale, provenance_captured, provenance_config_digests, provenance_engine_version, provenance_evaluation_mode, provenance_evaluated_at, provenance_window_from, provenance_window_to, provenance_applied_threshold)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
 		a.ID, a.CustomerID, a.ScenarioID,
 		string(a.Severity), string(a.Status), a.Score, a.Description,
 		a.TransactionIDs,
@@ -885,8 +1035,39 @@ func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 		a.Suppressed, nullableString(a.SuppressionReason),
 		a.AggregationWindowStart, nullableString(a.BatchRunID),
 		nullableString(a.AssignedTo), nullableString(a.AssignedTeam), a.DueAt, nullableString(a.Disposition), a.DispositionRationale,
+		prov.captured, prov.digests, prov.engineVersion, prov.mode, prov.evaluatedAt, prov.windowFrom, prov.windowTo, prov.threshold,
 	)
 	return err
+}
+
+// alertProvenanceArgs flattens the provenance record into insert parameters.
+// Every field is nil when nothing was captured, so the row records an absence
+// rather than a set of empty values that would read as a real evaluation.
+type alertProvenanceArgs struct {
+	captured      bool
+	digests       map[string]string
+	engineVersion *string
+	mode          *string
+	evaluatedAt   *time.Time
+	windowFrom    *time.Time
+	windowTo      *time.Time
+	threshold     *float64
+}
+
+func alertProvenanceInsertArgs(p *domain.AlertProvenance) alertProvenanceArgs {
+	if p == nil {
+		return alertProvenanceArgs{}
+	}
+	return alertProvenanceArgs{
+		captured:      true,
+		digests:       p.ConfigDigests,
+		engineVersion: nullableString(p.EngineVersion),
+		mode:          nullableString(p.EvaluationMode),
+		evaluatedAt:   p.EvaluatedAt,
+		windowFrom:    p.WindowFrom,
+		windowTo:      p.WindowTo,
+		threshold:     p.AppliedThreshold,
+	}
 }
 
 // CreateIfNotDuplicate enforces the (customer_id, scenario_id,
@@ -1354,6 +1535,12 @@ func (r *PgCaseRepo) ListByCustomer(ctx context.Context, customerID string) ([]d
 	customerID = domain.CanonicalUUID(customerID)
 	return r.listCases(ctx,
 		`SELECT `+caseColumns+` FROM cases WHERE customer_id = $1 AND purge_marked_at IS NULL ORDER BY created_at DESC, id DESC`, customerID)
+}
+
+func (r *PgCaseRepo) CountByCustomer(ctx context.Context, customerID string) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM cases WHERE customer_id=$1 AND purge_marked_at IS NULL`, domain.CanonicalUUID(customerID)).Scan(&count)
+	return count, err
 }
 
 func (r *PgCaseRepo) ListByCustomerOffset(ctx context.Context, customerID string, limit, offset int) ([]domain.Case, error) {

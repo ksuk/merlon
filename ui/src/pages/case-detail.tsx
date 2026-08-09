@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
@@ -16,9 +17,6 @@ const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critic
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function CaseDetailPage() {
   const { t, i18n } = useTranslation()

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,6 +51,57 @@ func TestCreateTransaction(t *testing.T) {
 	}
 	if tx.Amount != 100000 {
 		t.Errorf("amount = %f, want 100000", tx.Amount)
+	}
+}
+
+func TestCreateTransactionAuditFailureRollsBackTransaction(t *testing.T) {
+	audit := store.NewMemoryAuditRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(), Transactions: transactions, Alerts: store.NewMemoryAlertRepo(),
+		Audit: audit, Scoring: &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring: &engine.MockMonitoringEngine{}, Screening: &engine.MockScreeningEngine{},
+	})
+	cust := createTestCustomer(t, s)
+	audit.SetCreateFailure(errors.New("audit unavailable"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(`{"customer_id":"`+cust.ID+`","external_id":"TX-AUDIT-FAIL","amount":100,"currency":"JPY","direction":"inbound"}`))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, req)
+	if response.Code == http.StatusCreated {
+		t.Fatalf("status = %d, want failure when required audit append fails", response.Code)
+	}
+	items, err := transactions.ListByCustomer(context.Background(), cust.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("transactions after audit rollback = %d, want 0", len(items))
+	}
+}
+
+func TestCreateTransactionOutboxFailureRollsBackTransaction(t *testing.T) {
+	outbox := store.NewMemoryEventOutboxRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(), Transactions: transactions, Alerts: store.NewMemoryAlertRepo(),
+		Audit: store.NewMemoryAuditRepo(), EventOutbox: outbox,
+		Scoring:    &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring: &engine.MockMonitoringEngine{}, Screening: &engine.MockScreeningEngine{},
+	})
+	cust := createTestCustomer(t, s)
+	outbox.SetEnqueueFailure(errors.New("outbox unavailable"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(`{"customer_id":"`+cust.ID+`","external_id":"TX-OUTBOX-FAIL","amount":100,"currency":"JPY","direction":"inbound"}`))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, req)
+	if response.Code == http.StatusCreated {
+		t.Fatalf("status = %d, want failure when required outbox append fails", response.Code)
+	}
+	items, err := transactions.ListByCustomer(context.Background(), cust.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("transactions after outbox rollback = %d, want 0", len(items))
 	}
 }
 

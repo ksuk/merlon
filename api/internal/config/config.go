@@ -91,14 +91,29 @@ type Config struct {
 	// CasePriorityPath points to the versioned CDD-to-case-priority policy.
 	CasePriorityPath string
 
+	// Wave 3 policy documents (ADR-0016). Each is a versioned YAML file with
+	// an in-code default; a blank path selects that default. They are the
+	// single source for rules that used to be hardcoded in Go or duplicated
+	// across packages.
+	KYCRequiredFieldsPath  string
+	EDDPolicyPath          string
+	CDDRuleSelectionPath   string
+	TravelRulePolicyPath   string
+	ScreeningReadinessPath string
+	SLAPolicyPath          string
+
 	// PublicURL is the base URL of this Merlon instance, prefixed to alert
 	// IDs to build the link carried in notification emails (notifications.md
 	// §1: "ケース/アラートIDと本システムへのリンクのみを記載する").
 	PublicURL string
 
 	// EDD 3-stage escalation (the case-management workflow §EDD未実施継続時の段階的
-	// 措置). Stage 1 (reminder) is fixed at 30 days; stages 2/3 are
-	// "デフォルト、設定可" so they are configurable here.
+	// 措置).
+	//
+	// Deprecated: superseded by EDDPolicyPath, which is the single source for
+	// the whole stage schedule including stage 1. These remain so an existing
+	// deployment's environment keeps parsing; when both are set the policy
+	// file wins and main logs a warning.
 	EDDStage2Days int
 	EDDStage3Days int
 }
@@ -260,6 +275,13 @@ func Load() *Config {
 		OperatorTeams:     getEnvList("MERLON_OPERATOR_TEAMS"),
 		CasePriorityPath:  getEnv("MERLON_CASE_PRIORITY_PATH", "content/case_priority_v1.yaml"),
 		PublicURL:         getEnv("MERLON_PUBLIC_URL", ""),
+
+		KYCRequiredFieldsPath:  getEnv("MERLON_KYC_REQUIRED_FIELDS_PATH", "content/kyc_required_fields_v1.yaml"),
+		EDDPolicyPath:          getEnv("MERLON_EDD_POLICY_PATH", "content/edd_policy_v1.yaml"),
+		CDDRuleSelectionPath:   getEnv("MERLON_CDD_RULE_SELECTION_PATH", "content/cdd_rule_selection_v1.yaml"),
+		TravelRulePolicyPath:   getEnv("MERLON_TRAVEL_RULE_POLICY_PATH", "content/travel_rule_v1.yaml"),
+		ScreeningReadinessPath: getEnv("MERLON_SCREENING_READINESS_PATH", "content/screening_readiness_v1.yaml"),
+		SLAPolicyPath:          getEnv("MERLON_SLA_POLICY_PATH", "content/sla_policy_v1.yaml"),
 
 		EDDStage2Days: getEnvInt("MERLON_EDD_STAGE2_DAYS", 60),
 		EDDStage3Days: getEnvInt("MERLON_EDD_STAGE3_DAYS", 90),

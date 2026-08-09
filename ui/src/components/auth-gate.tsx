@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Navigate, Outlet, useLocation } from "react-router";
 import { ApiError, api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { SessionProvider } from "@/components/session-provider";
 
 type AuthState = "checking" | "authenticated" | "unauthenticated" | "error";
 
@@ -98,5 +99,11 @@ export function AuthGate() {
     );
   }
 
-  return <Outlet />;
+  // The session and its capability contract are read once here, for the whole
+  // protected tree, rather than by each page that needs them.
+  return (
+    <SessionProvider>
+      <Outlet />
+    </SessionProvider>
+  );
 }

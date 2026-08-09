@@ -18,6 +18,34 @@ beforeEach(() => {
   vi.restoreAllMocks()
 })
 
+const baseAlert = {
+  id: "a1",
+  customer_id: "c1",
+  scenario_id: "tm_structuring_basic",
+  severity: "high",
+  status: "open",
+  score: 88.5,
+  description: "大口取引の検出",
+  transaction_ids: ["t1"],
+  detected_at: "2025-01-15T10:00:00Z",
+  created_at: "2025-01-15T10:00:00Z",
+  updated_at: "2025-01-15T10:00:00Z",
+}
+
+function mockAlertDetail(overrides: Record<string, unknown>) {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString()
+    if (url.includes("/alerts/a1") && !url.includes("/decisions")) {
+      return Promise.resolve(new Response(JSON.stringify({ ...baseAlert, ...overrides })))
+    }
+    return Promise.resolve(new Response(JSON.stringify({ data: [], pagination: { has_more: false } })))
+  })
+}
+
+function renderAlertDetail() {
+  return renderWithRoute("a1")
+}
+
 test("renders alert detail with status transitions", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(
@@ -168,4 +196,53 @@ test("canceling an alert decision does not send a mutation", async () => {
 
   expect(screen.queryByRole("dialog")).toBeNull()
   expect(fetchMock.mock.calls.some(([, request]) => request?.method === "PATCH")).toBe(false)
+})
+
+test("shows an alert with no provenance as not captured, without inventing one", async () => {
+  mockAlertDetail({
+    provenance: { scenario_id: "tm_structuring_basic", availability: "not_captured" },
+  })
+
+  await renderAlertDetail()
+
+  expect(await screen.findByText("未記録")).toBeDefined()
+  expect(screen.getByText(/現在の設定は意図的に表示しません/)).toBeDefined()
+})
+
+test("links a resolved rule version to the rule it names", async () => {
+  mockAlertDetail({
+    provenance: {
+      scenario_id: "tm_structuring_basic",
+      availability: "restricted",
+      rule_name: "tm_structuring_basic",
+      rule_version: 3,
+      rule_digest: "0123456789abcdef0123",
+      evaluation_mode: "batch",
+      applied_threshold: 1000000,
+      config_digests: { tm_scenarios: "digest-abc" },
+    },
+  })
+
+  await renderAlertDetail()
+
+  const link = await screen.findByRole("link", { name: "tm_structuring_basic @ v3" })
+  expect(link.getAttribute("href")).toBe("/rules/tm_structuring_basic")
+  expect(screen.getByText("digest-abc")).toBeDefined()
+  expect(screen.getByText("1000000")).toBeDefined()
+})
+
+test("keeps the captured facts when the rule reference cannot be resolved", async () => {
+  mockAlertDetail({
+    provenance: {
+      scenario_id: "tm_scenario_since_deleted",
+      availability: "missing",
+      config_digests: { tm_scenarios: "digest-old" },
+    },
+  })
+
+  await renderAlertDetail()
+
+  expect(await screen.findByText("参照先を解決できません")).toBeDefined()
+  expect(screen.getByText("digest-old")).toBeDefined()
+  expect(screen.queryByRole("link", { name: /@ v/ })).toBeNull()
 })

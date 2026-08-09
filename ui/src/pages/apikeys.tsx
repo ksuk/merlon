@@ -1,15 +1,14 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PagePurpose } from "@/components/page-purpose"
 import { useApi } from "@/hooks/use-api"
 import { api, type Role } from "@/lib/api"
 import { Copy, Key, Plus, ShieldOff } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function APIKeysPage() {
   const { t, i18n } = useTranslation()
@@ -70,6 +69,18 @@ export function APIKeysPage() {
           {t("apikeys.createButton")}
         </Button>
       </div>
+
+      <PagePurpose
+        capabilityId="api_keys.manage"
+        bodyKey="apikeys.purpose.body"
+        points={[
+          "apikeys.purpose.consumers",
+          "apikeys.purpose.permission",
+          "apikeys.purpose.display",
+          "apikeys.purpose.revocation",
+          "apikeys.purpose.owner",
+        ]}
+      />
 
       {newKey && (
         <Card className="border-amber-200 bg-amber-50">

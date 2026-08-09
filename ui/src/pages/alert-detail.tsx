@@ -1,4 +1,6 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
+import { AlertProvenanceCard } from "@/components/alert-provenance-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
@@ -16,9 +18,6 @@ const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "criti
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function AlertDetailPage() {
   const { t, i18n } = useTranslation()
@@ -34,8 +33,12 @@ export function AlertDetailPage() {
     escalated: t("alertStatus.escalated"),
     closed_true_positive: t("alertStatus.closed_true_positive"),
     closed_false_positive: t("alertStatus.closed_false_positive"),
+    suppressed: t("alertStatus.suppressed"),
   }
   const statusTransitions: Record<AlertStatus, { label: string; value: AlertStatus }[]> = {
+    // suppressed is whitelist/system-only: an operator PATCH cannot leave it,
+    // so the surface offers no transition out of it.
+    suppressed: [],
     open: [
       { label: t("alertDetail.transitions.startInvestigation"), value: "investigating" },
       { label: t("alertDetail.transitions.escalate"), value: "escalated" },
@@ -215,9 +218,17 @@ export function AlertDetailPage() {
           {severityLabels[alert.severity]}
         </Badge>
         <Badge variant="outline">{statusLabels[alert.status]}</Badge>
+        {alert.suppressed && (
+          <Badge variant="secondary" data-testid="alert-suppressed">
+            {alert.suppression_reason
+              ? t("alerts.suppressedReason", { reason: alert.suppression_reason })
+              : t("alertStatus.suppressed")}
+          </Badge>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <AlertProvenanceCard provenance={alert.provenance} />
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t("alertDetail.info.title")}</CardTitle>

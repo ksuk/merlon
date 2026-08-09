@@ -44,6 +44,13 @@ type CustomerRepository interface {
 	UpdateStatus(ctx context.Context, id string, status CustomerStatus, reason string) (*Customer, error)
 }
 
+// CustomerOptimisticRepository is an additive capability for clients that
+// submit the customer version they last read. The base CustomerRepository
+// remains backward compatible for legacy callers that do not send a version.
+type CustomerOptimisticRepository interface {
+	UpdateIfUnmodified(ctx context.Context, c *Customer, expectedUpdatedAt time.Time) error
+}
+
 // CustomerSearchRepository is the optional cursor/offset search capability
 // used by the operator list. Keeping search separate preserves the stable
 // CustomerRepository contract for adapters that do not expose server-side
@@ -65,6 +72,25 @@ type TransactionRepository interface {
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Transaction, error)
 	ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Transaction, error)
 	Create(ctx context.Context, t *Transaction) error
+}
+
+// CustomerScopedCountRepository is an optional aggregate capability used by
+// the Customer 360 read model. It keeps page contents bounded while exposing
+// a count that reconciles with the paginated detail stream.
+type CustomerScopedCountRepository interface {
+	CountByCustomer(ctx context.Context, customerID string) (int, error)
+}
+
+type CustomerScoreCountRepository interface {
+	CountScoreHistory(ctx context.Context, customerID string) (int, error)
+}
+
+type CustomerScoreCursorRepository interface {
+	ListScoreHistoryCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]ScoreRecord, error)
+}
+
+type TransactionIdempotencyRepository interface {
+	GetByIdempotencyKey(ctx context.Context, key string) (*Transaction, error)
 }
 
 // TransactionHistoryRepository is an optional capability used by PH9 batch
@@ -193,6 +219,11 @@ type AtomicMutationRepositories struct {
 	Investigation      CaseInvestigationRepository
 	AlertDecisions     AlertDecisionRepository
 	EventOutbox        EventOutboxRepository
+	IdentityHistory    CustomerIdentityHistoryRepository
+	Wave3              Wave3Repository
+	PendingEvaluations PendingEvaluationWorkflowRepository
+	BatchRuns          BatchRunRepository
+	BacktestJobs       BacktestJobRepository
 }
 
 type AtomicMutationRepository interface {

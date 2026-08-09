@@ -1,4 +1,5 @@
 import { StatCard } from "@/components/stat-card"
+import { DashboardExceptions, DashboardWorkloadPanels } from "@/components/dashboard-workload"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
@@ -100,6 +101,12 @@ export function DashboardPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">{t("dashboard.title")}</h1>
 
+      {/* Workload comes before the totals: an operator opens this page to find
+          out what to do, not how many records exist. */}
+      <DashboardWorkloadPanels workload={stats.workload} />
+
+      <DashboardExceptions exceptions={stats.exceptions} />
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard title={t("dashboard.stats.customers")} value={stats.total_customers} icon={Users} />
         <StatCard
@@ -184,6 +191,29 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {stats.screening_ready != null && (
+        <Card className={stats.screening_ready ? undefined : "border-destructive"}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="h-4 w-4" />
+              {t("dashboard.screeningReadiness.title")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-3">
+            <Badge variant={stats.screening_ready ? "low" : "destructive"}>
+              {stats.screening_ready ? t("dashboard.screeningReadiness.ready") : t("dashboard.screeningReadiness.degraded")}
+            </Badge>
+            {stats.screening_ready ? (
+              <span className="text-sm text-muted-foreground">{t("dashboard.screeningReadiness.readyDescription")}</span>
+            ) : (
+              <span role="alert" className="text-sm text-destructive">
+                {t("dashboard.screeningReadiness.degradedSources", { sources: (stats.screening_degraded_sources ?? []).join(", ") })}
+              </span>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {stats.screening_list_freshness && stats.screening_list_freshness.length > 0 && (
         <Card>
           <CardHeader>
@@ -203,10 +233,13 @@ export function DashboardPage() {
                   </Badge>
                   <span className="text-sm text-muted-foreground">{list.list_id}</span>
                   <Badge variant={list.needs_operational_alert ? "destructive" : "secondary"}>
-                    {list.stale_days === 0
+                    {list.operational_state && list.operational_state !== "ready"
+                      ? t(`dashboard.freshness.state.${list.operational_state}`, { defaultValue: list.operational_state })
+                      : list.stale_days === 0
                       ? t("dashboard.freshness.upToDate")
                       : t("dashboard.freshness.staleDays", { days: list.stale_days })}
                   </Badge>
+                  {list.diagnostic && <span role="status" className="text-xs text-muted-foreground">{list.diagnostic}</span>}
                 </div>
               ))}
             </div>

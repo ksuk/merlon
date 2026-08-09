@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"strings"
 	"time"
@@ -39,16 +40,16 @@ func isValidCustomerStatus(s domain.CustomerStatus) bool {
 func (s *Server) handleCustomerStatusWebhook(w http.ResponseWriter, r *http.Request) {
 	var req customerStatusWebhookRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 
 	if req.ExternalID == "" {
-		writeError(w, http.StatusBadRequest, "external_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "external_id required")
 		return
 	}
 	if !isValidCustomerStatus(req.Status) {
-		writeError(w, http.StatusBadRequest, "status must be one of: active, dormant, frozen, closed")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "status must be one of: active, dormant, frozen, closed")
 		return
 	}
 
@@ -58,10 +59,10 @@ func (s *Server) handleCustomerStatusWebhook(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, "customer not found: "+req.ExternalID)
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "customer not found: "+req.ExternalID)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

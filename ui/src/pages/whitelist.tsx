@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -9,7 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { useApi } from "@/hooks/use-api"
+import { useCan, useSession } from "@/hooks/use-session"
+import { CapabilityNotice } from "@/components/capability-notice"
 import { api, type WhitelistEntry, type WhitelistEntryStatus } from "@/lib/api"
 import { translateApiError } from "@/lib/errors"
 import { Plus } from "lucide-react"
@@ -23,9 +25,6 @@ const STATUS_VARIANTS: Record<WhitelistEntryStatus, "medium" | "low" | "secondar
   revoked: "destructive",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function WhitelistPage() {
   const { t, i18n } = useTranslation()
@@ -35,12 +34,13 @@ export function WhitelistPage() {
     expired: t("whitelist.status.expired"),
     revoked: t("whitelist.status.revoked"),
   }
-  const { data: user } = useApi(api.auth.me)
   // whitelist:request (create/revoke) is granted to admin and analyst;
-  // whitelist:approve is admin-only (the authentication model §3, RolePermissions). The
-  // server enforces both; these are just UI affordance hints.
-  const canRequest = user?.role === "admin" || user?.role === "analyst"
-  const canApprove = user?.role === "admin"
+  // whitelist:approve is admin-only (the authentication model §3,
+  // RolePermissions). The server enforces both; these are affordance hints
+  // read from the capability contract rather than re-derived from the role.
+  const { user } = useSession()
+  const canRequest = useCan("whitelist.request")
+  const canApprove = useCan("whitelist.approve")
 
   const [entries, setEntries] = useState<WhitelistEntry[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -142,11 +142,13 @@ export function WhitelistPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("whitelist.title")}</h1>
-        {canRequest && (
+        {canRequest ? (
           <Button size="sm" onClick={() => setShowForm(!showForm)}>
             <Plus className="h-4 w-4" />
             {t("whitelist.requestButton")}
           </Button>
+        ) : (
+          <CapabilityNotice capabilityId="whitelist.request" />
         )}
       </div>
 

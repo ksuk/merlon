@@ -40,6 +40,17 @@ func IsAlertUnresolved(status AlertStatus) bool {
 	}
 }
 
+// AllAlertStatuses is every status an alert can hold, for lookups that must
+// span the whole history rather than the operator's active queue. Callers that
+// want the queue default must leave AlertQueueFilter.Statuses empty instead.
+func AllAlertStatuses() []AlertStatus {
+	return []AlertStatus{
+		AlertStatusOpen, AlertStatusInvestigating, AlertStatusEscalated,
+		AlertStatusClosedTruePositive, AlertStatusClosedFalsePositive,
+		AlertStatusSuppressed,
+	}
+}
+
 // IsAlertTerminal reports whether an alert has an operator disposition. The
 // disposition itself is immutable history, but an explicit, reasoned reopen
 // may move the current alert back into investigation. The decision event
@@ -114,6 +125,62 @@ type Alert struct {
 	DueAt                *time.Time `json:"due_at,omitempty"`
 	Disposition          string     `json:"disposition,omitempty"`
 	DispositionRationale string     `json:"disposition_rationale,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	// Provenance is the immutable record of what produced this detection. It
+	// is nil on alerts generated before it was captured, which the API reports
+	// as not_captured rather than filling in from current configuration.
+	Provenance *AlertProvenance `json:"provenance,omitempty"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+}
+
+// ProvenanceAvailability says whether the artifacts a provenance record points
+// at can still be produced (PROV-01).
+type ProvenanceAvailability string
+
+const (
+	// ProvenanceAvailable means the referenced rule version resolved.
+	ProvenanceAvailable ProvenanceAvailability = "available"
+	// ProvenanceRestricted means it resolved but its content is not returned:
+	// the identifier and version travel, the body does not.
+	ProvenanceRestricted ProvenanceAvailability = "restricted"
+	// ProvenanceMissing means provenance was captured but the artifact it
+	// names can no longer be resolved. This is reported, never reconstructed
+	// from current configuration.
+	ProvenanceMissing ProvenanceAvailability = "missing"
+	// ProvenanceNotCaptured means the alert predates provenance capture. It is
+	// a statement about the record, not about the rule.
+	ProvenanceNotCaptured ProvenanceAvailability = "not_captured"
+)
+
+// AlertProvenance identifies the logic and inputs effective at detection time.
+//
+// It stores references, not copies. rule_definitions already holds immutable
+// version rows, so duplicating a rule body here would create a second store
+// with its own authorization and retention problems (ADR-0025, DR-19).
+type AlertProvenance struct {
+	// ScenarioID is the detection logic's own identifier, repeated here so the
+	// provenance record is self-contained when read on its own.
+	ScenarioID string `json:"scenario_id"`
+	// ConfigDigests are the digests of every configuration document loaded by
+	// the process that produced this alert.
+	ConfigDigests map[string]string `json:"config_digests,omitempty"`
+	EngineVersion string            `json:"engine_version,omitempty"`
+	// EvaluationMode distinguishes a realtime detection from a batch or
+	// recovery one; the same scenario can behave differently under each.
+	EvaluationMode string     `json:"evaluation_mode,omitempty"`
+	EvaluatedAt    *time.Time `json:"evaluated_at,omitempty"`
+	WindowFrom     *time.Time `json:"window_from,omitempty"`
+	WindowTo       *time.Time `json:"window_to,omitempty"`
+	// AppliedThreshold is the single value that decided this detection for the
+	// customer type and risk tier involved. It is public-safe: the alert
+	// description already states it in prose. The rule body is not stored.
+	AppliedThreshold *float64 `json:"applied_threshold,omitempty"`
+
+	// The fields below are resolved at read time, never persisted, so a rule
+	// version that is deleted or restricted after the fact is reported as it is
+	// now rather than as it was when the alert was written.
+	RuleName     string                 `json:"rule_name,omitempty"`
+	RuleVersion  *int                   `json:"rule_version,omitempty"`
+	RuleDigest   string                 `json:"rule_digest,omitempty"`
+	Availability ProvenanceAvailability `json:"availability"`
 }

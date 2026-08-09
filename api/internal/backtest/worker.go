@@ -3,6 +3,7 @@ package backtest
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -192,7 +193,7 @@ func (w *Worker) snapshotCustomers(ctx context.Context, job *domain.BacktestJob)
 				if !job.SnapshotAt.IsZero() && c.CreatedAt.After(job.SnapshotAt) {
 					continue
 				}
-				if job.CustomerFilter == nil || matchesFilter(c, job.CustomerFilter) {
+				if job.CustomerFilter.Matches(c) {
 					ids = append(ids, c.ID)
 					scannedCustomers = append(scannedCustomers, c)
 				}
@@ -226,18 +227,6 @@ func (w *Worker) loadCustomersByID(ctx context.Context, ids []string) ([]domain.
 	}
 	return out, nil
 }
-func matchesFilter(c domain.Customer, f *domain.BacktestCustomerFilter) bool {
-	if f.RiskTier != "" && (c.RiskTier == nil || *c.RiskTier != f.RiskTier) {
-		return false
-	}
-	if f.Status != "" && c.EffectiveStatus() != f.Status {
-		return false
-	}
-	if f.CountryCode != "" && c.CountryCode != f.CountryCode {
-		return false
-	}
-	return true
-}
 func diffResult(base, cand *domain.BacktestResult) *domain.BacktestResult {
 	if base == nil || cand == nil {
 		return nil
@@ -262,6 +251,24 @@ func diffResult(base, cand *domain.BacktestResult) *domain.BacktestResult {
 			x.HighSeverityCount -= b.HighSeverityCount
 			x.MediumSeverityCount -= b.MediumSeverityCount
 			x.LowSeverityCount -= b.LowSeverityCount
+			baselineIDs := make(map[string]struct{}, len(b.AffectedCustomerIDs))
+			for _, id := range b.AffectedCustomerIDs {
+				baselineIDs[id] = struct{}{}
+			}
+			candidateIDs := make(map[string]struct{}, len(c.AffectedCustomerIDs))
+			for _, id := range c.AffectedCustomerIDs {
+				candidateIDs[id] = struct{}{}
+				if _, exists := baselineIDs[id]; !exists {
+					x.AddedCustomerIDs = append(x.AddedCustomerIDs, id)
+				}
+			}
+			for _, id := range b.AffectedCustomerIDs {
+				if _, exists := candidateIDs[id]; !exists {
+					x.RemovedCustomerIDs = append(x.RemovedCustomerIDs, id)
+				}
+			}
+			sort.Strings(x.AddedCustomerIDs)
+			sort.Strings(x.RemovedCustomerIDs)
 		}
 		d.ScenarioResults = append(d.ScenarioResults, x)
 	}

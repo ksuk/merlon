@@ -13,6 +13,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/store"
 )
@@ -70,6 +71,8 @@ type Server struct {
 	// remain a PH10 gate.
 	tmBaseCurrency         string
 	realtimeMonitorTimeout time.Duration
+	eddStage2Days          int
+	eddStage3Days          int
 	screeningResults       domain.ScreeningResultRepository
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
@@ -90,6 +93,8 @@ type Server struct {
 
 	db           DBPinger
 	pendingEvals domain.PendingEvaluationRepository
+	batchRuns    domain.BatchRunRepository
+	wave3        domain.Wave3Repository
 	events       events.Bus
 	eventOutbox  domain.EventOutboxRepository
 
@@ -101,6 +106,14 @@ type Server struct {
 	publicURL      string
 	operatorTeams  []string
 	priorityPolicy *casemgmt.PriorityPolicy
+	// policies is nil-tolerant: every accessor on *policy.Set returns the
+	// in-code default for a nil receiver.
+	policies *policy.Set
+
+	// statusCache bounds how often GET /system/status probes dependencies. The
+	// answer always travels with its own age, so a cached result is never
+	// mistaken for a fresh one.
+	statusCache systemStatusCache
 }
 
 type Deps struct {
@@ -137,6 +150,8 @@ type Deps struct {
 	WhitelistMaxValidDays  int
 	TMBaseCurrency         string
 	RealtimeMonitorTimeout time.Duration
+	EDDStage2Days          int
+	EDDStage3Days          int
 	ScreeningResults       domain.ScreeningResultRepository
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
@@ -151,6 +166,8 @@ type Deps struct {
 
 	DB                 DBPinger
 	PendingEvaluations domain.PendingEvaluationRepository
+	BatchRuns          domain.BatchRunRepository
+	Wave3              domain.Wave3Repository
 	Events             events.Bus
 	EventOutbox        domain.EventOutboxRepository
 
@@ -167,6 +184,10 @@ type Deps struct {
 	// CasePriorityPolicy is the versioned CDD-tier/score to case-priority
 	// mapping. A nil value uses the built-in development-safe policy.
 	CasePriorityPolicy *casemgmt.PriorityPolicy
+	// Policies is the Wave 3 policy bundle (ADR-0016). A nil value is valid
+	// and yields the in-code default for every policy, so a Server built
+	// without it behaves exactly as it did before the bundle existed.
+	Policies *policy.Set
 }
 
 func New(addr string, deps Deps) *Server {
@@ -203,6 +224,8 @@ func New(addr string, deps Deps) *Server {
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		tmBaseCurrency:           deps.TMBaseCurrency,
 		realtimeMonitorTimeout:   deps.RealtimeMonitorTimeout,
+		eddStage2Days:            deps.EDDStage2Days,
+		eddStage3Days:            deps.EDDStage3Days,
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
@@ -215,6 +238,8 @@ func New(addr string, deps Deps) *Server {
 
 		db:           deps.DB,
 		pendingEvals: deps.PendingEvaluations,
+		batchRuns:    deps.BatchRuns,
+		wave3:        deps.Wave3,
 		events:       deps.Events,
 		eventOutbox:  deps.EventOutbox,
 
@@ -223,6 +248,7 @@ func New(addr string, deps Deps) *Server {
 		publicURL:      deps.PublicURL,
 		operatorTeams:  append([]string(nil), deps.OperatorTeams...),
 		priorityPolicy: deps.CasePriorityPolicy,
+		policies:       deps.Policies,
 	}
 	if s.priorityPolicy == nil {
 		s.priorityPolicy = casemgmt.DefaultPriorityPolicy()
@@ -259,12 +285,29 @@ func New(addr string, deps Deps) *Server {
 			}
 		}
 	}
+	if memoryWave3, ok := s.wave3.(*store.MemoryWave3Repo); ok {
+		if memoryCases, ok := s.cases.(*store.MemoryCaseRepo); ok {
+			memoryWave3.SetCaseRepository(memoryCases)
+		}
+	}
 	if s.atomic == nil {
+		var identityHistory domain.CustomerIdentityHistoryRepository
+		if memoryWave3, ok := s.wave3.(*store.MemoryWave3Repo); ok {
+			identityHistory = memoryWave3
+		}
 		memoryRepos := domain.AtomicMutationRepositories{
 			Customers: s.customers, Transactions: s.transactions, Alerts: s.alerts,
 			Reports: s.reports, Audit: s.audit, Cases: s.cases,
 			CaseAlertLifecycle: s.caseAlertLifecycle, Investigation: s.caseInvestigation,
-			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox,
+			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox, IdentityHistory: identityHistory, Wave3: s.wave3,
+			PendingEvaluations: func() domain.PendingEvaluationWorkflowRepository {
+				if workflow, ok := s.pendingEvals.(domain.PendingEvaluationWorkflowRepository); ok {
+					return workflow
+				}
+				return nil
+			}(),
+			BatchRuns:    s.batchRuns,
+			BacktestJobs: s.backtestJobs,
 		}
 		if atomic, err := store.NewMemoryAtomicMutationRepo(memoryRepos); err == nil {
 			s.atomic = atomic
@@ -307,13 +350,32 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/customers/{id}", s.handleGetCustomer)
 	s.route("POST /api/v1/customers", s.handleCreateCustomer)
 	s.route("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
+	s.route("POST /api/v1/customers/{id}/edd/{action}", s.handleCustomerEDDAction)
+	s.route("GET /api/v1/customers/{id}/edd-events", s.handleListCustomerEDDEvents)
 	s.route("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
-	s.route("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
+	s.route("GET /api/v1/customers/{id}/score-explanation", s.handleScoreExplanation)
+	s.route("GET /api/v1/customers/{id}/scores/{scoreID}/explanation", s.handleScoreExplanation)
+	s.route("GET /api/v1/customers/{id}/screening-results", s.handleListScreeningResults)
+	s.route("GET /api/v1/customers/{id}/investigation", s.handleCustomerInvestigation)
+	s.route("GET /api/v1/customers/{id}/identity-history", s.handleListCustomerIdentityHistory)
+	// Producing a CDD score is a control action, not a read: the score decides
+	// EDD, monitoring thresholds and rescreening frequency, so Viewer no longer
+	// reaches it (ADR-0019, a deliberate breaking change).
+	s.routeHandler("POST /api/v1/customers/{id}/score", s.requireRolePermission(auth.PermCDDScore, s.handleScoreCustomer))
+	s.route("GET /api/v1/customers/{id}/score-overrides", s.handleListCDDScoreOverrides)
+	s.route("GET /api/v1/customers/{id}/cdd-rule-sets", s.handleListCDDRuleSets)
+	s.routeHandler("POST /api/v1/customers/{id}/score-overrides/{overrideID}/approve", s.requireRolePermission(auth.PermCDDOverrideApprove, s.handleApproveCDDScoreOverride))
 	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
 	// Screening (WS-7)
 	s.route("POST /api/v1/screening/check", s.handleScreeningCheck)
+	s.route("GET /api/v1/screening/runs", s.handleListScreeningRuns)
+	s.route("GET /api/v1/screening/runs/{id}", s.handleGetScreeningRun)
+	s.route("GET /api/v1/screening/results", s.handleListScreeningResults)
+	s.route("GET /api/v1/screening/results/{id}", s.handleGetScreeningResult)
+	s.route("GET /api/v1/screening/results/{id}/history", s.handleListScreeningResultHistory)
 	s.route("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
+	s.route("GET /api/v1/screening/sources", s.handleListScreeningSources)
 
 	// Accounts (joint accounts, the data model §1.1.3)
 	s.route("POST /api/v1/accounts", s.handleCreateAccount)
@@ -338,6 +400,8 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/backtest", s.handleRunBacktest)
 	s.route("POST /api/v1/backtests", s.handleCreateBacktestJob)
 	s.route("GET /api/v1/backtests", s.handleListBacktestJobs)
+	s.route("POST /api/v1/backtests/preview", s.handlePreviewBacktestCohort)
+	s.route("GET /api/v1/backtests/rules", s.handleDiscoverBacktestRules)
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
@@ -375,6 +439,22 @@ func (s *Server) routes() {
 	// Batch
 	s.route("POST /api/v1/batch/score", s.handleBatchScore)
 	s.route("POST /api/v1/batch/monitor", s.handleBatchMonitor)
+	s.route("POST /api/v1/batch/targets/preview", s.handlePreviewTargetManifest)
+	s.route("GET /api/v1/batch/targets/{id}", s.handleGetTargetManifest)
+	s.route("POST /api/v1/batch/targets/{id}/confirm", s.handleConfirmTargetManifest)
+	s.route("POST /api/v1/batch/runs", s.handleCreateBatchRun)
+	s.route("GET /api/v1/batch/runs", s.handleListBatchRuns)
+	s.route("GET /api/v1/batch/runs/{id}", s.handleGetBatchRun)
+	s.route("POST /api/v1/batch/runs/{id}/cancel", s.handleCancelBatchRun)
+	s.route("POST /api/v1/batch/runs/{id}/rerun", s.handleRerunBatchRun)
+
+	// Pending engine evaluations (fail-alert recovery queue)
+	s.route("GET /api/v1/pending-evaluations", s.handleListPendingEvaluations)
+	s.routeHandler("GET /api/v1/pending-evaluations/export", s.requireRolePermission(auth.PermAuditRead, s.handleExportPendingEvaluations))
+	s.route("GET /api/v1/pending-evaluations/stats", s.handlePendingEvaluationStats)
+	s.route("GET /api/v1/pending-evaluations/{id}", s.handleGetPendingEvaluation)
+	s.route("GET /api/v1/pending-evaluations/{id}/history", s.handleListPendingHistory)
+	s.route("POST /api/v1/pending-evaluations/{id}/{action}", s.handleTransitionPending)
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
@@ -418,7 +498,7 @@ func (s *Server) routes() {
 	// full filtered result set in one response, a higher-risk action than
 	// browsing a page at a time).
 	s.route("GET /api/v1/audit", s.handleListAuditLogs)
-	s.routeHandler("GET /api/v1/audit/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportAuditLogs)))
+	s.routeHandler("GET /api/v1/audit/export", s.requireRolePermission(auth.PermAuditRead, s.handleExportAuditLogs))
 
 	// Config validation
 	s.route("POST /api/v1/config/validate", s.handleValidateConfig)
@@ -429,11 +509,11 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/rules", s.handleListRules)
 	s.route("GET /api/v1/rules/{id}", s.handleGetRule)
 	s.route("GET /api/v1/rules/{id}/export", s.handleExportRule)
-	s.routeHandler("POST /api/v1/rules", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleCreateRule)))
-	s.routeHandler("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
-	s.routeHandler("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
-	s.routeHandler("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
-	s.routeHandler("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
+	s.routeHandler("POST /api/v1/rules", s.requireRolePermission(auth.PermRuleWrite, s.handleCreateRule))
+	s.routeHandler("PUT /api/v1/rules/{id}", s.requireRolePermission(auth.PermRuleWrite, s.handleUpdateRule))
+	s.routeHandler("POST /api/v1/rules/{id}/activate", s.requireRolePermission(auth.PermRuleWrite, s.handleActivateRule))
+	s.routeHandler("POST /api/v1/rules/{id}/deactivate", s.requireRolePermission(auth.PermRuleWrite, s.handleDeactivateRule))
+	s.routeHandler("POST /api/v1/rules/import", s.requireRolePermission(auth.PermRuleWrite, s.handleImportRules))
 
 	// Whitelist (whitelist.md §1, §3.1): reads are open to all roles; request
 	// and revoke require auth.PermWhitelistRequest, approve requires the
@@ -451,6 +531,21 @@ func (s *Server) routes() {
 	// System info
 	s.route("GET /api/v1/system/info", s.handleSystemInfo)
 	s.route("GET /api/v1/system/config-digests", s.handleConfigDigests)
+
+	// Capability contract (CAP-01, ADR-0024). Readable by any authenticated
+	// caller: it reports what this deployment offers and why a function is
+	// unavailable, never the content of a function the caller may not use.
+	s.route("GET /api/v1/system/capabilities", s.handleCapabilities)
+
+	// Truthful runtime readiness and active-configuration provenance (#83).
+	// Distinct from /healthz/ready, which is an unauthenticated probe with a
+	// deliberately minimal body.
+	s.route("GET /api/v1/system/status", s.handleSystemStatus)
+
+	// Policy documents (ADR-0016). Read-only: policies are edited as files
+	// and reloaded on restart, never mutated through the API.
+	s.route("GET /api/v1/policies", s.handleListPolicies)
+	s.route("GET /api/v1/policies/{policy}", s.handleGetPolicy)
 
 	// OpenAPI
 	s.route("GET /api/v1/openapi.json", s.handleOpenAPI)

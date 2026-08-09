@@ -20,6 +20,8 @@ type ScreenResult struct {
 	Matches      []ScreenMatch `json:"matches"`
 	ListsChecked int           `json:"lists_checked"`
 	ScreenedAt   time.Time     `json:"screened_at"`
+	RunID        string        `json:"run_id,omitempty"`
+	ResultIDs    []string      `json:"result_ids,omitempty"`
 }
 
 // MarshalJSON keeps collection fields stable for API consumers. A nil slice

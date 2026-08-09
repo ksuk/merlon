@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -31,9 +32,6 @@ const ACTION_CATEGORY_LABEL_KEYS: Record<string, string> = {
   "管理操作": "adminOp", // i18n-ignore
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function AuditPage() {
   const { t, i18n } = useTranslation()

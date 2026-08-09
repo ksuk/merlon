@@ -1,0 +1,26 @@
+schema_version: cdd_rule_selection_v1
+policy_version: "2026-08-06-default"
+# rules がどれも一致しないときに適用するルールセット。空文字は
+# 「有効な CDD_WEIGHT ルールが 1 件だけならそれを使う」を意味する。
+default_rule_set_id: ""
+# server: 呼び出し側がルールセットを指定しないとき、このポリシーで解決する。
+# client: 呼び出し側が有効なルールセットを自由に指定できる。
+selection_authority: server
+# priority の降順で評価し、最初に一致したものを適用する。priority は一意で
+# なければならない（ファイル記載順に結果が依存しないようにするため）。
+# match の各次元は省略時「すべて一致」、記載時はいずれかの値に一致が必要。
+rules: []
+# 設定例:
+# rules:
+#   - match:
+#       customer_type: [corporate_foreign, foreign_legal_arrangement]
+#     rule_set_id: cdd_cross_border
+#     priority: 100
+#   - match:
+#       product_type: [funds_transfer]
+#     rule_set_id: cdd_funds_transfer
+#     priority: 90
+#   - match:
+#       jurisdiction: [JP]
+#     rule_set_id: cdd_basic_weights
+#     priority: 10

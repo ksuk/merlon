@@ -108,8 +108,19 @@ func TestMigrationRunnerAppliesAllMigrationsAndIsIdempotent(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 44 {
-		t.Fatalf("schema_migrations count = %d, want 44", count)
+	// The ledger must account for every migration on disk. Deriving the
+	// expectation from the directory keeps the property that a migration which
+	// silently failed to apply is caught, without a hand-maintained constant
+	// that every new migration has to remember to bump.
+	onDisk, err := loadMigrations(opts.migrationsDir)
+	if err != nil {
+		t.Fatalf("loadMigrations: %v", err)
+	}
+	if len(onDisk) == 0 {
+		t.Fatal("found no migrations on disk; this guard cannot compare anything")
+	}
+	if count != len(onDisk) {
+		t.Fatalf("schema_migrations count = %d, want %d (one per migration on disk)", count, len(onDisk))
 	}
 }
 
@@ -302,10 +313,12 @@ var appRoleDMLTables = []string{
 	"accounts",
 	"alerts",
 	"api_keys",
+	"backtest_job_affected_customers",
 	"backtest_job_customer_snapshots",
 	"backtest_job_customers",
 	"backtest_jobs",
 	"batch_runs",
+	"cdd_score_overrides",
 	"case_notes",
 	"case_checklist_items",
 	"case_relationships",
@@ -321,8 +334,11 @@ var appRoleDMLTables = []string{
 	"screening_list_failures",
 	"screening_list_snapshots",
 	"screening_results",
+	"screening_runs",
 	"seed_state",
 	"str_reports",
+	"backtest_job_metadata",
+	"target_manifests",
 	"transactions",
 	"users",
 	"webhook_deliveries",
@@ -332,7 +348,7 @@ var appRoleDMLTables = []string{
 	"whitelist_reviews",
 }
 
-var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "case_evidence", "case_relationship_events", "rule_activation_events", "str_report_events"}
+var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "customer_edd_events", "case_evidence", "case_relationship_events", "customer_identity_history", "pending_evaluation_history", "rule_activation_events", "screening_result_history", "str_report_events"}
 
 func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 	migrations, err := loadMigrations("../../../migrations")
@@ -351,7 +367,7 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 		}
 	}
 	classified := append(append([]string{}, appRoleDMLTables...), appRoleAppendOnlyTables...)
-	const expectedApplicationTableCount = 39
+	const expectedApplicationTableCount = 48
 	if len(migrationTables) != expectedApplicationTableCount {
 		t.Fatalf("extracted %d migration tables, want %d: %v", len(migrationTables), expectedApplicationTableCount, migrationTables)
 	}

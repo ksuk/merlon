@@ -27,10 +27,11 @@ import (
 )
 
 type riskFactor struct {
-	Weight  float64            `yaml:"weight"`
-	Values  map[string]float64 `yaml:"values"`
-	Source  string             `yaml:"source"`
-	Applies []string           `yaml:"applies_to"`
+	Weight      float64            `yaml:"weight"`
+	Values      map[string]float64 `yaml:"values"`
+	Source      string             `yaml:"source"`
+	Description string             `yaml:"description"`
+	Applies     []string           `yaml:"applies_to"`
 }
 
 type cddConfig struct {
@@ -216,11 +217,11 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 
 func validateCountryRisk(table countryRisk) error {
 	if !validCountryRiskScore(table.DefaultScore) {
-		return fmt.Errorf("country risk default_score must be an integer between 1 and 5")
+		return fieldErrorf("default_score", "country risk default_score must be an integer between 1 and 5")
 	}
 	for code, row := range table.Countries {
 		if !validCountryRiskScore(row.Score) {
-			return fmt.Errorf("country %q score must be an integer between 1 and 5", code)
+			return fieldErrorf("countries."+code+".score", "country %q score must be an integer between 1 and 5", code)
 		}
 	}
 	return nil
@@ -239,29 +240,29 @@ func envOr(key, fallback string) string {
 
 func validateCDD(c cddConfig) error {
 	if len(c.RiskFactors) == 0 {
-		return fmt.Errorf("CDD risk_factors must not be empty")
+		return fieldErrorf("risk_factors", "CDD risk_factors must not be empty")
 	}
 	var total float64
 	for name, factor := range c.RiskFactors {
 		if factor.Weight <= 0 {
-			return fmt.Errorf("CDD risk_factor %q weight must be positive", name)
+			return fieldErrorf("risk_factors."+name+".weight", "CDD risk_factor %q weight must be positive", name)
 		}
 		if len(factor.Values) == 0 && factor.Source == "" {
-			return fmt.Errorf("CDD risk_factor %q must have either values or source", name)
+			return fieldErrorf("risk_factors."+name, "CDD risk_factor %q must have either values or source", name)
 		}
 		total += factor.Weight
 	}
 	if total < 0.99 || total > 1.01 {
-		return fmt.Errorf("CDD risk_factor weights must sum to 1.0, got %.4f", total)
+		return fieldErrorf("risk_factors", "CDD risk_factor weights must sum to 1.0, got %.4f", total)
 	}
 	if low, ok := c.TierThresholds["LOW"]; ok {
 		if medium, ok := c.TierThresholds["MEDIUM"]; ok && low.Max != 0 && medium.Min != 0 && low.Max != medium.Min {
-			return fmt.Errorf("LOW.max (%.6g) must equal MEDIUM.min (%.6g)", low.Max, medium.Min)
+			return fieldErrorf("tier_thresholds", "LOW.max (%.6g) must equal MEDIUM.min (%.6g)", low.Max, medium.Min)
 		}
 	}
 	if medium, ok := c.TierThresholds["MEDIUM"]; ok {
 		if high, ok := c.TierThresholds["HIGH"]; ok && medium.Max != 0 && high.Min != 0 && medium.Max != high.Min {
-			return fmt.Errorf("MEDIUM.max (%.6g) must equal HIGH.min (%.6g)", medium.Max, high.Min)
+			return fieldErrorf("tier_thresholds", "MEDIUM.max (%.6g) must equal HIGH.min (%.6g)", medium.Max, high.Min)
 		}
 	}
 	return nil
@@ -385,7 +386,7 @@ func parseScenario(content []byte) (scenario, error) {
 		}
 	}
 	if s.ID == "" {
-		return scenario{}, fmt.Errorf("scenario_id is required")
+		return scenario{}, fieldErrorf("scenario_id", "scenario_id is required")
 	}
 	return s, nil
 }
@@ -482,6 +483,35 @@ func (s scenario) listParam(name string) []string {
 }
 
 func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, ruleSetID string) (*domain.ScoreRecord, error) {
+	// Preserve the established native parity contract: an unversioned score
+	// reports the digest-pinned configuration loaded by the process, regardless
+	// of a legacy routing hint supplied by the caller.
+	return e.scoreCustomer(ctx, customer, e.cdd.PresetID, e.cdd, e.cddDigest)
+}
+
+// ScoreCustomerWithRuleSet evaluates a caller-selected immutable CDD
+// definition.  The definition is parsed and validated before it is used, and
+// the returned evidence is pinned to its digest and selected identifier.  The
+// live engine's TM/screening configuration is shared read-only; only the CDD
+// weight set is replaced for this scoring operation.
+func (e *Engine) ScoreCustomerWithRuleSet(ctx context.Context, customer *domain.Customer, ruleSetID string, definition []byte) (*domain.ScoreRecord, error) {
+	if strings.TrimSpace(ruleSetID) == "" {
+		return nil, fmt.Errorf("rule set id must not be empty")
+	}
+	var cdd cddConfig
+	if err := yaml.Unmarshal(definition, &cdd); err != nil {
+		return nil, fmt.Errorf("parse CDD rule set %q: %w", ruleSetID, err)
+	}
+	if err := normalizeCDD(&cdd); err != nil {
+		return nil, fmt.Errorf("normalize CDD rule set %q: %w", ruleSetID, err)
+	}
+	if err := validateCDD(cdd); err != nil {
+		return nil, fmt.Errorf("validate CDD rule set %q: %w", ruleSetID, err)
+	}
+	return e.scoreCustomer(ctx, customer, ruleSetID, cdd, digest(definition))
+}
+
+func (e *Engine) scoreCustomer(ctx context.Context, customer *domain.Customer, reportedRuleSetID string, cdd cddConfig, cddDigest string) (*domain.ScoreRecord, error) {
 	started := time.Now()
 	status := "ok"
 	defer func() {
@@ -499,8 +529,8 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		name string
 		f    riskFactor
 	}
-	factors := make([]pair, 0, len(e.cdd.RiskFactors))
-	for name, f := range e.cdd.RiskFactors {
+	factors := make([]pair, 0, len(cdd.RiskFactors))
+	for name, f := range cdd.RiskFactors {
 		if err := ctx.Err(); err != nil {
 			status = "error"
 			return nil, err
@@ -528,6 +558,7 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		attrs[k] = fmt.Sprint(v)
 	}
 	var total float64
+	usedFallback := false
 	resultFactors := make([]domain.Factor, 0, len(factors))
 	for _, p := range factors {
 		if err := ctx.Err(); err != nil {
@@ -537,6 +568,7 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		value, resolved := e.resolveFactor(p.name, p.f, customer, attrs)
 		if !resolved {
 			value = 5
+			usedFallback = true
 		}
 		contribution := p.f.Weight / weight * value
 		total += contribution
@@ -544,32 +576,81 @@ func (e *Engine) ScoreCustomer(ctx context.Context, customer *domain.Customer, r
 		if !resolved {
 			description += " (fallback: unresolved)"
 		}
-		resultFactors = append(resultFactors, domain.Factor{Name: p.name, Axis: p.name, Score: contribution, Description: description})
+		observed := factorObservedValue(p.name, customer, attrs)
+		rule := p.f.Source
+		if rule == "" {
+			rule = "values"
+		}
+		businessMeaning := p.f.Description
+		if businessMeaning == "" {
+			businessMeaning = "CDD factor " + p.name
+		}
+		// Score is the factor's own normalised value (0-10); Contribution is
+		// what it added to the total after weighting. They previously both held
+		// the contribution, which made the two fields indistinguishable and let
+		// any consumer that summed Score double-count the weighting -- including
+		// the score explanation's own reconciliation check, which therefore
+		// could never detect a mismatch.
+		resultFactors = append(resultFactors, domain.Factor{
+			Name: p.name, Axis: p.name, Score: value, Weight: p.f.Weight,
+			Contribution: contribution, Description: description, ObservedValue: observed,
+			BusinessMeaning: businessMeaning, Rule: rule, Fallback: !resolved,
+		})
 	}
 	tier := domain.RiskTierHigh
-	if th, ok := e.cdd.TierThresholds["LOW"]; ok && (th.Max == 0 || total < th.Max) {
+	if th, ok := cdd.TierThresholds["LOW"]; ok && (th.Max == 0 || total < th.Max) {
 		tier = domain.RiskTierLow
 	}
-	if th, ok := e.cdd.TierThresholds["MEDIUM"]; ok && total >= th.Min && (th.Max == 0 || total < th.Max) {
+	if th, ok := cdd.TierThresholds["MEDIUM"]; ok && total >= th.Min && (th.Max == 0 || total < th.Max) {
 		tier = domain.RiskTierMedium
 	}
-	// The scoring contract treats the request's rule_set_id as a routing
-	// hint and returns the loaded preset identifier. Keep the native path
-	// byte-compatible until versioned rule-set loading is introduced.
-	ruleSetID = e.cdd.PresetID
+	// Missing or unknown factor mappings are fail-alert conditions. Preserve
+	// the numeric score and factor-level fallback evidence, but never let an
+	// unresolved input produce a low/medium operational priority silently.
+	if usedFallback {
+		tier = domain.RiskTierHigh
+	}
+	if reportedRuleSetID == "" {
+		reportedRuleSetID = cdd.PresetID
+	}
 	now := time.Now().UTC()
-	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: ruleSetID, RuleSetSHA256: e.cddDigest, RuleSetVersion: fingerprint(e.cddDigest), ScoredAt: now}, nil
+	rationale := ""
+	if usedFallback {
+		rationale = "Fail-alert fallback applied for one or more unresolved CDD factors"
+	}
+	return &domain.ScoreRecord{CustomerID: customer.ID, Score: total, Tier: tier, Factors: resultFactors, RuleSetID: reportedRuleSetID, RuleSetSHA256: cddDigest, Rationale: rationale, ScoredAt: now}, nil
 }
-func fingerprint(s string) int {
-	if len(s) < 8 {
-		return 1
+
+// TierThresholds reports the active CDD configuration's score bands as
+// [min, max) pairs. A zero max means unbounded above.
+func (e *Engine) TierThresholds() map[string][2]float64 {
+	if len(e.cdd.TierThresholds) == 0 {
+		return nil
 	}
-	n, _ := strconv.ParseUint(s[:8], 16, 32)
-	n &= 0x7fffffff
-	if n == 0 {
-		n = 1
+	out := make(map[string][2]float64, len(e.cdd.TierThresholds))
+	for tier, band := range e.cdd.TierThresholds {
+		out[tier] = [2]float64{band.Min, band.Max}
 	}
-	return int(n)
+	return out
+}
+
+func factorObservedValue(name string, customer *domain.Customer, attrs map[string]string) string {
+	if value, ok := attrs[name]; ok {
+		return value
+	}
+	switch name {
+	case "customer_type":
+		return string(customer.CustomerType)
+	case "country_code":
+		return customer.CountryCode
+	case "product_type":
+		return strings.Join(customer.ProductTypes, ",")
+	case "risk_tier":
+		if customer.RiskTier != nil {
+			return string(*customer.RiskTier)
+		}
+	}
+	return ""
 }
 func (e *Engine) resolveFactor(name string, f riskFactor, c *domain.Customer, attrs map[string]string) (float64, bool) {
 	if f.Source == "country_risk_table" && e.country != nil {
@@ -598,7 +679,9 @@ func (e *Engine) resolveFactor(name string, f riskFactor, c *domain.Customer, at
 }
 
 func (e *Engine) EvaluateTransactions(ctx context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
-	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "realtime")
+	// Legacy entry point: no request, so no configuration to pin. See the note
+	// on EvaluateTransactionsBatch.
+	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "realtime", provenanceContext{})
 }
 
 func (e *Engine) Evaluate(ctx context.Context, req engine.MonitoringRequest) ([]domain.Alert, error) {
@@ -606,13 +689,21 @@ func (e *Engine) Evaluate(ctx context.Context, req engine.MonitoringRequest) ([]
 	if customerType == "" {
 		customerType = "unspecified"
 	}
+	mode := "realtime"
 	if req.Mode == engine.EvaluationModeBatch {
-		return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "batch")
+		mode = "batch"
 	}
-	return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "realtime")
+	// Provenance is attached here rather than at each call site because
+	// realtime, batch and recovery monitoring all reach the engine through this
+	// one request; stamping it in the engine is what makes the three produce
+	// identical semantics (ADR-0025).
+	return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, mode, provenanceContextFrom(req))
 }
 func (e *Engine) EvaluateTransactionsBatch(ctx context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
-	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "batch")
+	// The legacy entry point carries no request, so there is nothing to pin.
+	// The alert is left without provenance and reported as not_captured, which
+	// is accurate: nobody told this call what configuration was effective.
+	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "batch", provenanceContext{})
 }
 
 // RealtimeHistoryWindow returns the largest window used by any enabled
@@ -655,7 +746,7 @@ func (e *Engine) RealtimeHistoryWindow() (time.Duration, bool) {
 	return longest, true
 }
 
-func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, tier domain.RiskTier, txns []domain.Transaction, ids []string, mode string) ([]domain.Alert, error) {
+func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, tier domain.RiskTier, txns []domain.Transaction, ids []string, mode string, prov provenanceContext) ([]domain.Alert, error) {
 	started := time.Now()
 	defer func() {
 		metrics.EngineEvalDuration.WithLabelValues("EvaluateTransactions", "ok").Observe(time.Since(started).Seconds())
@@ -684,7 +775,7 @@ func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, 
 				return nil, err
 			}
 			now := time.Now().UTC()
-			out = append(out, domain.Alert{CustomerID: customerID, ScenarioID: s.ID, Severity: a.severity, Status: domain.AlertStatusOpen, Score: a.score, Description: a.description, TransactionIDs: a.ids, DetectedAt: now, CreatedAt: now, UpdatedAt: now})
+			out = append(out, domain.Alert{CustomerID: customerID, ScenarioID: s.ID, Severity: a.severity, Status: domain.AlertStatusOpen, Score: a.score, Description: a.description, TransactionIDs: a.ids, DetectedAt: now, CreatedAt: now, UpdatedAt: now, Provenance: prov.forScenario(s, customerType, string(tier), mode, e.digests())})
 		}
 	}
 	return out, nil
@@ -1077,7 +1168,9 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 		// Backtests intentionally evaluate every configured scenario,
 		// irrespective of realtime/batch mode; the mode filter is a serving
 		// concern, not a historical replay concern.
-		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both")
+		// A backtest already pins its own rule snapshot and digests on the job
+		// row (migrations 027/032); per-alert provenance would duplicate it.
+		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both", provenanceContext{})
 		if err != nil {
 			return nil, err
 		}
@@ -1161,69 +1254,78 @@ func (e *Engine) ValidateConfig(ctx context.Context, typ, content string) (*engi
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result := &engine.ConfigValidationResult{Valid: true}
-	addError := func(field string, err error) {
-		result.Valid = false
-		result.Errors = append(result.Errors, engine.ConfigValidationError{Field: field, Message: err.Error()})
-	}
+	c := newConfigValidationCollector(content)
 	if len(content) > 512*1024 {
-		addError("yaml", fmt.Errorf("yaml_content too large (max 512KB)"))
-		return result, nil
+		c.add("yaml", engine.ConfigErrorSchema, fmt.Errorf("yaml_content too large (max 512KB)"))
+		return c.result, nil
 	}
 	switch typ {
 	case "cdd_weights":
 		var cdd cddConfig
 		if err := yaml.Unmarshal([]byte(content), &cdd); err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.addSyntax(err)
 		} else if err := normalizeCDD(&cdd); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		} else if err := validateCDD(cdd); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		}
 	case "tm_scenarios":
+		// parseScenario reports both kinds of failure through one error. Ask
+		// the parser first, so a document it accepted is never reported as a
+		// syntax error the operator cannot find.
+		var probe map[string]any
+		if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+			c.addSyntax(err)
+			return c.result, nil
+		}
 		s, err := parseScenario([]byte(content))
 		if err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.add("config", engine.ConfigErrorSchema, err)
 		} else if !knownScenarioID(s.ID) {
-			addError("config", fmt.Errorf("unknown scenario type: %s", s.ID))
+			// The document is well formed; it names a scenario this engine does
+			// not implement. That is a different mistake from a malformed
+			// document and has a different fix.
+			c.addPathError("config", "scenario_id", engine.ConfigErrorCrossReference, fmt.Errorf("unknown scenario type: %s", s.ID))
 		} else {
 			var raw map[string]any
 			_ = yaml.Unmarshal([]byte(content), &raw)
 			isV2 := strings.HasPrefix(stringValue(raw["schema_version"]), "2") || raw["conditions"] != nil
 			if !isV2 && len(s.Parameters) == 0 {
-				addError("config", fmt.Errorf("parameters must not be empty"))
+				c.addPathError("config", "parameters", engine.ConfigErrorSchema, fmt.Errorf("parameters must not be empty"))
 			}
 		}
 	case "screening_lists":
 		var list screeningList
 		if err := yaml.Unmarshal([]byte(content), &list); err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.addSyntax(err)
 		} else if err := validateScreeningList(list); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		}
 	case "country_risk":
 		var table countryRisk
 		if err := yaml.Unmarshal([]byte(content), &table); err != nil {
-			addError("yaml", fmt.Errorf("parse error: %w", err))
+			c.addSyntax(err)
 		} else if err := validateCountryRisk(table); err != nil {
-			addError("config", err)
+			c.add("config", engine.ConfigErrorSchema, err)
 		}
 	default:
-		addError("config_type", fmt.Errorf("unknown config type: %s", typ))
+		// config_type is a request parameter, not a location in the document.
+		// Reporting a line here would send the operator to an innocent line.
+		c.add("config_type", engine.ConfigErrorSchema, fmt.Errorf("unknown config type: %s", typ))
 	}
-	return result, nil
+	return c.result, nil
 }
 
 func validateScreeningList(list screeningList) error {
 	if list.ID == "" {
-		return fmt.Errorf("list_id must not be empty")
+		return fieldErrorf("list_id", "list_id must not be empty")
 	}
 	if len(list.Entries) == 0 {
-		return fmt.Errorf("entries must not be empty")
+		return fieldErrorf("entries", "entries must not be empty")
 	}
-	for _, entry := range list.Entries {
+	for i, entry := range list.Entries {
 		if len(entry.Names) == 0 {
-			return fmt.Errorf("entry %q must have at least one name", entry.ID)
+			return fieldErrorf(fmt.Sprintf("entries[%d].names", i), "entry %q must have at least one name", entry.ID)
 		}
 	}
 	return nil

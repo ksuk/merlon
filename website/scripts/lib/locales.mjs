@@ -95,6 +95,8 @@ export const LOCALES = {
     schemaDisplayTitles: {
       tm_scenario_v2: "TM Scenario Definition",
       tm_scenario_v1: "TM Scenario Definition (v1, legacy)",
+      kyc_required_fields_v1: "KYC Required Fields Policy",
+      travel_rule_v1: "Travel Rule Policy",
     },
     // Presentation descriptions for schemas whose JSON Schema has no
     // `description` of its own, so the index table has no empty cells.
@@ -105,6 +107,12 @@ export const LOCALES = {
       tm_scenario_v2:
         "Current schema for transaction monitoring scenario definitions, with " +
         "per-customer-type and per-risk-tier thresholds",
+      kyc_required_fields_v1:
+        "Schema for the identity fields a customer record must carry, per " +
+        "customer type, and whether a gap warns or rejects",
+      travel_rule_v1:
+        "Schema for the Travel Rule applicability threshold, covered activity, " +
+        "required evidence, and exemption reason codes",
     },
 
     schemaNotApiVersion:
@@ -212,6 +220,8 @@ export const LOCALES = {
       country_risk_v1: "カントリーリスクテーブル",
       tm_scenario_v2: "TM シナリオ定義",
       tm_scenario_v1: "TM シナリオ定義（v1・レガシー）",
+      kyc_required_fields_v1: "KYC 必須項目ポリシー",
+      travel_rule_v1: "トラベルルールポリシー",
     },
     schemaDescriptions: {
       cdd_weight_v1: "顧客リスク評価（CDD）の重み定義スキーマ",
@@ -222,6 +232,12 @@ export const LOCALES = {
         "取引モニタリング（TM）シナリオ定義の現行スキーマ。顧客種別別・" +
         "リスクティア別の閾値に対応",
       tm_scenario_v1: "取引モニタリング（TM）シナリオ定義スキーマ",
+      kyc_required_fields_v1:
+        "顧客タイプ別に必須となる本人特定事項と、不足時に警告するか拒否するかを" +
+        "定めるスキーマ",
+      travel_rule_v1:
+        "トラベルルールの適用閾値・対象取引・必要証跡・適用対象外理由コードを" +
+        "定めるスキーマ",
     },
 
     schemaNotApiVersion:

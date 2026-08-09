@@ -39,6 +39,25 @@ type FailureTracker interface {
 	LastSuccessAt(ctx context.Context, listID string) (time.Time, error)
 }
 
+// FailureStatus is the safe, operator-facing status snapshot for one
+// configured source.  It is deliberately additive to FailureTracker so older
+// adapters remain source-compatible while the Wave 3 directory can expose
+// last-attempt and safe diagnostics without scraping implementation details.
+type FailureStatus struct {
+	LastAttemptAt       *time.Time
+	LastSuccessAt       *time.Time
+	LastFailureAt       *time.Time
+	ConsecutiveFailures int
+	Diagnostic          string
+}
+
+// FailureStatusReader is an optional capability implemented by durable
+// failure trackers.  Implementations must return a redacted diagnostic; raw
+// upstream URLs, response bodies, and credentials must never reach the API.
+type FailureStatusReader interface {
+	FailureStatus(ctx context.Context, listID string) (FailureStatus, error)
+}
+
 // staleFailureThreshold is the default number of consecutive fetch failures
 // after which an operational alert is required (the screening workflow "連続 N 日間
 // （デフォルト：3 日）取得失敗した場合、運用アラート...を発行").
@@ -246,26 +265,42 @@ func (s *MemoryListStore) GetList(_ context.Context, listID string) (*RawListDat
 	return &cp, nil
 }
 
-var errListNotFound = errors.New("screening list not found")
+// ErrListNotFound lets the API distinguish an expected never-imported source
+// from a storage or decode failure without exposing store-specific errors.
+var ErrListNotFound = errors.New("screening list not found")
+
+// Keep the package-private name for existing package tests and callers.
+var errListNotFound = ErrListNotFound
 
 var errNoSuccessYet = errors.New("list has never been successfully imported")
 
 // MemoryFailureTracker is the dev/test-only FailureTracker.
 type MemoryFailureTracker struct {
-	mu     sync.Mutex
-	counts map[string]int
-	lastOK map[string]time.Time
+	mu          sync.Mutex
+	counts      map[string]int
+	lastOK      map[string]time.Time
+	lastAttempt map[string]time.Time
+	lastFailure map[string]time.Time
+	diagnostic  map[string]string
 }
 
 func NewMemoryFailureTracker() *MemoryFailureTracker {
-	return &MemoryFailureTracker{counts: make(map[string]int), lastOK: make(map[string]time.Time)}
+	return &MemoryFailureTracker{
+		counts: make(map[string]int), lastOK: make(map[string]time.Time),
+		lastAttempt: make(map[string]time.Time), lastFailure: make(map[string]time.Time),
+		diagnostic: make(map[string]string),
+	}
 }
 
 func (t *MemoryFailureTracker) RecordSuccess(_ context.Context, listID string) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	now := time.Now().UTC()
 	t.counts[listID] = 0
-	t.lastOK[listID] = time.Now()
+	t.lastOK[listID] = now
+	t.lastAttempt[listID] = now
+	delete(t.lastFailure, listID)
+	delete(t.diagnostic, listID)
 	return nil
 }
 
@@ -282,8 +317,31 @@ func (t *MemoryFailureTracker) LastSuccessAt(_ context.Context, listID string) (
 func (t *MemoryFailureTracker) RecordFailure(_ context.Context, listID string) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	now := time.Now().UTC()
 	t.counts[listID]++
+	t.lastAttempt[listID] = now
+	t.lastFailure[listID] = now
+	t.diagnostic[listID] = "source fetch failed"
 	return t.counts[listID], nil
+}
+
+func (t *MemoryFailureTracker) FailureStatus(_ context.Context, listID string) (FailureStatus, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	status := FailureStatus{ConsecutiveFailures: t.counts[listID], Diagnostic: t.diagnostic[listID]}
+	if ts, ok := t.lastAttempt[listID]; ok {
+		copy := ts
+		status.LastAttemptAt = &copy
+	}
+	if ts, ok := t.lastOK[listID]; ok {
+		copy := ts
+		status.LastSuccessAt = &copy
+	}
+	if ts, ok := t.lastFailure[listID]; ok {
+		copy := ts
+		status.LastFailureAt = &copy
+	}
+	return status, nil
 }
 
 func (t *MemoryFailureTracker) ConsecutiveFailures(_ context.Context, listID string) (int, error) {

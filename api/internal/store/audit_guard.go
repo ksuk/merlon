@@ -17,7 +17,10 @@ var AppendOnlyTables = []string{
 	"case_events",
 	"case_evidence",
 	"case_relationship_events",
+	"customer_identity_history",
+	"pending_evaluation_history",
 	"rule_activation_events",
+	"screening_result_history",
 	"str_report_events",
 }
 

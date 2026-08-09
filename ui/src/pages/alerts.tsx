@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -23,9 +24,6 @@ const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "criti
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 function formatAge(iso: string, locale: string, label: (key: string, options?: Record<string, unknown>) => string, now: number) {
   const days = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 86400000))
@@ -53,6 +51,7 @@ export function AlertsPage() {
     escalated: t("alertStatus.escalated"),
     closed_true_positive: t("alertStatus.closed_true_positive"),
     closed_false_positive: t("alertStatus.closed_false_positive"),
+    suppressed: t("alertStatus.suppressed"),
   }
   const [alerts, setAlerts] = useState<Alert[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -296,7 +295,11 @@ export function AlertsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" />
+              {/* An empty header cell announces as an unlabelled column. The
+                  label is visually hidden so the layout is unchanged. */}
+              <TableHead className="w-10">
+                <span className="sr-only">{t("alerts.table.header.select")}</span>
+              </TableHead>
               <TableHead>{t("alerts.table.header.severity")}</TableHead>
               <TableHead>{t("alerts.table.header.status")}</TableHead>
               <TableHead>{t("alerts.table.header.customerId")}</TableHead>
@@ -314,11 +317,11 @@ export function AlertsPage() {
           <TableBody>
             {alerts && alerts.length > 0 ? (
               alerts.map((a) => (
-                <TableRow key={a.id} className="cursor-pointer">
+                <TableRow key={a.id}>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      aria-label={`select-${a.id}`}
+                      aria-label={t("alerts.table.selectRow", { id: a.id })}
                       checked={selected.has(a.id)}
                       onChange={() => toggleSelected(a.id)}
                     />
@@ -334,6 +337,14 @@ export function AlertsPage() {
                     <Badge variant="outline">
                       {statusLabels[a.status] ?? a.status}
                     </Badge>
+                    {/* A suppressed alert is withheld, not resolved. Showing
+                        the status without the reason leaves an operator with
+                        no way to tell why it is not in their queue. */}
+                    {a.suppressed && (
+                      <Badge variant="secondary" className="ml-1" title={a.suppression_reason}>
+                        {t("alertStatus.suppressed")}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="font-mono text-sm">{a.customer_id}</TableCell>
                   <TableCell className="font-mono text-sm">{a.scenario_id}</TableCell>

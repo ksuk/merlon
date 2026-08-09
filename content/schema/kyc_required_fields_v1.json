@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ksuk/merlon/schemas/kyc_required_fields_v1.json",
+  "title": "KYC Required Fields Policy",
+  "description": "Schema for the per-customer-type identity fields a customer record must carry",
+  "type": "object",
+  "required": ["schema_version", "policy_version", "enforcement", "defaults"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "kyc_required_fields_v1"
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Recorded on every decision made under this policy"
+    },
+    "enforcement": {
+      "type": "string",
+      "enum": ["warn", "reject"],
+      "description": "warn accepts the write and reports the gap; reject refuses it"
+    },
+    "defaults": { "$ref": "#/$defs/requirements" },
+    "types": {
+      "type": "object",
+      "description": "Per-customer-type overrides; a type not named here falls back to defaults",
+      "propertyNames": {
+        "enum": [
+          "individual",
+          "corporate_domestic",
+          "corporate_foreign",
+          "trust",
+          "partnership",
+          "npo",
+          "government",
+          "foreign_legal_arrangement"
+        ]
+      },
+      "additionalProperties": { "$ref": "#/$defs/requirements" }
+    }
+  },
+  "$defs": {
+    "requirements": {
+      "type": "object",
+      "required": ["required"],
+      "properties": {
+        "required": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/fieldName" }
+        },
+        "recommended": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/fieldName" }
+        }
+      }
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "A customer attribute key"
+    }
+  }
+}
