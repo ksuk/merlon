@@ -87,7 +87,7 @@ recorded rather than left to be discovered:
 
 | Capability | Endpoints | Why there is no screen |
 |---|---|---|
-| `retention.manage` | `GET`/`PUT /api/v1/admin/retention-policies` | Retention periods are set once per deployment by an administrator and are audited; see [Retention and purge](operations/retention.md) |
+| `retention.manage` | `GET`/`PUT /api/v1/admin/retention-policies` | Retention periods are set once per deployment by an administrator and are audited; see [Retention and purge](compliance/data-retention.md) |
 | `accounts.manage` | `POST /api/v1/accounts`, `GET /api/v1/accounts/{id}`, `POST`/`GET /api/v1/accounts/{id}/customers` | Account linkage is established at ingestion by the adapter layer, not by an analyst; see [Adapter guide](adapter-guide.md) |
 
 The whitelist workflow enforces that a requester cannot approve their own

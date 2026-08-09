@@ -58,7 +58,7 @@ UI はこれを用いて操作を隠すか、理由を表示する。これは�
 
 | ケイパビリティ | エンドポイント | 画面を用意していない理由 |
 |---|---|---|
-| `retention.manage` | `GET`/`PUT /api/v1/admin/retention-policies` | 保持期間は管理者がデプロイごとに一度設定するもので、変更は監査される。[保持とパージ](operations/retention.md) を参照 |
+| `retention.manage` | `GET`/`PUT /api/v1/admin/retention-policies` | 保持期間は管理者がデプロイごとに一度設定するもので、変更は監査される。[保持とパージ](compliance/data-retention.md) を参照 |
 | `accounts.manage` | `POST /api/v1/accounts`、`GET /api/v1/accounts/{id}`、`POST`/`GET /api/v1/accounts/{id}/customers` | 口座の紐付けはアナリストではなくアダプター層が取り込み時に確立する。[アダプターガイド](adapter-guide.md) を参照 |
 
 ホワイトリストのワークフローでは、申請者が自身の申請を承認できないことが強制される。これにより、ホワイトリスト判断について、独立した一次申請と二次承認の統制が提供される。
