@@ -520,6 +520,29 @@
       "confirmButton": "判定を確定",
       "cancel": "キャンセル",
       "noHistory": "判定履歴はありません"
+    },
+    "provenance": {
+      "title": "検知の来歴",
+      "scenario": "シナリオ",
+      "ruleVersion": "ルールバージョン",
+      "ruleDigest": "ルールダイジェスト",
+      "evaluationMode": "評価モード",
+      "appliedThreshold": "適用された閾値",
+      "evaluatedAt": "評価時刻",
+      "engineVersion": "エンジンビルド",
+      "configDigests": "検知時点の設定ダイジェスト",
+      "availability": {
+        "available": "記録済み",
+        "restricted": "解決済み",
+        "missing": "参照先を解決できません",
+        "not_captured": "未記録"
+      },
+      "explanation": {
+        "available": "検知時点で有効だった設定がこのアラートとともに記録されています。",
+        "restricted": "ルールバージョンを解決しました。識別子とダイジェストを表示しています。定義はルール画面で参照してください（そこで固有の認可が適用されます）。",
+        "missing": "来歴は記録されていますが、参照しているルールバージョンをもう解決できません。以下に記録された事実はそのまま有効ですが、参照は解決できません。",
+        "not_captured": "このアラートは来歴の記録が始まる前に生成されました。現在の設定は意図的に表示しません。何が発火したかの証跡に見えてしまいますが、そうではないためです。"
+      }
     }
   },
   "audit": {

@@ -166,6 +166,28 @@ export interface Customer {
   edd_stage3_notified_at?: string
 }
 
+export type ProvenanceAvailability = "available" | "restricted" | "missing" | "not_captured"
+
+/**
+ * AlertProvenance records what produced a detection. "not_captured" means the
+ * alert predates provenance capture, which is a statement about the record and
+ * not about the rule: current configuration is never backfilled as history.
+ */
+export interface AlertProvenance {
+  scenario_id: string
+  config_digests?: Record<string, string>
+  engine_version?: string
+  evaluation_mode?: string
+  evaluated_at?: string
+  window_from?: string
+  window_to?: string
+  applied_threshold?: number
+  rule_name?: string
+  rule_version?: number
+  rule_digest?: string
+  availability: ProvenanceAvailability
+}
+
 export interface Alert {
   id: string
   customer_id: string
@@ -185,6 +207,7 @@ export interface Alert {
   due_at?: string
   disposition?: string
   disposition_rationale?: string
+  provenance?: AlertProvenance
   // Set when a whitelist entry or a prior false-positive determination
   // withheld the alert from the default queue. The alert still exists; the
   // reason is what tells an operator why it is not in front of them.

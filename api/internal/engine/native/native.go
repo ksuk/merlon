@@ -679,7 +679,9 @@ func (e *Engine) resolveFactor(name string, f riskFactor, c *domain.Customer, at
 }
 
 func (e *Engine) EvaluateTransactions(ctx context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
-	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "realtime")
+	// Legacy entry point: no request, so no configuration to pin. See the note
+	// on EvaluateTransactionsBatch.
+	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "realtime", provenanceContext{})
 }
 
 func (e *Engine) Evaluate(ctx context.Context, req engine.MonitoringRequest) ([]domain.Alert, error) {
@@ -687,13 +689,21 @@ func (e *Engine) Evaluate(ctx context.Context, req engine.MonitoringRequest) ([]
 	if customerType == "" {
 		customerType = "unspecified"
 	}
+	mode := "realtime"
 	if req.Mode == engine.EvaluationModeBatch {
-		return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "batch")
+		mode = "batch"
 	}
-	return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, "realtime")
+	// Provenance is attached here rather than at each call site because
+	// realtime, batch and recovery monitoring all reach the engine through this
+	// one request; stamping it in the engine is what makes the three produce
+	// identical semantics (ADR-0025).
+	return e.evaluate(ctx, req.CustomerID, customerType, req.RiskTier, req.Transactions, req.ScenarioIDs, mode, provenanceContextFrom(req))
 }
 func (e *Engine) EvaluateTransactionsBatch(ctx context.Context, customerID string, tier domain.RiskTier, txns []domain.Transaction, ids []string) ([]domain.Alert, error) {
-	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "batch")
+	// The legacy entry point carries no request, so there is nothing to pin.
+	// The alert is left without provenance and reported as not_captured, which
+	// is accurate: nobody told this call what configuration was effective.
+	return e.evaluate(ctx, customerID, "unspecified", tier, txns, ids, "batch", provenanceContext{})
 }
 
 // RealtimeHistoryWindow returns the largest window used by any enabled
@@ -736,7 +746,7 @@ func (e *Engine) RealtimeHistoryWindow() (time.Duration, bool) {
 	return longest, true
 }
 
-func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, tier domain.RiskTier, txns []domain.Transaction, ids []string, mode string) ([]domain.Alert, error) {
+func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, tier domain.RiskTier, txns []domain.Transaction, ids []string, mode string, prov provenanceContext) ([]domain.Alert, error) {
 	started := time.Now()
 	defer func() {
 		metrics.EngineEvalDuration.WithLabelValues("EvaluateTransactions", "ok").Observe(time.Since(started).Seconds())
@@ -765,7 +775,7 @@ func (e *Engine) evaluate(ctx context.Context, customerID, customerType string, 
 				return nil, err
 			}
 			now := time.Now().UTC()
-			out = append(out, domain.Alert{CustomerID: customerID, ScenarioID: s.ID, Severity: a.severity, Status: domain.AlertStatusOpen, Score: a.score, Description: a.description, TransactionIDs: a.ids, DetectedAt: now, CreatedAt: now, UpdatedAt: now})
+			out = append(out, domain.Alert{CustomerID: customerID, ScenarioID: s.ID, Severity: a.severity, Status: domain.AlertStatusOpen, Score: a.score, Description: a.description, TransactionIDs: a.ids, DetectedAt: now, CreatedAt: now, UpdatedAt: now, Provenance: prov.forScenario(s, customerType, string(tier), mode, e.digests())})
 		}
 	}
 	return out, nil
@@ -1158,7 +1168,9 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 		// Backtests intentionally evaluate every configured scenario,
 		// irrespective of realtime/batch mode; the mode filter is a serving
 		// concern, not a historical replay concern.
-		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both")
+		// A backtest already pins its own rule snapshot and digests on the job
+		// row (migrations 027/032); per-alert provenance would duplicate it.
+		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both", provenanceContext{})
 		if err != nil {
 			return nil, err
 		}

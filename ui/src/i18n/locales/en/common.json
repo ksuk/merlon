@@ -520,6 +520,29 @@
       "confirmButton": "Confirm decision",
       "cancel": "Cancel",
       "noHistory": "No decision history"
+    },
+    "provenance": {
+      "title": "Detection provenance",
+      "scenario": "Scenario",
+      "ruleVersion": "Rule version",
+      "ruleDigest": "Rule digest",
+      "evaluationMode": "Evaluation mode",
+      "appliedThreshold": "Applied threshold",
+      "evaluatedAt": "Evaluated at",
+      "engineVersion": "Engine build",
+      "configDigests": "Configuration digests at detection",
+      "availability": {
+        "available": "Captured",
+        "restricted": "Resolved",
+        "missing": "Reference unresolved",
+        "not_captured": "Not captured"
+      },
+      "explanation": {
+        "available": "The configuration effective at detection was recorded with this alert.",
+        "restricted": "The rule version was resolved. Its identifier and digest are shown; the definition is read through the rule screen, where its own authorization applies.",
+        "missing": "Provenance was recorded, but the rule version it names can no longer be resolved. The captured facts below still stand; the reference does not.",
+        "not_captured": "This alert was generated before provenance was recorded. Current configuration is deliberately not shown here: it would look like evidence of what fired, and it is not."
+      }
     }
   },
   "audit": {

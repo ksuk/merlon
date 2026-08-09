@@ -462,6 +462,7 @@ func wave2Schemas() map[string]any {
 			"status": map[string]any{"type": "string"}, "score": map[string]any{"type": "number"},
 			"description": map[string]any{"type": "string"}, "transaction_ids": arraySchema(map[string]any{"type": "string"}),
 			"updated_at": map[string]any{"type": "string", "format": "date-time"},
+			"provenance": schemaRef("AlertProvenance"),
 		}),
 		"Customer": objectSchema(map[string]any{
 			"id": map[string]any{"type": "string"}, "external_id": map[string]any{"type": "string"},
@@ -922,6 +923,20 @@ func wave3Schemas() map[string]any {
 // wave4Schemas documents the operator-readiness contracts added in Wave 4.
 func wave4Schemas() map[string]any {
 	return map[string]any{
+		"AlertProvenance": objectSchema(map[string]any{
+			"scenario_id":       map[string]any{"type": "string"},
+			"config_digests":    map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "Digests of every configuration document the producing process had loaded"},
+			"engine_version":    map[string]any{"type": "string"},
+			"evaluation_mode":   map[string]any{"type": "string", "description": "realtime, batch or both; the same scenario can behave differently under each"},
+			"evaluated_at":      map[string]any{"type": "string", "format": "date-time"},
+			"window_from":       map[string]any{"type": "string", "format": "date-time"},
+			"window_to":         map[string]any{"type": "string", "format": "date-time"},
+			"applied_threshold": map[string]any{"type": "number", "description": "The single value that decided this detection for the customer type and risk tier involved. The rule body is never returned."},
+			"rule_name":         map[string]any{"type": "string", "description": "Resolved at read time, not persisted"},
+			"rule_version":      map[string]any{"type": "integer"},
+			"rule_digest":       map[string]any{"type": "string", "description": "Content address of the stored rule version, so a reviewer can confirm the artifact they fetched is the one named"},
+			"availability":      map[string]any{"type": "string", "enum": []string{"available", "restricted", "missing", "not_captured"}, "description": "not_captured means the alert predates provenance capture; current configuration is never backfilled as historical fact"},
+		}, "scenario_id", "availability"),
 		"ComponentStatus": objectSchema(map[string]any{
 			"name":              map[string]any{"type": "string"},
 			"configured":        map[string]any{"type": "boolean", "description": "Whether this deployment wired the component at all; independent of whether it is working"},

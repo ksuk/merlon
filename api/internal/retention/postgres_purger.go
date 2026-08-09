@@ -30,6 +30,21 @@ func NewPostgresPurger(pool *pgxpool.Pool) *PostgresPurger {
 // TestCustomerGuardCoversEveryForeignKey compares this list against the live
 // PostgreSQL catalogue, so adding a foreign key in a migration without
 // handling it here fails the integration suite.
+// ProvenanceReferencedTables lists the tables an alert's provenance record
+// points into. Nothing may purge from them while an alert that names them is
+// still retained: the alert's retention period is the lower bound on the
+// referenced rule version's (ADR-0025).
+//
+// This is a list rather than a foreign key on purpose. The scenario an alert
+// names is not always a stored rule -- the native engine also loads scenarios
+// from the configuration root -- so a constraint would refuse legitimate
+// alerts. TestProvenanceReferencedTablesAreNeverPurged compares this list
+// against what the purge targets actually delete, the same machine
+// verification the customer guard uses.
+var ProvenanceReferencedTables = []string{
+	"rule_definitions",
+}
+
 var CustomerReferencingTables = []string{
 	"account_customers",
 	"alerts",

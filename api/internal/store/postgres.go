@@ -717,7 +717,7 @@ func NewPgAlertRepo(pool DBTX) *PgAlertRepo {
 // alertColumns includes suppressed/suppression_reason (WL-004, additive
 // columns from migrations/010_whitelist.sql) and aggregation_window_start/
 // batch_run_id/batch_reviewed_at (WS-5 Task4, migrations/012_alert_dedup.sql).
-const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, batch_reviewed_at, assigned_to, assigned_team, due_at, disposition, disposition_rationale"
+const alertColumns = "id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, resolved_at, resolved_by, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, batch_reviewed_at, assigned_to, assigned_team, due_at, disposition, disposition_rationale, provenance_captured, provenance_config_digests, provenance_engine_version, provenance_evaluation_mode, provenance_evaluated_at, provenance_window_from, provenance_window_to, provenance_applied_threshold"
 
 const alertRiskRankSQL = `CASE severity::text
 	WHEN 'critical' THEN 4
@@ -735,6 +735,11 @@ func scanAlertRow(row interface {
 	var batchRunID *string
 	var resolvedBy *string
 	var assignedTo, assignedTeam, disposition, dispositionRationale *string
+	var provenanceCaptured bool
+	var provenanceDigests map[string]string
+	var provenanceEngineVersion, provenanceMode *string
+	var provenanceEvaluatedAt, provenanceWindowFrom, provenanceWindowTo *time.Time
+	var provenanceThreshold *float64
 	if err := row.Scan(
 		&a.ID, &a.CustomerID, &a.ScenarioID,
 		&a.Severity, &a.Status, &score, &description,
@@ -744,8 +749,30 @@ func scanAlertRow(row interface {
 		&a.Suppressed, &suppressionReason,
 		&a.AggregationWindowStart, &batchRunID, &a.BatchReviewedAt,
 		&assignedTo, &assignedTeam, &a.DueAt, &disposition, &dispositionRationale,
+		&provenanceCaptured, &provenanceDigests, &provenanceEngineVersion, &provenanceMode,
+		&provenanceEvaluatedAt, &provenanceWindowFrom, &provenanceWindowTo, &provenanceThreshold,
 	); err != nil {
 		return err
+	}
+	// An alert written before migration 057 has provenance_captured false. It
+	// stays nil here so the API can say "not captured" rather than presenting an
+	// empty record as if the detection had been evaluated with no configuration.
+	if provenanceCaptured {
+		a.Provenance = &domain.AlertProvenance{
+			ScenarioID:       a.ScenarioID,
+			ConfigDigests:    provenanceDigests,
+			EvaluatedAt:      provenanceEvaluatedAt,
+			WindowFrom:       provenanceWindowFrom,
+			WindowTo:         provenanceWindowTo,
+			AppliedThreshold: provenanceThreshold,
+			Availability:     domain.ProvenanceAvailable,
+		}
+		if provenanceEngineVersion != nil {
+			a.Provenance.EngineVersion = *provenanceEngineVersion
+		}
+		if provenanceMode != nil {
+			a.Provenance.EvaluationMode = *provenanceMode
+		}
 	}
 	if score != nil {
 		a.Score = *score
@@ -997,9 +1024,10 @@ func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 	for i := range a.TransactionIDs {
 		a.TransactionIDs[i] = domain.CanonicalUUID(a.TransactionIDs[i])
 	}
+	prov := alertProvenanceInsertArgs(a.Provenance)
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, assigned_to, assigned_team, due_at, disposition, disposition_rationale)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, assigned_to, assigned_team, due_at, disposition, disposition_rationale, provenance_captured, provenance_config_digests, provenance_engine_version, provenance_evaluation_mode, provenance_evaluated_at, provenance_window_from, provenance_window_to, provenance_applied_threshold)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
 		a.ID, a.CustomerID, a.ScenarioID,
 		string(a.Severity), string(a.Status), a.Score, a.Description,
 		a.TransactionIDs,
@@ -1007,8 +1035,39 @@ func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 		a.Suppressed, nullableString(a.SuppressionReason),
 		a.AggregationWindowStart, nullableString(a.BatchRunID),
 		nullableString(a.AssignedTo), nullableString(a.AssignedTeam), a.DueAt, nullableString(a.Disposition), a.DispositionRationale,
+		prov.captured, prov.digests, prov.engineVersion, prov.mode, prov.evaluatedAt, prov.windowFrom, prov.windowTo, prov.threshold,
 	)
 	return err
+}
+
+// alertProvenanceArgs flattens the provenance record into insert parameters.
+// Every field is nil when nothing was captured, so the row records an absence
+// rather than a set of empty values that would read as a real evaluation.
+type alertProvenanceArgs struct {
+	captured      bool
+	digests       map[string]string
+	engineVersion *string
+	mode          *string
+	evaluatedAt   *time.Time
+	windowFrom    *time.Time
+	windowTo      *time.Time
+	threshold     *float64
+}
+
+func alertProvenanceInsertArgs(p *domain.AlertProvenance) alertProvenanceArgs {
+	if p == nil {
+		return alertProvenanceArgs{}
+	}
+	return alertProvenanceArgs{
+		captured:      true,
+		digests:       p.ConfigDigests,
+		engineVersion: nullableString(p.EngineVersion),
+		mode:          nullableString(p.EvaluationMode),
+		evaluatedAt:   p.EvaluatedAt,
+		windowFrom:    p.WindowFrom,
+		windowTo:      p.WindowTo,
+		threshold:     p.AppliedThreshold,
+	}
 }
 
 // CreateIfNotDuplicate enforces the (customer_id, scenario_id,
