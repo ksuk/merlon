@@ -118,6 +118,41 @@
       "degraded": "Degraded",
       "readyDescription": "Every source the readiness policy requires is usable.",
       "degradedSources": "Required sources not ready: {{sources}}"
+    },
+    "workload": {
+      "title": "Workload",
+      "alerts": "Alert queue",
+      "cases": "Case queue",
+      "open": "Open",
+      "mine": "Assigned to me",
+      "unassigned": "Unassigned",
+      "noIdentity": "No signed-in operator to count against",
+      "ageTitle": "How long open",
+      "ageBucket": {
+        "under_24h": "Under 24h",
+        "1_to_3d": "1–3 days",
+        "3_to_7d": "3–7 days",
+        "over_7d": "Over 7 days"
+      },
+      "oldest": "Oldest open item: {{age}}",
+      "oldestNone": "Nothing is open.",
+      "overdue": "Overdue",
+      "dueSoon": "Due soon",
+      "slaNotConfigured": "No SLA policy is configured, so no work has a deadline. This is not the same as nothing being overdue.",
+      "scope": "Scope: {{scope}}",
+      "scopeAll": "Scope: all permitted work",
+      "evaluatedAt": "As of {{time}}",
+      "unavailable": "Workload figures are unavailable in this deployment."
+    },
+    "exceptions": {
+      "title": "Operational exceptions",
+      "none": "No failed or degraded operational work.",
+      "open": "Open queue",
+      "kind": {
+        "screening_sources_degraded": "Screening sources not ready",
+        "pending_evaluations_failed": "Failed evaluations awaiting retry",
+        "pending_evaluations_exhausted": "Evaluations that will not retry on their own"
+      }
     }
   },
   "customers": {

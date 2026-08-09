@@ -1,4 +1,5 @@
 import { StatCard } from "@/components/stat-card"
+import { DashboardExceptions, DashboardWorkloadPanels } from "@/components/dashboard-workload"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
@@ -99,6 +100,12 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">{t("dashboard.title")}</h1>
+
+      {/* Workload comes before the totals: an operator opens this page to find
+          out what to do, not how many records exist. */}
+      <DashboardWorkloadPanels workload={stats.workload} />
+
+      <DashboardExceptions exceptions={stats.exceptions} />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard title={t("dashboard.stats.customers")} value={stats.total_customers} icon={Users} />

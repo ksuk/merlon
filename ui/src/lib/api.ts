@@ -122,6 +122,57 @@ export interface DashboardStats {
   // customers are being screened against an incomplete picture.
   screening_ready?: boolean
   screening_degraded_sources?: string[]
+  workload?: DashboardWorkload
+  // An empty array means nothing is failing; an absent one means nothing was
+  // checked. The two are rendered differently.
+  exceptions?: DashboardException[]
+}
+
+export interface AgeBucket {
+  label: string
+  from_hours: number
+  /** 0 on the final open-ended bucket. */
+  to_hours?: number
+  count: number
+}
+
+export interface WorkloadCounts {
+  open: number
+  mine: number
+  unassigned: number
+  /** Absent on an empty queue: an age of zero would read as "just arrived". */
+  oldest_open_at?: string
+  oldest_age_seconds?: number
+  age_buckets: AgeBucket[]
+  /**
+   * Absent unless an SLA policy is configured. Zero would claim nothing is
+   * overdue, which an unconfigured deployment cannot know (ADR-0024, DR-07).
+   */
+  overdue?: number
+  due_soon?: number
+}
+
+export interface DashboardSLA {
+  state: "not_configured" | "running" | "breached" | "met"
+  policy_version: string
+  due_soon_within_hours?: number
+}
+
+export interface DashboardWorkload {
+  /** Whose work "mine" counts; empty when the deployment has no identity. */
+  scope: string
+  alerts: WorkloadCounts
+  cases: WorkloadCounts
+  sla: DashboardSLA
+  evaluated_at: string
+}
+
+export interface DashboardException {
+  kind: string
+  count: number
+  /** The pre-filtered queue that explains the count. */
+  href: string
+  state: "failed" | "degraded" | "unknown"
 }
 
 export type RiskTier = "low" | "medium" | "high"

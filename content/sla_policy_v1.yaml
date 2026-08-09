@@ -1,0 +1,30 @@
+# 内部サービス目標（SLA）ポリシー。
+#
+# 出荷時はルールを 1 件も持たない。期限は各金融機関が自ら決めるものであり、
+# Merlon が既定値を作れば「設定した覚えのない期限で超過と表示される」ことになる。
+# これは未設定の依存を healthy と表示するのと同じ種類の誤りである（ADR-0024, DR-07）。
+#
+# ルールを書かない限り、ダッシュボードとアラート/ケースは期限系を
+# not_configured と表示する。0 件でも healthy でもない。
+#
+# 第一版は単純経過時間（24 時間カレンダー）で測る。営業日カレンダーと
+# 一時停止は持たない。必要になった組織はこの文書を書き換える。
+#
+# 書き方の例（コメントのまま出荷する。有効化するにはコメントを外す）:
+#
+# rules:
+#   # 種別ごとの包括的な期限。severity / priority を書かなければその種別の全件に適用される。
+#   - kind: alert
+#     within_hours: 72
+#     description: 全アラートの一次対応期限
+#   # より具体的なルールが包括的なルールに優先する。
+#   - kind: alert
+#     severity: critical
+#     within_hours: 4
+#   - kind: case
+#     priority: high
+#     within_hours: 120
+
+schema_version: sla_policy_v1
+policy_version: "2026-08-08-unset"
+rules: []

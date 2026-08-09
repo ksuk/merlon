@@ -27,6 +27,82 @@ type DashboardStats struct {
 	// operator to infer it from a row of freshness numbers.
 	ScreeningReady           bool     `json:"screening_ready"`
 	ScreeningDegradedSources []string `json:"screening_degraded_sources,omitempty"`
+
+	// Workload answers the start-of-day questions the page could not: what is
+	// assigned to me, what is unassigned, what is oldest, what is overdue.
+	// Nil when the caller has no identity to scope "mine" against, which is
+	// itself worth showing rather than reporting zero.
+	Workload *DashboardWorkload `json:"workload,omitempty"`
+
+	// Exceptions summarises operational work that failed or degraded. An empty
+	// list means nothing is failing; a nil one means nothing was checked.
+	Exceptions []DashboardException `json:"exceptions"`
+}
+
+// DashboardWorkload is the operator-facing queue summary. Every count states
+// the scope it was taken over, because "12 alerts" means nothing without
+// knowing whose.
+type DashboardWorkload struct {
+	// Scope names whose work these figures cover: the operator identity used
+	// for "mine", or empty when the deployment has no identity to use.
+	Scope  string         `json:"scope"`
+	Alerts WorkloadCounts `json:"alerts"`
+	Cases  WorkloadCounts `json:"cases"`
+	// SLA carries the policy that produced the due figures, so a reader can
+	// tell an unconfigured deployment from one meeting every deadline.
+	SLA DashboardSLA `json:"sla"`
+	// EvaluatedAt is when these counts were taken.
+	EvaluatedAt time.Time `json:"evaluated_at"`
+}
+
+// WorkloadCounts is one queue's ownership and age picture.
+type WorkloadCounts struct {
+	Open       int `json:"open"`
+	Mine       int `json:"mine"`
+	Unassigned int `json:"unassigned"`
+	// OldestOpenAt is nil on an empty queue. An age of zero would read as
+	// "something arrived just now".
+	OldestOpenAt     *time.Time `json:"oldest_open_at,omitempty"`
+	OldestAgeSeconds *int64     `json:"oldest_age_seconds,omitempty"`
+	// AgeBuckets counts open work by how long it has been open. The bucket
+	// boundaries are reported alongside so the UI never restates them.
+	AgeBuckets []AgeBucket `json:"age_buckets"`
+	// Overdue is only meaningful when an SLA policy is configured; it is nil
+	// otherwise, which is different from zero.
+	Overdue *int `json:"overdue,omitempty"`
+	DueSoon *int `json:"due_soon,omitempty"`
+}
+
+// AgeBucket is one documented age band and its count.
+type AgeBucket struct {
+	Label     string `json:"label"`
+	FromHours int    `json:"from_hours"`
+	// ToHours is 0 for the final open-ended bucket.
+	ToHours int `json:"to_hours,omitempty"`
+	Count   int `json:"count"`
+}
+
+// DashboardSLA states whether deadlines exist at all before any count is read.
+type DashboardSLA struct {
+	// State is not_configured when this deployment declared no rules. The UI
+	// must render that distinctly: it is neither zero nor healthy
+	// (ADR-0024, DR-07).
+	State         string `json:"state"`
+	PolicyVersion string `json:"policy_version"`
+	// DueSoonWithinHours documents the window "due soon" was taken over.
+	DueSoonWithinHours int `json:"due_soon_within_hours,omitempty"`
+}
+
+// DashboardException is one operational failure an operator has to act on.
+type DashboardException struct {
+	// Kind is a stable machine value the UI localizes.
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+	// Href is the pre-filtered queue that explains the count. A number an
+	// operator cannot open is a number they cannot act on.
+	Href string `json:"href"`
+	// State distinguishes a failure from a degradation from an unknown.
+	State string `json:"state"`
 }
 
 // ScreeningListFreshnessStat is one sanctions/PEP list's dashboard

@@ -118,6 +118,41 @@
       "degraded": "不完全",
       "readyDescription": "必須ソースはすべて利用可能です。",
       "degradedSources": "利用できない必須ソース: {{sources}}"
+    },
+    "workload": {
+      "title": "ワークロード",
+      "alerts": "アラートキュー",
+      "cases": "ケースキュー",
+      "open": "未処理",
+      "mine": "自分の担当",
+      "unassigned": "未割当",
+      "noIdentity": "サインイン中の担当者がいないため集計できません",
+      "ageTitle": "滞留時間",
+      "ageBucket": {
+        "under_24h": "24時間未満",
+        "1_to_3d": "1〜3日",
+        "3_to_7d": "3〜7日",
+        "over_7d": "7日超"
+      },
+      "oldest": "最古の未処理: {{age}}",
+      "oldestNone": "未処理の件はありません。",
+      "overdue": "期限超過",
+      "dueSoon": "期限間近",
+      "slaNotConfigured": "SLA ポリシーが未設定のため、期限を持つ作業はありません。これは「超過ゼロ」とは異なります。",
+      "scope": "対象: {{scope}}",
+      "scopeAll": "対象: 権限のある全作業",
+      "evaluatedAt": "{{time}} 時点",
+      "unavailable": "このデプロイではワークロード集計を利用できません。"
+    },
+    "exceptions": {
+      "title": "運用上の例外",
+      "none": "失敗・劣化している運用作業はありません。",
+      "open": "キューを開く",
+      "kind": {
+        "screening_sources_degraded": "スクリーニングソースが未準備",
+        "pending_evaluations_failed": "再試行待ちの失敗した評価",
+        "pending_evaluations_exhausted": "自動では再試行されない評価"
+      }
     }
   },
   "customers": {

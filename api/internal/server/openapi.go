@@ -809,7 +809,7 @@ func wave3Schemas() map[string]any {
 		"ScreeningResultHistory": objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "screening_result_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "screening_result_id", "from_status", "to_status", "rationale", "actor", "version", "created_at"),
 		"ScreeningSourceStatus":  objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "configured": map[string]any{"type": "boolean"}, "operational_state": map[string]any{"type": "string", "enum": []string{"never_imported", "ready", "stale", "unreadable", "failed", "unavailable"}}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_failure_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_success_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "age_seconds": map[string]any{"type": "integer", "nullable": true}, "freshness_threshold_seconds": map[string]any{"type": "integer"}, "consecutive_failures": map[string]any{"type": "integer"}, "diagnostic": map[string]any{"type": "string"}}, "list_id", "list_type", "configured", "operational_state", "freshness_threshold_seconds", "consecutive_failures"),
 		"PolicyDescriptor": objectSchema(map[string]any{
-			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness"}},
+			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness", "sla"}},
 			"schema_version": map[string]any{"type": "string"},
 			"policy_version": map[string]any{"type": "string"},
 			"digest":         map[string]any{"type": "string", "description": "SHA-256 of the policy document, pinned onto the decisions it produced"},
@@ -937,6 +937,56 @@ func wave4Schemas() map[string]any {
 			"rule_digest":       map[string]any{"type": "string", "description": "Content address of the stored rule version, so a reviewer can confirm the artifact they fetched is the one named"},
 			"availability":      map[string]any{"type": "string", "enum": []string{"available", "restricted", "missing", "not_captured"}, "description": "not_captured means the alert predates provenance capture; current configuration is never backfilled as historical fact"},
 		}, "scenario_id", "availability"),
+		"AgeBucket": objectSchema(map[string]any{
+			"label":      map[string]any{"type": "string"},
+			"from_hours": map[string]any{"type": "integer"},
+			"to_hours":   map[string]any{"type": "integer", "description": "0 on the final open-ended bucket"},
+			"count":      map[string]any{"type": "integer"},
+		}, "label", "from_hours", "count"),
+		"WorkloadCounts": objectSchema(map[string]any{
+			"open":               map[string]any{"type": "integer"},
+			"mine":               map[string]any{"type": "integer"},
+			"unassigned":         map[string]any{"type": "integer"},
+			"oldest_open_at":     map[string]any{"type": "string", "format": "date-time", "description": "Absent on an empty queue; an age of zero would read as newly arrived"},
+			"oldest_age_seconds": map[string]any{"type": "integer"},
+			"age_buckets":        arraySchema(schemaRef("AgeBucket")),
+			"overdue":            map[string]any{"type": "integer", "description": "Absent unless an SLA policy is configured. Zero would claim nothing is overdue, which an unconfigured deployment cannot know."},
+			"due_soon":           map[string]any{"type": "integer"},
+		}, "open", "mine", "unassigned", "age_buckets"),
+		"DashboardSLA": objectSchema(map[string]any{
+			"state":                 map[string]any{"type": "string", "enum": []string{"not_configured", "running", "breached", "met"}},
+			"policy_version":        map[string]any{"type": "string"},
+			"due_soon_within_hours": map[string]any{"type": "integer"},
+		}, "state", "policy_version"),
+		"DashboardWorkload": objectSchema(map[string]any{
+			"scope":        map[string]any{"type": "string", "description": "The operator identity 'mine' was taken against; empty when the deployment has no identity"},
+			"alerts":       schemaRef("WorkloadCounts"),
+			"cases":        schemaRef("WorkloadCounts"),
+			"sla":          schemaRef("DashboardSLA"),
+			"evaluated_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "scope", "alerts", "cases", "sla", "evaluated_at"),
+		"DashboardException": objectSchema(map[string]any{
+			"kind":  map[string]any{"type": "string"},
+			"count": map[string]any{"type": "integer"},
+			"href":  map[string]any{"type": "string", "description": "Pre-filtered queue that explains the count"},
+			"state": map[string]any{"type": "string", "enum": []string{"failed", "degraded", "unknown"}},
+		}, "kind", "count", "href", "state"),
+		"DashboardStats": objectSchema(map[string]any{
+			"customers_by_risk_tier":           map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"total_customers":                  map[string]any{"type": "integer"},
+			"alerts_by_status":                 map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"alerts_by_severity":               map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"total_alerts":                     map[string]any{"type": "integer"},
+			"cases_by_status":                  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"total_cases":                      map[string]any{"type": "integer"},
+			"recent_transactions":              map[string]any{"type": "integer"},
+			"recent_transactions_window_hours": map[string]any{"type": "integer"},
+			"screening_ready":                  map[string]any{"type": "boolean"},
+			"screening_degraded_sources":       arraySchema(map[string]any{"type": "string"}),
+			"screening_list_freshness":         arraySchema(map[string]any{"type": "object", "additionalProperties": true}),
+			"workload":                         schemaRef("DashboardWorkload"),
+			"exceptions":                       arraySchema(schemaRef("DashboardException")),
+		}, "total_customers", "total_alerts", "total_cases", "recent_transactions", "recent_transactions_window_hours", "exceptions"),
 		"ComponentStatus": objectSchema(map[string]any{
 			"name":              map[string]any{"type": "string"},
 			"configured":        map[string]any{"type": "boolean", "description": "Whether this deployment wired the component at all; independent of whether it is working"},
@@ -992,6 +1042,10 @@ func wave4Schemas() map[string]any {
 			"data":        arraySchema(schemaRef("CapabilityDescriptor")),
 		}, "auth_mode", "permissions", "checked_at", "data"),
 	}
+}
+
+func pathDashboard() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Dashboard statistics, workload and exceptions", nil, nil, "200", "Dashboard statistics", schemaRef("DashboardStats"), "401", "500")}
 }
 
 func pathSystemStatus() map[string]any {

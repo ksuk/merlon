@@ -28,6 +28,9 @@ func TestShippedContentPoliciesLoad(t *testing.T) {
 	if _, err := LoadScreeningReadiness(contentPath("screening_readiness_v1.yaml")); err != nil {
 		t.Fatalf("screening_readiness_v1.yaml: %v", err)
 	}
+	if _, err := LoadSLA(contentPath("sla_policy_v1.yaml")); err != nil {
+		t.Fatalf("sla_policy_v1.yaml: %v", err)
+	}
 }
 
 // The shipped YAML and the in-code defaults must be the same policy. If they
@@ -63,6 +66,13 @@ func TestShippedContentMatchesInCodeDefaults(t *testing.T) {
 			name:     "screening_readiness_v1.yaml",
 			fromFile: func() (any, error) { return LoadScreeningReadiness(contentPath("screening_readiness_v1.yaml")) },
 			fallback: DefaultScreeningReadiness(),
+		},
+		{
+			// The shipped SLA policy must carry no rules, matching the in-code
+			// default. A shipped deadline would be a deadline nobody chose.
+			name:     "sla_policy_v1.yaml",
+			fromFile: func() (any, error) { return LoadSLA(contentPath("sla_policy_v1.yaml")) },
+			fallback: DefaultSLAPolicy(),
 		},
 	}
 	for _, test := range tests {
