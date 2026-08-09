@@ -5,10 +5,34 @@
     "switcherLabel": "言語"
   },
   "layout": {
-    "demoDataBadge": "合成デモデータ"
+    "demoDataBadge": "合成デモデータ",
+    "session": {
+      "logout": "ログアウト",
+      "loggingOut": "ログアウト中…",
+      "logoutFailed": "ログアウトの完了を確認できませんでした。サインイン画面へ戻りました。",
+      "role": {
+        "admin": "管理者",
+        "analyst": "アナリスト",
+        "viewer": "閲覧者"
+      },
+      "userState": {
+        "loading": "セッションを読み込み中…",
+        "identified": "サインイン済み",
+        "not_configured": "ユーザー管理が未設定です",
+        "unauthenticated": "ユーザーセッションなし",
+        "failed": "セッションの取得に失敗しました"
+      },
+      "authMode": {
+        "disabled": "認証無効",
+        "apiKeyOnly": "APIキー認証",
+        "hint": "このデプロイが呼び出し元をどう認証するかを示します。"
+      }
+    }
   },
   "list": {
-    "allLoaded": "すべてのレコードを読み込みました"
+    "allLoaded": "すべてのレコードを読み込みました",
+    "previous": "前へ",
+    "next": "次へ"
   },
   "nav": {
     "dashboard": "ダッシュボード",
@@ -17,6 +41,8 @@
     "cases": "ケース",
     "transactions": "取引",
     "batch": "一括処理",
+    "screeningQueue": "スクリーニング確認キュー",
+    "pendingEvaluations": "保留評価キュー",
     "reports": "STRレポート",
     "backtest": "バックテスト",
     "webhooks": "Webhook",
@@ -26,7 +52,8 @@
     "config": "設定検証",
     "audit": "監査ログ",
     "system": "システム",
-    "tagline": "AML/CFT Compliance Platform"
+    "tagline": "AML/CFT Compliance Platform",
+    "users": "ユーザー"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -75,7 +102,57 @@
     },
     "freshness": {
       "upToDate": "最新",
-      "staleDays": "{{days}}日経過"
+      "staleDays": "{{days}}日経過",
+      "state": {
+        "never_imported": "未取込",
+        "ready": "稼働中",
+        "stale": "古いデータ",
+        "unreadable": "読取不可",
+        "failed": "取込失敗",
+        "unavailable": "状態取得不可"
+      }
+    },
+    "screeningReadiness": {
+      "title": "照合体制の状態",
+      "ready": "正常",
+      "degraded": "不完全",
+      "readyDescription": "必須ソースはすべて利用可能です。",
+      "degradedSources": "利用できない必須ソース: {{sources}}"
+    },
+    "workload": {
+      "title": "ワークロード",
+      "alerts": "アラートキュー",
+      "cases": "ケースキュー",
+      "open": "未処理",
+      "mine": "自分の担当",
+      "unassigned": "未割当",
+      "noIdentity": "サインイン中の担当者がいないため集計できません",
+      "ageTitle": "滞留時間",
+      "ageBucket": {
+        "under_24h": "24時間未満",
+        "1_to_3d": "1〜3日",
+        "3_to_7d": "3〜7日",
+        "over_7d": "7日超"
+      },
+      "oldest": "最古の未処理: {{age}}",
+      "oldestNone": "未処理の件はありません。",
+      "overdue": "期限超過",
+      "dueSoon": "期限間近",
+      "slaNotConfigured": "SLA ポリシーが未設定のため、期限を持つ作業はありません。これは「超過ゼロ」とは異なります。",
+      "scope": "対象: {{scope}}",
+      "scopeAll": "対象: 権限のある全作業",
+      "evaluatedAt": "{{time}} 時点",
+      "unavailable": "このデプロイではワークロード集計を利用できません。"
+    },
+    "exceptions": {
+      "title": "運用上の例外",
+      "none": "失敗・劣化している運用作業はありません。",
+      "open": "キューを開く",
+      "kind": {
+        "screening_sources_degraded": "スクリーニングソースが未準備",
+        "pending_evaluations_failed": "再試行待ちの失敗した評価",
+        "pending_evaluations_exhausted": "自動では再試行されない評価"
+      }
     }
   },
   "customers": {
@@ -88,7 +165,15 @@
       "externalId": "外部ID",
       "type": "種別",
       "countryCode": "国コード",
-      "submit": "作成"
+      "name": "氏名・名称",
+      "nameJa": "日本語氏名・名称",
+      "nameKana": "カナ",
+      "address": "住所",
+      "addressPlaceholder": "登録住所",
+      "products": "商品（カンマ区切り）",
+      "submit": "作成",
+      "kycPolicyVersion": "本人特定事項は kyc_required_fields {{version}} に基づきます",
+      "kycPolicyLoading": "本人特定事項の要件を読み込み中"
     },
     "search": {
       "placeholder": "ID・名前・国コードで検索..."
@@ -109,19 +194,48 @@
     "type": {
       "individual": "個人",
       "corporateDomestic": "国内法人",
-      "corporateForeign": "海外法人"
+      "corporateForeign": "海外法人",
+      "trust": "信託",
+      "partnership": "パートナーシップ",
+      "npo": "NPO",
+      "government": "政府機関",
+      "foreignLegalArrangement": "外国法上の法的取極め"
+    },
+    "status": {
+      "active": "有効",
+      "dormant": "休眠",
+      "frozen": "凍結",
+      "closed": "終了"
     },
     "table": {
       "header": {
         "externalId": "外部ID",
+        "name": "氏名・名称",
         "type": "種別",
         "country": "国",
+        "status": "ライフサイクル",
         "riskScore": "リスクスコア",
         "riskTier": "リスクティア",
         "lastScored": "最終スコアリング"
       },
       "unscored": "未スコア",
       "empty": "顧客データがありません"
+    },
+    "identityField": {
+      "requiredHint": "この顧客タイプでは必須",
+      "name": "氏名・名称",
+      "name_ja": "日本語名",
+      "name_kana": "カナ",
+      "address": "住所・所在地",
+      "date_of_birth": "生年月日",
+      "occupation": "職業",
+      "nationality": "国籍",
+      "corporate_number": "法人番号",
+      "representative_name": "代表者名",
+      "jurisdiction": "設立準拠法域",
+      "industry": "業種",
+      "beneficial_owners": "実質的支配者",
+      "trust_parties": "信託関係人"
     }
   },
   "casePriority": {
@@ -137,13 +251,42 @@
     "escalated": "エスカレーション",
     "closed": "完了",
     "reopened": "再オープン",
-    "str_filed": "STR対象"
+    "str_filed": "STR届出済み",
+    "str_candidate": "STR対象"
   },
   "cases": {
     "title": "ケース一覧",
     "count": "{{count}} 件",
     "createButton": "新規作成",
     "error": "ケースデータの取得に失敗しました",
+    "queue": {
+      "title": "担当キュー",
+      "status": "ステータス",
+      "allStatuses": "対応中すべて",
+      "priority": "優先度",
+      "allPriorities": "優先度すべて",
+      "assignee": "担当者",
+      "myWork": "自分の担当",
+      "team": "チーム",
+      "search": "検索",
+      "disposition": "処分",
+      "strCandidate": "STR候補",
+      "allCandidates": "STR候補すべて",
+      "candidatesOnly": "STR候補のみ",
+      "nonCandidates": "STR候補以外",
+      "unassigned": "未割当",
+      "overdue": "期限超過",
+      "ageValue": "{{days}}日",
+      "maxAge": "最長経過日数",
+      "dueAt": "期限",
+      "sla": "SLA",
+      "slaUnassigned": "期限未設定",
+      "slaOverdue": "期限超過",
+      "slaOnTrack": "期限内",
+      "updatedAt": "最終更新",
+      "age": "経過時間",
+      "page": "ページ"
+    },
     "form": {
       "title": "ケース作成",
       "customerId": "顧客ID",
@@ -172,13 +315,25 @@
     "error": "ケースデータの取得に失敗しました",
     "conflict": "別のセッションでケースが更新されました。現在の内容を確認してから再試行してください。",
     "reload": "現在のケースを再読み込み",
+    "retry": "再試行",
+    "loading": "読み込み中…",
     "title": "ケース詳細",
     "info": {
       "title": "ケース情報",
       "customerId": "顧客ID",
       "assignedTo": "担当者",
+      "assignedTeam": "チーム",
       "createdAt": "作成日時",
-      "closedAt": "クローズ日時"
+      "closedAt": "クローズ日時",
+      "dueAt": "期限",
+      "disposition": "処分",
+      "rationale": "根拠",
+      "strReport": "STRレポート",
+      "strSubmittedAt": "提出日時",
+      "filingChannel": "届出経路",
+      "filingDestination": "届出先",
+      "externalReference": "外部参照番号",
+      "saveAssignment": "キュー項目を保存"
     },
     "summary": {
       "title": "概要",
@@ -190,6 +345,12 @@
       "escalate": "エスカレーション",
       "close": "クローズ",
       "fileStr": "STR対象として届出",
+      "markCandidate": "STR対象に指定",
+      "closeRationale": "クローズ理由",
+      "closeRationaleRequired": "クローズ理由を入力してください。",
+      "confirmClose": "ケースクローズの確認",
+      "confirmCloseText": "{{outcome}}としてクローズしますか？判定と根拠は調査ファイルに保持されます。",
+      "confirm": "確定",
       "rollback": "差し戻し（調査中に戻す）",
       "reinvestigate": "調査再開"
     },
@@ -205,12 +366,77 @@
       "title": "関連ケース",
       "empty": "関連ケースはありません",
       "auto": "自動抽出（同一顧客）",
-      "manual": "手動リンク"
+      "manual": "手動リンク",
+      "add": "関連ケースを追加",
+      "caseId": "ケースID",
+      "search": "関連ケースを検索",
+      "results": "リンク可能なアクティブケース",
+      "directedNote": "手動リンクはこのケースから相手ケースへの一方向リンクです。自動表示は同一顧客の履歴です。",
+      "type": "関連種別",
+      "rationale": "リンク理由",
+      "submit": "リンクを追加",
+      "cancel": "キャンセル",
+      "remove": "リンクを削除",
+      "correct": "リンクを訂正",
+      "correctionReason": "訂正理由",
+      "correctionRequired": "訂正理由を入力してください。",
+      "saveCorrection": "訂正を保存",
+      "removeReason": "削除理由",
+      "removePrompt": "この関連付けを削除する理由",
+      "removeTitle": "関連付けの削除を確認",
+      "removeConfirm": "関連付けを削除",
+      "removeReasonRequired": "削除理由を入力してください。",
+      "typeLabel": "種別",
+      "rationaleLabel": "理由",
+      "createdByAt": "作成者: {{actor}} / 作成日時: {{at}}",
+      "error": "関連ケースを更新できませんでした",
+      "more": "リンク可能なケースが200件を超えています。検索条件を絞るか、ケースIDを直接入力してください。"
     },
     "notes": {
       "title": "ノート",
       "empty": "ノートがありません",
       "placeholder": "ノートを追加..."
+    },
+    "filing": {
+      "title": "STR届出",
+      "report": "提出済みSTRレポート",
+      "reportPlaceholder": "レポートIDを選択または入力",
+      "channel": "届出経路",
+      "destination": "届出先",
+      "externalReference": "外部届出番号",
+      "submit": "届出を確定",
+      "cancel": "キャンセル",
+      "required": "提出済みレポートと届出メタデータをすべて入力してください。",
+      "loadError": "提出済みSTRレポートを読み込めませんでした",
+      "more": "提出済みレポートが200件を超えています。一覧にない場合はレポートIDを直接入力してください。"
+    },
+    "caseFile": {
+      "title": "調査ファイル",
+      "export": "ケースファイルを出力",
+      "exportError": "ケースファイルを出力できませんでした。再試行してください。",
+      "timeline": "タイムライン",
+      "timelineEmpty": "調査イベントはありません",
+      "evidence": "証跡",
+      "evidenceEmpty": "証跡はありません",
+      "evidenceDescription": "説明",
+      "evidenceSource": "出典",
+      "evidenceType": "種別",
+      "evidenceCollector": "収集者",
+      "evidenceHash": "完全性ハッシュ（任意）",
+      "evidenceAdd": "証跡を追加",
+      "evidenceCorrect": "証跡を訂正",
+      "evidenceCorrectionReason": "訂正理由",
+      "evidenceCorrectionRequired": "訂正理由を入力してください。",
+      "evidenceCorrectionCancel": "訂正をキャンセル",
+      "checklist": "チェックリスト",
+      "checklistEmpty": "チェック項目はありません",
+      "workItems": "作業項目",
+      "workItemsEmpty": "作業項目はありません",
+      "workTitle": "作業項目名",
+      "workAdd": "作業項目を追加",
+      "eventReason": "理由",
+      "changeDetails": "変更内容を表示",
+      "workStatus": "作業項目の状態"
     },
     "edd": {
       "stage3": "ステージ3: 取引謝絶推奨済み",
@@ -230,9 +456,33 @@
     "investigating": "調査中",
     "escalated": "エスカレーション",
     "closed_true_positive": "完了(真陽性)",
-    "closed_false_positive": "完了(偽陽性)"
+    "closed_false_positive": "完了(偽陽性)",
+    "suppressed": "抑制済み"
   },
   "alerts": {
+    "queue": {
+      "title": "担当キュー",
+      "status": "ステータス",
+      "allStatuses": "対応中すべて",
+      "severity": "深刻度",
+      "scenario": "シナリオ",
+      "assignee": "担当者",
+      "myWork": "自分の担当",
+      "team": "チーム",
+      "search": "検索",
+      "unassigned": "未割当",
+      "overdue": "期限超過",
+      "ageValue": "{{days}}日",
+      "maxAge": "最長経過日数",
+      "dueAt": "期限",
+      "sla": "SLA",
+      "slaUnassigned": "期限未設定",
+      "slaOverdue": "期限超過",
+      "slaOnTrack": "期限内",
+      "updatedAt": "最終更新",
+      "age": "経過時間",
+      "page": "ページ"
+    },
     "title": "アラート一覧",
     "count": "{{count}} 件",
     "error": "アラートデータの取得に失敗しました",
@@ -255,10 +505,16 @@
         "scenario": "シナリオ",
         "score": "スコア",
         "description": "説明",
-        "detectedAt": "検出日時"
+        "detectedAt": "検出日時",
+        "assignedTo": "担当者",
+        "dueAt": "期限",
+        "updatedAt": "最終更新",
+        "select": "選択"
       },
-      "empty": "アラートがありません"
-    }
+      "empty": "アラートがありません",
+      "selectRow": "アラート {{id}} を選択"
+    },
+    "suppressedReason": "抑制: {{reason}}"
   },
   "alertDetail": {
     "backToList": "アラート一覧に戻る",
@@ -266,6 +522,7 @@
     "error": "アラートデータの取得に失敗しました",
     "conflict": "別のセッションでアラートが更新されました。現在の内容を確認してから再試行してください。",
     "reload": "現在のアラートを再読み込み",
+    "retry": "再試行",
     "title": "アラート詳細",
     "info": {
       "title": "アラート情報",
@@ -274,7 +531,11 @@
       "score": "スコア",
       "detectedAt": "検出日時",
       "resolvedAt": "解決日時",
-      "resolvedBy": "解決者"
+      "resolvedBy": "解決者",
+      "assignedTo": "担当者",
+      "assignedTeam": "チーム",
+      "dueAt": "期限",
+      "saveAssignment": "キュー項目を保存"
     },
     "description": {
       "title": "説明",
@@ -285,13 +546,47 @@
       "startInvestigation": "調査開始",
       "escalate": "エスカレーション",
       "closeTruePositive": "真陽性として完了",
-      "closeFalsePositive": "偽陽性として完了"
+      "closeFalsePositive": "偽陽性として完了",
+      "reopen": "調査を再開"
+    },
+    "decision": {
+      "title": "アラート判定の確認",
+      "confirm": "このアラートに{{outcome}}を適用しますか？判定と根拠は履歴として保持されます。",
+      "rationale": "判定理由",
+      "rationaleRequired": "判定理由を入力してください。",
+      "confirmButton": "判定を確定",
+      "cancel": "キャンセル",
+      "noHistory": "判定履歴はありません"
+    },
+    "provenance": {
+      "title": "検知の来歴",
+      "scenario": "シナリオ",
+      "ruleVersion": "ルールバージョン",
+      "ruleDigest": "ルールダイジェスト",
+      "evaluationMode": "評価モード",
+      "appliedThreshold": "適用された閾値",
+      "evaluatedAt": "評価時刻",
+      "engineVersion": "エンジンビルド",
+      "configDigests": "検知時点の設定ダイジェスト",
+      "availability": {
+        "available": "記録済み",
+        "restricted": "解決済み",
+        "missing": "参照先を解決できません",
+        "not_captured": "未記録"
+      },
+      "explanation": {
+        "available": "検知時点で有効だった設定がこのアラートとともに記録されています。",
+        "restricted": "ルールバージョンを解決しました。識別子とダイジェストを表示しています。定義はルール画面で参照してください（そこで固有の認可が適用されます）。",
+        "missing": "来歴は記録されていますが、参照しているルールバージョンをもう解決できません。以下に記録された事実はそのまま有効ですが、参照は解決できません。",
+        "not_captured": "このアラートは来歴の記録が始まる前に生成されました。現在の設定は意図的に表示しません。何が発火したかの証跡に見えてしまいますが、そうではないためです。"
+      }
     }
   },
   "audit": {
     "title": "監査ログ",
     "count": "{{count}} 件",
     "error": "監査ログの取得に失敗しました",
+    "retry": "再試行",
     "action": {
       "create": "作成",
       "update": "更新",
@@ -373,7 +668,31 @@
       "direction": "方向",
       "counterpartyCountry": "相手先国",
       "channel": "チャネル",
-      "submit": "登録"
+      "accountId": "口座ID",
+      "counterpartyName": "相手方名称",
+      "counterpartyType": "相手方種別",
+      "unhostedWallet": "アンホステッドウォレット",
+      "unknown": "不明",
+      "travelStatus": "トラベルルール状態",
+      "notSpecified": "未指定",
+      "complete": "完全",
+      "incomplete": "不完全",
+      "notApplicable": "非該当",
+      "travelReason": "非該当理由",
+      "travelReasonPlaceholder": "非該当の場合は必須",
+      "idempotencyKey": "冪等性キー",
+      "metadata": "メタデータJSON",
+      "travelEvidence": "トラベルルール証跡JSON",
+      "invalidJson": "メタデータと証跡は正しいJSONで入力してください。",
+      "submit": "登録",
+      "travelThreshold": "{{amount}} {{currency}} 以上で適用（ポリシー {{version}}）",
+      "noEvidenceRequired": "この相手方区分では通知事項の入力は不要です",
+      "counterpartyTypeLabel": {
+        "vasp": "VASP",
+        "unhosted_wallet": "アンホステッドウォレット",
+        "unknown": "不明",
+        "exempt": "適用除外"
+      }
     },
     "direction": {
       "inbound": "入金",
@@ -387,7 +706,8 @@
         "amount": "金額",
         "counterpartyCountry": "相手先国",
         "channel": "チャネル",
-        "executedAt": "実行日時"
+        "executedAt": "実行日時",
+        "travelRule": "トラベルルール"
       },
       "empty": "取引データがありません"
     }
@@ -401,6 +721,7 @@
       "internalId": "内部ID",
       "externalId": "外部ID",
       "customerId": "顧客ID",
+      "accountId": "口座ID",
       "direction": "方向"
     },
     "amountRoute": {
@@ -411,6 +732,70 @@
       "channel": "チャネル",
       "executedAt": "実行日時",
       "createdAt": "登録日時"
+    },
+    "travelRule": {
+      "title": "トラベルルール",
+      "applicable": "適用対象",
+      "yes": "適用",
+      "no": "対象外",
+      "legacy": "旧データ（未設定）",
+      "reason": "対象外理由",
+      "counterparty": "カウンターパーティ",
+      "metadata": "メタデータ",
+      "evidence": "トラベルルール証跡",
+      "verdict": "サーバー判定",
+      "clientAssertion": "クライアント申告",
+      "notAsserted": "申告なし",
+      "threshold": "閾値",
+      "thresholdValue": "{{amount}} {{currency}}",
+      "reasonCode": "理由コード",
+      "missingFields": "不足している通知事項",
+      "assessedAt": "判定日時",
+      "conflict": "クライアント申告とポリシー判定が一致していません",
+      "conflictClient": "クライアント申告: {{value}}",
+      "conflictServer": "ポリシー判定: {{value}}",
+      "state": {
+        "not_assessed": "未評価",
+        "not_applicable": "該当なし",
+        "complete": "該当・通知事項充足",
+        "incomplete": "該当・通知事項不足"
+      },
+      "stateDescription": {
+        "not_assessed": "トラベルルールポリシー導入前に受け付けた取引のため、判定自体が行われていません。",
+        "not_applicable": "ポリシー判定の結果、この移転にトラベルルールは適用されません。",
+        "complete": "トラベルルールが適用され、必要な通知事項はすべて揃っています。",
+        "incomplete": "トラベルルールが適用されますが、必要な通知事項が不足しています。"
+      },
+      "reasonCodeLabel": {
+        "below_threshold": "閾値未満",
+        "non_covered_channel": "対象外チャネル",
+        "domestic_internal_transfer": "国内内部移転",
+        "fiat_only": "法定通貨のみ",
+        "exempt_counterparty": "適用除外の相手方",
+        "other": "その他"
+      },
+      "field": {
+        "counterparty_type": "相手方区分",
+        "originator": "送付人",
+        "beneficiary": "受取人",
+        "travel_rule_status": "申告ステータス",
+        "name": "氏名・名称",
+        "account_number": "口座番号",
+        "vasp_name": "VASP 名",
+        "originator_name": "送付人氏名",
+        "originator_account": "送付人口座番号",
+        "originator_vasp_name": "送付人側 VASP",
+        "beneficiary_name": "受取人氏名",
+        "beneficiary_account": "受取人口座番号",
+        "beneficiary_vasp_name": "受取人側 VASP",
+        "wallet_attribution_method": "ウォレット帰属確認方法"
+      }
+    },
+    "related": {
+      "title": "関連する調査記録",
+      "alerts": "関連アラート",
+      "cases": "関連ケース",
+      "none": "関連レコードなし"
     }
   },
   "customerDetail": {
@@ -421,33 +806,125 @@
       "title": "基本情報",
       "internalId": "内部ID",
       "type": "種別",
+      "name": "氏名・名称",
+      "nameJa": "日本語氏名・名称",
+      "nameKana": "カナ",
+      "address": "住所",
       "countryCode": "国コード",
+      "status": "ライフサイクル",
+      "identityRationale": "オペレーターがKYC本人情報を更新",
       "save": "保存",
+      "edit": "編集",
+      "cancel": "編集を閉じる",
       "products": "プロダクト",
       "createdAt": "作成日",
-      "updatedAt": "更新日"
+      "updatedAt": "更新日",
+      "kycMissing": "未取得の必須項目",
+      "kycPolicyVersion": "本人特定事項ポリシー版"
     },
     "riskAssessment": {
       "title": "リスク評価",
       "screenButton": "スクリーニング",
       "scoreButton": "スコアリング",
+      "confirmScore": "スコアリングを確定",
+      "ruleSet": "CDDルールセット",
+      "selectRuleSet": "ルールセットを選択",
+      "rationale": "再評価理由",
+      "rationaleRequired": "スコアリング理由を入力してください。",
+      "ruleRequired": "CDDルールセットを選択してください。",
       "riskScore": "リスクスコア",
       "riskTier": "リスクティア",
       "unscored": "未スコア",
-      "lastScored": "最終スコアリング"
+      "lastScored": "最終スコアリング",
+      "recommended": "推奨",
+      "inactiveRuleSet": "無効",
+      "matchedOn": "適用条件 {{match}}",
+      "selectionPolicyVersion": "ルールセット選択ポリシー版 {{version}}",
+      "tierReason": "ティア判定の根拠",
+      "tierThresholds": "ティア境界",
+      "notReconciled": "要因の寄与合計が記録済みスコアと一致しません（差分 {{delta}}）",
+      "appliedRuleSet": "適用ルールセット",
+      "pinnedDigest": "固定ダイジェスト"
     },
     "screening": {
       "title": "スクリーニング結果",
       "hit": "ヒットあり",
       "noHit": "ヒットなし",
       "summary": "チェック済みリスト: {{count}}件 | 実行日時: {{time}}",
+      "durableSummary": "永続化済み結果: {{count}}件 | 実行日時: {{time}}",
+      "loading": "永続化されたスクリーニング結果を取得中…",
+      "error": "スクリーニングに失敗しました: {{error}}",
+      "durableError": "永続化結果の取得に失敗しました: {{error}}",
       "table": {
         "list": "リスト",
         "matchedName": "一致名",
         "similarity": "類似度",
         "type": "種別",
-        "source": "ソース"
-      }
+        "source": "ソース",
+        "status": "ステータス",
+        "action": "レビュー",
+        "transient": "一時的な結果",
+        "reasonLabel": "判定理由",
+        "reasonPlaceholder": "理由",
+        "reasonRequired": "判定理由を入力してください。",
+        "startReview": "レビュー開始",
+        "truePositive": "真陽性",
+        "falsePositive": "偽陽性"
+      },
+      "degraded": "この顧客は不完全なリスト集合に対して照合されました。",
+      "degradedSources": "利用できなかったソース: {{sources}}"
+    },
+    "investigation": {
+      "title": "顧客360",
+      "loading": "顧客360を取得中…",
+      "error": "顧客360の取得に失敗しました: {{error}}",
+      "count": {
+        "transactions": "取引",
+        "alerts": "アラート",
+        "cases": "ケース",
+        "screening_results": "スクリーニング結果",
+        "score_history": "スコア評価"
+      },
+      "eddRequired": "継続的顧客管理（EDD）が必要です",
+      "eddStage": "EDDステージ: {{stage}}",
+      "eddElapsed": "経過: {{days}}日",
+      "timeline": "最近のアクティビティ",
+      "partial": "一部のデータソースを取得できませんでした: {{sources}}",
+      "freshness": "読取モデル更新日時: {{time}}",
+      "eddDueAt": "期限 {{date}}",
+      "eddOverdue": "期限超過 {{days}} 日",
+      "eddNextStage": "次の段階 {{stage}}（{{date}}）",
+      "eddCompletedAt": "完了日時 {{date}}",
+      "eddPolicyVersion": "EDD ポリシー版 {{version}}",
+      "eddCase": "関連ケースを開く",
+      "eddCaseId": "ケース ID",
+      "eddCaseRequired": "EDD ポリシーにより、完了にはケースの紐付けが必要です",
+      "eddRationale": "理由",
+      "eddRationaleRequired": "理由の入力が必要です",
+      "eddComplete": "EDD を完了",
+      "eddReopen": "EDD を再開",
+      "eddEvents": "EDD 履歴",
+      "eddStatus": {
+        "not_required": "対象外",
+        "open": "実施中",
+        "overdue": "期限超過",
+        "escalated": "エスカレーション済",
+        "completed": "完了"
+      },
+      "eddEventType": {
+        "requested": "要求",
+        "stage_escalated": "段階エスカレーション",
+        "completed": "完了",
+        "reopened": "再開",
+        "closed_on_downgrade": "ティア引き下げによる終了"
+      },
+      "relatedTitle": "関連レコード",
+      "relatedTransactions": "取引",
+      "relatedAlerts": "アラート",
+      "relatedCases": "ケース",
+      "relatedViewAll": "全{{count}}件を表示",
+      "relatedEmpty": "レコードなし",
+      "relatedShowing": "{{total}}件中{{shown}}件を表示"
     },
     "attributes": {
       "title": "属性"
@@ -468,8 +945,51 @@
       "table": {
         "axis": "軸",
         "name": "名称",
+        "observed": "観測値",
         "score": "スコア",
-        "description": "説明"
+        "weight": "重み",
+        "contribution": "寄与",
+        "rule": "適用ルール / フォールバック",
+        "description": "説明",
+        "businessMeaning": "業務上の意味"
+      },
+      "total": "整合した合計: {{score}}",
+      "fallback": "フォールバック / 未解決",
+      "contributionTotal": "寄与の合計: {{total}}"
+    },
+    "identityHistory": {
+      "title": "identity 変更履歴",
+      "empty": "identity の変更履歴はありません",
+      "table": {
+        "changedAt": "変更日時",
+        "actor": "実施者",
+        "changedFields": "変更項目",
+        "rationale": "理由"
+      }
+    },
+    "scoreDiff": {
+      "title": "今回のスコアリングによる変化",
+      "score": "スコア {{before}} → {{after}}",
+      "tier": "ティア {{before}} → {{after}}",
+      "factors": "変化した要因 {{count}} 件"
+    },
+    "override": {
+      "title": "承認待ちのティア上書き",
+      "pendingNotice": "顧客のティアは計算値のままです。提案ティアは第二者の承認後にのみ適用されます。",
+      "recorded": "{{computed}} から {{proposed}} へのティア上書きが、承認待ちの提案として記録されました。",
+      "computed": "計算値 {{tier}}",
+      "proposed": "提案 {{tier}}",
+      "reason": "理由: {{reason}}",
+      "requestedBy": "申請者 {{actor}}（{{time}}）",
+      "documents": "根拠資料: {{documents}}",
+      "rationale": "決裁理由",
+      "rationaleRequired": "決裁理由の入力が必要です",
+      "approve": "承認",
+      "reject": "却下",
+      "status": {
+        "pending_approval": "承認待ち",
+        "approved": "承認済",
+        "rejected": "却下"
       }
     }
   },
@@ -480,7 +1000,9 @@
   },
   "errorBoundary": {
     "title": "エラーが発生しました",
-    "retry": "再試行"
+    "retry": "再試行",
+    "description": "この画面を表示できませんでした。アプリケーションの他の部分は引き続き利用できます。",
+    "goHome": "ダッシュボードへ"
   },
   "errors": {
     "not_found": "対象のリソースが見つかりません。",
@@ -495,7 +1017,10 @@
     "service_unavailable": "この機能は現在利用できません。",
     "engine_error": "スコアリングエンジンがこのリクエストを処理できませんでした。",
     "retention_shorten_forbidden": "保持期間を規定の最低期間より短縮することはできません。",
-    "unknown": "予期しないエラーが発生しました。"
+    "unknown": "予期しないエラーが発生しました。",
+    "requestId": "サポート参照番号: {{id}}",
+    "retry": "再試行",
+    "mutationUnknown": "この操作が適用されたかどうかをサーバーは確認していません。繰り返す前にレコードを確認してください。"
   },
   "authGate": {
     "checking": "セッションを確認しています",
@@ -547,18 +1072,42 @@
       "yamlLabel": "YAML",
       "yamlPlaceholder": "# 設定をYAML形式で入力...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
       "validating": "検証中...",
-      "submit": "検証"
+      "submit": "検証",
+      "schemaDocs": "スキーマとフィールドの参照"
     },
     "types": {
       "cddWeights": "CDD重み付け",
       "screeningLists": "スクリーニングリスト",
-      "scenarioRules": "シナリオルール"
+      "scenarioRules": "シナリオルール",
+      "countryRisk": "国別リスク"
     },
     "result": {
       "successTitle": "検証成功",
       "validBadge": "有効",
       "errorTitle": "検証エラー",
-      "errorCount": "{{count}}件"
+      "errorCount": "{{count}}件",
+      "warningCount": "警告 {{count}} 件",
+      "warningsDoNotBlock": "警告は有効化をブロックしません。",
+      "emptyInput": "何も送信されていません。まず文書を入力または読み込んでください。",
+      "unchanged": "{{name}} v{{version}} と同一です。変更は発生しません。",
+      "atLine": "{{line}} 行目",
+      "atLineColumn": "{{line}} 行 {{column}} 列",
+      "noPosition": "文書内の位置なし",
+      "class": {
+        "syntax": "構文",
+        "schema": "スキーマ",
+        "cross_reference": "相互参照",
+        "activation": "有効化",
+        "unknown": "検証"
+      }
+    },
+    "baseline": {
+      "title": "このデプロイが実行中のバージョンから始める",
+      "help": "既存のルールバージョンをベースラインとして読み込み、それを編集します。空欄からの貼り付けは、誰も確認していない設定を置き換えることになります。",
+      "load": "{{name}} v{{version}} を読み込む",
+      "none": "この種別のルールはまだ保存されていません。上記のスキーマ参照に沿って新規に作成してください。",
+      "current": "ベースライン: {{name}} v{{version}}",
+      "unset": "ベースライン未読込。ここでの検証は既知バージョンとの差分ではなく、単体としての判定です。"
     }
   },
   "backtest": {
@@ -574,19 +1123,51 @@
       "deselectAll": "全解除",
       "from": "開始日時（UTC）",
       "to": "終了日時（UTC、この日時を含まない）",
+      "baselineRuleSet": "ベースラインルールセット",
       "candidateRuleSet": "候補ルールセット",
       "candidatePlaceholder": "有効なTMルール名",
+      "ruleDiscovery": "有効なTMルールセットを{{count}}件検出しました。",
+      "ruleDiscoveryError": "ルール検出に失敗しました: {{error}}",
       "running": "実行中...",
       "submit": "バックテスト実行"
     },
     "job": {
       "summary": "ジョブ {{id}}: {{status}}（{{progress}}%）",
+      "comparison": "比較: {{baseline}} → {{candidate}}",
+      "rationale": "理由: {{rationale}}",
+      "cohortPreview": "コホートプレビュー",
+      "cohortCustomers": "顧客数: {{count}}",
+      "cohortTransactions": "取引数: {{count}}",
+      "emptyCohort": "このコホートに取引がありません。空の結果に依存する前に実行を確認または停止してください。",
+      "sideBySide": "ベースライン / 候補 / 差分",
+      "baseline": "ベースライン",
+      "candidate": "候補",
+      "delta": "差分",
+      "affectedCustomers": "影響顧客",
+      "noAffectedCustomers": "影響顧客はありません",
+      "history": "永続ジョブ履歴",
+      "historyId": "ジョブID",
+      "historyStatus": "状態",
+      "historyComparison": "比較",
+      "historyEmpty": "過去のバックテストジョブはありません",
       "status": {
         "queued": "待機中",
         "running": "実行中",
         "completed": "完了",
         "failed": "失敗",
         "cancelled": "キャンセル済み"
+      },
+      "scenarioFilter": "シナリオ",
+      "allScenarios": "すべてのシナリオ",
+      "affectedCustomer": "顧客",
+      "deltaKind": "変化",
+      "deltaScenarios": "シナリオ別",
+      "deltaSummary": "新たに検知 {{added}} 件 / 検知されなくなる {{removed}} 件 / 変化なし {{unchanged}} 件 / 混在 {{mixed}} 件",
+      "deltaKindLabel": {
+        "added": "新たに検知",
+        "removed": "検知されなくなる",
+        "unchanged": "変化なし",
+        "mixed": "混在"
       }
     },
     "polling": {
@@ -618,15 +1199,30 @@
           "affectedCustomers": "影響顧客"
         }
       }
-    }
+    },
+    "columnCustomers": "顧客数",
+    "columnTransactions": "取引数",
+    "columnAlerts": "アラート数",
+    "previewCohort": "対象コホートのプレビュー",
+    "previewCustomers": "顧客: {{count}}件",
+    "previewTransactions": "取引: {{count}}件",
+    "previewEmpty": "このコホートには比較対象がありません。",
+    "previewRun": "実行前にプレビュー"
   },
   "batch": {
     "title": "一括処理",
     "error": "データの取得に失敗しました",
+    "retry": "再試行",
+    "operationError": "一括処理に失敗しました: {{error}}",
     "targetCustomers": {
       "title": "対象顧客",
       "selectedCount": "{{count}}件選択中",
       "allTargeted": "全顧客が対象（未選択時）",
+      "mode": "対象モード",
+      "selectedMode": "選択した顧客",
+      "allMode": "全顧客（明示）",
+      "explicitAll": "全顧客を明示的に選択中",
+      "selectionRequired": "顧客を1件以上選択するか、全顧客モードを明示してください。",
       "noCustomers": "利用可能な顧客がありません",
       "selectAll": "全選択",
       "deselectAll": "全解除"
@@ -634,6 +1230,34 @@
     "actions": {
       "score": "一括スコアリング",
       "monitor": "一括モニタリング"
+    },
+    "confirmation": {
+      "title": "対象マニフェストの確認",
+      "summary": "{{count}}件の顧客に{{operation}}を実行します。",
+      "mode": "モード",
+      "criteria": "条件",
+      "expires": "マニフェスト有効期限",
+      "rationale": "操作理由",
+      "rationalePlaceholder": "この一括処理を実行する理由を記録してください...",
+      "rationaleRequired": "確認前に操作理由を入力してください。",
+      "warning": "サーバーが固定した対象スナップショットを使用します。期限切れ・再利用トークンは拒否されます。",
+      "confirm": "確認して永続実行を開始"
+    },
+    "run": {
+      "title": "永続化された一括実行",
+      "status": "実行 {{id}}: {{status}}",
+      "noCounts": "結果件数はまだありません",
+      "history": "実行履歴",
+      "id": "実行ID",
+      "operation": "操作",
+      "statusLabel": "状態",
+      "customerOutcomes": "顧客ごとの結果",
+      "customer": "顧客",
+      "outcome": "結果",
+      "alerts": "アラート",
+      "errorLabel": "エラー",
+      "startedAt": "開始日時",
+      "empty": "一括実行はまだありません"
     },
     "scoreResult": {
       "title": "スコアリング結果",
@@ -681,7 +1305,120 @@
           "error": "エラー"
         }
       }
+    },
+    "excluded": "除外",
+    "excludedReason": "{{reason}}: {{count}}件",
+    "sideEffects": "この実行が行うこと",
+    "sample": "対象サンプル",
+    "ruleSet": "ルールセット",
+    "cancel": "実行をキャンセル",
+    "cancelled": "実行をキャンセルしました",
+    "reviewQueueLink": "要レビューキューを開く",
+    "historyStatus": "ステータス",
+    "historyOperation": "操作"
+  },
+  "screeningQueue": {
+    "title": "スクリーニング確認キュー",
+    "description": "永続化されたヒットは画面遷移・再起動後も確認できます。",
+    "error": "スクリーニング結果の取得に失敗しました",
+    "retry": "再試行",
+    "refresh": "更新",
+    "filter": "状態",
+    "customerFilter": "顧客ID",
+    "runFilter": "バッチ実行ID",
+    "createdFrom": "作成日（開始）",
+    "createdTo": "作成日（終了）",
+    "minAgeDays": "最小経過日数",
+    "maxAgeDays": "最大経過日数",
+    "all": "すべて",
+    "empty": "スクリーニング結果はありません",
+    "customer": "顧客",
+    "match": "一致",
+    "statusLabel": "状態",
+    "screenedAt": "実行日時",
+    "action": "操作",
+    "case": "ケース",
+    "suppressed": "抑制済み",
+    "rationale": "判定理由",
+    "rationalePlaceholder": "この結果を判定した理由を記録してください...",
+    "rationaleRequired": "判定理由は必須です。",
+    "startReview": "確認開始",
+    "truePositive": "真陽性",
+    "falsePositive": "偽陽性",
+    "status": {
+      "NEW": "未確認",
+      "REVIEWING": "確認中",
+      "TRUE_POSITIVE": "真陽性",
+      "FALSE_POSITIVE": "偽陽性"
+    },
+    "showSuppressed": "抑止されたヒットを表示",
+    "degraded": "不完全",
+    "degradedSources": "照合時に利用できなかったソース: {{sources}}",
+    "sources": {
+      "title": "照合ソース",
+      "ready": "正常",
+      "notReady": "不完全",
+      "loading": "ソース一覧を読み込み中",
+      "error": "ソース一覧を取得できませんでした: {{error}}",
+      "degradedWarning": "必須ソースが利用できないため、照合は不完全です: {{sources}}",
+      "counts": "登録 {{configured}} 件 / 利用可 {{ready}} 件 / 利用不可 {{unready}} 件",
+      "policyVersion": "ポリシー版 {{version}}",
+      "listId": "ソース",
+      "requirement": "区分",
+      "required": "必須",
+      "optional": "任意",
+      "state": "状態",
+      "lastSuccess": "最終取込成功",
+      "diagnostic": "診断",
+      "operationalState": {
+        "never_imported": "未取込",
+        "ready": "利用可",
+        "stale": "鮮度切れ",
+        "unreadable": "読み取り不可",
+        "failed": "取込失敗",
+        "unavailable": "利用不可"
+      },
+      "lastAttempt": "最終試行",
+      "age": "経過",
+      "threshold": "閾値",
+      "failures": "連続失敗",
+      "never": "未実施",
+      "ageOverThreshold": "{{age}}（閾値 {{threshold}}）"
     }
+  },
+  "pendingEvaluations": {
+    "title": "保留評価の復旧",
+    "description": "再試行・解決・エスカレーションが記録されるまで失敗を表示します。",
+    "error": "保留評価の取得に失敗しました",
+    "retry": "再試行",
+    "refresh": "更新",
+    "queue": "復旧キュー",
+    "filter": "状態",
+    "all": "すべて",
+    "empty": "保留評価はありません",
+    "customer": "顧客",
+    "statusLabel": "状態",
+    "reason": "理由",
+    "retryCount": "試行回数",
+    "createdAt": "作成日時",
+    "transactions": "件の取引",
+    "alerts": "関連アラート",
+    "batchRun": "バッチ実行",
+    "detail": "評価詳細",
+    "close": "閉じる",
+    "nextRetry": "次回再試行",
+    "actionReason": "操作理由",
+    "actionReasonPlaceholder": "操作の運用上の理由を記録してください...",
+    "rationaleRequired": "操作理由は必須です。",
+    "retryAction": "再試行",
+    "resolveAction": "解決",
+    "escalateAction": "エスカレーション",
+    "history": "履歴",
+    "backlog": "滞留件数",
+    "oldest": "最古",
+    "failedCount": "失敗",
+    "exhaustedCount": "自動再試行の上限到達",
+    "stopCondition": "キュー状況"
   },
   "apikeys": {
     "title": "APIキー管理",
@@ -712,7 +1449,15 @@
       "lastUsed": " | 最終使用: {{date}}"
     },
     "revoke": "無効化",
-    "empty": "APIキーが登録されていません"
+    "empty": "APIキーが登録されていません",
+    "purpose": {
+      "body": "API キーは、人がサインインしていない状態で動作する機械的な呼び出し元（取り込みアダプター、定期ジョブ、スクリプト）を認証します。ユーザーアカウントの代わりではありません。",
+      "consumers": "想定利用者: 自組織が運用するサーバーサイド連携。ブラウザーへ渡したキーは漏洩した認証情報と同じです。",
+      "permission": "キーに割り当てたロールは、そのキーで行われるすべてのリクエストのロールになります。用途に足る最小のロールを発行してください。",
+      "display": "シークレットは作成時に一度だけ表示され、以後は取得できません。",
+      "revocation": "キーの失効は即時に反映され、取り消せません。そのキーを使っている連携は停止します。",
+      "owner": "運用責任者: このデプロイを運用する管理者。"
+    }
   },
   "reports": {
     "title": "STRレポート",
@@ -721,19 +1466,36 @@
       "title": "STRレポートを作成しました",
       "idLabel": "ID: {{id}}"
     },
+    "saved": {
+      "title": "保存済みSTRレポート",
+      "source": "アラート: {{alert}}",
+      "open": "下書きを開く",
+      "empty": "保存済みのSTRレポートはありません"
+    },
+    "status": {
+      "draft": "下書き",
+      "submitted": "提出済み"
+    },
     "export": {
       "csv": "CSV",
       "json": "JSON"
     },
     "form": {
       "title": "STRレポート作成",
-      "targetAlert": "対象アラート",
+      "targetAlert": "対象アラートとSTR候補ケース",
+      "caseLabel": "ケース {{id}}",
       "noAlerts": "対象となるアラートがありません",
       "pointLabel": "疑わしい取引のポイント",
       "pointPlaceholder": "疑わしい取引の理由を記述...",
       "createdByLabel": "作成者",
       "createdByPlaceholder": "担当者名",
-      "submit": "STRレポート作成"
+      "submit": "STRレポート作成",
+      "draftTitle": "STR下書きの確認",
+      "draftId": "下書きID: {{id}}",
+      "evidenceLabel": "提出証跡",
+      "evidencePlaceholder": "届出受付番号または確認ID",
+      "submitDraft": "STRレポートを提出",
+      "cancel": "キャンセル"
     }
   },
   "system": {
@@ -748,7 +1510,9 @@
       "title": "コンポーネント",
       "api": "Go API",
       "engine": "Go Engine",
-      "database": "PostgreSQL"
+      "database": "PostgreSQL",
+      "screening_sources": "スクリーニングソース",
+      "investigate": "調査する"
     },
     "features": {
       "title": "機能ステータス",
@@ -761,11 +1525,49 @@
       "monitoring": "取引モニタリング",
       "screening": "スクリーニング",
       "backtest": "バックテスト",
-      "config": "設定検証"
+      "config": "設定検証",
+      "help": "ここは「何が構成されているか」であり、「正常に動作しているか」ではありません。動作状態は上のコンポーネント欄です。",
+      "demo_data": "合成デモデータ"
     },
     "status": {
       "enabled": "有効",
-      "disabled": "無効"
+      "disabled": "無効",
+      "notConfigured": "未設定"
+    },
+    "refresh": "再確認",
+    "statusUnavailable": "実行時ステータスを読み取れなかったため、コンポーネントの状態は不明です。",
+    "operationalState": {
+      "ready": "正常",
+      "degraded": "劣化",
+      "unavailable": "利用不可",
+      "unknown": "不明"
+    },
+    "reason": {
+      "not_configured": "このデプロイでは未設定",
+      "check_failed": "確認を実行し失敗しました。詳細はサーバーログにあります",
+      "no_probe_available": "構成されていますが、ヘルスチェックを公開していません",
+      "sources_degraded": "必須のスクリーニングソースが準備できていません"
+    },
+    "freshness": {
+      "live": "ただ今確認しました（{{time}}）",
+      "cached": "{{time}} 時点のキャッシュ結果"
+    },
+    "build": {
+      "commitUnknown": "このビルドにコミットは記録されていません",
+      "builtAt": "ビルド日時 {{date}}"
+    },
+    "provenance": {
+      "title": "有効な設定",
+      "help": "このプロセスが実際に読み込んだ内容です。判断は、それを生んだ設定に対してのみ再現できます。",
+      "authMode": "認証モード",
+      "baseCurrency": "基準通貨",
+      "configDigests": "設定ダイジェスト",
+      "noDigests": "設定ダイジェストは記録されていません。",
+      "policies": "ポリシー文書",
+      "source": {
+        "file": "作成済み",
+        "default": "組み込み既定値"
+      }
     }
   },
   "rules": {
@@ -791,7 +1593,8 @@
       "nameLabel": "名前",
       "namePlaceholder": "rule_name",
       "definitionLabel": "定義（JSON）",
-      "submit": "作成"
+      "submit": "作成",
+      "invalidJson": "定義が正しい JSON ではありません。"
     },
     "import": {
       "title": "ルール一括インポート",
@@ -859,7 +1662,12 @@
     },
     "entry": {
       "createdAt": "作成: {{date}}",
-      "deliveries": "配信履歴"
+      "deliveries": "配信履歴",
+      "deleteLabel": "この Webhook を削除",
+      "confirmTitle": "この Webhook を削除しますか？",
+      "confirmDetail": "{{url}} への以後の配信は即座に停止します。購読中のイベント種別 {{count}} 件が削除されます。",
+      "confirmDelete": "削除する",
+      "cancelDelete": "キャンセル"
     },
     "deliveries": {
       "table": {
@@ -874,7 +1682,15 @@
       "failure": "失敗",
       "empty": "配信履歴がありません"
     },
-    "empty": "Webhookが登録されていません"
+    "empty": "Webhookが登録されていません",
+    "purpose": {
+      "body": "Webhook は AML イベントを Merlon から自組織のシステム（チケットキュー、チャットチャンネル、下流のケース管理）へ送出します。送出専用であり、Merlon が応答を指示として読み取ることはありません。",
+      "consumers": "想定利用者: 自組織が管理する HTTPS エンドポイント。POST を受け取り、その正当性を検証できること。",
+      "delivery": "配信はバックオフ付きで再試行されます。成功しなかった配信は本ページのデッドレターキューに入り、再処理できます。",
+      "payload": "ペイロードはイベント種別と対象レコードの識別子を伝えるものであり、API でレコード本体を読む代わりにはなりません。",
+      "removal": "Webhook を削除すると以後の配信は即座に停止します。キューまたはデッドレターキューに残っている配信が、削除済みエンドポイントへ再送されることはありません。",
+      "owner": "運用責任者: 受信側システムを運用する管理者。"
+    }
   },
   "whitelist": {
     "title": "ホワイトリスト",
@@ -911,5 +1727,55 @@
       "approveDisabledTitle": "申請者自身は承認できません"
     },
     "empty": "ホワイトリストエントリがありません"
+  },
+  "duration": {
+    "hours": "{{count}}時間",
+    "minutes": "{{count}}分",
+    "days": "{{count}}日"
+  },
+  "capability": {
+    "availability": {
+      "available": "利用可能",
+      "not_configured": "未設定",
+      "forbidden": "権限なし",
+      "unsupported": "非対応",
+      "degraded": "劣化",
+      "unavailable": "利用不可"
+    },
+    "reason": {
+      "dependency_not_configured": "このデプロイでは当該機能が設定されていません。",
+      "permission_required": "あなたのロールには必要な権限がありません。",
+      "authentication_required": "この機能を使うにはサインインしてください。",
+      "capability_lookup_failed": "ケイパビリティ契約を読み取れなかったため、可用性は不明です。",
+      "unknown_capability": "このサーバーは当該機能を説明していません。"
+    },
+    "apiOnly": "この機能は API のみで提供されます。",
+    "documentation": "ドキュメント",
+    "purposeLabel": "この画面の目的",
+    "stateLabel": "可用性"
+  },
+  "ruleDetail": {
+    "backToRules": "ルール一覧へ戻る",
+    "notFound": "このルールを読み込めませんでした。",
+    "identity": {
+      "title": "識別情報",
+      "canonicalId": "正式な識別子",
+      "type": "種別",
+      "createdBy": "作成者",
+      "updatedAt": "最終更新",
+      "description": "説明",
+      "unknownAuthor": "記録なし",
+      "noDescription": "説明なし"
+    },
+    "definition": {
+      "title": "有効な定義",
+      "empty": "このバージョンには定義フィールドがありません。"
+    },
+    "compare": {
+      "title": "バージョン比較",
+      "against": "比較対象",
+      "onlyVersion": "最初のバージョンのため、比較対象がありません。",
+      "unavailable": "そのバージョンは取得できません。"
+    }
   }
 }

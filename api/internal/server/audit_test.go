@@ -62,7 +62,7 @@ func TestDemoTourWritesAreAudited(t *testing.T) {
 		t.Fatalf("create alert fixture: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(`{"customer_id":"`+cust.ID+`","alert_ids":["`+alert.ID+`"],"summary":"audit tour","priority":"high"}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(`{"customer_id":"`+cust.ID+`","alert_ids":["`+alert.ID+`"],"summary":"audit tour","priority":"high","priority_rationale":"audit fixture","str_candidate":true}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -86,11 +86,15 @@ func TestDemoTourWritesAreAudited(t *testing.T) {
 		t.Fatalf("case note status = %d, body: %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/reports/str", strings.NewReader(`{"alert_id":"`+alert.ID+`","suspicious_point":"audit tour"}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/reports/str", strings.NewReader(`{"alert_id":"`+alert.ID+`","case_id":"`+kase.ID+`","suspicious_point":"audit tour"}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("STR status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	var report domain.STRReport
+	if err := json.NewDecoder(rec.Body).Decode(&report); err != nil {
+		t.Fatalf("decode STR report: %v", err)
 	}
 
 	entries, err := s.audit.List(context.Background(), domain.AuditListFilter{Limit: 100})
@@ -106,7 +110,7 @@ func TestDemoTourWritesAreAudited(t *testing.T) {
 		"score_customer:customers:" + cust.ID,
 		"create:cases:" + kase.ID,
 		"update_status:cases:" + kase.ID,
-		"create_str:reports:str",
+		"create_str:reports:" + report.ID,
 	} {
 		if !found[want] {
 			t.Errorf("missing audit entry %q", want)

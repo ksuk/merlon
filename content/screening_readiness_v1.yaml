@@ -1,0 +1,23 @@
+schema_version: screening_readiness_v1
+policy_version: "2026-08-06-default"
+# 各ソースが ready とみなされる鮮度の既定値（秒）。72 時間。
+default_freshness_seconds: 259200
+# 必須ソースが ready でないまま実行されたスクリーニングを degraded として
+# run と各 result に記録する。真の「ヒットなし」と古いリストに対する
+# 「ヒットなし」を後から区別できるようにするための設定。
+mark_runs_degraded: true
+# 必須ソースが ready でないときスクリーニング実行自体を 503 で止める。
+# 既定は false。リスト提供元の障害中に業務が停止するため、Fail-Alert は
+# 実行のブロックではなく degraded 記録で満たしている。
+gate_screening_runs: false
+sources:
+  - list_id: ofac_sdn
+    required: true
+  - list_id: eu_sanctions
+    required: true
+  - list_id: un_sc
+    required: true
+  - list_id: mof_japan
+    required: true
+  - list_id: pep_provider
+    required: false

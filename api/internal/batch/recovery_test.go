@@ -3,6 +3,7 @@ package batch
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -143,5 +144,116 @@ func TestRecoveryJob_LeavesFailedStatusOnRepeatedFailure(t *testing.T) {
 	}
 	if got.RetryCount != maxPendingRetries {
 		t.Errorf("RetryCount = %d, want %d", got.RetryCount, maxPendingRetries)
+	}
+}
+
+func TestRecoveryJob_AtomicRecoveryLinksAlertsAndPreventsDuplicateProcessing(t *testing.T) {
+	ctx := context.Background()
+	customers := store.NewMemoryCustomerRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	alerts := store.NewMemoryAlertRepo()
+	pending := store.NewMemoryPendingEvaluationRepo()
+	audit := store.NewMemoryAuditRepo()
+	outbox := store.NewMemoryEventOutboxRepo()
+	atomic, err := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
+		Customers: customers, Transactions: transactions, Alerts: alerts, Audit: audit,
+		EventOutbox: outbox, PendingEvaluations: pending,
+	})
+	if err != nil {
+		t.Fatalf("NewMemoryAtomicMutationRepo: %v", err)
+	}
+	c, tx := seedPendingCustomerAndTransaction(t, customers, transactions, "RJ003")
+	pe := &domain.PendingEvaluation{ID: "pe3", CustomerID: c.ID, TransactionIDs: []string{tx.ID}, Status: domain.PendingEvaluationStatusPendingReview, Reason: "engine unavailable"}
+	if err := pending.Create(ctx, pe); err != nil {
+		t.Fatal(err)
+	}
+	monitoring := &engine.MockMonitoringEngine{Alerts: []domain.Alert{{CustomerID: c.ID, ScenarioID: "recovery-scenario", Severity: domain.AlertSeverityHigh, Description: "recovered"}}}
+	job := NewRecoveryJob(pending, monitoring, alerts, transactions, customers)
+	job.SetPersistence(atomic, audit, outbox)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	processed := make(chan int, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n, runErr := job.RunOnce(ctx)
+			processed <- n
+			errs <- runErr
+		}()
+	}
+	wg.Wait()
+	close(processed)
+	close(errs)
+	var succeeded int
+	for n := range processed {
+		succeeded += n
+	}
+	if succeeded != 1 {
+		t.Fatalf("processed = %d, want exactly one successful recovery", succeeded)
+	}
+	got, err := pending.Get(ctx, pe.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.PendingEvaluationStatusResolved || len(got.AlertIDs) != 1 {
+		t.Fatalf("pending after concurrent recovery = %+v, want resolved with one alert link", got)
+	}
+	created, err := alerts.ListByCustomer(ctx, c.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("alerts = %d, want one", len(created))
+	}
+	history, err := pending.ListPendingHistory(ctx, pe.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 3 || history[0].Action != "process" || history[1].Action != "link_alerts" || history[2].Action != "resolve" {
+		t.Fatalf("history = %+v, want process/link_alerts/resolve", history)
+	}
+}
+
+func TestRecoveryJob_AtomicAuditFailureRollsBackAndRetryIsSafe(t *testing.T) {
+	ctx := context.Background()
+	customers := store.NewMemoryCustomerRepo()
+	transactions := store.NewMemoryTransactionRepo()
+	alerts := store.NewMemoryAlertRepo()
+	pending := store.NewMemoryPendingEvaluationRepo()
+	audit := store.NewMemoryAuditRepo()
+	outbox := store.NewMemoryEventOutboxRepo()
+	atomic, err := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
+		Customers: customers, Transactions: transactions, Alerts: alerts, Audit: audit,
+		EventOutbox: outbox, PendingEvaluations: pending,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, tx := seedPendingCustomerAndTransaction(t, customers, transactions, "RJ004")
+	pe := &domain.PendingEvaluation{ID: "pe4", CustomerID: c.ID, TransactionIDs: []string{tx.ID}, Status: domain.PendingEvaluationStatusPendingReview, Reason: "engine unavailable"}
+	if err := pending.Create(ctx, pe); err != nil {
+		t.Fatal(err)
+	}
+	job := NewRecoveryJob(pending, &engine.MockMonitoringEngine{Alerts: []domain.Alert{{CustomerID: c.ID, ScenarioID: "recovery-scenario", Severity: domain.AlertSeverityHigh}}}, alerts, transactions, customers)
+	job.SetPersistence(atomic, audit, outbox)
+	audit.SetCreateFailure(errors.New("audit unavailable"))
+	if _, err := job.RunOnce(ctx); err == nil {
+		t.Fatal("RunOnce succeeded despite required audit failure")
+	}
+	got, err := pending.Get(ctx, pe.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.PendingEvaluationStatusPendingReview || got.Version != 1 || len(got.AlertIDs) != 0 {
+		t.Fatalf("pending after rollback = %+v, want unchanged", got)
+	}
+	if rows, _ := alerts.ListByCustomer(ctx, c.ID, 10, 0); len(rows) != 0 {
+		t.Fatalf("alerts after rollback = %d, want 0", len(rows))
+	}
+	audit.SetCreateFailure(nil)
+	if processed, err := job.RunOnce(ctx); err != nil || processed != 1 {
+		t.Fatalf("retry = processed %d, err %v; want one successful retry", processed, err)
 	}
 }

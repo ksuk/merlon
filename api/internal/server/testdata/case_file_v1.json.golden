@@ -1,0 +1,101 @@
+{
+  "case": {
+    "alert_ids": [
+      "alert-golden"
+    ],
+    "created_at": "2026-08-01T09:00:00Z",
+    "customer_id": "customer-golden",
+    "id": "case-file-golden",
+    "priority": "high",
+    "related_case_ids": [
+      "case-related-golden"
+    ],
+    "status": "investigating",
+    "summary": "golden case file",
+    "updated_at": "2026-08-01T09:30:00Z"
+  },
+  "checklist": [
+    {
+      "case_id": "case-file-golden",
+      "completed": true,
+      "completed_at": "2026-08-01T10:03:00Z",
+      "completed_by": "analyst-1",
+      "created_at": "2026-08-01T10:03:00Z",
+      "id": "case-file-check-1",
+      "key": "cdd",
+      "label": "CDD reviewed",
+      "updated_at": "2026-08-01T10:03:00Z",
+      "version": 1
+    }
+  ],
+  "events": [
+    {
+      "actor": "analyst-1",
+      "case_id": "case-file-golden",
+      "created_at": "2026-08-01T10:00:00Z",
+      "event_type": "created",
+      "id": "case-file-event-1",
+      "reason": "case opened",
+      "related_alert_ids": [
+        "alert-golden"
+      ]
+    },
+    {
+      "actor": "analyst-2",
+      "case_id": "case-file-golden",
+      "created_at": "2026-08-01T10:01:00Z",
+      "event_type": "str_filed",
+      "id": "case-file-event-2",
+      "reason": "filing confirmed",
+      "related_case_ids": [
+        "case-related-golden"
+      ],
+      "related_report_ids": [
+        "report-golden"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "case_id": "case-file-golden",
+      "collected_at": "2026-08-01T10:03:00Z",
+      "collected_by": "analyst-1",
+      "created_at": "2026-08-01T10:03:00Z",
+      "description": "bank statement",
+      "evidence_type": "transaction_record",
+      "id": "case-file-evidence-1",
+      "integrity_hash": "sha256:golden",
+      "root_id": "case-file-evidence-1",
+      "source": "bank-api",
+      "version": 1
+    }
+  ],
+  "export_version": "case-file-v1",
+  "exported_at": "\u003cdynamic\u003e",
+  "relationships": [
+    {
+      "active": true,
+      "case_id": "case-file-golden",
+      "created_at": "2026-08-01T10:03:00Z",
+      "created_by": "analyst-1",
+      "id": "case-file-relationship-1",
+      "rationale": "same customer review",
+      "related_case_id": "case-related-golden",
+      "relationship_type": "same_customer",
+      "source": "manual"
+    }
+  ],
+  "work_items": [
+    {
+      "assigned_to": "analyst-2",
+      "case_id": "case-file-golden",
+      "completed_at": "2026-08-01T10:03:00Z",
+      "completed_by": "analyst-2",
+      "created_at": "2026-08-01T10:03:00Z",
+      "id": "case-file-work-1",
+      "status": "completed",
+      "title": "Confirm filing receipt",
+      "updated_at": "2026-08-01T10:03:00Z"
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "alert": {
+    "alert_id": "alert-golden-001",
+    "description": "golden alert",
+    "detected_at": "2026-07-31T10:00:00Z",
+    "scenario_id": "scenario-golden",
+    "score": 87.5,
+    "severity": "high",
+    "status": "investigating",
+    "transaction_ids": [
+      "transaction-golden-001"
+    ]
+  },
+  "alert_id": "alert-golden-001",
+  "case_id": "case-golden-001",
+  "created_at": "2026-08-01T10:00:00Z",
+  "currency": "JPY",
+  "customer": {
+    "country_code": "JP",
+    "customer_type": "individual",
+    "external_id": "EXT-GOLDEN-001",
+    "id": "customer-golden-001"
+  },
+  "export_version": "str-v1",
+  "exported_at": "\u003cdynamic\u003e",
+  "report_id": "report-golden-001",
+  "report_status": "submitted",
+  "report_type": "str",
+  "submission_evidence": "receipt-001",
+  "submitted_at": "2026-08-01T10:30:00Z",
+  "submitted_by": "analyst01",
+  "suspicious_point": "golden suspicious point",
+  "total_amount": 1234.5,
+  "transaction_ids": [
+    "transaction-golden-001"
+  ],
+  "transactions": [
+    {
+      "amount": 1234.5,
+      "channel": "web",
+      "created_at": "2026-08-01T09:00:00Z",
+      "currency": "JPY",
+      "direction": "inbound",
+      "executed_at": "2026-08-01T10:00:00Z",
+      "external_id": "TX-GOLDEN-001",
+      "id": "transaction-golden-001"
+    }
+  ],
+  "updated_at": "2026-08-01T10:30:00Z"
+}

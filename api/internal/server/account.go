@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -25,15 +26,15 @@ func isValidAccountType(t domain.AccountType) bool {
 func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	var req CreateAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 	if req.ExternalID == "" {
-		writeError(w, http.StatusBadRequest, "external_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "external_id required")
 		return
 	}
 	if !isValidAccountType(req.AccountType) {
-		writeError(w, http.StatusBadRequest, "account_type must be one of: individual, joint")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "account_type must be one of: individual, joint")
 		return
 	}
 
@@ -43,7 +44,7 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		AccountType: req.AccountType,
 	}
 	if err := s.accounts.Create(r.Context(), a); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -56,10 +57,10 @@ func (s *Server) handleGetAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
@@ -84,39 +85,39 @@ func (s *Server) handleAddAccountCustomer(w http.ResponseWriter, r *http.Request
 	if _, err := s.accounts.Get(r.Context(), accountID); err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	var req AddAccountCustomerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
 	if req.CustomerID == "" {
-		writeError(w, http.StatusBadRequest, "customer_id required")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer_id required")
 		return
 	}
 	if !isValidAccountRole(req.Role) {
-		writeError(w, http.StatusBadRequest, "role must be one of: primary, co_holder")
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "role must be one of: primary, co_holder")
 		return
 	}
 
 	if _, err := s.customers.Get(r.Context(), req.CustomerID); err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusBadRequest, "customer not found: "+req.CustomerID)
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "customer not found: "+req.CustomerID)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	if err := s.accounts.AddCustomer(r.Context(), accountID, req.CustomerID, req.Role); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
@@ -131,16 +132,16 @@ func (s *Server) handleListAccountCustomers(w http.ResponseWriter, r *http.Reque
 	if _, err := s.accounts.Get(r.Context(), accountID); err != nil {
 		var notFound *domain.ErrNotFound
 		if errors.As(err, &notFound) {
-			writeError(w, http.StatusNotFound, err.Error())
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
 	links, err := s.accounts.ListCustomers(r.Context(), accountID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 	if links == nil {

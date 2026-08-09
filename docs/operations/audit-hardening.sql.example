@@ -1,14 +1,31 @@
 -- Example only. The executable counterpart is audit-hardening.sql. Adapt role
 -- names and ownership changes to the deployment's PostgreSQL model.
 --
--- Prevent the application role from altering or removing audit and rule
--- approval records.
-REVOKE UPDATE, DELETE ON TABLE audit_logs FROM merlon_app;
-REVOKE UPDATE, DELETE ON TABLE rule_activation_events FROM merlon_app;
+-- Prevent the application role from altering or removing append-only audit,
+-- decision, investigation, and STR history.  The executable hardening
+-- procedure also covers sequence privileges and the serving-role ownership
+-- guard; keep this example list aligned with its canonical table list.
+REVOKE UPDATE, DELETE ON TABLE
+    audit_logs,
+    rule_activation_events,
+    case_events,
+    case_evidence,
+    alert_decision_events,
+    case_relationship_events,
+    str_report_events
+FROM merlon_app;
 
 -- Give auditors a dedicated read-only role. Membership assignment is an
 -- operational decision and is intentionally not included here.
 CREATE ROLE merlon_auditor NOLOGIN;
 GRANT CONNECT ON DATABASE merlon TO merlon_auditor;
 GRANT USAGE ON SCHEMA public TO merlon_auditor;
-GRANT SELECT ON TABLE audit_logs, rule_activation_events TO merlon_auditor;
+GRANT SELECT ON TABLE
+    audit_logs,
+    rule_activation_events,
+    case_events,
+    case_evidence,
+    alert_decision_events,
+    case_relationship_events,
+    str_report_events
+TO merlon_auditor;

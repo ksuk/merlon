@@ -94,8 +94,8 @@ func TestMemoryCaseAlertLifecycleRechecksValidationOnlyAlerts(t *testing.T) {
 	alerts := NewMemoryAlertRepo()
 	lifecycle := NewMemoryCaseAlertLifecycleRepo(cases, alerts)
 	now := time.Now()
-	caseRecord := &domain.Case{ID: "case-validation-only", Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityMedium, Summary: "validation-only", CreatedAt: now, UpdatedAt: now}
 	alert := &domain.Alert{ID: "alert-validation-only", Status: domain.AlertStatusEscalated, CreatedAt: now, UpdatedAt: now}
+	caseRecord := &domain.Case{ID: "case-validation-only", AlertIDs: []string{alert.ID}, Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityMedium, Summary: "validation-only", CreatedAt: now, UpdatedAt: now}
 	if err := cases.Create(context.Background(), caseRecord); err != nil {
 		t.Fatal(err)
 	}
@@ -121,5 +121,40 @@ func TestMemoryCaseAlertLifecycleRechecksValidationOnlyAlerts(t *testing.T) {
 	}
 	if gotAlert.Status != domain.AlertStatusEscalated || !gotAlert.UpdatedAt.Equal(alertBefore.UpdatedAt) {
 		t.Fatalf("validation-only alert changed: before=%+v after=%+v", alertBefore, gotAlert)
+	}
+}
+
+func TestMemoryCaseAlertLifecycleRejectsCallerModifiedLinks(t *testing.T) {
+	cases := NewMemoryCaseRepo()
+	alerts := NewMemoryAlertRepo()
+	lifecycle := NewMemoryCaseAlertLifecycleRepo(cases, alerts)
+	now := time.Now()
+	alert := &domain.Alert{ID: "alert-immutable-link", CustomerID: "customer-1", Status: domain.AlertStatusOpen, CreatedAt: now, UpdatedAt: now}
+	caseRecord := &domain.Case{
+		ID: "case-immutable-link", CustomerID: "customer-1", AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityMedium,
+		Summary: "immutable links", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := alerts.Create(context.Background(), alert); err != nil {
+		t.Fatal(err)
+	}
+	if err := cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	modified := *caseRecord
+	modified.AlertIDs = nil
+	modified.Status = domain.CaseStatusClosed
+	err := lifecycle.UpdateCaseAndAlerts(context.Background(), &modified, caseRecord.UpdatedAt, nil)
+	var conflict *domain.ErrConflict
+	if !errors.As(err, &conflict) {
+		t.Fatalf("modified-link update error = %v, want ErrConflict", err)
+	}
+	stored, err := cases.Get(context.Background(), caseRecord.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != domain.CaseStatusInvestigating || len(stored.AlertIDs) != 1 {
+		t.Fatalf("modified-link update changed case: %+v", stored)
 	}
 }

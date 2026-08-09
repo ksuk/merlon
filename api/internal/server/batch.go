@@ -18,7 +18,9 @@ import (
 const maxBatchCustomers = 1000
 
 type batchScoreRequest struct {
-	CustomerIDs []string `json:"customer_ids,omitempty"`
+	CustomerIDs      []string `json:"customer_ids,omitempty"`
+	TargetMode       string   `json:"target_mode,omitempty"`
+	TargetManifestID string   `json:"target_manifest_id,omitempty"`
 }
 
 type batchScoreResult struct {
@@ -29,11 +31,124 @@ type batchScoreResult struct {
 }
 
 type batchScoreResponse struct {
+	// RunID names the durable batch_runs row this execution was recorded
+	// under. Additive (API-01); empty only where no run store is configured.
+	RunID     string             `json:"run_id,omitempty"`
 	Total     int                `json:"total"`
 	Succeeded int                `json:"succeeded"`
 	Failed    int                `json:"failed"`
 	Results   []batchScoreResult `json:"results"`
 	Duration  string             `json:"duration"`
+}
+
+func (s *Server) resolveBatchTarget(ctx context.Context, customerIDs []string, targetMode, manifestID string) ([]domain.Customer, error) {
+	if manifestID != "" {
+		repo, ok := s.wave3.(domain.TargetManifestRepository)
+		if !ok {
+			return nil, fmt.Errorf("target manifest store not configured")
+		}
+		manifest, err := repo.GetTargetManifest(ctx, manifestID)
+		if err != nil {
+			return nil, err
+		}
+		if manifest.Status != "confirmed" && manifest.Status != "consumed" {
+			return nil, fmt.Errorf("target manifest must be confirmed")
+		}
+		if len(manifest.CustomerIDs) > maxBatchCustomers {
+			return nil, fmt.Errorf("target manifest exceeds the maximum of %d customers", maxBatchCustomers)
+		}
+		customerIDs = manifest.CustomerIDs
+	}
+	if targetMode == "all" {
+		return s.customers.List(ctx, maxBatchCustomers, 0)
+	}
+	if len(customerIDs) == 0 {
+		return nil, fmt.Errorf("customer_ids or an explicit target_mode=all is required; an empty selection is not all customers")
+	}
+	customers := make([]domain.Customer, 0, len(customerIDs))
+	for _, id := range customerIDs {
+		c, err := s.customers.Get(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("customer %s not found", id)
+		}
+		customers = append(customers, *c)
+	}
+	return customers, nil
+}
+
+// startLegacyBatchRun records that a manual /batch/score or /batch/monitor
+// execution was accepted, before any customer is touched (#74).
+//
+// These two routes predate POST /batch/runs and stayed synchronous, so the
+// durable-run work went only to the new endpoint. That left the routes the
+// batch screen actually calls writing nothing at all: once the response was
+// closed, who ran what, over which population, and under which configuration
+// was unrecoverable.
+//
+// The record is written first so a crash mid-execution still leaves evidence
+// that the run started. A nil return means no run store is configured (tests
+// and minimal deployments); the caller proceeds without recording rather than
+// refusing to do the operator's work.
+func (s *Server) startLegacyBatchRun(r *http.Request, operation string, params map[string]any, manifestID string) *domain.BatchRun {
+	if s.batchRuns == nil {
+		return nil
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	run := &domain.BatchRun{
+		ID:               generateID(),
+		JobType:          operation,
+		Operation:        operation,
+		Status:           domain.BatchRunStatusRunning,
+		Parameters:       params,
+		TargetManifestID: manifestID,
+		ConfigDigests:    copyStringMap(s.configDigests),
+		Actor:            resolveAuditUserID(r),
+		StartedAt:        time.Now().UTC(),
+	}
+	if err := s.batchRuns.Create(r.Context(), run); err != nil {
+		// Failing to record must not fail the execution: the operator asked
+		// for work, and refusing it because history is unavailable trades a
+		// missing record for missing detection.
+		slog.WarnContext(r.Context(), "manual batch run not recorded", "operation", operation, "error", err)
+		return nil
+	}
+	setAuditDetail(r, "batch_run_id", run.ID)
+	return run
+}
+
+// legacyBatchTerminalStatus classifies a finished synchronous batch.
+//
+// It differs from manualBatchTerminalStatus by counting queued_for_review:
+// a customer routed to PENDING_REVIEW has *not* been monitored, so a run whose
+// population ended up there did not complete, and recording it as completed
+// would tell an operator that detection ran when it did not.
+func legacyBatchTerminalStatus(counts map[string]int) domain.BatchRunStatus {
+	failed, queued := counts["failed"], counts["queued_for_review"]
+	if failed == 0 && queued == 0 {
+		return domain.BatchRunStatusCompleted
+	}
+	if counts["succeeded"] == 0 && queued == 0 {
+		return domain.BatchRunStatusFailed
+	}
+	return domain.BatchRunStatusPartial
+}
+
+// finishLegacyBatchRun closes out the record started by startLegacyBatchRun.
+// It takes a context rather than the request because the response may already
+// be in flight.
+func (s *Server) finishLegacyBatchRun(ctx context.Context, run *domain.BatchRun, counts map[string]int) {
+	if run == nil || s.batchRuns == nil {
+		return
+	}
+	workflow, ok := s.batchRuns.(domain.BatchRunWorkflowRepository)
+	if !ok {
+		return
+	}
+	if err := workflow.UpdateBatchRun(ctx, run.ID, legacyBatchTerminalStatus(counts), counts, ""); err != nil {
+		slog.WarnContext(ctx, "manual batch run not finalised", "run_id", run.ID, "error", err)
+	}
 }
 
 func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
@@ -57,26 +172,22 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var customers []domain.Customer
-	if len(req.CustomerIDs) > 0 {
-		for _, id := range req.CustomerIDs {
-			c, err := s.customers.Get(ctx, id)
-			if err != nil {
-				continue
-			}
-			customers = append(customers, *c)
-		}
-	} else {
-		var err error
-		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
-		if err != nil {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-			return
-		}
+	customers, err := s.resolveBatchTarget(ctx, req.CustomerIDs, req.TargetMode, req.TargetManifestID)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+		return
 	}
+
+	run := s.startLegacyBatchRun(r, "score", map[string]any{
+		"target_mode":    req.TargetMode,
+		"customer_count": len(customers),
+	}, req.TargetManifestID)
 
 	resp := batchScoreResponse{
 		Total: len(customers),
+	}
+	if run != nil {
+		resp.RunID = run.ID
 	}
 
 	for _, c := range customers {
@@ -105,6 +216,12 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp.Duration = time.Since(start).String()
+
+	s.finishLegacyBatchRun(ctx, run, map[string]int{
+		"total":     resp.Total,
+		"succeeded": resp.Succeeded,
+		"failed":    resp.Failed,
+	})
 
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -213,7 +330,9 @@ func (s *Server) evaluateMonitoring(ctx context.Context, c *domain.Customer, txn
 }
 
 type batchMonitorRequest struct {
-	CustomerIDs []string `json:"customer_ids,omitempty"`
+	CustomerIDs      []string `json:"customer_ids,omitempty"`
+	TargetMode       string   `json:"target_mode,omitempty"`
+	TargetManifestID string   `json:"target_manifest_id,omitempty"`
 	// Mode selects the scenario set to evaluate. Absent means realtime, which
 	// is what this endpoint has always done.
 	Mode string `json:"mode,omitempty"`
@@ -320,6 +439,9 @@ type batchMonitorResult struct {
 }
 
 type batchMonitorResponse struct {
+	// RunID names the durable batch_runs row this execution was recorded
+	// under. Additive (API-01); empty only where no run store is configured.
+	RunID           string               `json:"run_id,omitempty"`
 	Total           int                  `json:"total"`
 	Succeeded       int                  `json:"succeeded"`
 	Failed          int                  `json:"failed"`
@@ -356,33 +478,33 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	var customers []domain.Customer
-	if len(req.CustomerIDs) > 0 {
-		for _, id := range req.CustomerIDs {
-			c, err := s.customers.Get(ctx, id)
-			if err != nil {
-				continue
-			}
-			customers = append(customers, *c)
-		}
-	} else {
-		var err error
-		customers, err = s.customers.List(ctx, maxBatchCustomers, 0)
-		if err != nil {
-			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
-			return
-		}
+	customers, err := s.resolveBatchTarget(ctx, req.CustomerIDs, req.TargetMode, req.TargetManifestID)
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
+		return
 	}
+
+	run := s.startLegacyBatchRun(r, "monitor", map[string]any{
+		"target_mode":    req.TargetMode,
+		"mode":           string(mode),
+		"customer_count": len(customers),
+	}, req.TargetManifestID)
 
 	resp := batchMonitorResponse{
 		Total: len(customers),
 	}
+	if run != nil {
+		resp.RunID = run.ID
+	}
 
 	// reviewRunID labels any AnnotateBatchReviewed call made during this
-	// handler invocation (Task4/Task7 dedup routing); it is not persisted to
-	// batch_runs since this HTTP-triggered pass isn't tracked there (unlike
-	// the scheduled batch.RunTMBatchEvaluation job).
+	// handler invocation (Task4/Task7 dedup routing). It reuses the durable
+	// run's ID when one was recorded, so a dedup annotation can be traced back
+	// to the execution that made it.
 	reviewRunID := generateID()
+	if run != nil {
+		reviewRunID = run.ID
+	}
 	var pendingIndex map[string][]domain.PendingEvaluation
 	bulkPendingLoaded := false
 	bulkPendingAvailable := false
@@ -501,6 +623,14 @@ func (s *Server) handleBatchMonitor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp.Duration = time.Since(start).String()
+
+	s.finishLegacyBatchRun(ctx, run, map[string]int{
+		"total":             resp.Total,
+		"succeeded":         resp.Succeeded,
+		"failed":            resp.Failed,
+		"queued_for_review": resp.QueuedForReview,
+		"alerts_total":      resp.AlertsTotal,
+	})
 
 	writeJSON(w, http.StatusOK, resp)
 }

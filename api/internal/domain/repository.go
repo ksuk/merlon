@@ -16,6 +16,10 @@ type Cursor struct {
 	// primary key for alert/case operator queues.
 	Sort string
 	Rank int
+	// Filter is an opaque fingerprint of the non-pagination queue filters. A
+	// cursor produced for one filtered result set must not silently be reused
+	// against another filter and skip or duplicate rows.
+	Filter string
 }
 
 type CustomerRepository interface {
@@ -40,6 +44,13 @@ type CustomerRepository interface {
 	UpdateStatus(ctx context.Context, id string, status CustomerStatus, reason string) (*Customer, error)
 }
 
+// CustomerOptimisticRepository is an additive capability for clients that
+// submit the customer version they last read. The base CustomerRepository
+// remains backward compatible for legacy callers that do not send a version.
+type CustomerOptimisticRepository interface {
+	UpdateIfUnmodified(ctx context.Context, c *Customer, expectedUpdatedAt time.Time) error
+}
+
 // CustomerSearchRepository is the optional cursor/offset search capability
 // used by the operator list. Keeping search separate preserves the stable
 // CustomerRepository contract for adapters that do not expose server-side
@@ -61,6 +72,25 @@ type TransactionRepository interface {
 	ListByCustomer(ctx context.Context, customerID string, limit, offset int) ([]Transaction, error)
 	ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Transaction, error)
 	Create(ctx context.Context, t *Transaction) error
+}
+
+// CustomerScopedCountRepository is an optional aggregate capability used by
+// the Customer 360 read model. It keeps page contents bounded while exposing
+// a count that reconciles with the paginated detail stream.
+type CustomerScopedCountRepository interface {
+	CountByCustomer(ctx context.Context, customerID string) (int, error)
+}
+
+type CustomerScoreCountRepository interface {
+	CountScoreHistory(ctx context.Context, customerID string) (int, error)
+}
+
+type CustomerScoreCursorRepository interface {
+	ListScoreHistoryCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]ScoreRecord, error)
+}
+
+type TransactionIdempotencyRepository interface {
+	GetByIdempotencyKey(ctx context.Context, key string) (*Transaction, error)
 }
 
 // TransactionHistoryRepository is an optional capability used by PH9 batch
@@ -104,6 +134,11 @@ type AlertRepository interface {
 	// (optimistic locking, the data model §3.9). Returns *ErrConflict on
 	// mismatch.
 	UpdateStatusIfUnmodified(ctx context.Context, id string, status AlertStatus, resolvedBy string, expectedUpdatedAt time.Time) error
+	// CloseFalsePositive is the existing bulk-close disposition path. Unlike
+	// an ordinary interactive status transition it accepts any unresolved
+	// alert, including open, because the bulk API already requires a common
+	// rationale and records one audit event per alert.
+	CloseFalsePositive(ctx context.Context, id string, resolvedBy string) error
 	// CreateIfNotDuplicate inserts a unless another alert already exists for
 	// the same (customer_id, scenario_id, aggregation_window_start) tuple
 	// (the transaction-monitoring design「バッチ/リアルタイム評価の重複アラート防止」).
@@ -149,6 +184,7 @@ type AlertStatusTransition struct {
 	From              AlertStatus
 	To                AlertStatus
 	ResolvedBy        string
+	Rationale         string
 	ExpectedUpdatedAt time.Time
 }
 
@@ -156,7 +192,42 @@ type AlertStatusTransition struct {
 // transitions in one transaction. Implementations must apply no mutation when
 // any expected version or compatibility check fails.
 type CaseAlertLifecycleRepository interface {
+	// CreateCaseWithAlerts validates and locks every requested alert before
+	// creating the case. Every alert must exist, be unresolved, and belong to
+	// the case customer; otherwise nothing is written.
+	CreateCaseWithAlerts(ctx context.Context, c *Case) error
+	// AppendAlerts adds new alert links without overwriting unrelated case
+	// fields. It rejects terminal cases and stale expectedUpdatedAt values and
+	// returns the updated case. Alert IDs already linked to the target are
+	// treated as idempotent no-ops.
+	AppendAlerts(ctx context.Context, caseID string, expectedUpdatedAt time.Time, alertIDs []string) (*Case, error)
 	UpdateCaseAndAlerts(ctx context.Context, c *Case, expectedUpdatedAt time.Time, alerts []AlertStatusTransition) error
+}
+
+// AtomicMutationRepositories are transaction-bound repository views. A
+// business mutation that requires an audit/timeline/decision append must use
+// these views so PostgreSQL commits all rows together and the memory backend
+// exposes the same all-or-nothing contract.
+type AtomicMutationRepositories struct {
+	Customers          CustomerRepository
+	Transactions       TransactionRepository
+	Alerts             AlertRepository
+	Reports            ReportRepository
+	Audit              AuditRepository
+	Cases              CaseRepository
+	CaseAlertLifecycle CaseAlertLifecycleRepository
+	Investigation      CaseInvestigationRepository
+	AlertDecisions     AlertDecisionRepository
+	EventOutbox        EventOutboxRepository
+	IdentityHistory    CustomerIdentityHistoryRepository
+	Wave3              Wave3Repository
+	PendingEvaluations PendingEvaluationWorkflowRepository
+	BatchRuns          BatchRunRepository
+	BacktestJobs       BacktestJobRepository
+}
+
+type AtomicMutationRepository interface {
+	RunAtomic(ctx context.Context, fn func(AtomicMutationRepositories) error) error
 }
 
 // CaseDashboardRepository provides unresolved case aggregates without

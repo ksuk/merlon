@@ -65,6 +65,189 @@ func TestCreateCustomer(t *testing.T) {
 	}
 }
 
+func TestCustomerIdentityHistoryIncludesLifecycleAndCountryUpdates(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	wave3 := store.NewMemoryWave3Repo()
+	s := New(":0", Deps{
+		Customers: customers,
+		Audit:     store.NewMemoryAuditRepo(),
+		Wave3:     wave3,
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"IDENTITY-HISTORY","customer_type":"individual","country_code":"JP","identity":{"name":"Before"}}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var customer domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&customer); err != nil {
+		t.Fatal(err)
+	}
+
+	updateBody := fmt.Sprintf(`{"country_code":"US","status":"frozen","identity":{"name":"After"},"expected_updated_at":%q}`, customer.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+customer.ID, strings.NewReader(updateBody))
+	updatedResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(updatedResponse, update)
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+
+	entries, err := wave3.ListCustomerIdentityHistory(context.Background(), customer.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("identity history entries = %d, want creation and update", len(entries))
+	}
+	latest := entries[0]
+	if latest.ChangedFields["after_status"] != domain.CustomerStatusFrozen || latest.ChangedFields["after_country_code"] != "US" {
+		t.Fatalf("latest identity history = %+v", latest.ChangedFields)
+	}
+	stored, err := customers.Get(context.Background(), customer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != domain.CustomerStatusFrozen || stored.CountryCode != "US" {
+		t.Fatalf("stored lifecycle identity = %+v", stored)
+	}
+}
+
+func TestCreateCustomerAuditFailureRollsBackCustomer(t *testing.T) {
+	s := testServer()
+	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"EXT-AUDIT-FAIL","customer_type":"individual","country_code":"JP"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusCreated {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	customers, err := s.customers.List(context.Background(), 10, 0)
+	if err != nil {
+		t.Fatalf("list customers: %v", err)
+	}
+	if len(customers) != 0 {
+		t.Fatalf("customers after rollback = %d, want 0", len(customers))
+	}
+}
+
+func TestUpdateCustomerAuditFailureRollsBackCustomer(t *testing.T) {
+	s := testServer()
+	c := &domain.Customer{ID: generateID(), ExternalID: "EXT-UPDATE-AUDIT-FAIL", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.customers.Create(context.Background(), c); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	original := c.CountryCode
+	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+c.ID, strings.NewReader(`{"country_code":"US"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	stored, err := s.customers.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get customer: %v", err)
+	}
+	if stored.CountryCode != original {
+		t.Fatalf("country_code after rollback = %q, want %q", stored.CountryCode, original)
+	}
+}
+
+func TestScoreCustomerAuditFailureRollsBackScoreAndHistory(t *testing.T) {
+	s := testServer()
+	c := &domain.Customer{ID: generateID(), ExternalID: "EXT-SCORE-AUDIT-FAIL", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.customers.Create(context.Background(), c); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	s.audit.(*store.MemoryAuditRepo).SetCreateFailure(errors.New("audit unavailable"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+c.ID+"/score", strings.NewReader(`{"rule_set_id":"test"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("status = %d, want failure when required audit append fails", rec.Code)
+	}
+	stored, err := s.customers.Get(context.Background(), c.ID)
+	if err != nil {
+		t.Fatalf("get customer: %v", err)
+	}
+	if stored.RiskScore != nil || stored.RiskTier != nil {
+		t.Fatalf("customer risk projection after rollback = score %v tier %v, want unset", stored.RiskScore, stored.RiskTier)
+	}
+	history, err := s.customers.ListScoreHistory(context.Background(), c.ID, 10)
+	if err != nil {
+		t.Fatalf("list score history: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("score history after rollback = %d, want 0", len(history))
+	}
+}
+
+func TestScoreCustomerOutboxFailureRollsBackScoreAndHistory(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
+	outbox := store.NewMemoryEventOutboxRepo()
+	want := errors.New("event outbox unavailable")
+	outbox.SetEnqueueFailure(want)
+	s := New(":0", Deps{
+		Customers:          customers,
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Reports:            store.NewMemorySTRReportRepo(),
+		Scoring:            &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		Events:             &fakeBus{},
+		EventOutbox:        outbox,
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"OUTBOX-FAIL","customer_type":"individual","country_code":"JP"}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create customer status = %d, body: %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	score := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(`{"rule_set_id":"test"}`))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, score)
+	if response.Code == http.StatusOK {
+		t.Fatalf("score status = %d, want failure when outbox enqueue fails", response.Code)
+	}
+	stored, err := customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.RiskScore != nil || stored.RiskTier != nil {
+		t.Fatalf("customer risk projection after outbox rollback = score %v tier %v", stored.RiskScore, stored.RiskTier)
+	}
+	history, err := customers.ListScoreHistory(context.Background(), created.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("score history after outbox rollback = %d, want 0", len(history))
+	}
+	pending, err := outbox.ListPending(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("outbox rows after rollback = %d, want 0", len(pending))
+	}
+}
+
 func TestCreateCustomerMissingExternalID(t *testing.T) {
 	s := testServer()
 
@@ -326,6 +509,76 @@ func TestUpdateCustomer(t *testing.T) {
 	}
 }
 
+func TestUpdateCustomerRejectsStaleVersion(t *testing.T) {
+	s := testServer()
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"EXT-CAS","customer_type":"individual","country_code":"JP"}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body: %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	stale := created.UpdatedAt.Format(time.RFC3339Nano)
+
+	first := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+created.ID, strings.NewReader(`{"country_code":"US","expected_updated_at":"`+stale+`"}`))
+	firstResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(firstResponse, first)
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first CAS update status = %d, body: %s", firstResponse.Code, firstResponse.Body.String())
+	}
+
+	second := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+created.ID, strings.NewReader(`{"country_code":"GB","expected_updated_at":"`+stale+`"}`))
+	secondResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(secondResponse, second)
+	if secondResponse.Code != http.StatusConflict {
+		t.Fatalf("stale CAS update status = %d, want %d, body: %s", secondResponse.Code, http.StatusConflict, secondResponse.Body.String())
+	}
+	stored, err := s.customers.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.CountryCode != "US" {
+		t.Fatalf("stale update changed country_code to %q", stored.CountryCode)
+	}
+}
+
+func TestScoreCustomerConfirmationRequiresRationale(t *testing.T) {
+	s := testServer()
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"SCORE-CONFIRM","customer_type":"individual","country_code":"JP"}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, body := range []string{`{"rule_set_id":"test","confirmed":false}`, `{"rule_set_id":"test","confirmed":true}`} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		s.Handler().ServeHTTP(response, req)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("body %s status = %d, want %d", body, response.Code, http.StatusBadRequest)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/customers/"+created.ID+"/score", strings.NewReader(`{"rule_set_id":"test","confirmed":true,"rationale":"periodic KYC review"}`))
+	response := httptest.NewRecorder()
+	s.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("confirmed score status = %d, body: %s", response.Code, response.Body.String())
+	}
+	var record domain.ScoreRecord
+	if err := json.NewDecoder(response.Body).Decode(&record); err != nil {
+		t.Fatal(err)
+	}
+	if record.RuleSetID != "test" || record.Rationale != "periodic KYC review" {
+		t.Fatalf("score snapshot = %+v", record)
+	}
+}
+
 func TestScoreCustomer(t *testing.T) {
 	s := testServer()
 
@@ -498,7 +751,7 @@ func TestScoreCustomer_SetsEddRequestedAtOnHighTier(t *testing.T) {
 // escalation window closes once the customer is no longer High tier, so a
 // later re-entry into High tier starts a fresh window rather than resuming a
 // stale one.
-func TestScoreCustomer_ClearsEddRequestedAtOnTierDowngrade(t *testing.T) {
+func TestScoreCustomer_ClosesEddWindowButKeepsEvidenceOnTierDowngrade(t *testing.T) {
 	scoring := &engine.MockScoringEngine{Score: 9.0, Tier: domain.RiskTierHigh}
 	s := New(":0", Deps{
 		Customers:    store.NewMemoryCustomerRepo(),
@@ -533,8 +786,17 @@ func TestScoreCustomer_ClearsEddRequestedAtOnTierDowngrade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if c.EddRequestedAt != nil {
-		t.Errorf("EddRequestedAt = %v, want nil after downgrade below High", c.EddRequestedAt)
+	// The window closes, but the evidence that EDD was ever requested survives:
+	// erasing it made a routine rescore destroy the record of an outstanding
+	// obligation (ADR-0021, edd_policy tier_downgrade: retain_evidence).
+	if c.EddClosedAt == nil {
+		t.Error("EddClosedAt = nil, want the window closed on downgrade below High")
+	}
+	if c.EddCloseReason != "tier_downgrade" {
+		t.Errorf("EddCloseReason = %q, want tier_downgrade", c.EddCloseReason)
+	}
+	if c.EddRequestedAt == nil {
+		t.Error("EddRequestedAt was erased; the downgrade must close the window, not delete its history")
 	}
 }
 

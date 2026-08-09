@@ -15,6 +15,50 @@ the section for the release they are a candidate for, or `[Unreleased]`.
 No version has been tagged yet. Everything below describes the state of `main`
 ahead of the first release.
 
+### Breaking
+
+Three deliberate contract changes ship in the Wave 3 operator workflows. Each
+withdraws an ability or corrects a field whose name did not match its meaning,
+so none has an additive alternative.
+
+1. **`POST /api/v1/customers/{id}/score` now requires the `cdd:score`
+   permission** (ADR-0019). The CDD score decides EDD requirements, monitoring
+   thresholds and rescreening frequency, so producing one is a control action.
+   Admin and Analyst hold the permission; **Viewer receives 403**.
+   *Migration:* move Viewer-role integrations that rescore customers to
+   Analyst. Deployments running without authentication are unaffected -- with
+   no roles configured there is nothing to check.
+
+2. **`factors[].score` changed meaning** (ADR-0019). It previously held the
+   same number as `contribution`, so summing it double-counted the factor
+   weighting. `score` is now the factor's own normalised value (0-10) and
+   `contribution` is its weighted share of the total.
+   *Migration:* a client that summed `factors[].score` to reconstruct the
+   total must read `factors[].contribution` instead. The record-level `score`
+   is unchanged. `GET /customers/{id}/score-explanation` now reports
+   `reconciled` and `reconciliation_delta` so the arithmetic can be verified
+   rather than assumed.
+
+3. **`POST /api/v1/batch/runs/{id}/rerun` returns an unconfirmed manifest**
+   (ADR-0018). It previously cloned the target manifest as already-confirmed
+   and executed it immediately, which let any population be re-run with no
+   second look and no second person -- bypassing the preview-and-confirm
+   control that the target mechanism exists to provide.
+   *Migration:* the response body is now
+   `{target_manifest, operation, parameters, rerun_of, next}`. Confirm the
+   returned manifest with `POST /api/v1/batch/targets/{id}/confirm` using its
+   token, then start the run with `POST /api/v1/batch/runs`.
+
+Two further changes are 2xx-compatible but worth noting:
+
+- `POST /api/v1/batch/runs` returns **202 Accepted** rather than 201. The run
+  is started and its row committed; execution continues independently of the
+  request, so a client disconnect no longer strands it at `status=running`.
+  Poll `GET /api/v1/batch/runs/{id}` for the outcome.
+- `investigation.edd.completion_status` gains `overdue` and `completed`
+  (ADR-0021). Both are refinements of states previously reported as `open` or
+  `escalated`.
+
 ### Added
 
 - CDD risk scoring with configurable weights, country risk tables, and risk
@@ -72,6 +116,33 @@ ahead of the first release.
   coverage (`make verify-openapi-coverage`), both required in CI.
 - Bilingual (English/Japanese) documentation site with generated API and rule
   schema reference pages.
+- Versioned, operator-editable policy documents for KYC required fields, the
+  EDD stage schedule, CDD rule-set selection, Travel Rule applicability, and
+  screening source readiness, with read-only `GET /api/v1/policies` and
+  `GET /api/v1/policies/{policy}` (ADR-0016). Their digests are pinned onto
+  the runs and batches they governed.
+- Server-side Travel Rule assessment recorded on every transaction, including
+  those submitted without a counterparty block (ADR-0017). A client assertion
+  that disagrees with the policy is preserved and the conflict recorded rather
+  than silently corrected, and evidence that is required but absent routes the
+  transaction to the PENDING_REVIEW queue instead of rejecting it.
+- Explicit EDD completion (`POST /api/v1/customers/{id}/edd/{complete,reopen}`)
+  with an append-only event history, `overdue`/`completed` states, and
+  `overdue_days` (ADR-0021). A tier downgrade now closes an EDD window while
+  retaining its evidence rather than erasing the stage timestamps.
+- Maker-checker for CDD tier overrides: an override becomes a proposal that a
+  second person approves via
+  `POST /api/v1/customers/{id}/score-overrides/{id}/approve` (ADR-0019), plus
+  `GET /api/v1/customers/{id}/cdd-rule-sets` reporting which rule sets apply
+  and which the policy recommends.
+- Batch run cancellation (`POST /api/v1/batch/runs/{id}/cancel`), retaining
+  work already completed as a terminal state distinct from failed and partial.
+- Monitoring gap queue export (`GET /api/v1/pending-evaluations/export`, CSV
+  and JSON, gated by `audit:read`).
+- Screening runs and results now record when they were made against a stale,
+  failed or never-imported watchlist, so a clear result cannot be mistaken for
+  evidence of absence, and `GET /api/v1/screening/sources` reports
+  `screening_ready`.
 
 ### Changed
 
@@ -91,6 +162,40 @@ ahead of the first release.
 
 ### Fixed
 
+- The retention purger could not delete any customer created after the Wave 3
+  schema landed: three foreign keys were added without matching guards, so
+  `DELETE FROM customers` raised a foreign-key violation that aborted the whole
+  purge transaction. One unpurgeable customer stopped retention for every
+  customer. Four further foreign keys had never been guarded. The guarded list
+  is now checked against the live PostgreSQL catalogue by an integration test
+  (ADR-0020).
+- Append-only evidence tables could never be purged, because the trigger
+  rejected every UPDATE and DELETE. Retention and tamper-evidence were
+  mutually unsatisfiable obligations; a purge-aware guard now permits exactly
+  the retention lifecycle and nothing else (ADR-0020).
+- Batch target resolution read a single page of customers and filtered that,
+  so a filter matching customers beyond the first page produced a manifest
+  covering only some of them -- with no error and a `target_count` an operator
+  would read as complete. Resolution now walks the whole book.
+- A manual batch run executed on the request context, so a client disconnect
+  cancelled both the execution and its finalisation, leaving the run at
+  `status=running` with its target manifest consumed until the process
+  restarted.
+- The monitoring gap recovery sweep read one fixed page of a newest-first
+  queue, so a backlog deeper than one page left its oldest records -- the ones
+  that had waited longest -- permanently unprocessed.
+- A FAILED monitoring gap could be revived by the ordinary retry action
+  without limit, which made the automatic retry budget meaningless. Reviving is
+  now a separate action requiring approval authority and counted separately.
+- Repeat screening hits on a list entry the same customer had already been
+  cleared against re-entered the queue on every rescreen with no sign they had
+  been judged before.
+- Screening source state was classified three different ways by three
+  implementations, which disagreed; a recorded successful import whose body is
+  missing now reports as unreadable everywhere rather than as fresh.
+- `GET /api/v1/backtests/{id}/affected-customers` rebuilt its whole answer from
+  the job's stored result on every request, and omitted entirely the customers
+  a candidate rule set would stop alerting on.
 - `GET /api/v1/system/info` reported a hardcoded version of `1.0.0` and a
   hardcoded endpoint count that had drifted to roughly half the real API
   surface. Both are now measured from the running build.

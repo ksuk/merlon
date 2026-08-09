@@ -63,3 +63,40 @@ func TestValidCaseStatusTransition_OpenTreatedAsNewAlias(t *testing.T) {
 		t.Error("ValidCaseStatusTransition(open, investigating) = false, want true (open is a new alias)")
 	}
 }
+
+func TestCaseAlertStateCompatibility(t *testing.T) {
+	tests := []struct {
+		name        string
+		caseStatus  CaseStatus
+		alertStatus AlertStatus
+		want        bool
+	}{
+		{"active case with active alert", CaseStatusInvestigating, AlertStatusOpen, true},
+		{"reopened case keeps terminal history", CaseStatusReopened, AlertStatusClosedFalsePositive, true},
+		{"closed case with terminal alert", CaseStatusClosed, AlertStatusClosedFalsePositive, true},
+		{"str filed case with true positive", CaseStatusStrFiled, AlertStatusClosedTruePositive, true},
+		{"closed case rejects active alert", CaseStatusClosed, AlertStatusInvestigating, false},
+		{"str filed case rejects active alert", CaseStatusStrFiled, AlertStatusEscalated, false},
+		{"unknown case state fails closed", CaseStatus("future"), AlertStatusOpen, false},
+		{"unknown alert state fails closed", CaseStatusNew, AlertStatus("future"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CompatibleCaseAlertState(tt.caseStatus, tt.alertStatus); got != tt.want {
+				t.Errorf("CompatibleCaseAlertState(%q, %q) = %t, want %t", tt.caseStatus, tt.alertStatus, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCanAttachAlertToCase(t *testing.T) {
+	if !CanAttachAlertToCase(CaseStatusReopened, AlertStatusOpen) {
+		t.Fatal("reopened case must accept a new unresolved alert")
+	}
+	if CanAttachAlertToCase(CaseStatusClosed, AlertStatusOpen) {
+		t.Fatal("terminal case accepted a new alert")
+	}
+	if CanAttachAlertToCase(CaseStatusNew, AlertStatusClosedTruePositive) {
+		t.Fatal("new case accepted a terminal alert as a new link")
+	}
+}

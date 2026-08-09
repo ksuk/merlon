@@ -7,6 +7,8 @@ type BacktestScenarioResult struct {
 	MediumSeverityCount int      `json:"medium_severity_count"`
 	LowSeverityCount    int      `json:"low_severity_count"`
 	AffectedCustomerIDs []string `json:"affected_customer_ids"`
+	AddedCustomerIDs    []string `json:"added_customer_ids,omitempty"`
+	RemovedCustomerIDs  []string `json:"removed_customer_ids,omitempty"`
 }
 
 type BacktestResult struct {

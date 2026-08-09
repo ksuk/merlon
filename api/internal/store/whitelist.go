@@ -46,7 +46,7 @@ func (r *MemoryWhitelistRepo) GetActiveByCustomer(_ context.Context, customerID 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	for _, e := range r.entries {
-		if e.CustomerID == customerID && e.Status == domain.WhitelistEntryStatusActive {
+		if domain.SameIdentifier(e.CustomerID, customerID) && e.Status == domain.WhitelistEntryStatusActive {
 			cp := *e
 			return &cp, nil
 		}
@@ -93,7 +93,7 @@ func (r *MemoryWhitelistRepo) ListExpiringSoon(_ context.Context, withinDays int
 // one active entry per customer" invariant. Caller must hold r.mu.
 func (r *MemoryWhitelistRepo) activeConflict(customerID, excludeID string) bool {
 	for _, e := range r.entries {
-		if e.ID != excludeID && e.CustomerID == customerID && e.Status == domain.WhitelistEntryStatusActive {
+		if e.ID != excludeID && domain.SameIdentifier(e.CustomerID, customerID) && e.Status == domain.WhitelistEntryStatusActive {
 			return true
 		}
 	}

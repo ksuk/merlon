@@ -39,6 +39,7 @@ func testServerFull() *Server {
 		Customers:          store.NewMemoryCustomerRepo(),
 		Transactions:       store.NewMemoryTransactionRepo(),
 		Alerts:             alerts,
+		Reports:            store.NewMemorySTRReportRepo(),
 		Scoring:            &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
 		Monitoring:         &engine.MockMonitoringEngine{},
 		Screening:          &engine.MockScreeningEngine{},
@@ -54,14 +55,22 @@ func testServerWithEngine(scoring engine.ScoringEngine, monitoring engine.Monito
 }
 
 func testServerWithEngines(scoring engine.ScoringEngine, monitoring engine.MonitoringEngine, screening engine.ScreeningEngine) *Server {
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
 	return New(":0", Deps{
-		Customers:    store.NewMemoryCustomerRepo(),
-		Transactions: store.NewMemoryTransactionRepo(),
-		Alerts:       store.NewMemoryAlertRepo(),
-		Scoring:      scoring,
-		Monitoring:   monitoring,
-		Screening:    screening,
-		Backtest:     &engine.MockBacktestEngine{},
+		Customers:          store.NewMemoryCustomerRepo(),
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Reports:            store.NewMemorySTRReportRepo(),
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		CaseInvestigation:  store.NewMemoryCaseInvestigationRepo(),
+		AlertDecisions:     store.NewMemoryAlertDecisionRepo(),
+		Scoring:            scoring,
+		Monitoring:         monitoring,
+		Screening:          screening,
+		Backtest:           &engine.MockBacktestEngine{},
 	})
 }
 

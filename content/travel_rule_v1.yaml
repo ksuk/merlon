@@ -1,0 +1,55 @@
+schema_version: travel_rule_v1
+policy_version: "2026-08-06-default"
+# 暗号資産移転に対するトラベルルール適用の閾値。金額は threshold_currency
+# 換算後の値と比較され、閾値ちょうどは適用対象に含まれる（以上）。
+# 自機関の規制解釈・監督当局の指導に応じて変更すること。
+threshold_amount: 100000
+threshold_currency: JPY
+# トラベルルールの対象となる取引チャネル。ここに無いチャネルは
+# fiat_only として適用対象外になる。
+covered_channels:
+  - crypto
+  - virtual_asset
+  - exchange_transfer
+covered_directions:
+  - inbound
+  - outbound
+applicable_counterparty_types:
+  - vasp
+  - unhosted_wallet
+  - unknown
+# travel_rule_status が complete を主張するとき、実際に揃っていなければ
+# ならない項目。構造化 counterparty か travel_rule_evidence のいずれかに
+# 存在すればよい。
+required_evidence_fields:
+  vasp:
+    - originator_name
+    - originator_account
+    - originator_vasp_name
+    - beneficiary_name
+    - beneficiary_account
+    - beneficiary_vasp_name
+  unhosted_wallet:
+    - originator_name
+    - originator_account
+    - beneficiary_account
+    - wallet_attribution_method
+  unknown:
+    - originator_name
+    - beneficiary_account
+# 適用対象外とする理由の閉じた集合。自由記述ではなくコードで記録するため、
+# 後から件数集計と傾向分析ができる。
+not_applicable_reasons:
+  - below_threshold
+  - non_covered_channel
+  - domestic_internal_transfer
+  - fiat_only
+  - exempt_counterparty
+  - other
+# client: クライアントの travel_rule_applicable 主張を保存し、サーバー判定は
+#         travel_rule_assessment に併記して食い違いを conflict として記録する。
+#         公開済み契約を壊さずに矛盾を監査可能にする。
+# server: 食い違う主張を 400 で拒否する。
+assertion_authority: client
+# 適用対象だが証跡が不足する移転の送り先。
+incomplete_routing: pending_review

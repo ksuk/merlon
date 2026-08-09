@@ -16,6 +16,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/auth"
 	backtestworker "github.com/ksuk/merlon/api/internal/backtest"
 	"github.com/ksuk/merlon/api/internal/batch"
+	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/config"
 	"github.com/ksuk/merlon/api/internal/crypto"
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -23,9 +24,10 @@ import (
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/events/handlers"
 	_ "github.com/ksuk/merlon/api/internal/events/nats"
-	_ "github.com/ksuk/merlon/api/internal/events/pgnotify"
+	pgnotifypkg "github.com/ksuk/merlon/api/internal/events/pgnotify"
 	"github.com/ksuk/merlon/api/internal/logging"
 	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/retention"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/seed"
@@ -40,6 +42,8 @@ const whitelistExpiryCheckInterval = time.Hour
 // shortest possible backoff (attempt 1) so a due retry isn't delayed further
 // than necessary.
 const webhookRetryCheckInterval = 30 * time.Second
+
+const eventOutboxCheckInterval = time.Second
 
 const (
 	httpReadHeaderTimeout = 10 * time.Second
@@ -154,12 +158,54 @@ func main() {
 
 	deps := server.Deps{}
 	deps.ConfigDigests = make(map[string]string)
+	deps.EDDStage2Days = cfg.EDDStage2Days
+	deps.EDDStage3Days = cfg.EDDStage3Days
+	priorityPolicy, err := casemgmt.LoadPriorityPolicy(cfg.CasePriorityPath)
+	if err != nil {
+		slog.Error("case priority policy", "error", err)
+		os.Exit(1)
+	}
+	deps.CasePriorityPolicy = priorityPolicy
+
+	// The Wave 3 policy documents (ADR-0016). A policy the operator meant to
+	// apply but that cannot be parsed is a configuration error: exiting is
+	// safer than scoring customers under rules nobody chose.
+	policies, err := policy.Load(policy.Paths{
+		KYCRequiredFields:  cfg.KYCRequiredFieldsPath,
+		EDD:                cfg.EDDPolicyPath,
+		CDDRuleSelection:   cfg.CDDRuleSelectionPath,
+		TravelRule:         cfg.TravelRulePolicyPath,
+		ScreeningReadiness: cfg.ScreeningReadinessPath,
+		SLA:                cfg.SLAPolicyPath,
+	})
+	if err != nil {
+		slog.Error("policy", "error", err)
+		os.Exit(1)
+	}
+	deps.Policies = policies
+	// The EDD policy file is the single source for the stage schedule. The
+	// legacy environment variables still parse so an existing deployment
+	// starts, but a non-default value that the file overrides is announced
+	// rather than silently ignored.
+	if stage2, ok := policies.EDD().StageDays("stage2"); ok && cfg.EDDStage2Days != stage2 {
+		slog.Warn("MERLON_EDD_STAGE2_DAYS is superseded by the EDD policy file",
+			"env", cfg.EDDStage2Days, "policy", stage2, "path", cfg.EDDPolicyPath)
+	}
+	if stage3, ok := policies.EDD().StageDays("stage3"); ok && cfg.EDDStage3Days != stage3 {
+		slog.Warn("MERLON_EDD_STAGE3_DAYS is superseded by the EDD policy file",
+			"env", cfg.EDDStage3Days, "policy", stage3, "path", cfg.EDDPolicyPath)
+	}
+	for name, digest := range policies.Digests() {
+		deps.ConfigDigests[name] = digest
+	}
+
 	for name, path := range map[string]string{
 		"application":     cfg.ConfigPath,
 		"adapter":         cfg.AdapterConfigPath,
 		"country_risk":    cfg.CountryRiskPath,
 		"tm_scenarios":    os.Getenv("MERLON_TM_SCENARIOS_PATH"),
 		"screening_lists": os.Getenv("MERLON_SCREENING_LISTS_PATH"),
+		"case_priority":   cfg.CasePriorityPath,
 	} {
 		if path == "" {
 			continue
@@ -199,6 +245,7 @@ func main() {
 		deps.RoutingRules = notify.DefaultRoutingRules()
 	}
 	deps.PublicURL = cfg.PublicURL
+	deps.OperatorTeams = append([]string(nil), cfg.OperatorTeams...)
 
 	// PII field encryption (security.md §2.1, WS-11 Task 7). An unset key
 	// ring leaves customers.attributes' direct PII fields in plaintext --
@@ -240,10 +287,15 @@ func main() {
 		deps.Customers = store.NewPgCustomerRepo(pool, encryptor)
 		deps.Transactions = store.NewPgTransactionRepo(pool)
 		deps.Alerts = store.NewPgAlertRepo(pool)
+		deps.Reports = store.NewPgSTRReportRepo(pool)
 		deps.Audit = store.NewPgAuditRepo(pool)
 		deps.Cases = store.NewPgCaseRepo(pool)
 		deps.CaseAlertLifecycle = store.NewPgCaseAlertLifecycleRepo(pool)
-		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.CaseInvestigation = store.NewPgCaseInvestigationRepo(pool)
+		deps.AlertDecisions = store.NewPgAlertDecisionRepo(pool)
+		deps.Atomic = store.NewPgAtomicMutationRepo(pool)
+		deps.EventOutbox = store.NewPgEventOutboxRepo(pool)
+		deps.Webhooks = store.NewPgWebhookRepo(pool, encryptor)
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
@@ -253,6 +305,7 @@ func main() {
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		deps.BacktestJobs = store.NewPgBacktestJobRepo(pool)
+		deps.Wave3 = store.NewPgWave3Repo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
 		memCustomers := store.NewMemoryCustomerRepo()
@@ -261,20 +314,44 @@ func main() {
 		deps.Customers = memCustomers
 		deps.Transactions = store.NewMemoryTransactionRepo()
 		deps.Alerts = memAlerts
+		deps.Reports = store.NewMemorySTRReportRepo()
 		deps.Audit = store.NewMemoryAuditRepo()
 		deps.Cases = memCases
 		deps.CaseAlertLifecycle = store.NewMemoryCaseAlertLifecycleRepo(memCases, memAlerts)
+		deps.CaseInvestigation = store.NewMemoryCaseInvestigationRepo()
+		deps.AlertDecisions = store.NewMemoryAlertDecisionRepo()
+		deps.EventOutbox = store.NewMemoryEventOutboxRepo()
+		memoryWave3 := store.NewMemoryWave3Repo()
+		memoryPending := store.NewMemoryPendingEvaluationRepo()
+		memoryBatch := store.NewMemoryBatchRunRepo()
+		memoryBacktest := store.NewMemoryBacktestJobRepo()
+		deps.BacktestJobs = memoryBacktest
+		memoryAtomic, atomicErr := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
+			Customers: deps.Customers, Transactions: deps.Transactions, Alerts: deps.Alerts,
+			Reports: deps.Reports, Audit: deps.Audit, Cases: deps.Cases,
+			CaseAlertLifecycle: deps.CaseAlertLifecycle, Investigation: deps.CaseInvestigation,
+			AlertDecisions: deps.AlertDecisions, EventOutbox: deps.EventOutbox,
+			IdentityHistory: memoryWave3, Wave3: memoryWave3,
+			PendingEvaluations: memoryPending, BatchRuns: memoryBatch, BacktestJobs: memoryBacktest,
+		})
+		if atomicErr != nil {
+			slog.Error("memory atomic mutation repository initialization failed", "error", atomicErr)
+			os.Exit(1)
+		}
+		deps.Atomic = memoryAtomic
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
-		deps.PendingEvaluations = store.NewMemoryPendingEvaluationRepo()
+		deps.PendingEvaluations = memoryPending
 		deps.Retention = store.NewMemoryRetentionRepo()
 		deps.Accounts = store.NewMemoryAccountRepo(memCustomers)
 		deps.Rules = store.NewMemoryRuleRepo()
-		batchRuns = store.NewMemoryBatchRunRepo()
-		deps.BacktestJobs = store.NewMemoryBacktestJobRepo()
+		batchRuns = memoryBatch
+		deps.BacktestJobs = memoryBacktest
+		deps.Wave3 = memoryWave3
 		slog.Info("using in-memory store (set MERLON_DATABASE_URL for PostgreSQL)")
 	}
+	deps.BatchRuns = batchRuns
 
 	if cfg.AuthEnabled {
 		if pool != nil {
@@ -353,18 +430,36 @@ func main() {
 	defer cancelJobs()
 
 	// Event bus (Task 6/7, EVENT_BUS driver selection): pg_notify requires a
-	// real PostgreSQL connection, so it's only wired in the Postgres-backed
-	// deployment mode. The in-memory dev mode has no event bus (tier-change
-	// propagation, Task 8, is a no-op then, same as any other Postgres-only
-	// background job in this file).
-	if runWorkerJobs && pool != nil {
+	// real PostgreSQL connection, so it's wired in every PostgreSQL deployment
+	// mode. API processes must consume the outbox too: otherwise an API-only
+	// deployment would commit durable event intents that no process publishes.
+	// The in-memory dev mode has no event bus.
+	if pool != nil && (runAPIJobs || runWorkerJobs) {
 		bus, err := events.NewBus(events.Config{Driver: cfg.EventBus, Pool: pool})
 		if err != nil {
 			slog.Error("event bus", "error", err)
 			os.Exit(1)
 		}
 		deps.Events = bus
-		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases)
+		if pgBus, ok := bus.(*pgnotifypkg.Bus); ok && deps.EventOutbox != nil {
+			pgBus.Requery = func(ctx context.Context, topic string, afterSeq int64) ([]events.Event, error) {
+				durable, err := deps.EventOutbox.ListAfter(ctx, topic, afterSeq, 0)
+				if err != nil {
+					return nil, err
+				}
+				out := make([]events.Event, 0, len(durable))
+				for _, item := range durable {
+					out = append(out, events.Event{
+						ID: item.ID, Topic: item.Topic, Payload: item.Payload,
+						SequenceNum: item.SequenceNum, ChainID: item.ChainID,
+						ChainHopCount: item.ChainHopCount, CreatedAt: item.CreatedAt,
+					})
+				}
+				return out, nil
+			}
+		}
+		go server.RunEventOutboxWorker(jobsCtx, deps.EventOutbox, bus, eventOutboxCheckInterval)
+		tierChangeHandler := handlers.NewTierChangeHandler(deps.Transactions, deps.Monitoring, deps.Alerts, deps.Cases, deps.CaseAlertLifecycle)
 		subscriptionErrors, err := startEventSubscription(jobsCtx, bus, "cdd.tier_changed", tierChangeHandler)
 		if err != nil {
 			slog.Error("event bus subscription initialization failed", "topic", "cdd.tier_changed", "error", err)
@@ -387,6 +482,11 @@ func main() {
 			}
 		})
 	}
+	listenAddr := cfg.HTTPAddr
+	if cfg.Mode == "worker" {
+		listenAddr = cfg.WorkerHTTPAddr
+	}
+	var srv *server.Server
 
 	if runAPIJobs && (cfg.ScreeningImportEnabled || cfg.ScreeningRescreenEnabled) {
 		var listStore screening.ListStore
@@ -401,6 +501,10 @@ func main() {
 		deps.ScreeningListStore = listStore
 		deps.ScreeningFailureTracker = failureTracker
 		deps.ScreeningListIDs = screeningListIDs
+		// Construct the server after the source directory dependencies are
+		// attached so dashboard reads and scheduled screening share the same
+		// composition.
+		srv = server.New(listenAddr, deps)
 
 		if cfg.ScreeningImportEnabled {
 			fetcher := screening.NewDefaultHTTPFetcher(30 * time.Second)
@@ -424,7 +528,13 @@ func main() {
 				Customers: deps.Customers,
 				Screening: deps.Screening,
 				Results:   deps.ScreeningResults,
-				ListIDs:   screeningListIDs,
+				Workflow:  deps.Wave3,
+				PersistWorkflow: func(ctx context.Context, run *domain.ScreeningRun, results []domain.ScreeningResultRecord) error {
+					return srv.PersistScreeningRun(ctx, run, results)
+				},
+				ConfigDigests: deps.ConfigDigests,
+				Actor:         "system:screening-scheduler",
+				ListIDs:       screeningListIDs,
 			})
 			go scheduler.RunPeriodic(jobsCtx, cfg.ScreeningCheckInterval)
 			slog.Info("screening rescreening scheduler enabled", "check_interval", cfg.ScreeningCheckInterval)
@@ -433,21 +543,24 @@ func main() {
 		}
 	}
 
-	listenAddr := cfg.HTTPAddr
-	if cfg.Mode == "worker" {
-		listenAddr = cfg.WorkerHTTPAddr
+	if srv == nil {
+		srv = server.New(listenAddr, deps)
 	}
-	srv := server.New(listenAddr, deps)
+	if runAPIJobs {
+		go srv.ResumeManualBatchRuns(jobsCtx)
+		slog.Info("manual batch recovery check enabled")
+	}
 
 	if runAPIJobs && deps.Customers != nil && deps.Cases != nil {
 		batch.StartEDDEscalationTicker(jobsCtx, batch.EDDEscalationDeps{
 			Customers:  deps.Customers,
 			Cases:      deps.Cases,
 			Webhook:    srv.DispatchWebhook,
+			Policy:     policies.EDD(),
 			Stage2Days: cfg.EDDStage2Days,
 			Stage3Days: cfg.EDDStage3Days,
 		}, eddEscalationCheckInterval)
-		slog.Info("EDD escalation job enabled", "stage2_days", cfg.EDDStage2Days, "stage3_days", cfg.EDDStage3Days)
+		slog.Info("EDD escalation job enabled", "policy_version", policies.EDD().Version())
 	}
 
 	if runAPIJobs && deps.Retention != nil && deps.Audit != nil {
@@ -460,6 +573,11 @@ func main() {
 				"alert_case_data":   purger.AlertCaseData,
 				"cdd_score_history": purger.ScoreHistory,
 				"audit_log":         purger.AuditLogs,
+				// Wave 3 evidence streams. Without these two, pending
+				// evaluations and backtest job history grew without bound and
+				// no policy governed them.
+				"pending_evaluation_data": purger.PendingEvaluationData,
+				"backtest_data":           purger.BacktestData,
 			}
 		}
 		purgeJob := &retention.PurgeJob{
@@ -517,6 +635,7 @@ func main() {
 	if runWorkerJobs && deps.PendingEvaluations != nil && deps.Monitoring != nil {
 		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
 		recoveryJob.ConfigDigests = deps.ConfigDigests
+		recoveryJob.SetPersistence(deps.Atomic, deps.Audit, deps.EventOutbox)
 		go func() {
 			if err := recoveryJob.Run(recoveryCtx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("pending evaluation recovery job stopped", "error", err)
@@ -551,6 +670,7 @@ func main() {
 				Monitoring:    deps.Monitoring,
 				Alerts:        deps.Alerts,
 				Cases:         deps.Cases,
+				CaseLifecycle: deps.CaseAlertLifecycle,
 				ConfigDigests: deps.ConfigDigests,
 			}, runID)
 		})

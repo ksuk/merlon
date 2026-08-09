@@ -1,12 +1,10 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Card, CardContent } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api, type Role } from "@/lib/api"
 import { useTranslation } from "react-i18next"
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function UsersPage() {
   const { t, i18n } = useTranslation()

@@ -18,10 +18,31 @@ type loginRequest struct {
 
 // meResponse is also the login response body: the authenticated user's
 // public profile. PasswordHash is never serialized (domain.User json:"-").
+//
+// AuthMode, Roles and Permissions are the CAP-01 additive extension: the shell
+// needs the session's authority to decide what to render, and previously each
+// page re-derived it from Role alone. Role is retained unchanged — the contract
+// is extended, not replaced.
 type meResponse struct {
-	ID    string      `json:"id"`
-	Email string      `json:"email"`
-	Role  domain.Role `json:"role"`
+	ID          string      `json:"id"`
+	Email       string      `json:"email"`
+	Role        domain.Role `json:"role"`
+	AuthMode    AuthMode    `json:"auth_mode,omitempty"`
+	Roles       []string    `json:"roles,omitempty"`
+	Permissions []string    `json:"permissions,omitempty"`
+}
+
+// newMeResponse builds the profile body for both login and /auth/me so the two
+// can never disagree about what a session may do.
+func (s *Server) newMeResponse(user *domain.User) meResponse {
+	return meResponse{
+		ID:          user.ID,
+		Email:       user.Email,
+		Role:        user.Role,
+		AuthMode:    s.authMode(),
+		Roles:       []string{string(user.Role)},
+		Permissions: rolePermissions(user.Role),
+	}
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +89,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	s.recordAuthAudit(r, user.ID, "login_success")
 
-	writeJSON(w, http.StatusOK, meResponse{ID: user.ID, Email: user.Email, Role: user.Role})
+	writeJSON(w, http.StatusOK, s.newMeResponse(user))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -165,7 +186,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, meResponse{ID: user.ID, Email: user.Email, Role: user.Role})
+	writeJSON(w, http.StatusOK, s.newMeResponse(user))
 }
 
 // handleListUsers is the admin user-management screen's data source

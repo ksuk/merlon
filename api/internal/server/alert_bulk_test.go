@@ -56,9 +56,6 @@ func TestHandleBulkCloseAlerts_FiltersByScenarioPeriodSeverity(t *testing.T) {
 	outOfWindow := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
 	match := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, inWindow)
-	if err := s.alerts.UpdateStatus(context.Background(), match.ID, domain.AlertStatusInvestigating, ""); err != nil {
-		t.Fatalf("advance matching alert: %v", err)
-	}
 	wrongScenario := seedAlertWith(t, s, cust.ID, "rapid_movement", domain.AlertSeverityHigh, inWindow)
 	wrongSeverity := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityLow, inWindow)
 	wrongPeriod := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, outOfWindow)
@@ -112,11 +109,6 @@ func TestHandleBulkCloseAlerts_RecordsIndividualAuditEntries(t *testing.T) {
 	now := time.Now()
 	a1 := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, now)
 	a2 := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, now)
-	for _, a := range []domain.Alert{a1, a2} {
-		if err := s.alerts.UpdateStatus(context.Background(), a.ID, domain.AlertStatusInvestigating, ""); err != nil {
-			t.Fatalf("advance alert %s: %v", a.ID, err)
-		}
-	}
 
 	body, _ := json.Marshal(bulkCloseAlertsRequest{
 		ScenarioID: "structuring_basic",
@@ -238,5 +230,51 @@ func TestHandleBulkCaseAssignment_CreatesNewCase(t *testing.T) {
 	}
 	if got.CustomerID != cust.ID {
 		t.Errorf("case customer_id = %q, want %q", got.CustomerID, cust.ID)
+	}
+}
+
+func TestHandleBulkCaseAssignment_RejectsTerminalCaseWithoutMutation(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomerWithExternalID(t, s, "BULK_CASE_TERMINAL")
+	alert := seedAlertWith(t, s, cust.ID, "structuring_basic", domain.AlertSeverityHigh, time.Now())
+	terminal := &domain.Case{
+		ID: "case-terminal-bulk", CustomerID: cust.ID, Status: domain.CaseStatusClosed,
+		Priority: domain.CasePriorityMedium, Summary: "terminal", CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := s.cases.Create(context.Background(), terminal); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(bulkCaseAssignmentRequest{AlertIDs: []string{alert.ID}, CaseID: terminal.ID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts/bulk-case", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	stored, err := s.cases.Get(context.Background(), terminal.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.AlertIDs) != 0 {
+		t.Fatalf("terminal case mutated: %v", stored.AlertIDs)
+	}
+}
+
+func TestHandleBulkCaseAssignment_ValidatesBeforeCreatingCase(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomerWithExternalID(t, s, "BULK_CASE_VALIDATE_FIRST")
+	body, _ := json.Marshal(bulkCaseAssignmentRequest{AlertIDs: []string{"missing-alert"}, CustomerID: cust.ID})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/alerts/bulk-case", strings.NewReader(string(body)))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	cases, err := s.cases.ListByCustomer(context.Background(), cust.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) != 0 {
+		t.Fatalf("invalid bulk request created orphan cases: %+v", cases)
 	}
 }

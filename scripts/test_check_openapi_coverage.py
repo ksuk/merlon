@@ -112,7 +112,10 @@ class CoverageRatchetTests(unittest.TestCase):
         status, stdout, stderr = self.run_guard()
 
         self.assertEqual(status, 0, stderr)
-        self.assertIn("OpenAPI coverage: 44/78", stdout)
+        self.assertIn(
+            f"OpenAPI coverage: {coverage.BASELINE_DOCUMENTED}/{coverage.BASELINE_REGISTERED}",
+            stdout,
+        )
 
     def test_undocumented_registered_route_addition_fails(self) -> None:
         status, _, stderr = self.run_guard(
@@ -120,27 +123,27 @@ class CoverageRatchetTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 1)
-        self.assertIn("registered route count rose to 79", stderr)
+        self.assertIn(f"registered route count rose to {coverage.BASELINE_REGISTERED + 1}", stderr)
 
     def test_same_count_registered_route_replacement_fails(self) -> None:
         status, _, stderr = self.run_guard(replace_registered=True)
 
         self.assertEqual(status, 1)
         self.assertIn(
-            "registered route set changed while the count remained 78",
+            f"registered route set changed while the count remained {coverage.BASELINE_REGISTERED}",
             stderr,
         )
         self.assertIn("POST /api/v1/replacement", stderr)
 
-    def test_same_count_undocumented_route_replacement_fails(self) -> None:
+    def test_same_count_route_replacement_fails(self) -> None:
         status, _, stderr = self.run_guard(swap_documented=True)
 
         self.assertEqual(status, 1)
         self.assertIn(
-            "undocumented route set changed while the count remained 34",
+            "documented in openapi.json but not registered",
             stderr,
         )
-        self.assertIn("GET /api/v1/example-43", stderr)
+        self.assertIn(f"GET /api/v1/example-{coverage.BASELINE_DOCUMENTED - 1}", stderr)
 
     def test_registered_route_removal_requires_baseline_update(self) -> None:
         status, _, stderr = self.run_guard(
@@ -148,15 +151,16 @@ class CoverageRatchetTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 1)
-        self.assertIn("registered route count fell to 77", stderr)
+        self.assertIn(f"registered route count fell to {coverage.BASELINE_REGISTERED - 1}", stderr)
 
     def test_documented_route_addition_requires_baseline_update(self) -> None:
         status, _, stderr = self.run_guard(
+            registered=coverage.BASELINE_DOCUMENTED + 1,
             documented=coverage.BASELINE_DOCUMENTED + 1,
         )
 
         self.assertEqual(status, 1)
-        self.assertIn("coverage rose to 45", stderr)
+        self.assertIn(f"coverage rose to {coverage.BASELINE_DOCUMENTED + 1}", stderr)
 
     def test_documented_route_removal_points_to_spec_source(self) -> None:
         status, _, stderr = self.run_guard(

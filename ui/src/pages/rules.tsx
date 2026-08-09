@@ -1,17 +1,17 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useApi } from "@/hooks/use-api"
+import { useCan, useSession } from "@/hooks/use-session"
+import { CapabilityNotice } from "@/components/capability-notice"
 import { cn } from "@/lib/utils"
 import { api, type RuleDefinition, type RuleType } from "@/lib/api"
 import { translateApiError } from "@/lib/errors"
 import { Download, FileUp, Plus, PowerOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { Link } from "react-router"
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function RulesPage() {
   const { t, i18n } = useTranslation()
@@ -24,8 +24,12 @@ export function RulesPage() {
   function ruleTypeLabel(rt: RuleType) {
     return ruleTypes.find((entry) => entry.value === rt)?.label ?? rt
   }
-  const { data: user } = useApi(api.auth.me)
-  const isAdmin = user?.role === "admin"
+  // rule:write is the permission the server enforces on every write route.
+  // Reading it from the capability contract keeps the affordance and the
+  // enforcement derived from one source instead of two role literals.
+  const { user } = useSession()
+  const canWriteRules = useCan("rules.write")
+  const isAdmin = canWriteRules
 
   const [typeFilter, setTypeFilter] = useState<RuleType | "">("")
   const [activeOnly, setActiveOnly] = useState(false)
@@ -34,6 +38,7 @@ export function RulesPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [showCreate, setShowCreate] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [createType, setCreateType] = useState<RuleType>("CDD_WEIGHT")
   const nameRef = useRef<HTMLInputElement>(null)
@@ -75,14 +80,22 @@ export function RulesPage() {
     try {
       definition = JSON.parse(definitionText)
     } catch {
+      // A malformed definition used to return silently, so the operator
+      // pressed the button and nothing at all happened.
+      setCreateError(t("rules.create.invalidJson"))
       return
     }
 
     setCreating(true)
+    setCreateError(null)
     try {
       await api.rules.create({ type: createType, name, definition })
       setShowCreate(false)
       await reload()
+    } catch (err: unknown) {
+      // The server's validation response was previously swallowed by a
+      // try/finally with no catch: a rejected rule looked like a no-op.
+      setCreateError(translateApiError(err, t))
     } finally {
       setCreating(false)
     }
@@ -127,7 +140,7 @@ export function RulesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("rules.title")}</h1>
-        {isAdmin && (
+        {isAdmin ? (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setShowImport(!showImport)}>
               <FileUp className="h-4 w-4" />
@@ -138,6 +151,8 @@ export function RulesPage() {
               {t("rules.actions.create")}
             </Button>
           </div>
+        ) : (
+          <CapabilityNotice capabilityId="rules.write" />
         )}
       </div>
 
@@ -224,6 +239,11 @@ export function RulesPage() {
                   className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
+              {createError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {createError}
+                </p>
+              )}
               <Button type="submit" size="sm" disabled={creating}>
                 {t("rules.create.submit")}
               </Button>
@@ -270,7 +290,9 @@ export function RulesPage() {
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{rule.name}</span>
+                      <Link to={`/rules/${encodeURIComponent(rule.name)}`} className="text-sm font-medium underline">
+                        {rule.name}
+                      </Link>
                       <Badge variant="outline">{ruleTypeLabel(rule.type)}</Badge>
                       <Badge variant={rule.is_active ? "low" : "secondary"}>
                         {rule.is_active ? t("rules.status.active") : t("rules.status.inactive")}
