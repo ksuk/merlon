@@ -132,6 +132,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/audit/export":                                        pathExportAuditLogs(),
 			"/api/v1/system/config-digests":                               pathGET("Get loaded configuration digests"),
 			"/api/v1/system/capabilities":                                 pathCapabilities(),
+			"/api/v1/system/status":                                       pathSystemStatus(),
 			"/api/v1/policies":                                            pathPolicies(),
 			"/api/v1/policies/{policy}":                                   pathPolicy(),
 			"/api/v1/accounts":                                            pathAccountCreate(),
@@ -921,6 +922,33 @@ func wave3Schemas() map[string]any {
 // wave4Schemas documents the operator-readiness contracts added in Wave 4.
 func wave4Schemas() map[string]any {
 	return map[string]any{
+		"ComponentStatus": objectSchema(map[string]any{
+			"name":              map[string]any{"type": "string"},
+			"configured":        map[string]any{"type": "boolean", "description": "Whether this deployment wired the component at all; independent of whether it is working"},
+			"operational_state": map[string]any{"type": "string", "enum": []string{"ready", "degraded", "unavailable", "unknown"}, "description": "unknown means no check could be run. It is never a quiet yes."},
+			"reason_code":       map[string]any{"type": "string", "description": "Stable machine reason; never carries a dependency's error text"},
+			"checked_at":        map[string]any{"type": "string", "format": "date-time"},
+		}, "name", "configured", "operational_state", "checked_at"),
+		"PolicyProvenance": objectSchema(map[string]any{
+			"name":           map[string]any{"type": "string"},
+			"schema_version": map[string]any{"type": "string"},
+			"policy_version": map[string]any{"type": "string"},
+			"digest":         map[string]any{"type": "string"},
+			"source":         map[string]any{"type": "string", "enum": []string{"file", "default"}, "description": "default means this deployment has not authored the policy"},
+		}, "name", "policy_version", "digest", "source"),
+		"SystemStatus": objectSchema(map[string]any{
+			"version":        map[string]any{"type": "string"},
+			"commit":         map[string]any{"type": "string"},
+			"built_at":       map[string]any{"type": "string"},
+			"auth_mode":      map[string]any{"type": "string", "enum": []string{"disabled", "api_key_only", "session"}},
+			"base_currency":  map[string]any{"type": "string"},
+			"config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"policies":       arraySchema(schemaRef("PolicyProvenance")),
+			"components":     arraySchema(schemaRef("ComponentStatus")),
+			"checked_at":     map[string]any{"type": "string", "format": "date-time"},
+			"expires_at":     map[string]any{"type": "string", "format": "date-time"},
+			"source":         map[string]any{"type": "string", "enum": []string{"live", "cached"}},
+		}, "version", "auth_mode", "config_digests", "policies", "components", "checked_at", "expires_at", "source"),
 		"ConfigValidationError": objectSchema(map[string]any{
 			"field":    map[string]any{"type": "string", "description": "Legacy coarse field name, retained unchanged"},
 			"message":  map[string]any{"type": "string"},
@@ -949,6 +977,13 @@ func wave4Schemas() map[string]any {
 			"data":        arraySchema(schemaRef("CapabilityDescriptor")),
 		}, "auth_mode", "permissions", "checked_at", "data"),
 	}
+}
+
+func pathSystemStatus() map[string]any {
+	parameters := []map[string]any{
+		{"name": "refresh", "in": "query", "description": "Force a live dependency check instead of reusing a cached result", "schema": map[string]any{"type": "boolean"}},
+	}
+	return map[string]any{"get": documentedJSONOperation("Get runtime readiness and active configuration provenance", parameters, nil, "200", "System status", schemaRef("SystemStatus"), "401", "500")}
 }
 
 func pathCapabilities() map[string]any {

@@ -109,6 +109,11 @@ type Server struct {
 	// policies is nil-tolerant: every accessor on *policy.Set returns the
 	// in-code default for a nil receiver.
 	policies *policy.Set
+
+	// statusCache bounds how often GET /system/status probes dependencies. The
+	// answer always travels with its own age, so a cached result is never
+	// mistaken for a fresh one.
+	statusCache systemStatusCache
 }
 
 type Deps struct {
@@ -531,6 +536,11 @@ func (s *Server) routes() {
 	// caller: it reports what this deployment offers and why a function is
 	// unavailable, never the content of a function the caller may not use.
 	s.route("GET /api/v1/system/capabilities", s.handleCapabilities)
+
+	// Truthful runtime readiness and active-configuration provenance (#83).
+	// Distinct from /healthz/ready, which is an unauthenticated probe with a
+	// deliberately minimal body.
+	s.route("GET /api/v1/system/status", s.handleSystemStatus)
 
 	// Policy documents (ADR-0016). Read-only: policies are edited as files
 	// and reloaded on restart, never mutated through the API.
