@@ -253,6 +253,7 @@ func (s *Server) handleGetAlert(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
+	s.resolveAlertProvenance(r.Context(), a)
 	writeJSON(w, http.StatusOK, a)
 }
 

@@ -35,6 +35,9 @@ func BuildOpenAPISpec() map[string]any {
 	for name, schema := range wave3Schemas() {
 		schemas[name] = schema
 	}
+	for name, schema := range wave4Schemas() {
+		schemas[name] = schema
+	}
 	spec := map[string]any{
 		"openapi": "3.0.3",
 		"info": map[string]any{
@@ -128,6 +131,8 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/audit":                                               pathAuditLogs(),
 			"/api/v1/audit/export":                                        pathExportAuditLogs(),
 			"/api/v1/system/config-digests":                               pathGET("Get loaded configuration digests"),
+			"/api/v1/system/capabilities":                                 pathCapabilities(),
+			"/api/v1/system/status":                                       pathSystemStatus(),
 			"/api/v1/policies":                                            pathPolicies(),
 			"/api/v1/policies/{policy}":                                   pathPolicy(),
 			"/api/v1/accounts":                                            pathAccountCreate(),
@@ -457,6 +462,7 @@ func wave2Schemas() map[string]any {
 			"status": map[string]any{"type": "string"}, "score": map[string]any{"type": "number"},
 			"description": map[string]any{"type": "string"}, "transaction_ids": arraySchema(map[string]any{"type": "string"}),
 			"updated_at": map[string]any{"type": "string", "format": "date-time"},
+			"provenance": schemaRef("AlertProvenance"),
 		}),
 		"Customer": objectSchema(map[string]any{
 			"id": map[string]any{"type": "string"}, "external_id": map[string]any{"type": "string"},
@@ -698,7 +704,7 @@ func compatibilitySchemas() map[string]any {
 			"next_review_date": map[string]any{"type": "string", "format": "date", "nullable": true}, "created_at": map[string]any{"type": "string", "format": "date-time"},
 		}),
 		"UserProfile":            objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "email": map[string]any{"type": "string", "format": "email"}, "role": map[string]any{"type": "string"}}, "id", "email", "role"),
-		"ConfigValidationResult": objectSchema(map[string]any{"valid": map[string]any{"type": "boolean"}, "errors": arraySchema(map[string]any{"type": "object", "additionalProperties": true})}, "valid", "errors"),
+		"ConfigValidationResult": objectSchema(map[string]any{"valid": map[string]any{"type": "boolean"}, "errors": arraySchema(schemaRef("ConfigValidationError")), "warnings": arraySchema(schemaRef("ConfigValidationError"))}, "valid", "errors"),
 		"SystemInfo":             objectSchema(map[string]any{"version": map[string]any{"type": "string"}, "components": arraySchema(map[string]any{"type": "string"}), "endpoints": map[string]any{"type": "integer"}, "features": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}}}),
 		"Webhook": objectSchema(map[string]any{
 			"id": map[string]any{"type": "string"}, "url": map[string]any{"type": "string", "format": "uri"},
@@ -803,7 +809,7 @@ func wave3Schemas() map[string]any {
 		"ScreeningResultHistory": objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "screening_result_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "screening_result_id", "from_status", "to_status", "rationale", "actor", "version", "created_at"),
 		"ScreeningSourceStatus":  objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "configured": map[string]any{"type": "boolean"}, "operational_state": map[string]any{"type": "string", "enum": []string{"never_imported", "ready", "stale", "unreadable", "failed", "unavailable"}}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_failure_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_success_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "age_seconds": map[string]any{"type": "integer", "nullable": true}, "freshness_threshold_seconds": map[string]any{"type": "integer"}, "consecutive_failures": map[string]any{"type": "integer"}, "diagnostic": map[string]any{"type": "string"}}, "list_id", "list_type", "configured", "operational_state", "freshness_threshold_seconds", "consecutive_failures"),
 		"PolicyDescriptor": objectSchema(map[string]any{
-			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness"}},
+			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness", "sla"}},
 			"schema_version": map[string]any{"type": "string"},
 			"policy_version": map[string]any{"type": "string"},
 			"digest":         map[string]any{"type": "string", "description": "SHA-256 of the policy document, pinned onto the decisions it produced"},
@@ -912,6 +918,145 @@ func wave3Schemas() map[string]any {
 		"PaginatedBatchRuns":          objectSchema(map[string]any{"data": arraySchema(schemaRef("BatchRun")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
 		"PaginatedTransactions":       objectSchema(map[string]any{"data": arraySchema(schemaRef("Transaction")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
 	}
+}
+
+// wave4Schemas documents the operator-readiness contracts added in Wave 4.
+func wave4Schemas() map[string]any {
+	return map[string]any{
+		"AlertProvenance": objectSchema(map[string]any{
+			"scenario_id":       map[string]any{"type": "string"},
+			"config_digests":    map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "Digests of every configuration document the producing process had loaded"},
+			"engine_version":    map[string]any{"type": "string"},
+			"evaluation_mode":   map[string]any{"type": "string", "description": "realtime, batch or both; the same scenario can behave differently under each"},
+			"evaluated_at":      map[string]any{"type": "string", "format": "date-time"},
+			"window_from":       map[string]any{"type": "string", "format": "date-time"},
+			"window_to":         map[string]any{"type": "string", "format": "date-time"},
+			"applied_threshold": map[string]any{"type": "number", "description": "The single value that decided this detection for the customer type and risk tier involved. The rule body is never returned."},
+			"rule_name":         map[string]any{"type": "string", "description": "Resolved at read time, not persisted"},
+			"rule_version":      map[string]any{"type": "integer"},
+			"rule_digest":       map[string]any{"type": "string", "description": "Content address of the stored rule version, so a reviewer can confirm the artifact they fetched is the one named"},
+			"availability":      map[string]any{"type": "string", "enum": []string{"available", "restricted", "missing", "not_captured"}, "description": "not_captured means the alert predates provenance capture; current configuration is never backfilled as historical fact"},
+		}, "scenario_id", "availability"),
+		"AgeBucket": objectSchema(map[string]any{
+			"label":      map[string]any{"type": "string"},
+			"from_hours": map[string]any{"type": "integer"},
+			"to_hours":   map[string]any{"type": "integer", "description": "0 on the final open-ended bucket"},
+			"count":      map[string]any{"type": "integer"},
+		}, "label", "from_hours", "count"),
+		"WorkloadCounts": objectSchema(map[string]any{
+			"open":               map[string]any{"type": "integer"},
+			"mine":               map[string]any{"type": "integer"},
+			"unassigned":         map[string]any{"type": "integer"},
+			"oldest_open_at":     map[string]any{"type": "string", "format": "date-time", "description": "Absent on an empty queue; an age of zero would read as newly arrived"},
+			"oldest_age_seconds": map[string]any{"type": "integer"},
+			"age_buckets":        arraySchema(schemaRef("AgeBucket")),
+			"overdue":            map[string]any{"type": "integer", "description": "Absent unless an SLA policy is configured. Zero would claim nothing is overdue, which an unconfigured deployment cannot know."},
+			"due_soon":           map[string]any{"type": "integer"},
+		}, "open", "mine", "unassigned", "age_buckets"),
+		"DashboardSLA": objectSchema(map[string]any{
+			"state":                 map[string]any{"type": "string", "enum": []string{"not_configured", "running", "breached", "met"}},
+			"policy_version":        map[string]any{"type": "string"},
+			"due_soon_within_hours": map[string]any{"type": "integer"},
+		}, "state", "policy_version"),
+		"DashboardWorkload": objectSchema(map[string]any{
+			"scope":        map[string]any{"type": "string", "description": "The operator identity 'mine' was taken against; empty when the deployment has no identity"},
+			"alerts":       schemaRef("WorkloadCounts"),
+			"cases":        schemaRef("WorkloadCounts"),
+			"sla":          schemaRef("DashboardSLA"),
+			"evaluated_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "scope", "alerts", "cases", "sla", "evaluated_at"),
+		"DashboardException": objectSchema(map[string]any{
+			"kind":  map[string]any{"type": "string"},
+			"count": map[string]any{"type": "integer"},
+			"href":  map[string]any{"type": "string", "description": "Pre-filtered queue that explains the count"},
+			"state": map[string]any{"type": "string", "enum": []string{"failed", "degraded", "unknown"}},
+		}, "kind", "count", "href", "state"),
+		"DashboardStats": objectSchema(map[string]any{
+			"customers_by_risk_tier":           map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"total_customers":                  map[string]any{"type": "integer"},
+			"alerts_by_status":                 map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"alerts_by_severity":               map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"total_alerts":                     map[string]any{"type": "integer"},
+			"cases_by_status":                  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "integer"}},
+			"total_cases":                      map[string]any{"type": "integer"},
+			"recent_transactions":              map[string]any{"type": "integer"},
+			"recent_transactions_window_hours": map[string]any{"type": "integer"},
+			"screening_ready":                  map[string]any{"type": "boolean"},
+			"screening_degraded_sources":       arraySchema(map[string]any{"type": "string"}),
+			"screening_list_freshness":         arraySchema(map[string]any{"type": "object", "additionalProperties": true}),
+			"workload":                         schemaRef("DashboardWorkload"),
+			"exceptions":                       arraySchema(schemaRef("DashboardException")),
+		}, "total_customers", "total_alerts", "total_cases", "recent_transactions", "recent_transactions_window_hours", "exceptions"),
+		"ComponentStatus": objectSchema(map[string]any{
+			"name":              map[string]any{"type": "string"},
+			"configured":        map[string]any{"type": "boolean", "description": "Whether this deployment wired the component at all; independent of whether it is working"},
+			"operational_state": map[string]any{"type": "string", "enum": []string{"ready", "degraded", "unavailable", "unknown"}, "description": "unknown means no check could be run. It is never a quiet yes."},
+			"reason_code":       map[string]any{"type": "string", "description": "Stable machine reason; never carries a dependency's error text"},
+			"checked_at":        map[string]any{"type": "string", "format": "date-time"},
+		}, "name", "configured", "operational_state", "checked_at"),
+		"PolicyProvenance": objectSchema(map[string]any{
+			"name":           map[string]any{"type": "string"},
+			"schema_version": map[string]any{"type": "string"},
+			"policy_version": map[string]any{"type": "string"},
+			"digest":         map[string]any{"type": "string"},
+			"source":         map[string]any{"type": "string", "enum": []string{"file", "default"}, "description": "default means this deployment has not authored the policy"},
+		}, "name", "policy_version", "digest", "source"),
+		"SystemStatus": objectSchema(map[string]any{
+			"version":        map[string]any{"type": "string"},
+			"commit":         map[string]any{"type": "string"},
+			"built_at":       map[string]any{"type": "string"},
+			"auth_mode":      map[string]any{"type": "string", "enum": []string{"disabled", "api_key_only", "session"}},
+			"base_currency":  map[string]any{"type": "string"},
+			"config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+			"policies":       arraySchema(schemaRef("PolicyProvenance")),
+			"components":     arraySchema(schemaRef("ComponentStatus")),
+			"checked_at":     map[string]any{"type": "string", "format": "date-time"},
+			"expires_at":     map[string]any{"type": "string", "format": "date-time"},
+			"source":         map[string]any{"type": "string", "enum": []string{"live", "cached"}},
+		}, "version", "auth_mode", "config_digests", "policies", "components", "checked_at", "expires_at", "source"),
+		"ConfigValidationError": objectSchema(map[string]any{
+			"field":    map[string]any{"type": "string", "description": "Legacy coarse field name, retained unchanged"},
+			"message":  map[string]any{"type": "string"},
+			"class":    map[string]any{"type": "string", "enum": []string{"syntax", "schema", "cross_reference", "activation"}, "description": "What kind of mistake this is; syntax and schema have different fixes"},
+			"severity": map[string]any{"type": "string", "enum": []string{"error", "warning"}, "description": "Only error affects valid. Warnings never block activation (ADR-0025)."},
+			"line":     map[string]any{"type": "integer", "description": "1-based line in the submitted document; omitted when the position is unknown rather than defaulted to the first line"},
+			"column":   map[string]any{"type": "integer"},
+			"path":     map[string]any{"type": "string", "description": "Dotted document path, e.g. entries[0].names"},
+		}, "field", "message"),
+		"CapabilityDescriptor": objectSchema(map[string]any{
+			"id":                  map[string]any{"type": "string", "description": "Stable capability identifier"},
+			"availability":        map[string]any{"type": "string", "enum": []string{"available", "not_configured", "forbidden", "unsupported", "degraded", "unavailable"}},
+			"required_permission": map[string]any{"type": "string", "description": "The auth.RolePermissions grant this capability needs; absent when the capability is not permission-gated"},
+			"surfaces":            arraySchema(map[string]any{"type": "string", "enum": []string{"ui", "api"}}),
+			"reason_code":         map[string]any{"type": "string", "description": "Stable machine reason the capability is not available. Never carries configuration detail, endpoint names or credentials."},
+			"docs_url":            map[string]any{"type": "string"},
+			"checked_at":          map[string]any{"type": "string", "format": "date-time"},
+			"expires_at":          map[string]any{"type": "string", "format": "date-time", "nullable": true},
+		}, "id", "availability", "surfaces", "checked_at"),
+		"Capabilities": objectSchema(map[string]any{
+			"auth_mode":   map[string]any{"type": "string", "enum": []string{"disabled", "api_key_only", "session"}, "description": "How this deployment authenticates callers. disabled means every capability is available because no role exists to refuse one (ADR-0024)."},
+			"user_id":     map[string]any{"type": "string"},
+			"role":        map[string]any{"type": "string"},
+			"permissions": arraySchema(map[string]any{"type": "string"}),
+			"checked_at":  map[string]any{"type": "string", "format": "date-time"},
+			"data":        arraySchema(schemaRef("CapabilityDescriptor")),
+		}, "auth_mode", "permissions", "checked_at", "data"),
+	}
+}
+
+func pathDashboard() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Dashboard statistics, workload and exceptions", nil, nil, "200", "Dashboard statistics", schemaRef("DashboardStats"), "401", "500")}
+}
+
+func pathSystemStatus() map[string]any {
+	parameters := []map[string]any{
+		{"name": "refresh", "in": "query", "description": "Force a live dependency check instead of reusing a cached result", "schema": map[string]any{"type": "boolean"}},
+	}
+	return map[string]any{"get": documentedJSONOperation("Get runtime readiness and active configuration provenance", parameters, nil, "200", "System status", schemaRef("SystemStatus"), "401", "500")}
+}
+
+func pathCapabilities() map[string]any {
+	return map[string]any{"get": documentedJSONOperation("Get the server-sourced capability contract", nil, nil, "200", "Capability availability for the calling principal", schemaRef("Capabilities"), "401", "500")}
 }
 
 func publicOperation(operation map[string]any) map[string]any {

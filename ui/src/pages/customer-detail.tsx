@@ -1,4 +1,5 @@
 import { customerStatusVariant, formatCountry } from "@/lib/utils"
+import { formatDateTime } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +13,8 @@ import {
 } from "@/components/ui/table"
 import { CountrySelect, IdentityFields } from "@/components/identity-fields"
 import { useApi } from "@/hooks/use-api"
+import { useCan } from "@/hooks/use-session"
+import { CapabilityNotice } from "@/components/capability-notice"
 import { usePolicy } from "@/hooks/use-policy"
 import { api, type CDDScoreOverride, type Customer, type EDDCompletionStatus, type Factor, type RiskTier, type ScoreRecord, type ScreenResult, type ScreeningResultRecord, type ScreeningResultStatus } from "@/lib/api"
 import { identityRequirements } from "@/lib/identity"
@@ -57,9 +60,6 @@ const CUSTOMER_TYPE_KEYS: Record<string, string> = {
   foreign_legal_arrangement: "foreignLegalArrangement",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 function identityValue(customer: { attributes: Record<string, unknown> }, key: string) {
   const value = customer.attributes?.[key]
@@ -127,11 +127,10 @@ export function CustomerDetailPage() {
     useCallback(() => api.customers.scoreExplanation(id!), [id]),
     requestKey,
   )
-  // Role decides whether the scoring and approval controls are offered at
-  // all. A deployment with authentication disabled answers with an error
-  // here, which leaves the controls visible exactly as before.
-  const { data: currentUser } = useApi(useCallback(() => api.auth.me(), []))
-  const readOnly = currentUser?.role === "viewer"
+  // cdd:score decides whether the scoring and approval controls are offered
+  // at all. A deployment with authentication disabled grants it, which leaves
+  // the controls visible exactly as before.
+  const readOnly = !useCan("cdd.score")
   const { data: kyc } = usePolicy("kyc_required_fields")
   const { data: eddPolicy } = usePolicy("edd")
   const { data: eddEvents } = useApi(
@@ -454,7 +453,9 @@ export function CustomerDetailPage() {
                 <Search className={`h-4 w-4 ${screening ? "animate-pulse" : ""}`} />
                 {t("customerDetail.riskAssessment.screenButton")}
               </Button>
-              {!readOnly && (
+              {readOnly ? (
+                <CapabilityNotice capabilityId="cdd.score" className="self-center" />
+              ) : (
                 <Button size="sm" variant="outline" onClick={handleScore} disabled={scoring}>
                   <RefreshCw className={`h-4 w-4 ${scoring ? "animate-spin" : ""}`} />
                   {scoreConfirmation ? t("customerDetail.riskAssessment.confirmScore") : t("customerDetail.riskAssessment.scoreButton")}

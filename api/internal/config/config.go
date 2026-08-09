@@ -100,6 +100,7 @@ type Config struct {
 	CDDRuleSelectionPath   string
 	TravelRulePolicyPath   string
 	ScreeningReadinessPath string
+	SLAPolicyPath          string
 
 	// PublicURL is the base URL of this Merlon instance, prefixed to alert
 	// IDs to build the link carried in notification emails (notifications.md
@@ -280,6 +281,7 @@ func Load() *Config {
 		CDDRuleSelectionPath:   getEnv("MERLON_CDD_RULE_SELECTION_PATH", "content/cdd_rule_selection_v1.yaml"),
 		TravelRulePolicyPath:   getEnv("MERLON_TRAVEL_RULE_POLICY_PATH", "content/travel_rule_v1.yaml"),
 		ScreeningReadinessPath: getEnv("MERLON_SCREENING_READINESS_PATH", "content/screening_readiness_v1.yaml"),
+		SLAPolicyPath:          getEnv("MERLON_SLA_POLICY_PATH", "content/sla_policy_v1.yaml"),
 
 		EDDStage2Days: getEnvInt("MERLON_EDD_STAGE2_DAYS", 60),
 		EDDStage3Days: getEnvInt("MERLON_EDD_STAGE3_DAYS", 90),

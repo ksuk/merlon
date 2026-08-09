@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -23,9 +24,6 @@ const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "criti
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 function formatAge(iso: string, locale: string, label: (key: string, options?: Record<string, unknown>) => string, now: number) {
   const days = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 86400000))
@@ -297,7 +295,11 @@ export function AlertsPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" />
+              {/* An empty header cell announces as an unlabelled column. The
+                  label is visually hidden so the layout is unchanged. */}
+              <TableHead className="w-10">
+                <span className="sr-only">{t("alerts.table.header.select")}</span>
+              </TableHead>
               <TableHead>{t("alerts.table.header.severity")}</TableHead>
               <TableHead>{t("alerts.table.header.status")}</TableHead>
               <TableHead>{t("alerts.table.header.customerId")}</TableHead>
@@ -315,11 +317,11 @@ export function AlertsPage() {
           <TableBody>
             {alerts && alerts.length > 0 ? (
               alerts.map((a) => (
-                <TableRow key={a.id} className="cursor-pointer">
+                <TableRow key={a.id}>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      aria-label={`select-${a.id}`}
+                      aria-label={t("alerts.table.selectRow", { id: a.id })}
                       checked={selected.has(a.id)}
                       onChange={() => toggleSelected(a.id)}
                     />

@@ -5,7 +5,29 @@
     "switcherLabel": "Language"
   },
   "layout": {
-    "demoDataBadge": "Synthetic demo data"
+    "demoDataBadge": "Synthetic demo data",
+    "session": {
+      "logout": "Sign out",
+      "loggingOut": "Signing out…",
+      "logoutFailed": "Sign-out could not be confirmed. You have been returned to the sign-in screen.",
+      "role": {
+        "admin": "Administrator",
+        "analyst": "Analyst",
+        "viewer": "Viewer"
+      },
+      "userState": {
+        "loading": "Loading session…",
+        "identified": "Signed in",
+        "not_configured": "No user directory configured",
+        "unauthenticated": "No user session",
+        "failed": "Session lookup failed"
+      },
+      "authMode": {
+        "disabled": "Authentication disabled",
+        "apiKeyOnly": "API key authentication",
+        "hint": "How this deployment authenticates callers."
+      }
+    }
   },
   "list": {
     "allLoaded": "All records loaded",
@@ -30,7 +52,8 @@
     "config": "Config validation",
     "audit": "Audit log",
     "system": "System",
-    "tagline": "AML/CFT Compliance Platform"
+    "tagline": "AML/CFT Compliance Platform",
+    "users": "Users"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -95,6 +118,41 @@
       "degraded": "Degraded",
       "readyDescription": "Every source the readiness policy requires is usable.",
       "degradedSources": "Required sources not ready: {{sources}}"
+    },
+    "workload": {
+      "title": "Workload",
+      "alerts": "Alert queue",
+      "cases": "Case queue",
+      "open": "Open",
+      "mine": "Assigned to me",
+      "unassigned": "Unassigned",
+      "noIdentity": "No signed-in operator to count against",
+      "ageTitle": "How long open",
+      "ageBucket": {
+        "under_24h": "Under 24h",
+        "1_to_3d": "1–3 days",
+        "3_to_7d": "3–7 days",
+        "over_7d": "Over 7 days"
+      },
+      "oldest": "Oldest open item: {{age}}",
+      "oldestNone": "Nothing is open.",
+      "overdue": "Overdue",
+      "dueSoon": "Due soon",
+      "slaNotConfigured": "No SLA policy is configured, so no work has a deadline. This is not the same as nothing being overdue.",
+      "scope": "Scope: {{scope}}",
+      "scopeAll": "Scope: all permitted work",
+      "evaluatedAt": "As of {{time}}",
+      "unavailable": "Workload figures are unavailable in this deployment."
+    },
+    "exceptions": {
+      "title": "Operational exceptions",
+      "none": "No failed or degraded operational work.",
+      "open": "Open queue",
+      "kind": {
+        "screening_sources_degraded": "Screening sources not ready",
+        "pending_evaluations_failed": "Failed evaluations awaiting retry",
+        "pending_evaluations_exhausted": "Evaluations that will not retry on their own"
+      }
     }
   },
   "customers": {
@@ -450,9 +508,11 @@
         "detectedAt": "Detected at",
         "assignedTo": "Owner",
         "dueAt": "Due",
-        "updatedAt": "Last update"
+        "updatedAt": "Last update",
+        "select": "Selection"
       },
-      "empty": "No alerts"
+      "empty": "No alerts",
+      "selectRow": "Select alert {{id}}"
     },
     "suppressedReason": "Suppressed: {{reason}}"
   },
@@ -497,6 +557,29 @@
       "confirmButton": "Confirm decision",
       "cancel": "Cancel",
       "noHistory": "No decision history"
+    },
+    "provenance": {
+      "title": "Detection provenance",
+      "scenario": "Scenario",
+      "ruleVersion": "Rule version",
+      "ruleDigest": "Rule digest",
+      "evaluationMode": "Evaluation mode",
+      "appliedThreshold": "Applied threshold",
+      "evaluatedAt": "Evaluated at",
+      "engineVersion": "Engine build",
+      "configDigests": "Configuration digests at detection",
+      "availability": {
+        "available": "Captured",
+        "restricted": "Resolved",
+        "missing": "Reference unresolved",
+        "not_captured": "Not captured"
+      },
+      "explanation": {
+        "available": "The configuration effective at detection was recorded with this alert.",
+        "restricted": "The rule version was resolved. Its identifier and digest are shown; the definition is read through the rule screen, where its own authorization applies.",
+        "missing": "Provenance was recorded, but the rule version it names can no longer be resolved. The captured facts below still stand; the reference does not.",
+        "not_captured": "This alert was generated before provenance was recorded. Current configuration is deliberately not shown here: it would look like evidence of what fired, and it is not."
+      }
     }
   },
   "audit": {
@@ -917,7 +1000,9 @@
   },
   "errorBoundary": {
     "title": "An error occurred",
-    "retry": "Retry"
+    "retry": "Retry",
+    "description": "This screen could not be displayed. The rest of the application is still usable.",
+    "goHome": "Go to dashboard"
   },
   "errors": {
     "not_found": "The requested resource was not found.",
@@ -932,7 +1017,10 @@
     "service_unavailable": "This feature is not currently available.",
     "engine_error": "The scoring engine could not process this request.",
     "retention_shorten_forbidden": "The retention period cannot be shortened below the regulatory minimum.",
-    "unknown": "An unexpected error occurred."
+    "unknown": "An unexpected error occurred.",
+    "requestId": "Support reference: {{id}}",
+    "retry": "Try again",
+    "mutationUnknown": "The server did not confirm whether this action was applied. Check the record before repeating it."
   },
   "authGate": {
     "checking": "Checking your session",
@@ -984,18 +1072,42 @@
       "yamlLabel": "YAML",
       "yamlPlaceholder": "# Enter config in YAML format...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
       "validating": "Validating...",
-      "submit": "Validate"
+      "submit": "Validate",
+      "schemaDocs": "Schema and field reference"
     },
     "types": {
       "cddWeights": "CDD weights",
       "screeningLists": "Screening lists",
-      "scenarioRules": "Scenario rules"
+      "scenarioRules": "Scenario rules",
+      "countryRisk": "Country risk"
     },
     "result": {
       "successTitle": "Validation succeeded",
       "validBadge": "Valid",
       "errorTitle": "Validation error",
-      "errorCount": "{{count}} errors"
+      "errorCount": "{{count}} errors",
+      "warningCount": "{{count}} warnings",
+      "warningsDoNotBlock": "Warnings do not block activation.",
+      "emptyInput": "Nothing was submitted. Enter or load a document first.",
+      "unchanged": "Identical to {{name}} v{{version}}. Nothing would change.",
+      "atLine": "line {{line}}",
+      "atLineColumn": "line {{line}}, column {{column}}",
+      "noPosition": "no position in the document",
+      "class": {
+        "syntax": "Syntax",
+        "schema": "Schema",
+        "cross_reference": "Cross-reference",
+        "activation": "Activation",
+        "unknown": "Validation"
+      }
+    },
+    "baseline": {
+      "title": "Start from a version this deployment runs",
+      "help": "Load an existing rule version as the baseline, then edit it. A blank box invites a paste that replaces a configuration nobody looked at.",
+      "load": "Load {{name}} v{{version}}",
+      "none": "No rule of this type is stored yet. Author a new document against the schema reference above.",
+      "current": "Baseline: {{name}} v{{version}}",
+      "unset": "No baseline loaded. Anything validated here is judged on its own, not as a change to a known version."
     }
   },
   "backtest": {
@@ -1337,7 +1449,15 @@
       "lastUsed": " | Last used: {{date}}"
     },
     "revoke": "Revoke",
-    "empty": "No API keys registered"
+    "empty": "No API keys registered",
+    "purpose": {
+      "body": "API keys authenticate machine callers — ingestion adapters, scheduled jobs and scripts — that act without a person signed in. They are not a substitute for a user account.",
+      "consumers": "Intended consumers: server-side integrations you operate. A key sent to a browser is a disclosed credential.",
+      "permission": "The role assigned to a key is the role every request made with it carries. Issue the narrowest role that does the job.",
+      "display": "The secret is displayed once, at creation, and is never retrievable afterwards.",
+      "revocation": "Revoking a key takes effect immediately and cannot be undone. Any integration still using it stops working.",
+      "owner": "Operational owner: the administrator who runs this deployment."
+    }
   },
   "reports": {
     "title": "STR reports",
@@ -1390,7 +1510,9 @@
       "title": "Components",
       "api": "Go API",
       "engine": "Go Engine",
-      "database": "PostgreSQL"
+      "database": "PostgreSQL",
+      "screening_sources": "Screening sources",
+      "investigate": "Investigate"
     },
     "features": {
       "title": "Feature status",
@@ -1403,11 +1525,49 @@
       "monitoring": "Transaction monitoring",
       "screening": "Screening",
       "backtest": "Backtest",
-      "config": "Config validation"
+      "config": "Config validation",
+      "help": "These report what is wired, not whether it is working. Component readiness is above.",
+      "demo_data": "Synthetic demo data"
     },
     "status": {
       "enabled": "Enabled",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "notConfigured": "Not configured"
+    },
+    "refresh": "Refresh",
+    "statusUnavailable": "Runtime status could not be read, so component readiness is unknown.",
+    "operationalState": {
+      "ready": "Ready",
+      "degraded": "Degraded",
+      "unavailable": "Unavailable",
+      "unknown": "Unknown"
+    },
+    "reason": {
+      "not_configured": "Not configured in this deployment",
+      "check_failed": "The check ran and failed; detail is in the server log",
+      "no_probe_available": "Wired, but exposes no health check",
+      "sources_degraded": "A required screening source is not ready"
+    },
+    "freshness": {
+      "live": "Checked just now ({{time}})",
+      "cached": "Cached result from {{time}}"
+    },
+    "build": {
+      "commitUnknown": "Commit not recorded in this build",
+      "builtAt": "Built {{date}}"
+    },
+    "provenance": {
+      "title": "Active configuration",
+      "help": "What this process actually loaded. A decision can only be reproduced against the configuration that produced it.",
+      "authMode": "Authentication mode",
+      "baseCurrency": "Base currency",
+      "configDigests": "Configuration digests",
+      "noDigests": "No configuration digests were recorded.",
+      "policies": "Policy documents",
+      "source": {
+        "file": "Authored",
+        "default": "Built-in default"
+      }
     }
   },
   "rules": {
@@ -1433,7 +1593,8 @@
       "nameLabel": "Name",
       "namePlaceholder": "rule_name",
       "definitionLabel": "Definition (JSON)",
-      "submit": "Create"
+      "submit": "Create",
+      "invalidJson": "The definition is not valid JSON."
     },
     "import": {
       "title": "Bulk import rules",
@@ -1501,7 +1662,12 @@
     },
     "entry": {
       "createdAt": "Created: {{date}}",
-      "deliveries": "Delivery history"
+      "deliveries": "Delivery history",
+      "deleteLabel": "Delete this webhook",
+      "confirmTitle": "Delete this webhook?",
+      "confirmDetail": "Future deliveries to {{url}} stop immediately. {{count}} subscribed event types are removed.",
+      "confirmDelete": "Delete",
+      "cancelDelete": "Cancel"
     },
     "deliveries": {
       "table": {
@@ -1516,7 +1682,15 @@
       "failure": "Failed",
       "empty": "No delivery history"
     },
-    "empty": "No webhooks registered"
+    "empty": "No webhooks registered",
+    "purpose": {
+      "body": "Webhooks push AML events out of Merlon to a system you operate — a ticketing queue, a chat channel, a downstream case system. They are outbound only; Merlon never reads a reply as instruction.",
+      "consumers": "Intended consumers: an HTTPS endpoint you control that can accept an unauthenticated-looking POST and verify it.",
+      "delivery": "Delivery is retried with backoff. A delivery that never succeeds lands in the dead-letter queue on this page, where it can be reprocessed.",
+      "payload": "Each payload names the event type and the affected record identifiers; it is not a substitute for reading the record through the API.",
+      "removal": "Deleting a webhook stops future deliveries immediately. Deliveries already queued or in the dead-letter queue are not replayed to a deleted endpoint.",
+      "owner": "Operational owner: the administrator who runs the receiving system."
+    }
   },
   "whitelist": {
     "title": "Whitelist",
@@ -1558,5 +1732,50 @@
     "hours": "{{count}}h",
     "minutes": "{{count}}m",
     "days": "{{count}}d"
+  },
+  "capability": {
+    "availability": {
+      "available": "Available",
+      "not_configured": "Not configured",
+      "forbidden": "Not permitted",
+      "unsupported": "Not supported",
+      "degraded": "Degraded",
+      "unavailable": "Unavailable"
+    },
+    "reason": {
+      "dependency_not_configured": "This deployment has not configured the function.",
+      "permission_required": "Your role does not hold the required permission.",
+      "authentication_required": "Sign in to use this function.",
+      "capability_lookup_failed": "The capability contract could not be read, so availability is unknown.",
+      "unknown_capability": "This server did not describe the function."
+    },
+    "apiOnly": "This function is supported through the API only.",
+    "documentation": "Documentation",
+    "purposeLabel": "What this screen is for",
+    "stateLabel": "Availability"
+  },
+  "ruleDetail": {
+    "backToRules": "Back to rules",
+    "notFound": "This rule could not be loaded.",
+    "identity": {
+      "title": "Identity",
+      "canonicalId": "Canonical identifier",
+      "type": "Type",
+      "createdBy": "Authored by",
+      "updatedAt": "Last updated",
+      "description": "Description",
+      "unknownAuthor": "Not recorded",
+      "noDescription": "No description"
+    },
+    "definition": {
+      "title": "Effective definition",
+      "empty": "This version carries no definition fields."
+    },
+    "compare": {
+      "title": "Compare versions",
+      "against": "Compare against",
+      "onlyVersion": "This is the first version; there is nothing to compare it with.",
+      "unavailable": "That version is no longer retrievable."
+    }
   }
 }

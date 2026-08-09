@@ -176,6 +176,7 @@ func main() {
 		CDDRuleSelection:   cfg.CDDRuleSelectionPath,
 		TravelRule:         cfg.TravelRulePolicyPath,
 		ScreeningReadiness: cfg.ScreeningReadinessPath,
+		SLA:                cfg.SLAPolicyPath,
 	})
 	if err != nil {
 		slog.Error("policy", "error", err)

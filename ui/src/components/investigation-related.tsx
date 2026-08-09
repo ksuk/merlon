@@ -1,4 +1,5 @@
 import { Link } from "react-router"
+import { formatAmount, formatDateTime } from "@/lib/format"
 import { useTranslation } from "react-i18next"
 import { Badge } from "@/components/ui/badge"
 import type { Alert, AlertSeverity, Case, CasePriority, CustomerInvestigation, Transaction } from "@/lib/api"
@@ -22,17 +23,7 @@ const PRIORITY_VARIANT: Record<CasePriority, "low" | "medium" | "high" | "critic
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
-function formatAmount(amount: number, currency: string, locale: string) {
-  try {
-    return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount)
-  } catch {
-    return `${amount} ${currency}`
-  }
-}
 
 interface SectionProps {
   id: string

@@ -2,6 +2,8 @@ import { fireEvent, screen, within } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
+import { capabilitiesFor } from "@/test/session-test-utils"
+import { SessionProvider } from "@/components/session-provider"
 import { CustomerDetailPage } from "./customer-detail"
 
 // customer-detail carries #75, #76 and #77 in one 906-line page and had two
@@ -96,6 +98,14 @@ function mockAPI(overrides: Record<string, unknown> = {}) {
     if (init?.method && init.method !== "GET") {
       posted.push({ url, body: init.body ? JSON.parse(String(init.body)) : null })
     }
+    if (url.includes("/system/capabilities")) {
+      return Promise.resolve(new Response(JSON.stringify(capabilitiesFor({ role: "admin" }))))
+    }
+    if (url.includes("/auth/me")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: "u1", email: "admin@example.com", role: "admin" })),
+      )
+    }
     for (const [fragment, body] of Object.entries(overrides)) {
       if (url.includes(fragment)) return Promise.resolve(new Response(JSON.stringify(body)))
     }
@@ -114,9 +124,11 @@ function mockAPI(overrides: Record<string, unknown> = {}) {
 function renderDetail() {
   return renderWithI18n(
     <MemoryRouter initialEntries={["/customers/c1"]}>
-      <Routes>
-        <Route path="customers/:id" element={<CustomerDetailPage />} />
-      </Routes>
+      <SessionProvider>
+        <Routes>
+          <Route path="customers/:id" element={<CustomerDetailPage />} />
+        </Routes>
+      </SessionProvider>
     </MemoryRouter>,
   )
 }

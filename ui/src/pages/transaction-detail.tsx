@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatAmount, formatDateTime } from "@/lib/format"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
@@ -15,13 +16,7 @@ const DIR_VARIANT: Record<string, "low" | "medium" | "high"> = {
   internal: "medium",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
-function formatAmount(amount: number, currency: string, locale: string) {
-  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(amount)
-}
 
 // A labelled, recursive renderer for the free-shape counterparty, evidence
 // and metadata payloads. Rendering them as JSON.stringify put raw braces in

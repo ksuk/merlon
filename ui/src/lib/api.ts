@@ -11,16 +11,57 @@ function getCookie(name: string): string | null {
 // alongside the human-readable message, so callers can branch on `code`
 // (Contract Stability) and translate via errors.{code} instead of matching
 // on message wording, which may change or be translated server-side.
+/**
+ * OperationState says whether the request the client sent actually ran.
+ *
+ * The client is the only party that knows this: the server knows the failure
+ * class, but only the caller knows whether it sent a mutation and whether the
+ * response ever arrived. A mutation whose outcome is unknown must not be
+ * retried silently (ERR-01).
+ */
+export type OperationState = "not_started" | "completed" | "unknown"
+
 export class ApiError extends Error {
   status: number
   code?: string
+  /** Correlates this failure with the server log; safe to show and to quote. */
+  requestId?: string
+  /**
+   * Whether repeating an identical request could plausibly succeed. This is a
+   * property of the failure class; whether repeating is *safe* additionally
+   * depends on operationState.
+   */
+  retryable: boolean
+  operationState: OperationState
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    options?: { requestId?: string; retryable?: boolean; operationState?: OperationState },
+  ) {
     super(message)
     this.name = "ApiError"
     this.status = status
     this.code = code
+    this.requestId = options?.requestId
+    this.retryable = options?.retryable ?? false
+    this.operationState = options?.operationState ?? "not_started"
   }
+}
+
+/**
+ * operationStateFor decides what the caller may assume about a failed request.
+ *
+ * A response with a status means the server reached a decision, so a mutation
+ * it refused did not run. Everything else -- a 5xx, a timeout, a dropped
+ * connection -- leaves a mutation in an unknown state, and presenting that as
+ * "not started" is how an operator ends up filing a report twice.
+ */
+function operationStateFor(method: string, status: number): OperationState {
+  const mutating = method !== "GET" && method !== "HEAD"
+  if (!mutating) return "not_started"
+  return status >= 500 ? "unknown" : "not_started"
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -39,18 +80,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.text()
     let message = body
     let code: string | undefined
+    let requestId: string | undefined
+    let retryableFlag = false
     try {
       const parsed: unknown = JSON.parse(body)
       if (parsed && typeof parsed === "object") {
-        const { error, error_code } = parsed as { error?: unknown; error_code?: unknown }
+        const { error, error_code, request_id, retryable } = parsed as {
+          error?: unknown
+          error_code?: unknown
+          request_id?: unknown
+          retryable?: unknown
+        }
         if (typeof error === "string") message = error
         if (typeof error_code === "string") code = error_code
+        if (typeof request_id === "string") requestId = request_id
+        if (typeof retryable === "boolean") retryableFlag = retryable
       }
     } catch {
       // Response body was not JSON (e.g. a proxy error page); fall back to
       // the raw text as the message.
     }
-    throw new ApiError(message, res.status, code)
+    throw new ApiError(message, res.status, code, {
+      // The header is the fallback: a proxy error page carries no JSON body but
+      // the identifier still reached the client.
+      requestId: requestId ?? res.headers.get("X-Request-ID") ?? undefined,
+      retryable: retryableFlag,
+      operationState: operationStateFor(method, res.status),
+    })
   }
   return res.json()
 }
@@ -69,17 +125,30 @@ async function requestBlob(path: string, init?: RequestInit): Promise<Blob> {
     const body = await res.text()
     let message = body
     let code: string | undefined
+    let requestId: string | undefined
+    let retryableFlag = false
     try {
       const parsed: unknown = JSON.parse(body)
       if (parsed && typeof parsed === "object") {
-        const errorBody = parsed as { error?: unknown; error_code?: unknown }
+        const errorBody = parsed as {
+          error?: unknown
+          error_code?: unknown
+          request_id?: unknown
+          retryable?: unknown
+        }
         if (typeof errorBody.error === "string") message = errorBody.error
         if (typeof errorBody.error_code === "string") code = errorBody.error_code
+        if (typeof errorBody.request_id === "string") requestId = errorBody.request_id
+        if (typeof errorBody.retryable === "boolean") retryableFlag = errorBody.retryable
       }
     } catch {
       // Keep a proxy/plain-text error useful to the operator.
     }
-    throw new ApiError(message, res.status, code)
+    throw new ApiError(message, res.status, code, {
+      requestId: requestId ?? res.headers.get("X-Request-ID") ?? undefined,
+      retryable: retryableFlag,
+      operationState: operationStateFor(method, res.status),
+    })
   }
   return res.blob()
 }
@@ -122,6 +191,57 @@ export interface DashboardStats {
   // customers are being screened against an incomplete picture.
   screening_ready?: boolean
   screening_degraded_sources?: string[]
+  workload?: DashboardWorkload
+  // An empty array means nothing is failing; an absent one means nothing was
+  // checked. The two are rendered differently.
+  exceptions?: DashboardException[]
+}
+
+export interface AgeBucket {
+  label: string
+  from_hours: number
+  /** 0 on the final open-ended bucket. */
+  to_hours?: number
+  count: number
+}
+
+export interface WorkloadCounts {
+  open: number
+  mine: number
+  unassigned: number
+  /** Absent on an empty queue: an age of zero would read as "just arrived". */
+  oldest_open_at?: string
+  oldest_age_seconds?: number
+  age_buckets: AgeBucket[]
+  /**
+   * Absent unless an SLA policy is configured. Zero would claim nothing is
+   * overdue, which an unconfigured deployment cannot know (ADR-0024, DR-07).
+   */
+  overdue?: number
+  due_soon?: number
+}
+
+export interface DashboardSLA {
+  state: "not_configured" | "running" | "breached" | "met"
+  policy_version: string
+  due_soon_within_hours?: number
+}
+
+export interface DashboardWorkload {
+  /** Whose work "mine" counts; empty when the deployment has no identity. */
+  scope: string
+  alerts: WorkloadCounts
+  cases: WorkloadCounts
+  sla: DashboardSLA
+  evaluated_at: string
+}
+
+export interface DashboardException {
+  kind: string
+  count: number
+  /** The pre-filtered queue that explains the count. */
+  href: string
+  state: "failed" | "degraded" | "unknown"
 }
 
 export type RiskTier = "low" | "medium" | "high"
@@ -166,6 +286,28 @@ export interface Customer {
   edd_stage3_notified_at?: string
 }
 
+export type ProvenanceAvailability = "available" | "restricted" | "missing" | "not_captured"
+
+/**
+ * AlertProvenance records what produced a detection. "not_captured" means the
+ * alert predates provenance capture, which is a statement about the record and
+ * not about the rule: current configuration is never backfilled as history.
+ */
+export interface AlertProvenance {
+  scenario_id: string
+  config_digests?: Record<string, string>
+  engine_version?: string
+  evaluation_mode?: string
+  evaluated_at?: string
+  window_from?: string
+  window_to?: string
+  applied_threshold?: number
+  rule_name?: string
+  rule_version?: number
+  rule_digest?: string
+  availability: ProvenanceAvailability
+}
+
 export interface Alert {
   id: string
   customer_id: string
@@ -185,6 +327,7 @@ export interface Alert {
   due_at?: string
   disposition?: string
   disposition_rationale?: string
+  provenance?: AlertProvenance
   // Set when a whitelist entry or a prior false-positive determination
   // withheld the alert from the default queue. The alert still exists; the
   // reason is what tells an operator why it is not in front of them.
@@ -599,9 +742,25 @@ export interface APIKeyCreateResponse {
   key: string
 }
 
+export type ConfigValidationErrorClass = "syntax" | "schema" | "cross_reference" | "activation"
+
+export interface ConfigValidationError {
+  field: string
+  message: string
+  // Additive: absent on a deployment running an older API. A missing line is
+  // "unknown", never "line 0", which is why these stay optional.
+  class?: ConfigValidationErrorClass
+  severity?: "error" | "warning"
+  line?: number
+  column?: number
+  path?: string
+}
+
 export interface ConfigValidationResult {
   valid: boolean
-  errors: { field: string; message: string }[]
+  errors: ConfigValidationError[]
+  // Warnings never affect valid (ADR-0025).
+  warnings?: ConfigValidationError[]
 }
 
 export interface ScreenMatch {
@@ -988,10 +1147,82 @@ export interface SystemInfo {
   features: Record<string, boolean>
 }
 
+export type OperationalState = "ready" | "degraded" | "unavailable" | "unknown"
+
+export interface ComponentStatus {
+  name: string
+  /** Whether the deployment wired the component; independent of whether it works. */
+  configured: boolean
+  operational_state: OperationalState
+  reason_code?: string
+  checked_at: string
+}
+
+export interface PolicyProvenance {
+  name: string
+  schema_version?: string
+  policy_version: string
+  digest: string
+  /** "default" means this deployment has not authored the policy. */
+  source: "file" | "default"
+}
+
+export interface SystemStatus {
+  version: string
+  commit?: string
+  built_at?: string
+  auth_mode: AuthMode
+  base_currency?: string
+  config_digests: Record<string, string>
+  policies: PolicyProvenance[]
+  components: ComponentStatus[]
+  checked_at: string
+  expires_at: string
+  source: "live" | "cached"
+}
+
+// AuthMode names how the deployment authenticates callers. "disabled" is an
+// evaluation deployment with no roles at all: the shell must show that state
+// rather than let it read as a normal authenticated session (ADR-0024).
+export type AuthMode = "disabled" | "api_key_only" | "session"
+
+export type CapabilityAvailability =
+  | "available"
+  | "not_configured"
+  | "forbidden"
+  | "unsupported"
+  | "degraded"
+  | "unavailable"
+
+export interface CapabilityDescriptor {
+  id: string
+  availability: CapabilityAvailability
+  required_permission?: string
+  surfaces: ("ui" | "api")[]
+  reason_code?: string
+  docs_url?: string
+  checked_at: string
+  expires_at?: string | null
+}
+
+export interface Capabilities {
+  auth_mode: AuthMode
+  user_id?: string
+  role?: Role
+  permissions: string[]
+  checked_at: string
+  data: CapabilityDescriptor[]
+}
+
 export interface AuthUser {
   id: string
   email: string
   role: Role
+  // Additive CAP-01 fields. Absent on a deployment running an older API, which
+  // is why every consumer treats them as optional rather than assuming a shape.
+  auth_mode?: AuthMode
+  roles?: string[]
+  permissions?: string[]
 }
 
 export interface User {
@@ -1665,6 +1896,9 @@ export const api = {
   },
   system: {
     info: () => request<SystemInfo>("/system/info"),
+    capabilities: () => request<Capabilities>("/system/capabilities"),
+    status: (refresh = false) =>
+      request<SystemStatus>(`/system/status${refresh ? "?refresh=true" : ""}`),
   },
   whitelist: {
     list: (status?: WhitelistEntryStatus) => {

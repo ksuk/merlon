@@ -1,4 +1,6 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
+import { AlertProvenanceCard } from "@/components/alert-provenance-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApi } from "@/hooks/use-api"
@@ -16,9 +18,6 @@ const SEVERITY_VARIANT: Record<AlertSeverity, "low" | "medium" | "high" | "criti
   critical: "critical",
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function AlertDetailPage() {
   const { t, i18n } = useTranslation()
@@ -229,6 +228,7 @@ export function AlertDetailPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <AlertProvenanceCard provenance={alert.provenance} />
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{t("alertDetail.info.title")}</CardTitle>

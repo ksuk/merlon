@@ -2,15 +2,19 @@ import { fireEvent, screen } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
+import { capabilitiesFor } from "@/test/session-test-utils"
+import { SessionProvider } from "@/components/session-provider"
 import { api } from "@/lib/api"
 import { CustomerDetailPage } from "./customer-detail"
 
 function renderWithRoute(id: string) {
   return renderWithI18n(
     <MemoryRouter initialEntries={[`/customers/${id}`]}>
-      <Routes>
-        <Route path="customers/:id" element={<CustomerDetailPage />} />
-      </Routes>
+      <SessionProvider>
+        <Routes>
+          <Route path="customers/:id" element={<CustomerDetailPage />} />
+        </Routes>
+      </SessionProvider>
     </MemoryRouter>,
   )
 }
@@ -21,7 +25,16 @@ beforeEach(() => {
 
 test("renders customer detail with profile data", async () => {
   let callCount = 0
-  vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString()
+    if (url.includes("/system/capabilities")) {
+      return Promise.resolve(new Response(JSON.stringify(capabilitiesFor({ role: "admin" }))))
+    }
+    if (url.includes("/auth/me")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: "u1", email: "a@example.com", role: "admin" })),
+      )
+    }
     callCount++
     if (callCount === 1) {
       return Promise.resolve(

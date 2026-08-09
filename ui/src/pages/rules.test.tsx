@@ -2,10 +2,16 @@ import { screen, fireEvent, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
+import { capabilitiesFor } from "@/test/session-test-utils"
+import { SessionProvider } from "@/components/session-provider"
 import { RulesPage } from "./rules"
 
 function renderWithRouter(ui: React.ReactElement) {
-  return renderWithI18n(<MemoryRouter>{ui}</MemoryRouter>)
+  return renderWithI18n(
+    <MemoryRouter>
+      <SessionProvider>{ui}</SessionProvider>
+    </MemoryRouter>,
+  )
 }
 
 const sampleRule = {
@@ -26,6 +32,10 @@ const viewerUser = { id: "u2", email: "viewer@example.com", role: "viewer" }
 function mockFetchRouting(user: unknown, rules: unknown[]) {
   vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString()
+    if (url.includes("/system/capabilities")) {
+      const role = (user as { role?: "admin" | "analyst" | "viewer" } | null)?.role ?? "viewer"
+      return Promise.resolve(new Response(JSON.stringify(capabilitiesFor({ role }))))
+    }
     if (url.includes("/auth/me")) {
       return Promise.resolve(new Response(JSON.stringify(user)))
     }

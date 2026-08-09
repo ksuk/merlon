@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"time"
@@ -100,31 +99,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		stats.ScreeningReady = true
 	}
 
-	writeJSON(w, http.StatusOK, stats)
-}
-
-// screeningListFreshness reports each configured list's staleness
-// (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示する"). A list
-// that has never completed an import yet is retained as an explicit
-// never_imported row so source cardinality cannot be mistaken for queue size.
-func (s *Server) screeningListFreshness(ctx context.Context) []domain.ScreeningListFreshnessStat {
-	out := make([]domain.ScreeningListFreshnessStat, 0, len(s.screeningListIDs))
-	sources, err := s.screeningSourceStatuses(ctx, s.screeningListIDs, 0)
+	now := time.Now().UTC()
+	workload, err := s.dashboardWorkload(r, now)
 	if err != nil {
-		sources = unavailableSourceStatuses(s.configuredScreeningSourceIDs(s.screeningListIDs), s.screeningSourceThresholds(0), "source status unavailable")
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
 	}
-	for _, source := range sources {
-		f := domain.ScreeningListFreshnessStat{ListID: source.ListID, ListType: source.ListType, OperationalState: source.OperationalState, LastAttemptAt: source.LastAttemptAt, LastSuccessAt: source.LastSuccessAt, AgeSeconds: source.AgeSeconds, Diagnostic: source.Diagnostic}
-		if source.AgeSeconds != nil {
-			f.StaleDays = int(*source.AgeSeconds / 86400)
-		}
-		f.NeedsOperationalAlert = source.OperationalState != domain.ScreeningSourceReady
-		out = append(out, domain.ScreeningListFreshnessStat{
-			ListID:                f.ListID,
-			ListType:              f.ListType,
-			StaleDays:             f.StaleDays,
-			NeedsOperationalAlert: f.NeedsOperationalAlert,
-		})
-	}
-	return out
+	stats.Workload = workload
+	stats.Exceptions = s.dashboardExceptions(ctx, &stats, now)
+
+	writeJSON(w, http.StatusOK, stats)
 }

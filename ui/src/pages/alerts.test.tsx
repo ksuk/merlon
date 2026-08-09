@@ -35,8 +35,8 @@ test("renders alert table with data", async () => {
   await screen.findByText("大口取引の検出")
   // "高" also appears as a <select> option in the bulk-close filter form, so
   // scope this assertion to the severity badge specifically.
-  expect(screen.getByLabelText("select-a1").closest("tr")?.textContent).toContain("高")
-  const row = screen.getByLabelText("select-a1").closest("tr")
+  expect(screen.getByLabelText("アラート a1 を選択").closest("tr")?.textContent).toContain("高")
+  const row = screen.getByLabelText("アラート a1 を選択").closest("tr")
   expect(row).not.toBeNull()
   expect(within(row!).getByText("未対応")).toBeDefined()
 })
@@ -132,7 +132,7 @@ test("selecting an alert enables bulk case assignment", async () => {
 
   expect(screen.queryByText("選択したアラートをケースにまとめる")).toBeNull()
 
-  fireEvent.click(screen.getByLabelText("select-a1"))
+  fireEvent.click(screen.getByLabelText("アラート a1 を選択"))
 
   expect(await screen.findByText("選択中: 1 件")).toBeDefined()
 

@@ -31,6 +31,7 @@ type Paths struct {
 	CDDRuleSelection   string
 	TravelRule         string
 	ScreeningReadiness string
+	SLA                string
 }
 
 // Set is the assembled policy bundle held by the server. A nil *Set is valid
@@ -42,6 +43,7 @@ type Set struct {
 	cddRuleSelection   *CDDRuleSelectionPolicy
 	travelRule         *TravelRulePolicy
 	screeningReadiness *ScreeningReadinessPolicy
+	sla                *SLAPolicy
 
 	digests map[string]string
 	sources map[string]string
@@ -72,11 +74,15 @@ func Load(paths Paths) (*Set, error) {
 	if set.screeningReadiness, err = LoadScreeningReadiness(paths.ScreeningReadiness); err != nil {
 		return nil, err
 	}
+	if set.sla, err = LoadSLA(paths.SLA); err != nil {
+		return nil, err
+	}
 	set.record(NameKYCRequiredFields, paths.KYCRequiredFields, set.kyc)
 	set.record(NameEDD, paths.EDD, set.edd)
 	set.record(NameCDDRuleSelection, paths.CDDRuleSelection, set.cddRuleSelection)
 	set.record(NameTravelRule, paths.TravelRule, set.travelRule)
 	set.record(NameScreeningReadiness, paths.ScreeningReadiness, set.screeningReadiness)
+	set.record(NameSLA, paths.SLA, set.sla)
 	return set, nil
 }
 
@@ -88,6 +94,7 @@ const (
 	NameCDDRuleSelection   = "cdd_rule_selection"
 	NameTravelRule         = "travel_rule"
 	NameScreeningReadiness = "screening_readiness"
+	NameSLA                = "sla"
 )
 
 // Names lists every policy in a stable order.
@@ -98,6 +105,7 @@ func Names() []string {
 		NameCDDRuleSelection,
 		NameTravelRule,
 		NameScreeningReadiness,
+		NameSLA,
 	}
 }
 
@@ -108,6 +116,16 @@ func (s *Set) record(name, path string, document any) {
 		s.sources[name] = "file"
 	}
 	s.digests[name] = digest(document)
+}
+
+// SLA returns the service-level policy, or the in-code default. The default
+// declares no rules, so an unconfigured deployment reports not_configured
+// rather than inventing a deadline (ADR-0024, DR-07).
+func (s *Set) SLA() *SLAPolicy {
+	if s == nil || s.sla == nil {
+		return DefaultSLAPolicy()
+	}
+	return s.sla
 }
 
 // KYC returns the KYC required-field policy, or the in-code default.
@@ -167,6 +185,8 @@ func (s *Set) Document(name string) (any, bool) {
 		return s.TravelRule(), true
 	case NameScreeningReadiness:
 		return s.ScreeningReadiness(), true
+	case NameSLA:
+		return s.SLA(), true
 	default:
 		return nil, false
 	}
