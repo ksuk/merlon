@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -117,6 +118,56 @@ func TestMemoryAlertRepo_ListOpenByCursor_HasMore(t *testing.T) {
 	}
 	if len(rest) != 1 || rest[0].ID != generateTestID(0) {
 		t.Errorf("unexpected second page: %+v", rest)
+	}
+}
+
+func TestMemoryAlertRepo_RiskSortUsesAllRanksAndCursorTieBreakers(t *testing.T) {
+	repo := NewMemoryAlertRepo()
+	ctx := context.Background()
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	severities := []domain.AlertSeverity{
+		domain.AlertSeverityLow,
+		domain.AlertSeverityMedium,
+		domain.AlertSeverityHigh,
+		domain.AlertSeverityCritical,
+	}
+	for i, severity := range severities {
+		if err := repo.Create(ctx, &domain.Alert{
+			ID: fmt.Sprintf("risk-alert-%d", i), Status: domain.AlertStatusOpen,
+			Severity: severity, CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create %s: %v", severity, err)
+		}
+	}
+	if err := repo.Create(ctx, &domain.Alert{
+		ID: "risk-alert-unknown", Status: domain.AlertStatusOpen,
+		Severity: domain.AlertSeverity("future"), CreatedAt: created, UpdatedAt: created,
+	}); err != nil {
+		t.Fatalf("create unknown: %v", err)
+	}
+
+	page, err := repo.ListOpenByRisk(ctx, 5, 0)
+	if err != nil {
+		t.Fatalf("ListOpenByRisk: %v", err)
+	}
+	want := []string{"risk-alert-3", "risk-alert-2", "risk-alert-1", "risk-alert-0", "risk-alert-unknown"}
+	for i, id := range want {
+		if page[i].ID != id {
+			t.Errorf("page[%d].ID = %q, want %q", i, page[i].ID, id)
+		}
+	}
+
+	first, err := repo.ListOpenByRiskCursor(ctx, 3, nil)
+	if err != nil {
+		t.Fatalf("first risk cursor page: %v", err)
+	}
+	after := &domain.Cursor{Sort: "risk", Rank: domain.AlertSeverityRank(first[2].Severity), CreatedAt: first[2].CreatedAt, ID: first[2].ID}
+	rest, err := repo.ListOpenByRiskCursor(ctx, 3, after)
+	if err != nil {
+		t.Fatalf("second risk cursor page: %v", err)
+	}
+	if len(rest) != 2 || rest[0].ID != "risk-alert-0" || rest[1].ID != "risk-alert-unknown" {
+		t.Errorf("second risk cursor page = %+v, want low then unknown", rest)
 	}
 }
 

@@ -51,6 +51,13 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_WHITELIST_MAX_VALID_DAYS` | `365` | ホワイトリストの最大有効期間。 |
 | `MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS` | `60` / `90` | EDD エスカレーションの閾値。 |
 | `MERLON_TM_SCENARIOS_PATH` | `tm_scenarios` | ディレクトリを管理下のソース管理に保管する。実行時ダイジェストは読み込まれた内容を識別するが、変更を承認するものではない。 |
+| `MERLON_OPERATOR_TEAMS` | 未設定 | 永続的な割当チーム一覧をカンマ区切りで指定する。キュー行を走査してチームを推測することはなく、認証済みの割当には設定値が必要となる。 |
+| `MERLON_CASE_PRIORITY_PATH` | `content/case_priority_v1.yaml` | 保存された CDD ティア／スコアからケース優先度への対応を定義するバージョン付き YAML。 |
+| `MERLON_KYC_REQUIRED_FIELDS_PATH` | `content/kyc_required_fields_v1.yaml` | 顧客タイプごとに必須となる本人特定事項を定義するバージョン付き YAML。`enforcement: warn` は不足を報告しつつ登録を受理し、`reject` は拒否する。 |
+| `MERLON_EDD_POLICY_PATH` | `content/edd_policy_v1.yaml` | EDD の段階スケジュール・期限・完了要件・リスク等級降格時の挙動を保持するバージョン付き YAML。`MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS` を置き換える。 |
+| `MERLON_CDD_RULE_SELECTION_PATH` | `content/cdd_rule_selection_v1.yaml` | 顧客タイプ・商品・法域から適用 CDD ルールセットへの対応を定義するバージョン付き YAML。ルールセットの選択が一覧順ではなく設定によって決まる。 |
+| `MERLON_TRAVEL_RULE_POLICY_PATH` | `content/travel_rule_v1.yaml` | トラベルルールの閾値・対象取引・必要証跡・適用対象外理由コード、およびクライアントの矛盾する主張を記録するか拒否するかを保持するバージョン付き YAML。 |
+| `MERLON_SCREENING_READINESS_PATH` | `content/screening_readiness_v1.yaml` | 期待するリストソース・鮮度ウィンドウと、必須ソースが未整備のとき実行を degraded として記録するか停止するかを定義するバージョン付き YAML。 |
 | `MERLON_TM_BATCH_SCHEDULE` | `02:00` | 取引モニタリングのバッチ評価を実行する日次時刻（`HH:MM`）。 |
 | `MERLON_TM_BATCH_TIMEZONE` | ローカルタイムゾーン | 本番環境では IANA タイムゾーンを明示的に設定する。 |
 | `MERLON_LOG_LEVEL` | `info` | `info` 以上を維持する。機密性の高いワークロードに debug ログを使用しないこと。 |

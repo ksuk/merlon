@@ -1,0 +1,27 @@
+schema_version: edd_policy_v1
+policy_version: "2026-08-06-default"
+# EDD ウィンドウを開くリスク等級。
+trigger_tiers:
+  - high
+# 各段階は EDD 要求時点からの経過日数で発火する。after_days は狭義単調増加。
+stages:
+  - name: stage1
+    after_days: 30
+    action: reminder
+  - name: stage2
+    after_days: 60
+    action: transaction_restriction_recommended
+    case_priority: high
+  - name: stage3
+    after_days: 90
+    action: relationship_decline_recommended
+    case_priority: critical
+# 期限超過の境界。最終段階の after_days 以上でなければならない。
+due_days: 90
+completion:
+  requires_rationale: true
+  requires_case_link: false
+# retain_evidence: リスク等級が下がっても段階のタイムスタンプを保持し、
+#                  終了理由を記録する。エスカレーション履歴が監査可能に残る。
+# close_window:    ウィンドウを消去する（ポリシー導入前の挙動）。
+tier_downgrade: retain_evidence

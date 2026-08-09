@@ -30,6 +30,36 @@ Merlon は対話的ユーザーを JWT セッションで、非対話的クラ�
 | ホワイトリスト登録を承認する（`whitelist:approve`） | Yes | No | No |
 | 監査記録を読み取る（`audit:read`） | Yes | No | No |
 | ルールの作成・更新・インポート・有効化・無効化（`rule:write`） | Yes | No | No |
+| 大規模な対象母集団に対する一括実行を確定する（`batch:execute:large`） | Yes | No | No |
+| 顧客を再スコアリングする（`cdd:score`） | Yes | Yes | No |
+| リスク階層のオーバーライド提案を承認する（`cdd:override:approve`） | Yes | No | No |
+
+この表が権限モデルの全体である。`GET /api/v1/system/capabilities` は別立ての権限表ではなくこの表から回答を導出するため、ここに権限を追加すれば追加の配線なしに運用画面へ反映される。
+
+## ケイパビリティの発見
+
+`GET /api/v1/system/capabilities` は、管理機能および権限で保護された機能のそれぞれについて、`available` / `not_configured` / `forbidden` / `unsupported` / `degraded` / `unavailable` のいずれであるか、必要な権限、画面として提供されるのか API のみなのか、そしてドキュメントの所在を返す。`GET /api/v1/auth/me` は同一セッションの `auth_mode`・`roles`・`permissions` を返す。
+
+UI はこれを用いて操作を隠すか、理由を表示する。これは認可ではない。ここに挙げられたケイパビリティは、実際に処理を行うルート側でも再度強制される。クライアントが隠した操作であっても、サーバーは同じように拒否する。
+
+`auth_mode` は 3 種類のデプロイを区別する。
+
+| `auth_mode` | 意味 |
+|---|---|
+| `session` | ユーザーがログインする。API キーも併用できる |
+| `api_key_only` | API キーによる認証は行われるが、JWT 署名鍵が未設定のためユーザーはログインできない |
+| `disabled` | `MERLON_AUTH_ENABLED=false`。いかなるリクエストにもロールが存在しない |
+
+認証を無効にしたデプロイでは、依存関係が設定されているケイパビリティはすべて `available` を返す。拒否の根拠となるロールが存在しないためである。一方、そのデプロイが設定していない機能は `not_configured` のままとなる。権限がないことと機能がないことは別の事実である（ADR-0024）。
+
+### API のみで提供される機能
+
+すべてのバックエンド機能に画面があるわけではない。意図的な非提供は、利用者が探し当てるのではなく明示的に記録する。
+
+| ケイパビリティ | エンドポイント | 画面を用意していない理由 |
+|---|---|---|
+| `retention.manage` | `GET`/`PUT /api/v1/admin/retention-policies` | 保持期間は管理者がデプロイごとに一度設定するもので、変更は監査される。[保持とパージ](compliance/data-retention.md) を参照 |
+| `accounts.manage` | `POST /api/v1/accounts`、`GET /api/v1/accounts/{id}`、`POST`/`GET /api/v1/accounts/{id}/customers` | 口座の紐付けはアナリストではなくアダプター層が取り込み時に確立する。[アダプターガイド](adapter-guide.md) を参照 |
 
 ホワイトリストのワークフローでは、申請者が自身の申請を承認できないことが強制される。これにより、ホワイトリスト判断について、独立した一次申請と二次承認の統制が提供される。
 

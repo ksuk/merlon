@@ -28,12 +28,17 @@ class MakeTargetTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        generator = (
-            'go run -ldflags "-X '
-            "github.com/ksuk/merlon/api/internal/buildinfo.Version=review-test"
-            '" ./cmd/openapi-export -o ../docs/api/openapi.json'
-        )
+        # The ldflags carry commit and build time alongside the version, and
+        # their values depend on the checkout, so this asserts the parts that
+        # matter rather than the whole string: the version reaches the
+        # generator, the generator writes the artifact, and it runs before the
+        # verifier reads it.
+        generator = "./cmd/openapi-export -o ../docs/api/openapi.json"
         verifier = "python3 scripts/check-openapi-coverage.py"
+        self.assertIn(
+            "github.com/ksuk/merlon/api/internal/buildinfo.Version=review-test",
+            result.stdout,
+        )
         self.assertIn(generator, result.stdout)
         self.assertIn(verifier, result.stdout)
         self.assertLess(result.stdout.index(generator), result.stdout.index(verifier))

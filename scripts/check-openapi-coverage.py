@@ -36,21 +36,21 @@ SPEC_FILE = REPO_ROOT / "docs" / "api" / "openapi.json"
 
 # The number of registered API operations currently present in the OpenAPI
 # document. This may only be raised. See the module docstring.
-BASELINE_DOCUMENTED = 44
+BASELINE_DOCUMENTED = 130
 
 # The total number of registered API operations. Pinning this separately from
 # documented coverage makes an undocumented addition visible: without it,
 # covered would remain at BASELINE_DOCUMENTED while the missing list silently
 # grew. Any intentional surface change must update this value in review.
-BASELINE_REGISTERED = 78
+BASELINE_REGISTERED = 130
 
 # SHA-256 of the normalized, sorted route sets at the baseline above. Counts
 # catch simple additions/removals; these digests also catch a same-count
 # replacement, which would otherwise let a new undocumented route trade places
 # with an old one without failing CI.
-BASELINE_REGISTERED_SHA256 = "8f15dccc5e3de89689a53e813df091e751018d67207184bffbd050ac11870749"
-BASELINE_UNDOCUMENTED = 34
-BASELINE_UNDOCUMENTED_SHA256 = "9e6fcf35b38c5611723f4c7bc2753d0a99495dd83ef6dde686acccc564a4dae4"
+BASELINE_REGISTERED_SHA256 = "af38b65e6d493b38c9044bf0f78f54cc9ffe7b0e49059c31faa0f9fe9d6e9a68"
+BASELINE_UNDOCUMENTED = 0
+BASELINE_UNDOCUMENTED_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 # Only /api/ paths form the published contract. Operational probes (/healthz,
 # /metrics) and the SPA asset routes are deliberately outside it, and are

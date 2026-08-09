@@ -36,8 +36,9 @@ type auditDetailsKey struct{}
 // details to the generic audit entry without every handler needing its own
 // audit-writing logic.
 type auditDetailsSink struct {
-	mu      sync.Mutex
-	details map[string]string
+	mu             sync.Mutex
+	details        map[string]string
+	handledByRoute bool
 }
 
 func (s *auditDetailsSink) set(key, value string) {
@@ -60,6 +61,18 @@ func (s *auditDetailsSink) snapshot() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func (s *auditDetailsSink) markHandledByRoute() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handledByRoute = true
+}
+
+func (s *auditDetailsSink) isHandledByRoute() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.handledByRoute
 }
 
 // setAuditDetail attaches a key/value pair to the audit log entry that will
@@ -87,6 +100,13 @@ func (s *Server) auditMiddleware(next http.Handler) http.Handler {
 		// (ALD-006: the export operation must be traceable even though it
 		// is a read).
 		if r.Method == http.MethodGet && r.URL.Path != "/api/v1/audit/export" {
+			return
+		}
+		// Atomic mutation handlers append their required audit/event record inside
+		// the same database transaction as the business row. Do not append a
+		// second best-effort record after the response; doing so would make a
+		// successful business mutation possible after an audit failure.
+		if sink.isHandledByRoute() {
 			return
 		}
 
@@ -136,6 +156,9 @@ func resolveAction(method, path string) string {
 		if strings.Contains(path, "/backtest") {
 			return "run_backtest"
 		}
+		if strings.Contains(path, "/reports/str/") && strings.HasSuffix(path, "/submit") {
+			return "submit_str"
+		}
 		if strings.Contains(path, "/reports/str") {
 			return "create_str"
 		}
@@ -162,11 +185,17 @@ func resolveAction(method, path string) string {
 		}
 		return "create"
 	case http.MethodPut:
+		if strings.Contains(path, "/reports/str/") {
+			return "update_str"
+		}
 		if strings.Contains(path, "/admin/retention-policies/") {
 			return "update_retention_policy"
 		}
 		return "update"
 	case http.MethodPatch:
+		if strings.Contains(path, "/reports/str/") {
+			return "update_str"
+		}
 		return "update_status"
 	case http.MethodDelete:
 		return "delete"
@@ -258,7 +287,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	filter, pageReq, err := parseAuditListFilter(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, err.Error())
 		return
 	}
 
@@ -278,7 +307,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 // (ALD-005).
 func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if s.audit == nil {
-		writeError(w, http.StatusServiceUnavailable, "audit not configured")
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "audit not configured")
 		return
 	}
 
@@ -287,7 +316,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 		format = "csv"
 	}
 	if format != "csv" && format != "json" {
-		writeError(w, http.StatusBadRequest, "unsupported format: "+format)
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "unsupported format: "+format)
 		return
 	}
 
@@ -304,7 +333,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("since"); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid since: "+err.Error())
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid since: "+err.Error())
 			return
 		}
 		filter.Since = &t
@@ -312,7 +341,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if raw := q.Get("until"); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid until: "+err.Error())
+			writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid until: "+err.Error())
 			return
 		}
 		filter.Until = &t
@@ -320,7 +349,7 @@ func (s *Server) handleExportAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	entries, err := s.audit.List(r.Context(), filter)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 

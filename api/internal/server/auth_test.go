@@ -16,18 +16,26 @@ import (
 const testBootstrapToken = "test-bootstrap-token"
 
 func testServerWithAuth() *Server {
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
+	caseInvestigation := store.NewMemoryCaseInvestigationRepo()
+	alertDecisions := store.NewMemoryAlertDecisionRepo()
 	return New(":0", Deps{
-		Customers:      store.NewMemoryCustomerRepo(),
-		Transactions:   store.NewMemoryTransactionRepo(),
-		Alerts:         store.NewMemoryAlertRepo(),
-		Scoring:        &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
-		Monitoring:     &engine.MockMonitoringEngine{},
-		Screening:      &engine.MockScreeningEngine{},
-		Backtest:       &engine.MockBacktestEngine{},
-		Audit:          store.NewMemoryAuditRepo(),
-		Cases:          store.NewMemoryCaseRepo(),
-		APIKeys:        store.NewMemoryAPIKeyRepo(),
-		BootstrapToken: testBootstrapToken,
+		Customers:          store.NewMemoryCustomerRepo(),
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Scoring:            &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Backtest:           &engine.MockBacktestEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		Reports:            store.NewMemorySTRReportRepo(),
+		CaseInvestigation:  caseInvestigation,
+		AlertDecisions:     alertDecisions,
+		APIKeys:            store.NewMemoryAPIKeyRepo(),
+		BootstrapToken:     testBootstrapToken,
 	})
 }
 
@@ -38,19 +46,27 @@ func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
 		t.Fatalf("NewHS256Issuer: %v", err)
 	}
 
+	alerts := store.NewMemoryAlertRepo()
+	cases := store.NewMemoryCaseRepo()
+	caseInvestigation := store.NewMemoryCaseInvestigationRepo()
+	alertDecisions := store.NewMemoryAlertDecisionRepo()
 	s := New(":0", Deps{
-		Customers:      store.NewMemoryCustomerRepo(),
-		Transactions:   store.NewMemoryTransactionRepo(),
-		Alerts:         store.NewMemoryAlertRepo(),
-		Scoring:        &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
-		Monitoring:     &engine.MockMonitoringEngine{},
-		Screening:      &engine.MockScreeningEngine{},
-		Backtest:       &engine.MockBacktestEngine{},
-		Audit:          store.NewMemoryAuditRepo(),
-		Cases:          store.NewMemoryCaseRepo(),
-		APIKeys:        store.NewMemoryAPIKeyRepo(),
-		BootstrapToken: testBootstrapToken,
-		TokenIssuer:    issuer,
+		Customers:          store.NewMemoryCustomerRepo(),
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Alerts:             alerts,
+		Scoring:            &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Monitoring:         &engine.MockMonitoringEngine{},
+		Screening:          &engine.MockScreeningEngine{},
+		Backtest:           &engine.MockBacktestEngine{},
+		Audit:              store.NewMemoryAuditRepo(),
+		Cases:              cases,
+		CaseAlertLifecycle: store.NewMemoryCaseAlertLifecycleRepo(cases, alerts),
+		Reports:            store.NewMemorySTRReportRepo(),
+		CaseInvestigation:  caseInvestigation,
+		AlertDecisions:     alertDecisions,
+		APIKeys:            store.NewMemoryAPIKeyRepo(),
+		BootstrapToken:     testBootstrapToken,
+		TokenIssuer:        issuer,
 	})
 	return s, issuer
 }
@@ -88,12 +104,14 @@ func TestAuthNoHeader(t *testing.T) {
 // clients must be able to branch on error_code for every error response).
 func assertErrorCode(t *testing.T, rec *httptest.ResponseRecorder, want string) {
 	t.Helper()
-	var body map[string]string
+	// Decoded loosely: the envelope is additive (request_id, retryable), and a
+	// map[string]string would reject a field the contract is free to add.
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v (body: %s)", err, rec.Body.String())
 	}
-	if body["error_code"] != want {
-		t.Errorf("error_code = %q, want %q (body: %s)", body["error_code"], want, rec.Body.String())
+	if got, _ := body["error_code"].(string); got != want {
+		t.Errorf("error_code = %q, want %q (body: %s)", got, want, rec.Body.String())
 	}
 }
 

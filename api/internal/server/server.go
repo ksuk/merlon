@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/auth"
+	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/notify"
+	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/screening"
+	"github.com/ksuk/merlon/api/internal/store"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -42,8 +45,13 @@ type Server struct {
 	screening                engine.ScreeningEngine
 	backtest                 engine.BacktestEngine
 	backtestJobs             domain.BacktestJobRepository
+	reports                  domain.ReportRepository
 	audit                    domain.AuditRepository
 	cases                    domain.CaseRepository
+	caseAlertLifecycle       domain.CaseAlertLifecycleRepository
+	caseInvestigation        domain.CaseInvestigationRepository
+	alertDecisions           domain.AlertDecisionRepository
+	atomic                   domain.AtomicMutationRepository
 	apikeys                  domain.APIKeyRepository
 	webhooks                 domain.WebhookRepository
 	configEngine             engine.ConfigEngine
@@ -63,6 +71,8 @@ type Server struct {
 	// remain a PH10 gate.
 	tmBaseCurrency         string
 	realtimeMonitorTimeout time.Duration
+	eddStage2Days          int
+	eddStage3Days          int
 	screeningResults       domain.ScreeningResultRepository
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
@@ -83,45 +93,65 @@ type Server struct {
 
 	db           DBPinger
 	pendingEvals domain.PendingEvaluationRepository
+	batchRuns    domain.BatchRunRepository
+	wave3        domain.Wave3Repository
 	events       events.Bus
+	eventOutbox  domain.EventOutboxRepository
 
 	// notifier/routingRules/publicURL back alert-created email notifications
 	// (NOTIF-001/NOTIF-003, WS-8 Task 5). notifier is nil when no SMTP host
 	// is configured, in which case notifyAlertCreated is a no-op.
-	notifier     notify.Notifier
-	routingRules []notify.RoutingRule
-	publicURL    string
+	notifier       notify.Notifier
+	routingRules   []notify.RoutingRule
+	publicURL      string
+	operatorTeams  []string
+	priorityPolicy *casemgmt.PriorityPolicy
+	// policies is nil-tolerant: every accessor on *policy.Set returns the
+	// in-code default for a nil receiver.
+	policies *policy.Set
+
+	// statusCache bounds how often GET /system/status probes dependencies. The
+	// answer always travels with its own age, so a cached result is never
+	// mistaken for a fresh one.
+	statusCache systemStatusCache
 }
 
 type Deps struct {
-	Customers         domain.CustomerRepository
-	Transactions      domain.TransactionRepository
-	Alerts            domain.AlertRepository
-	Scoring           engine.ScoringEngine
-	Monitoring        engine.MonitoringEngine
-	Screening         engine.ScreeningEngine
-	Backtest          engine.BacktestEngine
-	BacktestJobs      domain.BacktestJobRepository
-	Audit             domain.AuditRepository
-	Cases             domain.CaseRepository
-	APIKeys           domain.APIKeyRepository
-	Webhooks          domain.WebhookRepository
-	Config            engine.ConfigEngine
-	EngineHealth      engine.HealthChecker
-	RateLimit         int
-	TrustedProxyCIDRs []netip.Prefix
-	BootstrapToken    string
-	TokenIssuer       *auth.TokenIssuer
-	Denylist          auth.Denylist
-	Users             domain.UserRepository
-	RefreshTokens     domain.RefreshTokenRepository
-	Rules             domain.RuleRepository
-	Whitelist         domain.WhitelistRepository
+	Customers          domain.CustomerRepository
+	Transactions       domain.TransactionRepository
+	Alerts             domain.AlertRepository
+	Scoring            engine.ScoringEngine
+	Monitoring         engine.MonitoringEngine
+	Screening          engine.ScreeningEngine
+	Backtest           engine.BacktestEngine
+	BacktestJobs       domain.BacktestJobRepository
+	Reports            domain.ReportRepository
+	Audit              domain.AuditRepository
+	Cases              domain.CaseRepository
+	CaseAlertLifecycle domain.CaseAlertLifecycleRepository
+	CaseInvestigation  domain.CaseInvestigationRepository
+	AlertDecisions     domain.AlertDecisionRepository
+	Atomic             domain.AtomicMutationRepository
+	APIKeys            domain.APIKeyRepository
+	Webhooks           domain.WebhookRepository
+	Config             engine.ConfigEngine
+	EngineHealth       engine.HealthChecker
+	RateLimit          int
+	TrustedProxyCIDRs  []netip.Prefix
+	BootstrapToken     string
+	TokenIssuer        *auth.TokenIssuer
+	Denylist           auth.Denylist
+	Users              domain.UserRepository
+	RefreshTokens      domain.RefreshTokenRepository
+	Rules              domain.RuleRepository
+	Whitelist          domain.WhitelistRepository
 	// WhitelistMaxValidDays overrides defaultWhitelistMaxValidDays (WL-002)
 	// when positive; zero/negative falls back to the default.
 	WhitelistMaxValidDays  int
 	TMBaseCurrency         string
 	RealtimeMonitorTimeout time.Duration
+	EDDStage2Days          int
+	EDDStage3Days          int
 	ScreeningResults       domain.ScreeningResultRepository
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
@@ -136,7 +166,10 @@ type Deps struct {
 
 	DB                 DBPinger
 	PendingEvaluations domain.PendingEvaluationRepository
+	BatchRuns          domain.BatchRunRepository
+	Wave3              domain.Wave3Repository
 	Events             events.Bus
+	EventOutbox        domain.EventOutboxRepository
 
 	// Notifier/RoutingRules/PublicURL wire alert-created email notifications
 	// (NOTIF-001/NOTIF-003, WS-8 Task 5). Notifier nil disables email
@@ -144,9 +177,17 @@ type Deps struct {
 	// to notify.DefaultRoutingRules() behavior only if the caller passes it
 	// explicitly — main.go always resolves a concrete rule set before
 	// constructing Deps.
-	Notifier     notify.Notifier
-	RoutingRules []notify.RoutingRule
-	PublicURL    string
+	Notifier      notify.Notifier
+	RoutingRules  []notify.RoutingRule
+	PublicURL     string
+	OperatorTeams []string
+	// CasePriorityPolicy is the versioned CDD-tier/score to case-priority
+	// mapping. A nil value uses the built-in development-safe policy.
+	CasePriorityPolicy *casemgmt.PriorityPolicy
+	// Policies is the Wave 3 policy bundle (ADR-0016). A nil value is valid
+	// and yields the in-code default for every policy, so a Server built
+	// without it behaves exactly as it did before the bundle existed.
+	Policies *policy.Set
 }
 
 func New(addr string, deps Deps) *Server {
@@ -161,8 +202,13 @@ func New(addr string, deps Deps) *Server {
 		screening:                deps.Screening,
 		backtest:                 deps.Backtest,
 		backtestJobs:             deps.BacktestJobs,
+		reports:                  deps.Reports,
 		audit:                    deps.Audit,
 		cases:                    deps.Cases,
+		caseAlertLifecycle:       deps.CaseAlertLifecycle,
+		caseInvestigation:        deps.CaseInvestigation,
+		alertDecisions:           deps.AlertDecisions,
+		atomic:                   deps.Atomic,
 		apikeys:                  deps.APIKeys,
 		webhooks:                 deps.Webhooks,
 		configEngine:             deps.Config,
@@ -178,6 +224,8 @@ func New(addr string, deps Deps) *Server {
 		whitelistMaxValidDaysCfg: deps.WhitelistMaxValidDays,
 		tmBaseCurrency:           deps.TMBaseCurrency,
 		realtimeMonitorTimeout:   deps.RealtimeMonitorTimeout,
+		eddStage2Days:            deps.EDDStage2Days,
+		eddStage3Days:            deps.EDDStage3Days,
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
@@ -190,14 +238,80 @@ func New(addr string, deps Deps) *Server {
 
 		db:           deps.DB,
 		pendingEvals: deps.PendingEvaluations,
+		batchRuns:    deps.BatchRuns,
+		wave3:        deps.Wave3,
 		events:       deps.Events,
+		eventOutbox:  deps.EventOutbox,
 
-		notifier:     deps.Notifier,
-		routingRules: deps.RoutingRules,
-		publicURL:    deps.PublicURL,
+		notifier:       deps.Notifier,
+		routingRules:   deps.RoutingRules,
+		publicURL:      deps.PublicURL,
+		operatorTeams:  append([]string(nil), deps.OperatorTeams...),
+		priorityPolicy: deps.CasePriorityPolicy,
+		policies:       deps.Policies,
+	}
+	if s.priorityPolicy == nil {
+		s.priorityPolicy = casemgmt.DefaultPriorityPolicy()
 	}
 	if s.realtimeMonitorTimeout <= 0 {
 		s.realtimeMonitorTimeout = defaultRealtimeMonitorTimeout
+	}
+	// A memory timeline keeps the operator API useful in the documented
+	// database-free development mode and gives tests the same append-only
+	// semantics as PostgreSQL. Production wiring replaces these with the PG
+	// adapters in main.go.
+	if s.caseInvestigation == nil {
+		s.caseInvestigation = store.NewMemoryCaseInvestigationRepo()
+	}
+	if s.alertDecisions == nil {
+		s.alertDecisions = store.NewMemoryAlertDecisionRepo()
+	}
+	if s.reports == nil {
+		// Small in-memory test/development compositions sometimes only wire the
+		// repositories exercised by that route. Keep the atomic mutation
+		// boundary usable instead of silently falling back to best effort.
+		s.reports = store.NewMemorySTRReportRepo()
+	}
+	if s.audit == nil {
+		// Audit is part of the memory backend's durable contract. Supplying the
+		// default keeps small dependency compositions from silently accepting a
+		// mutation with no trace at all.
+		s.audit = store.NewMemoryAuditRepo()
+	}
+	if s.caseAlertLifecycle == nil {
+		if memoryCases, ok := s.cases.(*store.MemoryCaseRepo); ok {
+			if memoryAlerts, ok := s.alerts.(*store.MemoryAlertRepo); ok {
+				s.caseAlertLifecycle = store.NewMemoryCaseAlertLifecycleRepo(memoryCases, memoryAlerts)
+			}
+		}
+	}
+	if memoryWave3, ok := s.wave3.(*store.MemoryWave3Repo); ok {
+		if memoryCases, ok := s.cases.(*store.MemoryCaseRepo); ok {
+			memoryWave3.SetCaseRepository(memoryCases)
+		}
+	}
+	if s.atomic == nil {
+		var identityHistory domain.CustomerIdentityHistoryRepository
+		if memoryWave3, ok := s.wave3.(*store.MemoryWave3Repo); ok {
+			identityHistory = memoryWave3
+		}
+		memoryRepos := domain.AtomicMutationRepositories{
+			Customers: s.customers, Transactions: s.transactions, Alerts: s.alerts,
+			Reports: s.reports, Audit: s.audit, Cases: s.cases,
+			CaseAlertLifecycle: s.caseAlertLifecycle, Investigation: s.caseInvestigation,
+			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox, IdentityHistory: identityHistory, Wave3: s.wave3,
+			PendingEvaluations: func() domain.PendingEvaluationWorkflowRepository {
+				if workflow, ok := s.pendingEvals.(domain.PendingEvaluationWorkflowRepository); ok {
+					return workflow
+				}
+				return nil
+			}(),
+			BatchRuns:    s.batchRuns,
+			BacktestJobs: s.backtestJobs,
+		}
+		if atomic, err := store.NewMemoryAtomicMutationRepo(memoryRepos); err == nil {
+			s.atomic = atomic
+		}
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
@@ -236,13 +350,32 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/customers/{id}", s.handleGetCustomer)
 	s.route("POST /api/v1/customers", s.handleCreateCustomer)
 	s.route("PUT /api/v1/customers/{id}", s.handleUpdateCustomer)
+	s.route("POST /api/v1/customers/{id}/edd/{action}", s.handleCustomerEDDAction)
+	s.route("GET /api/v1/customers/{id}/edd-events", s.handleListCustomerEDDEvents)
 	s.route("GET /api/v1/customers/{id}/scores", s.handleGetScoreHistory)
-	s.route("POST /api/v1/customers/{id}/score", s.handleScoreCustomer)
+	s.route("GET /api/v1/customers/{id}/score-explanation", s.handleScoreExplanation)
+	s.route("GET /api/v1/customers/{id}/scores/{scoreID}/explanation", s.handleScoreExplanation)
+	s.route("GET /api/v1/customers/{id}/screening-results", s.handleListScreeningResults)
+	s.route("GET /api/v1/customers/{id}/investigation", s.handleCustomerInvestigation)
+	s.route("GET /api/v1/customers/{id}/identity-history", s.handleListCustomerIdentityHistory)
+	// Producing a CDD score is a control action, not a read: the score decides
+	// EDD, monitoring thresholds and rescreening frequency, so Viewer no longer
+	// reaches it (ADR-0019, a deliberate breaking change).
+	s.routeHandler("POST /api/v1/customers/{id}/score", s.requireRolePermission(auth.PermCDDScore, s.handleScoreCustomer))
+	s.route("GET /api/v1/customers/{id}/score-overrides", s.handleListCDDScoreOverrides)
+	s.route("GET /api/v1/customers/{id}/cdd-rule-sets", s.handleListCDDRuleSets)
+	s.routeHandler("POST /api/v1/customers/{id}/score-overrides/{overrideID}/approve", s.requireRolePermission(auth.PermCDDOverrideApprove, s.handleApproveCDDScoreOverride))
 	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
 	// Screening (WS-7)
 	s.route("POST /api/v1/screening/check", s.handleScreeningCheck)
+	s.route("GET /api/v1/screening/runs", s.handleListScreeningRuns)
+	s.route("GET /api/v1/screening/runs/{id}", s.handleGetScreeningRun)
+	s.route("GET /api/v1/screening/results", s.handleListScreeningResults)
+	s.route("GET /api/v1/screening/results/{id}", s.handleGetScreeningResult)
+	s.route("GET /api/v1/screening/results/{id}/history", s.handleListScreeningResultHistory)
 	s.route("PATCH /api/v1/screening/results/{id}", s.handleUpdateScreeningResult)
+	s.route("GET /api/v1/screening/sources", s.handleListScreeningSources)
 
 	// Accounts (joint accounts, the data model §1.1.3)
 	s.route("POST /api/v1/accounts", s.handleCreateAccount)
@@ -261,17 +394,25 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/alerts/bulk-case", s.handleBulkCaseAssignment)
 	s.route("GET /api/v1/alerts/{id}", s.handleGetAlert)
 	s.route("PATCH /api/v1/alerts/{id}", s.handleUpdateAlertStatus)
+	s.route("GET /api/v1/alerts/{id}/decisions", s.handleListAlertDecisions)
 
 	// Backtest
 	s.route("POST /api/v1/backtest", s.handleRunBacktest)
 	s.route("POST /api/v1/backtests", s.handleCreateBacktestJob)
 	s.route("GET /api/v1/backtests", s.handleListBacktestJobs)
+	s.route("POST /api/v1/backtests/preview", s.handlePreviewBacktestCohort)
+	s.route("GET /api/v1/backtests/rules", s.handleDiscoverBacktestRules)
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
 
 	// Reports
+	s.route("GET /api/v1/reports/str", s.handleListSTR)
 	s.route("POST /api/v1/reports/str", s.handleCreateSTR)
+	s.route("GET /api/v1/reports/str/{id}", s.handleGetSTR)
+	s.route("PUT /api/v1/reports/str/{id}", s.handleUpdateSTR)
+	s.route("PATCH /api/v1/reports/str/{id}", s.handleUpdateSTR)
+	s.route("POST /api/v1/reports/str/{id}/submit", s.handleSubmitSTR)
 	s.route("GET /api/v1/reports/str/export", s.handleExportSTR)
 
 	// Cases
@@ -280,8 +421,17 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/cases/{id}", s.handleGetCase)
 	s.route("PATCH /api/v1/cases/{id}", s.handleUpdateCase)
 	s.route("POST /api/v1/cases/{id}/notes", s.handleAddCaseNote)
+	s.route("GET /api/v1/cases/{id}/timeline", s.handleCaseTimeline)
+	s.route("GET /api/v1/cases/{id}/export", s.handleCaseFileExport)
+	s.route("POST /api/v1/cases/{id}/evidence", s.handleAddCaseEvidence)
+	s.route("POST /api/v1/cases/{id}/evidence/{evidence}/corrections", s.handleCorrectCaseEvidence)
+	s.route("PUT /api/v1/cases/{id}/checklist/{item}", s.handleUpdateCaseChecklist)
+	s.route("POST /api/v1/cases/{id}/work-items", s.handleCreateCaseWorkItem)
+	s.route("PATCH /api/v1/cases/{id}/work-items/{item}", s.handleUpdateCaseWorkItem)
 	s.route("GET /api/v1/cases/{id}/related", s.handleGetRelatedCases)
 	s.route("POST /api/v1/cases/{id}/related", s.handleAddRelatedCase)
+	s.route("DELETE /api/v1/cases/{id}/related/{relationship}", s.handleRemoveRelatedCase)
+	s.route("PUT /api/v1/cases/{id}/related/{relationship}", s.handleCorrectRelatedCase)
 
 	// Dashboard
 	s.route("GET /api/v1/dashboard", s.handleDashboard)
@@ -289,6 +439,22 @@ func (s *Server) routes() {
 	// Batch
 	s.route("POST /api/v1/batch/score", s.handleBatchScore)
 	s.route("POST /api/v1/batch/monitor", s.handleBatchMonitor)
+	s.route("POST /api/v1/batch/targets/preview", s.handlePreviewTargetManifest)
+	s.route("GET /api/v1/batch/targets/{id}", s.handleGetTargetManifest)
+	s.route("POST /api/v1/batch/targets/{id}/confirm", s.handleConfirmTargetManifest)
+	s.route("POST /api/v1/batch/runs", s.handleCreateBatchRun)
+	s.route("GET /api/v1/batch/runs", s.handleListBatchRuns)
+	s.route("GET /api/v1/batch/runs/{id}", s.handleGetBatchRun)
+	s.route("POST /api/v1/batch/runs/{id}/cancel", s.handleCancelBatchRun)
+	s.route("POST /api/v1/batch/runs/{id}/rerun", s.handleRerunBatchRun)
+
+	// Pending engine evaluations (fail-alert recovery queue)
+	s.route("GET /api/v1/pending-evaluations", s.handleListPendingEvaluations)
+	s.routeHandler("GET /api/v1/pending-evaluations/export", s.requireRolePermission(auth.PermAuditRead, s.handleExportPendingEvaluations))
+	s.route("GET /api/v1/pending-evaluations/stats", s.handlePendingEvaluationStats)
+	s.route("GET /api/v1/pending-evaluations/{id}", s.handleGetPendingEvaluation)
+	s.route("GET /api/v1/pending-evaluations/{id}/history", s.handleListPendingHistory)
+	s.route("POST /api/v1/pending-evaluations/{id}/{action}", s.handleTransitionPending)
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
@@ -310,6 +476,11 @@ func (s *Server) routes() {
 	// Users (admin only)
 	s.route("GET /api/v1/admin/users", s.handleListUsers)
 
+	// Operator assignment directory. This is intentionally separate from the
+	// admin user-management endpoint: analysts may use active principals and
+	// known queue teams as selectors without receiving password-management data.
+	s.route("GET /api/v1/operators", s.handleListOperatorDirectory)
+
 	// Retention policies (admin only via /api/v1/admin/ prefix gate,
 	// the audit design RET-001/RET-002). Update additionally enforces a
 	// positive period and any optional deployment-defined minimum.
@@ -327,7 +498,7 @@ func (s *Server) routes() {
 	// full filtered result set in one response, a higher-risk action than
 	// browsing a page at a time).
 	s.route("GET /api/v1/audit", s.handleListAuditLogs)
-	s.routeHandler("GET /api/v1/audit/export", auth.RequirePermission(auth.PermAuditRead)(http.HandlerFunc(s.handleExportAuditLogs)))
+	s.routeHandler("GET /api/v1/audit/export", s.requireRolePermission(auth.PermAuditRead, s.handleExportAuditLogs))
 
 	// Config validation
 	s.route("POST /api/v1/config/validate", s.handleValidateConfig)
@@ -338,11 +509,11 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/rules", s.handleListRules)
 	s.route("GET /api/v1/rules/{id}", s.handleGetRule)
 	s.route("GET /api/v1/rules/{id}/export", s.handleExportRule)
-	s.routeHandler("POST /api/v1/rules", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleCreateRule)))
-	s.routeHandler("PUT /api/v1/rules/{id}", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleUpdateRule)))
-	s.routeHandler("POST /api/v1/rules/{id}/activate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleActivateRule)))
-	s.routeHandler("POST /api/v1/rules/{id}/deactivate", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleDeactivateRule)))
-	s.routeHandler("POST /api/v1/rules/import", auth.RequirePermission(auth.PermRuleWrite)(http.HandlerFunc(s.handleImportRules)))
+	s.routeHandler("POST /api/v1/rules", s.requireRolePermission(auth.PermRuleWrite, s.handleCreateRule))
+	s.routeHandler("PUT /api/v1/rules/{id}", s.requireRolePermission(auth.PermRuleWrite, s.handleUpdateRule))
+	s.routeHandler("POST /api/v1/rules/{id}/activate", s.requireRolePermission(auth.PermRuleWrite, s.handleActivateRule))
+	s.routeHandler("POST /api/v1/rules/{id}/deactivate", s.requireRolePermission(auth.PermRuleWrite, s.handleDeactivateRule))
+	s.routeHandler("POST /api/v1/rules/import", s.requireRolePermission(auth.PermRuleWrite, s.handleImportRules))
 
 	// Whitelist (whitelist.md §1, §3.1): reads are open to all roles; request
 	// and revoke require auth.PermWhitelistRequest, approve requires the
@@ -360,6 +531,21 @@ func (s *Server) routes() {
 	// System info
 	s.route("GET /api/v1/system/info", s.handleSystemInfo)
 	s.route("GET /api/v1/system/config-digests", s.handleConfigDigests)
+
+	// Capability contract (CAP-01, ADR-0024). Readable by any authenticated
+	// caller: it reports what this deployment offers and why a function is
+	// unavailable, never the content of a function the caller may not use.
+	s.route("GET /api/v1/system/capabilities", s.handleCapabilities)
+
+	// Truthful runtime readiness and active-configuration provenance (#83).
+	// Distinct from /healthz/ready, which is an unauthenticated probe with a
+	// deliberately minimal body.
+	s.route("GET /api/v1/system/status", s.handleSystemStatus)
+
+	// Policy documents (ADR-0016). Read-only: policies are edited as files
+	// and reloaded on restart, never mutated through the API.
+	s.route("GET /api/v1/policies", s.handleListPolicies)
+	s.route("GET /api/v1/policies/{policy}", s.handleGetPolicy)
 
 	// OpenAPI
 	s.route("GET /api/v1/openapi.json", s.handleOpenAPI)

@@ -22,6 +22,8 @@ Sample rules and thresholds are public by design and can be used to infer detect
 - [`tm_scenario_v2.json`](schema/tm_scenario_v2.json) — TM シナリオ定義のスキーマ（現行）
 - [`cdd_weight_v1.json`](schema/cdd_weight_v1.json) — CDD ウェイト定義のスキーマ
 - [`country_risk_v1.json`](schema/country_risk_v1.json) — カントリーリスクテーブルのスキーマ
+- [`kyc_required_fields_v1.json`](schema/kyc_required_fields_v1.json) — KYC 必須項目ポリシーのスキーマ
+- [`travel_rule_v1.json`](schema/travel_rule_v1.json) — トラベルルールポリシーのスキーマ
 - [`tm_scenario_v1.json`](schema/tm_scenario_v1.json) — TM シナリオ定義の旧スキーマ。新規作成には使用しない。エンジンは後方互換のため受理し続け、本ファイルは [ADR-0006](../docs/decisions/0006-tm-scenario-v2-migration.md) に基づき 2027-07-04 まで維持する
 
 各ルール定義の `schema_version` フィールドが、対応するスキーマを指す。

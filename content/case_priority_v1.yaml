@@ -1,0 +1,16 @@
+schema_version: case_priority_v1
+policy_version: "2026-08-04-default"
+unscored_priority: medium
+tier_priorities:
+  low: low
+  medium: medium
+  high: high
+score_bands:
+  - min: 0
+    max: 2
+    priority: low
+  - min: 2
+    max: 4
+    priority: medium
+  - min: 4
+    priority: high

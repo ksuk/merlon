@@ -56,6 +56,44 @@ func ValidCaseStatusTransition(from, to CaseStatus) bool {
 	return false
 }
 
+// IsCaseUnresolved reports whether a case belongs in the active operator
+// queue. The legacy "open" value is retained as an active alias of "new".
+func IsCaseUnresolved(status CaseStatus) bool {
+	switch normalizeCaseStatus(status) {
+	case CaseStatusNew, CaseStatusInvestigating, CaseStatusEscalated, CaseStatusReopened:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsCaseTerminal reports whether a case has reached a terminal disposition.
+func IsCaseTerminal(status CaseStatus) bool {
+	return status == CaseStatusClosed || status == CaseStatusStrFiled
+}
+
+// CompatibleCaseAlertState is the public storage invariant for a case and
+// one of its linked alerts. Terminal cases may reference only terminal
+// alerts. Active cases may retain terminal alerts as immutable investigation
+// history after a reopen, as well as reference unresolved alerts.
+func CompatibleCaseAlertState(caseStatus CaseStatus, alertStatus AlertStatus) bool {
+	if IsCaseTerminal(caseStatus) {
+		return IsAlertTerminal(alertStatus)
+	}
+	if !IsCaseUnresolved(caseStatus) {
+		return false
+	}
+	return IsAlertUnresolved(alertStatus) || IsAlertTerminal(alertStatus)
+}
+
+// CanAttachAlertToCase is deliberately stricter than the storage invariant:
+// a new link may be added only while both records are active. Terminal alerts
+// can remain linked when a closed case is reopened, but cannot be introduced
+// as new work.
+func CanAttachAlertToCase(caseStatus CaseStatus, alertStatus AlertStatus) bool {
+	return IsCaseUnresolved(caseStatus) && IsAlertUnresolved(alertStatus)
+}
+
 type CasePriority string
 
 const (
@@ -75,13 +113,28 @@ type Case struct {
 	Status         CaseStatus   `json:"status"`
 	Priority       CasePriority `json:"priority"`
 	AssignedTo     string       `json:"assigned_to,omitempty"`
+	AssignedTeam   string       `json:"assigned_team,omitempty"`
+	DueAt          *time.Time   `json:"due_at,omitempty"`
 	Summary        string       `json:"summary"`
 	Notes          []CaseNote   `json:"notes,omitempty"`
 	ReopenReason   string       `json:"reopen_reason,omitempty"`
 	RelatedCaseIDs []string     `json:"related_case_ids,omitempty"`
-	CreatedAt      time.Time    `json:"created_at"`
-	UpdatedAt      time.Time    `json:"updated_at"`
-	ClosedAt       *time.Time   `json:"closed_at,omitempty"`
+	// InvestigationDisposition is deliberately separate from severity/priority:
+	// an alert may be high-risk without an operator deciding that an STR is
+	// warranted. STRCandidate is the review-stage flag; str_filed is reserved
+	// for a validated submitted report.
+	InvestigationDisposition string     `json:"investigation_disposition,omitempty"`
+	STRCandidate             bool       `json:"str_candidate,omitempty"`
+	DispositionRationale     string     `json:"disposition_rationale,omitempty"`
+	STRReportID              string     `json:"str_report_id,omitempty"`
+	STRFiledAt               *time.Time `json:"str_filed_at,omitempty"`
+	STRFiledBy               string     `json:"str_filed_by,omitempty"`
+	STRFilingChannel         string     `json:"str_filing_channel,omitempty"`
+	STRDestination           string     `json:"str_destination,omitempty"`
+	STRExternalReference     string     `json:"str_external_reference,omitempty"`
+	CreatedAt                time.Time  `json:"created_at"`
+	UpdatedAt                time.Time  `json:"updated_at"`
+	ClosedAt                 *time.Time `json:"closed_at,omitempty"`
 }
 
 type CaseNote struct {
@@ -94,6 +147,8 @@ type CaseNote struct {
 type CaseRepository interface {
 	Get(ctx context.Context, id string) (*Case, error)
 	ListByCustomer(ctx context.Context, customerID string) ([]Case, error)
+	ListByCustomerOffset(ctx context.Context, customerID string, limit, offset int) ([]Case, error)
+	ListByCustomerCursor(ctx context.Context, customerID string, limit int, after *Cursor) ([]Case, error)
 	ListOpen(ctx context.Context, limit, offset int) ([]Case, error)
 	ListOpenByCursor(ctx context.Context, limit int, after *Cursor) ([]Case, error)
 	Create(ctx context.Context, c *Case) error

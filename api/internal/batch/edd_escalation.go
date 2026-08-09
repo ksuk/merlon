@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/policy"
 )
 
 // eddStage1Days is the fixed reminder threshold (the case-management workflow §EDD
@@ -40,6 +41,10 @@ type EDDEscalationDeps struct {
 	Webhook   WebhookDispatchFunc
 	// Now overrides time.Now for deterministic tests. Nil uses time.Now.
 	Now func() time.Time
+	// Policy is the single source of the stage schedule (DR-14). The
+	// Stage2Days/Stage3Days fields below remain so an existing deployment's
+	// environment configuration keeps working; when Policy is supplied it wins.
+	Policy *policy.EDDPolicy
 	// Stage2Days/Stage3Days override the default 60/90-day thresholds
 	// (the case-management workflow: "デフォルト、設定可"). Zero uses the default.
 	Stage2Days int
@@ -83,11 +88,21 @@ func RunEDDEscalationJob(ctx context.Context, deps EDDEscalationDeps) (EDDEscala
 	if deps.Now != nil {
 		now = deps.Now
 	}
+	// The schedule comes from the policy, which carries the same 30/60/90
+	// defaults the literals below expressed. Duplicating them here, in the
+	// investigation read model, and in the process configuration meant the
+	// three could disagree about when a customer was late.
 	stage2Days := deps.Stage2Days
+	if days, ok := deps.Policy.StageDays("stage2"); ok {
+		stage2Days = days
+	}
 	if stage2Days <= 0 {
 		stage2Days = defaultEDDStage2Days
 	}
 	stage3Days := deps.Stage3Days
+	if days, ok := deps.Policy.StageDays("stage3"); ok {
+		stage3Days = days
+	}
 	if stage3Days <= 0 {
 		stage3Days = defaultEDDStage3Days
 	}
@@ -172,12 +187,16 @@ func ensureEDDCase(ctx context.Context, deps EDDEscalationDeps, c *domain.Custom
 	}
 	for i := range existing {
 		e := existing[i]
-		if !strings.Contains(e.Summary, eddCaseSummaryMarker) {
+		if c.EddCaseID != "" && domain.SameIdentifier(e.ID, c.EddCaseID) {
+			// The recorded link is authoritative; the summary marker below is
+			// the fallback for cases opened before the link existed.
+		} else if !strings.Contains(e.Summary, eddCaseSummaryMarker) {
 			continue
 		}
 		if e.Status == domain.CaseStatusClosed || e.Status == domain.CaseStatusStrFiled {
 			continue
 		}
+		c.EddCaseID = e.ID
 		if casePriorityRank(priority) <= casePriorityRank(e.Priority) {
 			return nil
 		}
@@ -198,7 +217,13 @@ func ensureEDDCase(ctx context.Context, deps EDDEscalationDeps, c *domain.Custom
 		CreatedAt:  now,
 		UpdatedAt:  now,
 	}
-	return deps.Cases.Create(ctx, newCase)
+	if err := deps.Cases.Create(ctx, newCase); err != nil {
+		return err
+	}
+	// Recorded on the customer so the investigation panel can link straight to
+	// it, rather than rediscovering it by matching a marker string.
+	c.EddCaseID = newCase.ID
+	return nil
 }
 
 func casePriorityRank(p domain.CasePriority) int {

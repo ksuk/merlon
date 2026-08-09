@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { formatDateTime } from "@/lib/format"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -31,9 +32,6 @@ const ACTION_CATEGORY_LABEL_KEYS: Record<string, string> = {
   "管理操作": "adminOp", // i18n-ignore
 }
 
-function formatDateTime(iso: string, locale: string) {
-  return new Date(iso).toLocaleString(locale)
-}
 
 export function AuditPage() {
   const { t, i18n } = useTranslation()
@@ -127,7 +125,14 @@ export function AuditPage() {
   }
 
   if (error) {
-    return <p className="p-12 text-center text-destructive">{t("audit.error")}</p>
+    return (
+      <div role="alert" className="space-y-3 p-12 text-center text-destructive">
+        <p>{t("audit.error")}</p>
+        <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+          {t("audit.retry")}
+        </Button>
+      </div>
+    )
   }
 
   return (
@@ -206,7 +211,7 @@ export function AuditPage() {
           />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {exportError && <p className="text-xs text-destructive">{exportError}</p>}
+          {exportError && <p role="alert" className="text-xs text-destructive">{exportError}</p>}
           <Button variant="outline" size="sm" disabled={exporting} onClick={() => handleExport("csv")}>
             <Download className="h-4 w-4" />
             CSV

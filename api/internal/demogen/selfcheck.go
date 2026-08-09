@@ -214,6 +214,51 @@ func checkTolerance(errs *[]string, label string, count, want int, tolerancePct 
 func SelfCheckW2(r *Result) error {
 	var errs []string
 
+	alertsByID := make(map[string]domain.Alert, len(r.Alerts))
+	for _, a := range r.Alerts {
+		alertsByID[a.ID] = a
+		switch {
+		case domain.IsAlertUnresolved(a.Status):
+			if a.ResolvedAt != nil || a.ResolvedBy != "" {
+				errs = append(errs, fmt.Sprintf("active alert %s carries terminal resolution metadata", a.ID))
+			}
+		case domain.IsAlertTerminal(a.Status):
+			if a.ResolvedAt == nil || strings.TrimSpace(a.ResolvedBy) == "" {
+				errs = append(errs, fmt.Sprintf("terminal alert %s is missing resolved_at/resolved_by", a.ID))
+			}
+		default:
+			errs = append(errs, fmt.Sprintf("alert %s has unsupported lifecycle status %q", a.ID, a.Status))
+		}
+	}
+
+	for _, c := range r.Cases {
+		if domain.IsCaseTerminal(c.Status) && c.ClosedAt == nil {
+			errs = append(errs, fmt.Sprintf("terminal case %s is missing closed_at", c.ID))
+		}
+		if domain.IsCaseUnresolved(c.Status) && c.ClosedAt != nil {
+			errs = append(errs, fmt.Sprintf("active case %s carries closed_at", c.ID))
+		}
+		seenAlertIDs := make(map[string]struct{}, len(c.AlertIDs))
+		for _, alertID := range c.AlertIDs {
+			if _, duplicate := seenAlertIDs[alertID]; duplicate {
+				errs = append(errs, fmt.Sprintf("case %s contains duplicate alert %s", c.ID, alertID))
+				continue
+			}
+			seenAlertIDs[alertID] = struct{}{}
+			a, ok := alertsByID[alertID]
+			if !ok {
+				errs = append(errs, fmt.Sprintf("case %s references missing alert %s", c.ID, alertID))
+				continue
+			}
+			if a.CustomerID != c.CustomerID {
+				errs = append(errs, fmt.Sprintf("case %s and alert %s belong to different customers", c.ID, alertID))
+			}
+			if !domain.CompatibleCaseAlertState(c.Status, a.Status) {
+				errs = append(errs, fmt.Sprintf("case %s status %q is incompatible with alert %s status %q", c.ID, c.Status, alertID, a.Status))
+			}
+		}
+	}
+
 	if len(r.Transactions) > 0 {
 		rate := float64(len(r.Alerts)) / float64(len(r.Transactions))
 		if rate >= 0.01 {

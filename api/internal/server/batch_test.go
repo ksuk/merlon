@@ -40,7 +40,7 @@ func TestBatchScoreAll(t *testing.T) {
 		s.Handler().ServeHTTP(rec, req)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/score", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/score", strings.NewReader(`{"target_mode":"all"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -102,7 +102,7 @@ func TestBatchScoreNoEngine(t *testing.T) {
 		Alerts:       store.NewMemoryAlertRepo(),
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/score", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/score", strings.NewReader(`{"target_mode":"all"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -144,7 +144,7 @@ func TestBatchMonitorAll(t *testing.T) {
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all"}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -191,7 +191,7 @@ func TestBatchMonitor_DedupsRepeatedAlertForSameScenarioAndWindow(t *testing.T) 
 	s.Handler().ServeHTTP(rec, req)
 
 	for i := 0; i < 2; i++ {
-		req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all"}`))
 		rec = httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -237,7 +237,7 @@ func TestBatchMonitor_EngineDown_QueuesPendingReview(t *testing.T) {
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all"}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -252,6 +252,9 @@ func TestBatchMonitor_EngineDown_QueuesPendingReview(t *testing.T) {
 	}
 	if resp.QueuedForReview != 1 {
 		t.Errorf("queued_for_review = %d, want 1", resp.QueuedForReview)
+	}
+	if len(resp.Results) != 1 || !resp.Results[0].PendingReview {
+		t.Fatalf("results = %+v, want one pending_review result", resp.Results)
 	}
 
 	queued, err := pending.ListByStatus(context.Background(), domain.PendingEvaluationStatusPendingReview, 10, 0)
@@ -295,7 +298,7 @@ func TestBatchMonitor_NoPendingRepo_TreatsEngineFailureAsHardFailure(t *testing.
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all"}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -339,7 +342,7 @@ func TestBatchMonitor_BulkPendingFailureDoesNotFallBackToPerCustomerReads(t *tes
 		}
 	}
 	s := New(":0", Deps{Customers: customers, Transactions: transactions, Alerts: store.NewMemoryAlertRepo(), Monitoring: &engine.MockMonitoringEngine{Err: errors.New("engine outage")}, PendingEvaluations: pending})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -377,9 +380,9 @@ func TestBatchMonitor_ModeSelectsEvaluationMode(t *testing.T) {
 		body string
 		want engine.EvaluationMode
 	}{
-		{name: "absent mode stays realtime", body: `{}`, want: engine.EvaluationModeRealtime},
-		{name: "explicit realtime", body: `{"mode":"realtime"}`, want: engine.EvaluationModeRealtime},
-		{name: "explicit batch", body: `{"mode":"batch"}`, want: engine.EvaluationModeBatch},
+		{name: "absent mode stays realtime", body: `{"target_mode":"all"}`, want: engine.EvaluationModeRealtime},
+		{name: "explicit realtime", body: `{"target_mode":"all","mode":"realtime"}`, want: engine.EvaluationModeRealtime},
+		{name: "explicit batch", body: `{"target_mode":"all","mode":"batch"}`, want: engine.EvaluationModeBatch},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			monitoring := &recordingMonitoringEngine{}
@@ -456,7 +459,7 @@ func TestBatchMonitor_EvaluatesHistoryBeyondBatchCustomerLimit(t *testing.T) {
 	}
 
 	s := New(":0", Deps{Customers: customers, Transactions: transactions, Alerts: store.NewMemoryAlertRepo(), Monitoring: monitoring})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"mode":"batch"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all","mode":"batch"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -497,7 +500,7 @@ func TestBatchMonitor_NonBaseCurrencyQueuesPendingReview(t *testing.T) {
 		Customers: customers, Transactions: transactions, Alerts: store.NewMemoryAlertRepo(),
 		Monitoring: monitoring, PendingEvaluations: pending, TMBaseCurrency: "JPY",
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"mode":"batch"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all","mode":"batch"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -539,11 +542,11 @@ func TestBatchMonitor_StatusPolicyFollowsMode(t *testing.T) {
 		body        string
 		wantEvalled bool
 	}{
-		{name: "dormant is evaluated in realtime", status: domain.CustomerStatusDormant, body: `{}`, wantEvalled: true},
-		{name: "dormant is skipped in batch", status: domain.CustomerStatusDormant, body: `{"mode":"batch"}`, wantEvalled: false},
-		{name: "frozen is evaluated in batch", status: domain.CustomerStatusFrozen, body: `{"mode":"batch"}`, wantEvalled: true},
-		{name: "closed is skipped in batch", status: domain.CustomerStatusClosed, body: `{"mode":"batch"}`, wantEvalled: false},
-		{name: "closed is skipped in realtime", status: domain.CustomerStatusClosed, body: `{}`, wantEvalled: false},
+		{name: "dormant is evaluated in realtime", status: domain.CustomerStatusDormant, body: `{"target_mode":"all"}`, wantEvalled: true},
+		{name: "dormant is skipped in batch", status: domain.CustomerStatusDormant, body: `{"target_mode":"all","mode":"batch"}`, wantEvalled: false},
+		{name: "frozen is evaluated in batch", status: domain.CustomerStatusFrozen, body: `{"target_mode":"all","mode":"batch"}`, wantEvalled: true},
+		{name: "closed is skipped in batch", status: domain.CustomerStatusClosed, body: `{"target_mode":"all","mode":"batch"}`, wantEvalled: false},
+		{name: "closed is skipped in realtime", status: domain.CustomerStatusClosed, body: `{"target_mode":"all"}`, wantEvalled: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			monitoring := &recordingMonitoringEngine{}
@@ -598,7 +601,7 @@ func TestBatchMonitor_EngineOutageBulkLoadsPendingRecordsOnce(t *testing.T) {
 		Monitoring:         &engine.MockMonitoringEngine{Err: errors.New("engine outage")},
 		PendingEvaluations: pending,
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/batch/monitor", strings.NewReader(`{"target_mode":"all"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

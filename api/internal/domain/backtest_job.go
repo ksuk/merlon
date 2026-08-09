@@ -25,6 +25,28 @@ type BacktestCustomerFilter struct {
 	CountryCode string         `json:"country_code,omitempty"`
 }
 
+// Matches reports whether a customer belongs to the filtered cohort. A nil
+// filter matches everyone.
+//
+// This lives on the domain type so the pre-execution preview and the worker
+// that actually runs the job cannot disagree about who is in the cohort --
+// a preview computed by different rules than the run is worse than no preview.
+func (f *BacktestCustomerFilter) Matches(c Customer) bool {
+	if f == nil {
+		return true
+	}
+	if f.RiskTier != "" && (c.RiskTier == nil || *c.RiskTier != f.RiskTier) {
+		return false
+	}
+	if f.Status != "" && c.EffectiveStatus() != f.Status {
+		return false
+	}
+	if f.CountryCode != "" && c.CountryCode != f.CountryCode {
+		return false
+	}
+	return true
+}
+
 type BacktestJob struct {
 	ID                   string                  `json:"id"`
 	Status               BacktestJobStatus       `json:"status"`
@@ -56,6 +78,30 @@ type BacktestJob struct {
 	StartedAt               *time.Time        `json:"started_at,omitempty"`
 	CompletedAt             *time.Time        `json:"completed_at,omitempty"`
 	UpdatedAt               time.Time         `json:"updated_at"`
+	Metadata                *BacktestMetadata `json:"metadata,omitempty"`
+}
+
+// MarshalJSON keeps empty backtest result collections as arrays. This applies
+// both to the immediate backtest response and to completed durable jobs whose
+// candidate/baseline/delta results contain no scenario findings.
+func (r BacktestResult) MarshalJSON() ([]byte, error) {
+	type backtestResult BacktestResult
+	normalized := backtestResult(r)
+	if normalized.ScenarioResults == nil {
+		normalized.ScenarioResults = []BacktestScenarioResult{}
+	}
+	return json.Marshal(normalized)
+}
+
+// MarshalJSON applies the same collection contract to each scenario result
+// when it is serialized as part of a backtest result.
+func (r BacktestScenarioResult) MarshalJSON() ([]byte, error) {
+	type backtestScenarioResult BacktestScenarioResult
+	normalized := backtestScenarioResult(r)
+	if normalized.AffectedCustomerIDs == nil {
+		normalized.AffectedCustomerIDs = []string{}
+	}
+	return json.Marshal(normalized)
 }
 
 type BacktestJobRepository interface {

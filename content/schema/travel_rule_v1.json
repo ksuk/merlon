@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ksuk/merlon/schemas/travel_rule_v1.json",
+  "title": "Travel Rule Policy",
+  "description": "Schema for when the Travel Rule applies to a transfer and what evidence a complete transfer must carry",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "policy_version",
+    "threshold_amount",
+    "threshold_currency",
+    "covered_channels",
+    "covered_directions",
+    "not_applicable_reasons",
+    "assertion_authority",
+    "incomplete_routing"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "travel_rule_v1"
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Recorded on every assessment made under this policy"
+    },
+    "threshold_amount": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Transfers at or above this value are in scope"
+    },
+    "threshold_currency": {
+      "type": "string",
+      "pattern": "^[A-Z]{3}$",
+      "description": "ISO 4217 code the threshold is expressed in"
+    },
+    "covered_channels": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string" }
+    },
+    "covered_directions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "enum": ["inbound", "outbound", "internal"] }
+    },
+    "applicable_counterparty_types": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/counterpartyType" }
+    },
+    "required_evidence_fields": {
+      "type": "object",
+      "description": "Evidence a complete transfer must carry, keyed by counterparty type",
+      "propertyNames": { "$ref": "#/$defs/counterpartyType" },
+      "additionalProperties": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+      }
+    },
+    "not_applicable_reasons": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+      "description": "Closed set of exemption reason codes; free text is not accepted in their place"
+    },
+    "assertion_authority": {
+      "type": "string",
+      "enum": ["client", "server"],
+      "description": "client records a conflicting caller assertion alongside the policy verdict; server rejects it"
+    },
+    "incomplete_routing": {
+      "type": "string",
+      "enum": ["pending_review", "none"],
+      "description": "Where an applicable-but-incomplete transfer goes for follow-up"
+    }
+  },
+  "$defs": {
+    "counterpartyType": {
+      "type": "string",
+      "enum": ["vasp", "unhosted_wallet", "unknown"]
+    }
+  }
+}

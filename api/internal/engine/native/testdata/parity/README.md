@@ -26,3 +26,18 @@ string comparisons, including `*.5` rounding boundaries.
 The corpus and replay test are a required CI gate. Keep this frozen fixture when
 changing the native engine so that the pre-consolidation behavior remains
 auditable.
+
+## Refrozen 2026-08-07 (Wave 3, ADR-0019)
+
+The two `scoring` records were re-frozen when `domain.Factor.Score` stopped
+duplicating `Contribution`. `Score` is now the factor's own normalised value
+and `Contribution` is its weighted share of the total; previously both held
+the contribution, so a consumer that summed `score` double-counted the
+weighting. The record-level `score` is unchanged, which is the point: the
+totals this corpus exists to protect did not move, only the per-factor
+breakdown became able to explain them.
+
+`rule_set_version` in these records is now `0` rather than a fingerprint of
+the digest. The column carries a real rule-set version everywhere else, and
+writing a hash into it made an unversioned score look like version
+1,750,295,863. The pin is `rule_set_sha256`, which is unchanged.

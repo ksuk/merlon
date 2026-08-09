@@ -1,96 +1,112 @@
 package server
 
 import (
-	"context"
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
-	"github.com/ksuk/merlon/api/internal/screening"
 )
+
+const dashboardRecentTransactionWindow = 24 * time.Hour
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	stats := domain.DashboardStats{
-		CustomersByRiskTier: make(map[string]int),
-		AlertsByStatus:      make(map[string]int),
-		AlertsBySeverity:    make(map[string]int),
-		CasesByStatus:       make(map[string]int),
+		CustomersByRiskTier:           make(map[string]int),
+		AlertsByStatus:                make(map[string]int),
+		AlertsBySeverity:              make(map[string]int),
+		CasesByStatus:                 make(map[string]int),
+		RecentTransactionsWindowHours: int(dashboardRecentTransactionWindow / time.Hour),
 	}
 
-	customers, err := s.customers.List(ctx, 10000, 0)
+	customerDashboard, ok := s.customers.(domain.CustomerDashboardRepository)
+	if !ok {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "customer dashboard aggregate is not configured")
+		return
+	}
+	customerCounts, err := customerDashboard.DashboardRiskTierCounts(ctx)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	stats.TotalCustomers = len(customers)
-	for _, c := range customers {
-		tier := "unscored"
-		if c.RiskTier != nil {
-			tier = string(*c.RiskTier)
-		}
-		stats.CustomersByRiskTier[tier]++
+	stats.CustomersByRiskTier = customerCounts
+	for _, count := range customerCounts {
+		stats.TotalCustomers += count
 	}
 
-	openAlerts, err := s.alerts.ListOpen(ctx, 10000, 0)
+	alertDashboard, ok := s.alerts.(domain.AlertDashboardRepository)
+	if !ok {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "alert dashboard aggregate is not configured")
+		return
+	}
+	alertStatusCounts, alertSeverityCounts, err := alertDashboard.DashboardUnresolvedCounts(ctx)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	for _, a := range openAlerts {
-		stats.AlertsByStatus[string(a.Status)]++
-		stats.AlertsBySeverity[string(a.Severity)]++
-		stats.TotalAlerts++
+	stats.AlertsByStatus = alertStatusCounts
+	stats.AlertsBySeverity = alertSeverityCounts
+	for _, count := range alertStatusCounts {
+		stats.TotalAlerts += count
 	}
 
 	if s.cases != nil {
-		cases, err := s.cases.ListOpen(ctx, 10000, 0)
+		caseDashboard, ok := s.cases.(domain.CaseDashboardRepository)
+		if !ok {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "case dashboard aggregate is not configured")
+			return
+		}
+		caseStatusCounts, err := caseDashboard.DashboardUnresolvedCounts(ctx)
 		if err != nil {
 			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 			return
 		}
-		stats.TotalCases = len(cases)
-		for _, c := range cases {
-			stats.CasesByStatus[string(c.Status)]++
+		stats.CasesByStatus = caseStatusCounts
+		for _, count := range caseStatusCounts {
+			stats.TotalCases += count
 		}
 	}
 
-	if s.screeningListStore != nil && s.screeningFailureTracker != nil {
-		stats.ScreeningListFreshness = s.screeningListFreshness(ctx)
+	if transactionDashboard, ok := s.transactions.(domain.TransactionDashboardRepository); ok {
+		stats.RecentTransactions, err = transactionDashboard.CountExecutedSince(ctx, time.Now().UTC().Add(-dashboardRecentTransactionWindow))
+		if err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
 	}
+
+	if s.wave3 != nil || s.screeningListStore != nil || s.screeningFailureTracker != nil || len(s.screeningListIDs) > 0 {
+		sources, sourceErr := s.screeningSourceStatuses(ctx, s.screeningListIDs, 0)
+		if sourceErr != nil {
+			sources = unavailableSourceStatuses(s.configuredScreeningSourceIDs(s.screeningListIDs), s.screeningSourceThresholds(0), "source status unavailable")
+		}
+		for _, source := range sources {
+			stat := domain.ScreeningListFreshnessStat{ListID: source.ListID, ListType: source.ListType, OperationalState: source.OperationalState, LastAttemptAt: source.LastAttemptAt, LastSuccessAt: source.LastSuccessAt, AgeSeconds: source.AgeSeconds, Diagnostic: source.Diagnostic}
+			if source.AgeSeconds != nil {
+				stat.StaleDays = int(*source.AgeSeconds / 86400)
+			}
+			stat.NeedsOperationalAlert = source.OperationalState != domain.ScreeningSourceReady
+			stats.ScreeningListFreshness = append(stats.ScreeningListFreshness, stat)
+		}
+		required := s.policies.ScreeningReadiness().Required
+		stats.ScreeningDegradedSources = unreadyRequiredSources(sources, required)
+		stats.ScreeningReady = len(stats.ScreeningDegradedSources) == 0
+	} else {
+		// Nothing to assess: no source directory is wired at all. Claiming
+		// readiness here would be inventing a fact.
+		stats.ScreeningReady = true
+	}
+
+	now := time.Now().UTC()
+	workload, err := s.dashboardWorkload(r, now)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+	stats.Workload = workload
+	stats.Exceptions = s.dashboardExceptions(ctx, &stats, now)
 
 	writeJSON(w, http.StatusOK, stats)
-}
-
-// screeningListFreshness reports each configured list's staleness
-// (the screening workflow "リストの鮮度情報（最終更新日時）をダッシュボードに表示する"). A list
-// that has never completed an import yet is omitted rather than shown as
-// freshly imported.
-func (s *Server) screeningListFreshness(ctx context.Context) []domain.ScreeningListFreshnessStat {
-	statuses := make([]screening.ListImportStatus, 0, len(s.screeningListIDs))
-	for _, listID := range s.screeningListIDs {
-		data, err := s.screeningListStore.GetList(ctx, listID)
-		if err != nil {
-			continue
-		}
-		lastSuccess, err := s.screeningFailureTracker.LastSuccessAt(ctx, listID)
-		if err != nil {
-			continue
-		}
-		statuses = append(statuses, screening.ListImportStatus{
-			ListID: listID, ListType: data.ListType, LastSuccessAt: lastSuccess,
-		})
-	}
-
-	out := make([]domain.ScreeningListFreshnessStat, 0, len(statuses))
-	for _, f := range screening.ComputeListFreshness(statuses) {
-		out = append(out, domain.ScreeningListFreshnessStat{
-			ListID:                f.ListID,
-			ListType:              f.ListType,
-			StaleDays:             f.StaleDays,
-			NeedsOperationalAlert: f.NeedsOperationalAlert,
-		})
-	}
-	return out
 }

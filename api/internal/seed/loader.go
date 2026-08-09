@@ -172,7 +172,40 @@ func readDemoDataset(dir string) (*demoDataset, error) {
 	if d.AuditEntries, err = readJSONArray[domain.AuditEntry](path("audit_logs.json")); err != nil {
 		return nil, fmt.Errorf("audit_logs.json: %w", err)
 	}
+	if err := validateDemoCaseAlertLinks(d); err != nil {
+		return nil, fmt.Errorf("case/alert lifecycle validation: %w", err)
+	}
 	return d, nil
+}
+
+func validateDemoCaseAlertLinks(d *demoDataset) error {
+	alerts := make(map[string]domain.Alert, len(d.Alerts))
+	for _, alert := range d.Alerts {
+		alerts[alert.ID] = alert
+	}
+	for _, c := range d.Cases {
+		if !domain.IsCaseUnresolved(c.Status) && !domain.IsCaseTerminal(c.Status) {
+			return fmt.Errorf("case %s has unsupported status %q", c.ID, c.Status)
+		}
+		seen := make(map[string]struct{}, len(c.AlertIDs))
+		for _, alertID := range c.AlertIDs {
+			if _, duplicate := seen[alertID]; duplicate {
+				return fmt.Errorf("case %s contains duplicate alert %s", c.ID, alertID)
+			}
+			seen[alertID] = struct{}{}
+			alert, ok := alerts[alertID]
+			if !ok {
+				return fmt.Errorf("case %s references missing alert %s", c.ID, alertID)
+			}
+			if alert.CustomerID != c.CustomerID {
+				return fmt.Errorf("case %s and alert %s belong to different customers", c.ID, alertID)
+			}
+			if !domain.CompatibleCaseAlertState(c.Status, alert.Status) {
+				return fmt.Errorf("case %s status %q is incompatible with alert %s status %q", c.ID, c.Status, alertID, alert.Status)
+			}
+		}
+	}
+	return nil
 }
 
 // loadDemoDataset loads the full demogen dataset from dir into repos, in FK

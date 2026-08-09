@@ -27,6 +27,8 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_JWT_SECRET` | unset | Development fallback only. Do not set in production when using local-user authentication. |
 | `MERLON_BOOTSTRAP_TOKEN` | unset | One-time setup secret. Rotate or remove immediately after the first administrator/API key is created. |
 | `MERLON_POSTGRES_PASSWORD` | unset | Compose-only development password. Use a secret manager in production. |
+| `MERLON_API_HOST_PORT` | `8080` | Compose-only host port for the API. The standard topology binds it on the host; the demo topology limits it to `127.0.0.1`. The container always listens on `8080`. |
+| `MERLON_DB_HOST_PORT` | `5432` | Compose test overlay only. Publishes PostgreSQL on `127.0.0.1`; the standard and demo topologies do not publish a database host port. |
 | `MERLON_AUTH_ENABLED` | `false` | Must be `true` in production. |
 | `MERLON_SEED` | `false` | Development/demo data only; must be `false` in production. |
 | `MERLON_DEMO_DATA_DIR` | unset | Directory holding a full generated demo dataset, loaded when `MERLON_SEED` is enabled. Falls back to the built-in sample if the directory is incomplete. Development/demo only. |
@@ -53,6 +55,14 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_WHITELIST_MAX_VALID_DAYS` | `365` | Maximum whitelist validity period. |
 | `MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS` | `60` / `90` | EDD escalation thresholds. |
 | `MERLON_TM_SCENARIOS_PATH` | `tm_scenarios` | Store the directory in controlled source management. Runtime digests identify loaded content but do not authorize changes. |
+| `MERLON_OPERATOR_TEAMS` | unset | Comma-separated durable assignment-team directory. Queue rows are never scanned to infer teams; authenticated assignment requires a configured value. |
+| `MERLON_CASE_PRIORITY_PATH` | `content/case_priority_v1.yaml` | Versioned YAML mapping from persisted CDD tier/score to case priority. |
+| `MERLON_KYC_REQUIRED_FIELDS_PATH` | `content/kyc_required_fields_v1.yaml` | Versioned YAML naming the identity fields each customer type must carry. `enforcement: warn` reports a gap without refusing the write; `reject` refuses it. |
+| `MERLON_EDD_POLICY_PATH` | `content/edd_policy_v1.yaml` | Versioned YAML holding the whole EDD stage schedule, due boundary, completion requirements, and tier-downgrade behaviour. Supersedes `MERLON_EDD_STAGE2_DAYS` / `MERLON_EDD_STAGE3_DAYS`. |
+| `MERLON_SLA_POLICY_PATH` | `content/sla_policy_v1.yaml` | Versioned YAML holding the optional SLA deadline rules. When unset or empty, SLA reporting remains `not_configured` rather than inventing a due date. |
+| `MERLON_CDD_RULE_SELECTION_PATH` | `content/cdd_rule_selection_v1.yaml` | Versioned YAML mapping customer type, product, and jurisdiction to the applicable CDD rule set, so selection is configuration rather than list order. |
+| `MERLON_TRAVEL_RULE_POLICY_PATH` | `content/travel_rule_v1.yaml` | Versioned YAML holding the Travel Rule threshold, covered activity, required evidence, exemption reason codes, and whether a conflicting caller assertion is recorded or rejected. |
+| `MERLON_SCREENING_READINESS_PATH` | `content/screening_readiness_v1.yaml` | Versioned YAML naming the expected watchlist sources, their freshness windows, and whether an unready required source marks runs degraded or blocks them. |
 | `MERLON_CDD_WEIGHTS_PATH` | `cdd_weights.yaml` | Native Go CDD rule root; pin and review content changes. |
 | `MERLON_COUNTRY_RISK_PATH` | unset | Optional native Go country-risk table. |
 | `MERLON_SCREENING_LISTS_PATH` | `screening_lists` | Native Go last-good screening-list snapshot root. |

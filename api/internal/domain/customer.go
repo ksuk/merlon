@@ -22,6 +22,32 @@ const (
 	CustomerTypeForeignLegalArrangement CustomerType = "foreign_legal_arrangement"
 )
 
+// AllCustomerTypes lists every accepted customer type in a stable order. It
+// is the single source for validation and for the operator-facing error
+// message, so the two can no longer drift apart.
+func AllCustomerTypes() []CustomerType {
+	return []CustomerType{
+		CustomerTypeIndividual,
+		CustomerTypeCorporateDomestic,
+		CustomerTypeCorporateForeign,
+		CustomerTypeTrust,
+		CustomerTypePartnership,
+		CustomerTypeNPO,
+		CustomerTypeGovernment,
+		CustomerTypeForeignLegalArrangement,
+	}
+}
+
+// IsValidCustomerType reports whether ct is an accepted customer type.
+func IsValidCustomerType(ct CustomerType) bool {
+	for _, candidate := range AllCustomerTypes() {
+		if candidate == ct {
+			return true
+		}
+	}
+	return false
+}
+
 type RiskTier string
 
 const (
@@ -74,6 +100,16 @@ type Customer struct {
 	EddStage1LastSentAt *time.Time `json:"edd_stage1_last_sent_at,omitempty"`
 	EddStage2NotifiedAt *time.Time `json:"edd_stage2_notified_at,omitempty"`
 	EddStage3NotifiedAt *time.Time `json:"edd_stage3_notified_at,omitempty"`
+	// EddCompletedAt/EddClosedAt/EddCloseReason end a window explicitly. A
+	// window could previously only be opened and escalated, so an operator who
+	// had finished the enhanced due diligence had no way to say so, and the
+	// record stayed outstanding forever.
+	EddCompletedAt *time.Time `json:"edd_completed_at,omitempty"`
+	EddClosedAt    *time.Time `json:"edd_closed_at,omitempty"`
+	EddCloseReason string     `json:"edd_close_reason,omitempty"`
+	// EddCaseID is the case the escalation job opened, recorded rather than
+	// rediscovered by matching a marker string inside a case summary.
+	EddCaseID string `json:"edd_case_id,omitempty"`
 
 	// AnonymizedAt marks that this customer's direct-PII Attributes fields
 	// have been replaced in response to an APPI deletion request made after
@@ -94,20 +130,29 @@ func (c *Customer) EffectiveStatus() CustomerStatus {
 }
 
 type ScoreRecord struct {
-	ID             string    `json:"id"`
-	CustomerID     string    `json:"customer_id"`
-	Score          float64   `json:"score"`
-	Tier           RiskTier  `json:"tier"`
-	Factors        []Factor  `json:"factors"`
-	RuleSetID      string    `json:"rule_set_id"`
-	RuleSetSHA256  string    `json:"rule_set_sha256,omitempty"`
-	RuleSetVersion int       `json:"rule_set_version"`
-	ScoredAt       time.Time `json:"scored_at"`
+	ID               string         `json:"id"`
+	CustomerID       string         `json:"customer_id"`
+	Score            float64        `json:"score"`
+	Tier             RiskTier       `json:"tier"`
+	Factors          []Factor       `json:"factors"`
+	RuleSetID        string         `json:"rule_set_id"`
+	RuleSetSHA256    string         `json:"rule_set_sha256,omitempty"`
+	RuleSetVersion   int            `json:"rule_set_version"`
+	ScoredAt         time.Time      `json:"scored_at"`
+	Rationale        string         `json:"rationale,omitempty"`
+	Actor            string         `json:"actor,omitempty"`
+	OverrideEvidence map[string]any `json:"override_evidence,omitempty"`
 }
 
 type Factor struct {
-	Name        string  `json:"name"`
-	Axis        string  `json:"axis"`
-	Score       float64 `json:"score"`
-	Description string  `json:"description"`
+	Name            string  `json:"name"`
+	Axis            string  `json:"axis"`
+	Score           float64 `json:"score"`
+	Description     string  `json:"description"`
+	BusinessMeaning string  `json:"business_meaning,omitempty"`
+	Weight          float64 `json:"weight,omitempty"`
+	Contribution    float64 `json:"contribution,omitempty"`
+	ObservedValue   string  `json:"observed_value,omitempty"`
+	Rule            string  `json:"rule,omitempty"`
+	Fallback        bool    `json:"fallback,omitempty"`
 }

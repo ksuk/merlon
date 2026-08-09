@@ -118,7 +118,7 @@ func TestUpdateAlertStatus(t *testing.T) {
 	cust := createTestCustomer(t, s)
 	alert := seedAlert(t, s, cust.ID)
 
-	body := `{"status":"closed_false_positive","resolved_by":"analyst@example.com"}`
+	body := `{"status":"investigating"}`
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -129,12 +129,81 @@ func TestUpdateAlertStatus(t *testing.T) {
 
 	var updated domain.Alert
 	json.NewDecoder(rec.Body).Decode(&updated)
+	if updated.Status != domain.AlertStatusInvestigating {
+		t.Fatalf("status = %q, want %q before terminal close", updated.Status, domain.AlertStatusInvestigating)
+	}
+
+	body = `{"status":"closed_false_positive","resolved_by":"analyst@example.com","rationale":"transaction reviewed as false positive","confirm":true}`
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("terminal close status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	json.NewDecoder(rec.Body).Decode(&updated)
 
 	if updated.Status != domain.AlertStatusClosedFalsePositive {
 		t.Errorf("status = %q, want %q", updated.Status, domain.AlertStatusClosedFalsePositive)
 	}
 	if updated.ResolvedBy != "analyst@example.com" {
 		t.Errorf("resolved_by = %q, want %q", updated.ResolvedBy, "analyst@example.com")
+	}
+}
+
+func TestReopenAlertRequiresRationaleAndRetainsTerminalDecisionHistory(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+
+	for _, body := range []string{
+		`{"status":"investigating"}`,
+		`{"status":"closed_false_positive","rationale":"reviewed against source activity","confirm":true}`,
+	} {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status update = %d, body: %s", rec.Code, rec.Body.String())
+		}
+	}
+	closed, err := s.alerts.Get(context.Background(), alert.ID)
+	if err != nil {
+		t.Fatalf("get closed alert: %v", err)
+	}
+
+	missingRationale := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(`{"status":"investigating","confirm":true}`))
+	missingRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(missingRec, missingRationale)
+	if missingRec.Code != http.StatusBadRequest {
+		t.Fatalf("missing reopen rationale status = %d, want %d, body: %s", missingRec.Code, http.StatusBadRequest, missingRec.Body.String())
+	}
+
+	reopen := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(`{"status":"investigating","rationale":"new evidence requires a second review","confirm":true,"expected_updated_at":"`+closed.UpdatedAt.Format(time.RFC3339Nano)+`"}`))
+	reopenRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(reopenRec, reopen)
+	if reopenRec.Code != http.StatusOK {
+		t.Fatalf("reopen status = %d, body: %s", reopenRec.Code, reopenRec.Body.String())
+	}
+	var reopened domain.Alert
+	if err := json.NewDecoder(reopenRec.Body).Decode(&reopened); err != nil {
+		t.Fatalf("decode reopened alert: %v", err)
+	}
+	if reopened.Status != domain.AlertStatusInvestigating || reopened.ResolvedAt != nil || reopened.Disposition != "" || reopened.DispositionRationale != "" {
+		t.Fatalf("reopened projection = %+v, want active fields cleared", reopened)
+	}
+
+	decisions, err := s.alertDecisions.ListDecisions(context.Background(), alert.ID)
+	if err != nil {
+		t.Fatalf("list decisions: %v", err)
+	}
+	if len(decisions) != 3 {
+		t.Fatalf("decision history length = %d, want 3", len(decisions))
+	}
+	if decisions[1].ToStatus != domain.AlertStatusClosedFalsePositive || decisions[1].Rationale != "reviewed against source activity" {
+		t.Fatalf("terminal decision = %+v, want retained rationale", decisions[1])
+	}
+	if decisions[2].FromStatus != domain.AlertStatusClosedFalsePositive || decisions[2].ToStatus != domain.AlertStatusInvestigating || decisions[2].SupersedesID != decisions[1].ID {
+		t.Fatalf("reopen decision = %+v, want superseding terminal decision", decisions[2])
 	}
 }
 
@@ -149,6 +218,21 @@ func TestUpdateAlertStatusNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
+}
+
+func TestUpdateAlertStatusRejectsDirectTerminalClose(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(`{"status":"closed_false_positive","resolved_by":"analyst@example.com"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	assertErrorCode(t, rec, "invalid_state_transition")
 }
 
 // TestAlertStatusUpdateOptimisticLock verifies a PATCH supplying the
@@ -176,7 +260,7 @@ func TestAlertStatusUpdateOptimisticLock(t *testing.T) {
 
 	// A second client submits an update using the now-stale updated_at it
 	// read before the update above.
-	staleBody := `{"status":"closed_false_positive","expected_updated_at":"` + alert.UpdatedAt.Format(time.RFC3339Nano) + `"}`
+	staleBody := `{"status":"closed_false_positive","resolved_by":"analyst@example.com","rationale":"stale decision","confirm":true,"expected_updated_at":"` + alert.UpdatedAt.Format(time.RFC3339Nano) + `"}`
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/alerts/"+alert.ID, strings.NewReader(staleBody))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -224,6 +308,43 @@ func TestHandleListAlerts_CursorPagination(t *testing.T) {
 	}
 	if meta2.HasMore {
 		t.Error("expected has_more = false on second page")
+	}
+}
+
+func TestHandleListAlerts_RiskSortRanksCriticalFirst(t *testing.T) {
+	s := testServer()
+	cust := createTestCustomer(t, s)
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	severities := []domain.AlertSeverity{
+		domain.AlertSeverityLow,
+		domain.AlertSeverityMedium,
+		domain.AlertSeverityHigh,
+		domain.AlertSeverityCritical,
+	}
+	for i, severity := range severities {
+		if err := s.alerts.Create(context.Background(), &domain.Alert{
+			ID: fmt.Sprintf("risk-api-alert-%d", i), CustomerID: cust.ID, Severity: severity,
+			Status: domain.AlertStatusOpen, CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create alert: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/alerts?sort=risk&limit=4", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	alerts, meta := decodeListResponse[domain.Alert](t, rec.Body)
+	if meta.HasMore {
+		t.Error("has_more = true, want false")
+	}
+	want := []string{"risk-api-alert-3", "risk-api-alert-2", "risk-api-alert-1", "risk-api-alert-0"}
+	for i, id := range want {
+		if alerts[i].ID != id {
+			t.Errorf("alerts[%d].ID = %q, want %q", i, alerts[i].ID, id)
+		}
 	}
 }
 
@@ -325,6 +446,61 @@ func TestCursorPagination_MatchesOffsetTraversal(t *testing.T) {
 		if !cursorIDs[id] {
 			t.Errorf("cursor traversal missing alert %s", id)
 		}
+	}
+}
+
+func TestAlertQueueCursorPaginationRetainsFiltersAcrossPages(t *testing.T) {
+	s := testServerFull()
+	customer := createTestCustomer(t, s)
+	base := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+	fixtures := []domain.Alert{
+		{ID: "queue-alert-newest", CustomerID: customer.ID, ScenarioID: "queue-cursor", Severity: domain.AlertSeverityHigh, Status: domain.AlertStatusInvestigating, Description: "matching alert", DetectedAt: base, CreatedAt: base, UpdatedAt: base},
+		{ID: "queue-alert-middle", CustomerID: customer.ID, ScenarioID: "queue-cursor", Severity: domain.AlertSeverityHigh, Status: domain.AlertStatusInvestigating, Description: "matching alert", DetectedAt: base.Add(-time.Hour), CreatedAt: base.Add(-time.Hour), UpdatedAt: base.Add(-time.Hour)},
+		{ID: "queue-alert-oldest", CustomerID: customer.ID, ScenarioID: "queue-cursor", Severity: domain.AlertSeverityHigh, Status: domain.AlertStatusInvestigating, Description: "matching alert", DetectedAt: base.Add(-2 * time.Hour), CreatedAt: base.Add(-2 * time.Hour), UpdatedAt: base.Add(-2 * time.Hour)},
+		{ID: "queue-alert-excluded", CustomerID: customer.ID, ScenarioID: "other-scenario", Severity: domain.AlertSeverityHigh, Status: domain.AlertStatusInvestigating, Description: "must be filtered", DetectedAt: base, CreatedAt: base, UpdatedAt: base},
+	}
+	for i := range fixtures {
+		if err := s.alerts.Create(context.Background(), &fixtures[i]); err != nil {
+			t.Fatalf("create alert %s: %v", fixtures[i].ID, err)
+		}
+	}
+
+	requestPage := func(cursor string) ([]domain.Alert, PaginationMeta) {
+		path := "/api/v1/alerts?customer_id=" + url.QueryEscape(customer.ID) + "&scenario_id=queue-cursor&active=true&limit=2"
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("queue page status = %d, body: %s", rec.Code, rec.Body.String())
+		}
+		return decodeListResponse[domain.Alert](t, rec.Body)
+	}
+
+	page1, meta1 := requestPage("")
+	if len(page1) != 2 || !meta1.HasMore || meta1.NextCursor == "" {
+		t.Fatalf("page1 = %+v, pagination = %+v, want two matching alerts and a cursor", page1, meta1)
+	}
+	page2, meta2 := requestPage(meta1.NextCursor)
+	if len(page2) != 1 || meta2.HasMore {
+		t.Fatalf("page2 = %+v, pagination = %+v, want final matching alert", page2, meta2)
+	}
+	seen := map[string]bool{}
+	for _, alert := range append(page1, page2...) {
+		if seen[alert.ID] {
+			t.Fatalf("cursor pagination duplicated alert %s", alert.ID)
+		}
+		seen[alert.ID] = true
+	}
+	for _, id := range []string{"queue-alert-newest", "queue-alert-middle", "queue-alert-oldest"} {
+		if !seen[id] {
+			t.Errorf("cursor pagination omitted matching alert %s", id)
+		}
+	}
+	if seen["queue-alert-excluded"] {
+		t.Error("cursor pagination returned an alert outside the composed filters")
 	}
 }
 

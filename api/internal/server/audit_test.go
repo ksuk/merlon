@@ -62,7 +62,7 @@ func TestDemoTourWritesAreAudited(t *testing.T) {
 		t.Fatalf("create alert fixture: %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(`{"customer_id":"`+cust.ID+`","alert_ids":["`+alert.ID+`"],"summary":"audit tour","priority":"high"}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(`{"customer_id":"`+cust.ID+`","alert_ids":["`+alert.ID+`"],"summary":"audit tour","priority":"high","priority_rationale":"audit fixture","str_candidate":true}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -86,11 +86,15 @@ func TestDemoTourWritesAreAudited(t *testing.T) {
 		t.Fatalf("case note status = %d, body: %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/reports/str", strings.NewReader(`{"alert_id":"`+alert.ID+`","suspicious_point":"audit tour"}`))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/reports/str", strings.NewReader(`{"alert_id":"`+alert.ID+`","case_id":"`+kase.ID+`","suspicious_point":"audit tour"}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("STR status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	var report domain.STRReport
+	if err := json.NewDecoder(rec.Body).Decode(&report); err != nil {
+		t.Fatalf("decode STR report: %v", err)
 	}
 
 	entries, err := s.audit.List(context.Background(), domain.AuditListFilter{Limit: 100})
@@ -106,7 +110,7 @@ func TestDemoTourWritesAreAudited(t *testing.T) {
 		"score_customer:customers:" + cust.ID,
 		"create:cases:" + kase.ID,
 		"update_status:cases:" + kase.ID,
-		"create_str:reports:str",
+		"create_str:reports:" + report.ID,
 	} {
 		if !found[want] {
 			t.Errorf("missing audit entry %q", want)
@@ -228,6 +232,40 @@ func TestAuditUsesResolvedClientIPFromTrustedProxy(t *testing.T) {
 	}
 	if got := entries[0].IPAddress; got != "198.51.100.42" {
 		t.Errorf("audit IP = %q, want resolved client IP", got)
+	}
+}
+
+func TestAuditListPreservesIPv4IPv6AndNullIPAddresses(t *testing.T) {
+	s := testServerFull()
+	userID := "audit-handler-inet"
+	base := time.Now().UTC()
+	for _, entry := range []*domain.AuditEntry{
+		{UserID: userID, Action: "ipv4", ResourceType: "audit", ResourceID: "ipv4", IPAddress: "192.0.2.10", CreatedAt: base},
+		{UserID: userID, Action: "ipv6", ResourceType: "audit", ResourceID: "ipv6", IPAddress: "2001:db8::10", CreatedAt: base.Add(time.Second)},
+		{UserID: userID, Action: "null", ResourceType: "audit", ResourceID: "null", CreatedAt: base.Add(2 * time.Second)},
+	} {
+		if err := s.audit.Create(context.Background(), entry); err != nil {
+			t.Fatalf("create audit entry: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/audit?user_id="+url.QueryEscape(userID), nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	entries, _ := decodeListResponse[domain.AuditEntry](t, rec.Body)
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3", len(entries))
+	}
+	got := map[string]string{}
+	for _, entry := range entries {
+		got[entry.ResourceID] = entry.IPAddress
+	}
+	if got["ipv4"] != "192.0.2.10" || got["ipv6"] != "2001:db8::10" || got["null"] != "" {
+		t.Fatalf("IP addresses = %#v, want IPv4/IPv6/empty", got)
 	}
 }
 

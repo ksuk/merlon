@@ -186,6 +186,7 @@ type TMBatchEvaluationDeps struct {
 	Monitoring    engine.MonitoringEngine
 	Alerts        domain.AlertRepository
 	Cases         domain.CaseRepository
+	CaseLifecycle domain.CaseAlertLifecycleRepository
 	ConfigDigests map[string]string
 }
 
@@ -311,7 +312,13 @@ func evaluateCustomerBatch(ctx context.Context, deps TMBatchEvaluationDeps, c *d
 			continue
 		}
 		if deps.Cases != nil {
-			if _, err := casemgmt.ConsolidateAlert(ctx, deps.Cases, a, casemgmt.DefaultConsolidationWindow); err != nil {
+			var err error
+			if deps.CaseLifecycle != nil {
+				_, err = casemgmt.ConsolidateAlertWithLifecycle(ctx, deps.Cases, deps.CaseLifecycle, a, casemgmt.DefaultConsolidationWindow)
+			} else {
+				_, err = casemgmt.ConsolidateAlert(ctx, deps.Cases, a, casemgmt.DefaultConsolidationWindow)
+			}
+			if err != nil {
 				metrics.AlertPersistenceFailuresTotal.WithLabelValues("case_consolidation").Inc()
 				return fmt.Errorf("consolidate alert %s: %w", a.ID, err)
 			}

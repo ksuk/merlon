@@ -24,6 +24,43 @@ done, Go and Node.js are available, along with `psql`
 See `.devcontainer/devcontainer.json` and `.devcontainer/Dockerfile` for the
 configuration.
 
+## Compose project and port isolation
+
+Give each local stack an explicit Compose project name with `-p`. Compose then
+prefixes named volumes and networks with that project name, so separate stacks
+do not share their database resources. The standard topology keeps API port
+`8080` by default and does not publish PostgreSQL to the host:
+
+```bash
+docker compose -p merlon-dev -f docker-compose.yml up --build
+```
+
+When another stack already uses the API port, override only the host-side port
+and use a separate project name:
+
+```bash
+MERLON_API_HOST_PORT=18050 \
+  docker compose -p merlon-dev-18050 -f docker-compose.yml up --build
+```
+
+For local tests that need a host PostgreSQL client, add the test-only overlay
+and choose a loopback database port. Do not add this overlay to a normal or
+public deployment:
+
+```bash
+MERLON_API_HOST_PORT=18050 MERLON_DB_HOST_PORT=15450 \
+  docker compose -p merlon-test-18050 \
+  -f docker-compose.yml -f docker-compose.test.yml up --build
+```
+
+Use the same `-p` value and compose files for `down`. The demo topology uses
+the same API override and keeps its API binding on `127.0.0.1`:
+
+```bash
+MERLON_API_HOST_PORT=18050 \
+  docker compose -p merlon-demo-18050 -f docker-compose.demo.yml up --build
+```
+
 ## Option 2: Local environment
 
 If you're not using the DevContainer, install the following tools yourself.

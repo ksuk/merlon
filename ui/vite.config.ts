@@ -35,5 +35,11 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test-setup.ts',
     execArgv: testExecArgv,
+    // The jsdom suite shares browser-shaped globals and currently deadlocks
+    // under Vitest's default worker pool in constrained containers. Keep the
+    // standard make test-ui command deterministic; individual runs can still
+    // opt into a different pool when profiling worker parallelism.
+    pool: 'vmThreads',
+    maxWorkers: 1,
   },
 })

@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,7 +20,7 @@ func TestCreateCase(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)
 
-	body := `{"customer_id":"` + cust.ID + `","summary":"Suspicious structuring detected","priority":"high","assigned_to":"analyst01"}`
+	body := `{"customer_id":"` + cust.ID + `","summary":"Suspicious structuring detected","priority":"high","priority_rationale":"operator review","assigned_to":"analyst01"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -45,6 +47,66 @@ func TestCreateCase(t *testing.T) {
 	if c.AssignedTo != "analyst01" {
 		t.Errorf("assigned_to = %q, want %q", c.AssignedTo, "analyst01")
 	}
+}
+
+func TestCreateCaseValidatesAlertLinksBeforeWriting(t *testing.T) {
+	t.Run("missing alert", func(t *testing.T) {
+		s := testServerFull()
+		cust := createTestCustomer(t, s)
+		body := `{"customer_id":"` + cust.ID + `","alert_ids":["missing"],"summary":"invalid links"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusNotFound, rec.Body.String())
+		}
+	})
+
+	t.Run("duplicate alert", func(t *testing.T) {
+		s := testServerFull()
+		cust := createTestCustomer(t, s)
+		alert := seedAlert(t, s, cust.ID)
+		body := `{"customer_id":"` + cust.ID + `","alert_ids":["` + alert.ID + `","` + alert.ID + `"],"summary":"invalid links"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+	})
+
+	t.Run("different customer", func(t *testing.T) {
+		s := testServerFull()
+		caseCustomer := createTestCustomerWithExternalID(t, s, "CASE_LINK_OWNER")
+		alertCustomer := createTestCustomerWithExternalID(t, s, "CASE_LINK_OTHER")
+		alert := seedAlert(t, s, alertCustomer.ID)
+		body := `{"customer_id":"` + caseCustomer.ID + `","alert_ids":["` + alert.ID + `"],"summary":"invalid links"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+		}
+	})
+
+	t.Run("terminal alert", func(t *testing.T) {
+		s := testServerFull()
+		cust := createTestCustomer(t, s)
+		alert := seedAlert(t, s, cust.ID)
+		if err := s.alerts.UpdateStatus(context.Background(), alert.ID, domain.AlertStatusInvestigating, ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.alerts.UpdateStatus(context.Background(), alert.ID, domain.AlertStatusClosedFalsePositive, "analyst"); err != nil {
+			t.Fatal(err)
+		}
+		body := `{"customer_id":"` + cust.ID + `","alert_ids":["` + alert.ID + `"],"summary":"invalid links"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+		}
+	})
 }
 
 func TestCreateCaseMissingSummary(t *testing.T) {
@@ -163,11 +225,49 @@ func TestHandleListCases_CursorPagination(t *testing.T) {
 	}
 }
 
+func TestHandleListCases_RiskSortRanksCriticalFirst(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	created := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	priorities := []domain.CasePriority{
+		domain.CasePriorityLow,
+		domain.CasePriorityMedium,
+		domain.CasePriorityHigh,
+		domain.CasePriorityCritical,
+	}
+	for i, priority := range priorities {
+		if err := s.cases.Create(context.Background(), &domain.Case{
+			ID: fmt.Sprintf("risk-api-case-%d", i), CustomerID: cust.ID,
+			Status: domain.CaseStatusInvestigating, Priority: priority,
+			Summary: "risk queue test", CreatedAt: created, UpdatedAt: created,
+		}); err != nil {
+			t.Fatalf("create case: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/cases?sort=risk&limit=4", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	cases, meta := decodeListResponse[domain.Case](t, rec.Body)
+	if meta.HasMore {
+		t.Error("has_more = true, want false")
+	}
+	want := []string{"risk-api-case-3", "risk-api-case-2", "risk-api-case-1", "risk-api-case-0"}
+	for i, id := range want {
+		if cases[i].ID != id {
+			t.Errorf("cases[%d].ID = %q, want %q", i, cases[i].ID, id)
+		}
+	}
+}
+
 func TestUpdateCase(t *testing.T) {
 	s := testServerFull()
 	cust := createTestCustomer(t, s)
 
-	body := `{"customer_id":"` + cust.ID + `","summary":"Test case","priority":"low"}`
+	body := `{"customer_id":"` + cust.ID + `","summary":"Test case","priority":"low","priority_rationale":"operator review"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -175,7 +275,7 @@ func TestUpdateCase(t *testing.T) {
 	var created domain.Case
 	json.NewDecoder(rec.Body).Decode(&created)
 
-	body = `{"status":"investigating","assigned_to":"senior_analyst"}`
+	body = `{"status":"investigating","assigned_to":"senior_analyst","summary":"  Updated investigation summary  "}`
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -191,6 +291,81 @@ func TestUpdateCase(t *testing.T) {
 	}
 	if updated.AssignedTo != "senior_analyst" {
 		t.Errorf("assigned_to = %q, want %q", updated.AssignedTo, "senior_analyst")
+	}
+	if updated.Summary != "Updated investigation summary" {
+		t.Errorf("summary = %q, want trimmed update", updated.Summary)
+	}
+
+	blankSummary := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"summary":"   "}`))
+	blankSummaryRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(blankSummaryRec, blankSummary)
+	if blankSummaryRec.Code != http.StatusBadRequest {
+		t.Fatalf("blank summary status = %d, want %d", blankSummaryRec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestUpdateCaseAdvancesLinkedAlertAtomically(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	now := time.Now()
+	caseRecord := &domain.Case{
+		ID: "case-linked-active", CustomerID: cust.ID, AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusNew, Priority: domain.CasePriorityMedium,
+		Summary: "linked lifecycle", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseRecord.ID, strings.NewReader(`{"status":"investigating"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updatedCase, err := s.cases.Get(context.Background(), caseRecord.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedAlert, err := s.alerts.Get(context.Background(), alert.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedCase.Status != domain.CaseStatusInvestigating || updatedAlert.Status != domain.AlertStatusInvestigating {
+		t.Fatalf("case/alert lifecycle = (%q, %q), want investigating/investigating", updatedCase.Status, updatedAlert.Status)
+	}
+	if updatedAlert.ResolvedAt != nil || updatedAlert.ResolvedBy != "" {
+		t.Fatalf("active linked alert retained resolution metadata: %+v", updatedAlert)
+	}
+}
+
+func TestUpdateCaseRejectsTerminalWithActiveLinkedAlert(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	now := time.Now()
+	caseRecord := &domain.Case{
+		ID: "case-linked-close", CustomerID: cust.ID, AlertIDs: []string{alert.ID},
+		Status: domain.CaseStatusInvestigating, Priority: domain.CasePriorityMedium,
+		Summary: "linked close", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := s.cases.Create(context.Background(), caseRecord); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseRecord.ID, strings.NewReader(`{"status":"closed","rationale":"linked alert review complete","confirm":true}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+
+	unchangedCase, _ := s.cases.Get(context.Background(), caseRecord.ID)
+	unchangedAlert, _ := s.alerts.Get(context.Background(), alert.ID)
+	if unchangedCase.Status != domain.CaseStatusInvestigating || unchangedAlert.Status != domain.AlertStatusOpen {
+		t.Fatalf("rejected close changed state: case=%q alert=%q", unchangedCase.Status, unchangedAlert.Status)
 	}
 }
 
@@ -236,7 +411,7 @@ func TestCaseStatusChangeUpdatesGauge(t *testing.T) {
 		t.Errorf("merlon_cases_open{status=investigating} = %v, want %v", investigatingAfter, investigatingBefore+1)
 	}
 
-	body = `{"status":"closed"}`
+	body = `{"status":"closed","rationale":"gauge review complete","confirm":true}`
 	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -372,7 +547,7 @@ func closeCase(t *testing.T, s *Server, caseID string) {
 		t.Fatalf("move to investigating failed: %d %s", rec.Code, rec.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseID, strings.NewReader(`{"status":"closed"}`))
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+caseID, strings.NewReader(`{"status":"closed","rationale":"case review complete","confirm":true}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -417,6 +592,59 @@ func TestHandleUpdateCase_ReopenRequiresReason(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateCase_ReopenKeepsTerminalAlertAsHistory(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	alert := seedAlert(t, s, cust.ID)
+	body := `{"customer_id":"` + cust.ID + `","alert_ids":["` + alert.ID + `"],"summary":"linked reopen"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	var created domain.Case
+	json.NewDecoder(rec.Body).Decode(&created)
+
+	for _, status := range []domain.CaseStatus{domain.CaseStatusInvestigating} {
+		req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"`+string(status)+`"}`))
+		rec = httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("case transition to %s = %d, body: %s", status, rec.Code, rec.Body.String())
+		}
+	}
+	if err := s.alerts.UpdateStatus(context.Background(), alert.ID, domain.AlertStatusClosedFalsePositive, "analyst"); err != nil {
+		t.Fatalf("close linked alert: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"closed","rationale":"case review complete","confirm":true}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("close case = %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"reopened","reason":"new evidence"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reopen case = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"investigating"}`))
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reinvestigate case = %d, body: %s", rec.Code, rec.Body.String())
+	}
+	storedAlert, err := s.alerts.Get(context.Background(), alert.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if storedAlert.Status != domain.AlertStatusClosedFalsePositive {
+		t.Fatalf("historical alert status = %q, want terminal false positive", storedAlert.Status)
+	}
+}
+
 func TestHandleUpdateCase_ReopenRequiresAnalystOrAbove(t *testing.T) {
 	s := testServerWithAuth()
 	adminKey := createAPIKey(t, s, "admin", domain.RoleAdmin)
@@ -439,7 +667,11 @@ func TestHandleUpdateCase_ReopenRequiresAnalystOrAbove(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&created)
 
 	for _, status := range []string{"investigating", "closed"} {
-		req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"`+status+`"}`))
+		bodyForStatus := `{"status":"` + status + `"}`
+		if status == "closed" {
+			bodyForStatus = `{"status":"closed","rationale":"authorization review complete","confirm":true}`
+		}
+		req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(bodyForStatus))
 		req.Header.Set("Authorization", "Bearer "+adminKey)
 		rec = httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, req)
@@ -469,7 +701,7 @@ func TestHandleUpdateCase_InvalidTransitionReturns400(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&created)
 
 	// "new" cannot jump directly to "closed" per the transition diagram.
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"closed"}`))
+	req = httptest.NewRequest(http.MethodPatch, "/api/v1/cases/"+created.ID, strings.NewReader(`{"status":"closed","rationale":"close decision recorded","confirm":true}`))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -532,7 +764,6 @@ func TestHandleGetRelatedCases_ReturnsSameCustomerHistory(t *testing.T) {
 func TestHandleGetRelatedCases_IncludesManualLinks(t *testing.T) {
 	s := testServerFull()
 	custA := createTestCustomer(t, s)
-	custB := createTestCustomerWithExternalID(t, s, "CUST_RELATED_B")
 
 	body := `{"customer_id":"` + custA.ID + `","summary":"Case for customer A"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
@@ -541,14 +772,14 @@ func TestHandleGetRelatedCases_IncludesManualLinks(t *testing.T) {
 	var caseA domain.Case
 	json.NewDecoder(rec.Body).Decode(&caseA)
 
-	body = `{"customer_id":"` + custB.ID + `","summary":"Case for customer B"}`
+	body = `{"customer_id":"` + custA.ID + `","summary":"Second case for customer A"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases", strings.NewReader(body))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	var caseB domain.Case
 	json.NewDecoder(rec.Body).Decode(&caseB)
 
-	linkBody := `{"related_case_id":"` + caseB.ID + `"}`
+	linkBody := `{"related_case_id":"` + caseB.ID + `","rationale":"same customer investigation"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases/"+caseA.ID+"/related", strings.NewReader(linkBody))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -591,7 +822,7 @@ func TestHandleAddRelatedCase_ManualLink(t *testing.T) {
 	var caseTwo domain.Case
 	json.NewDecoder(rec.Body).Decode(&caseTwo)
 
-	linkBody := `{"related_case_id":"` + caseTwo.ID + `"}`
+	linkBody := `{"related_case_id":"` + caseTwo.ID + `","rationale":"same customer investigation"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/cases/"+caseOne.ID+"/related", strings.NewReader(linkBody))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -603,6 +834,26 @@ func TestHandleAddRelatedCase_ManualLink(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&updated)
 	if len(updated.RelatedCaseIDs) != 1 || updated.RelatedCaseIDs[0] != caseTwo.ID {
 		t.Errorf("related_case_ids = %v, want [%q]", updated.RelatedCaseIDs, caseTwo.ID)
+	}
+}
+
+func TestHandleAddRelatedCaseRequiresRationale(t *testing.T) {
+	s := testServerFull()
+	cust := createTestCustomer(t, s)
+	first := &domain.Case{ID: "related-rationale-one", CustomerID: cust.ID, Status: domain.CaseStatusNew, Priority: domain.CasePriorityMedium, Summary: "one", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	second := &domain.Case{ID: "related-rationale-two", CustomerID: cust.ID, Status: domain.CaseStatusNew, Priority: domain.CasePriorityMedium, Summary: "two", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	if err := s.cases.Create(context.Background(), first); err != nil {
+		t.Fatalf("create first case: %v", err)
+	}
+	if err := s.cases.Create(context.Background(), second); err != nil {
+		t.Fatalf("create second case: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/cases/"+first.ID+"/related", strings.NewReader(`{"related_case_id":"`+second.ID+`"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 

@@ -38,6 +38,12 @@ const TransactionDetailPage = lazy(() =>
 const BatchPage = lazy(() =>
   import("@/pages/batch").then((m) => ({ default: m.BatchPage })),
 );
+const ScreeningQueuePage = lazy(() =>
+  import("@/pages/screening-queue").then((m) => ({ default: m.ScreeningQueuePage })),
+);
+const PendingEvaluationsPage = lazy(() =>
+  import("@/pages/pending-evaluations").then((m) => ({ default: m.PendingEvaluationsPage })),
+);
 const ReportsPage = lazy(() =>
   import("@/pages/reports").then((m) => ({ default: m.ReportsPage })),
 );
@@ -55,6 +61,9 @@ const ConfigPage = lazy(() =>
 );
 const RulesPage = lazy(() =>
   import("@/pages/rules").then((m) => ({ default: m.RulesPage })),
+)
+const RuleDetailPage = lazy(() =>
+  import("@/pages/rule-detail").then((m) => ({ default: m.RuleDetailPage })),
 );
 const WhitelistPage = lazy(() =>
   import("@/pages/whitelist").then((m) => ({ default: m.WhitelistPage })),
@@ -100,6 +109,8 @@ function App() {
                 element={<TransactionDetailPage />}
               />
               <Route path="batch" element={<BatchPage />} />
+              <Route path="screening-queue" element={<ScreeningQueuePage />} />
+              <Route path="pending-evaluations" element={<PendingEvaluationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="backtest" element={<BacktestPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />
@@ -107,6 +118,9 @@ function App() {
               <Route path="users" element={<UsersPage />} />
               <Route path="config" element={<ConfigPage />} />
               <Route path="rules" element={<RulesPage />} />
+              {/* Rules resolve by name, not by the row's primary key: the key
+                  is regenerated on every version insert. */}
+              <Route path="rules/:name" element={<RuleDetailPage />} />
               <Route path="whitelist" element={<WhitelistPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="system" element={<SystemPage />} />

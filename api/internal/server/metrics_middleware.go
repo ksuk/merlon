@@ -18,10 +18,11 @@ func (s *Server) metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		mw := &auditResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		_, matchedPattern := s.mux.Handler(r)
 
 		next.ServeHTTP(mw, r)
 
-		path := patternPath(r.Pattern)
+		path := patternPath(matchedPattern)
 		metrics.APIRequestDuration.
 			WithLabelValues(r.Method, path, strconv.Itoa(mw.statusCode)).
 			Observe(time.Since(start).Seconds())
