@@ -25,14 +25,17 @@ class ErrorBoundaryBase extends Component<Props, State> {
     return { error }
   }
 
-  static getDerivedStateFromProps(props: Props, state: State): Partial<State> | null {
-    if (props.resetKey !== state.resetKey) {
-      // Navigating away clears the failure. Previously the boundary sat outside
-      // the route tree and kept its state forever, so one broken screen left
-      // the whole application showing an error page until a full reload.
-      return { error: null, resetKey: props.resetKey }
+  // Navigating away clears the failure. The boundary previously sat outside the
+  // route tree and kept its state forever, so one broken screen left the whole
+  // application showing an error page until a full reload.
+  //
+  // This lives in componentDidUpdate rather than getDerivedStateFromProps
+  // because withTranslation()'s HOC types erase the props type, and the static
+  // signature cannot be expressed through that erasure.
+  componentDidUpdate(previous: Props) {
+    if (previous.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null, resetKey: this.props.resetKey })
     }
-    return null
   }
 
   componentDidCatch(error: Error, info: { componentStack?: string | null }) {
