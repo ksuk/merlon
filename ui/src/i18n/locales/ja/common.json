@@ -1007,18 +1007,42 @@
       "yamlLabel": "YAML",
       "yamlPlaceholder": "# 設定をYAML形式で入力...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
       "validating": "検証中...",
-      "submit": "検証"
+      "submit": "検証",
+      "schemaDocs": "スキーマとフィールドの参照"
     },
     "types": {
       "cddWeights": "CDD重み付け",
       "screeningLists": "スクリーニングリスト",
-      "scenarioRules": "シナリオルール"
+      "scenarioRules": "シナリオルール",
+      "countryRisk": "国別リスク"
     },
     "result": {
       "successTitle": "検証成功",
       "validBadge": "有効",
       "errorTitle": "検証エラー",
-      "errorCount": "{{count}}件"
+      "errorCount": "{{count}}件",
+      "warningCount": "警告 {{count}} 件",
+      "warningsDoNotBlock": "警告は有効化をブロックしません。",
+      "emptyInput": "何も送信されていません。まず文書を入力または読み込んでください。",
+      "unchanged": "{{name}} v{{version}} と同一です。変更は発生しません。",
+      "atLine": "{{line}} 行目",
+      "atLineColumn": "{{line}} 行 {{column}} 列",
+      "noPosition": "文書内の位置なし",
+      "class": {
+        "syntax": "構文",
+        "schema": "スキーマ",
+        "cross_reference": "相互参照",
+        "activation": "有効化",
+        "unknown": "検証"
+      }
+    },
+    "baseline": {
+      "title": "このデプロイが実行中のバージョンから始める",
+      "help": "既存のルールバージョンをベースラインとして読み込み、それを編集します。空欄からの貼り付けは、誰も確認していない設定を置き換えることになります。",
+      "load": "{{name}} v{{version}} を読み込む",
+      "none": "この種別のルールはまだ保存されていません。上記のスキーマ参照に沿って新規に作成してください。",
+      "current": "ベースライン: {{name}} v{{version}}",
+      "unset": "ベースライン未読込。ここでの検証は既知バージョンとの差分ではなく、単体としての判定です。"
     }
   },
   "backtest": {
@@ -1421,7 +1445,9 @@
       "title": "コンポーネント",
       "api": "Go API",
       "engine": "Go Engine",
-      "database": "PostgreSQL"
+      "database": "PostgreSQL",
+      "screening_sources": "スクリーニングソース",
+      "investigate": "調査する"
     },
     "features": {
       "title": "機能ステータス",
@@ -1434,11 +1460,49 @@
       "monitoring": "取引モニタリング",
       "screening": "スクリーニング",
       "backtest": "バックテスト",
-      "config": "設定検証"
+      "config": "設定検証",
+      "help": "ここは「何が構成されているか」であり、「正常に動作しているか」ではありません。動作状態は上のコンポーネント欄です。",
+      "demo_data": "合成デモデータ"
     },
     "status": {
       "enabled": "有効",
-      "disabled": "無効"
+      "disabled": "無効",
+      "notConfigured": "未設定"
+    },
+    "refresh": "再確認",
+    "statusUnavailable": "実行時ステータスを読み取れなかったため、コンポーネントの状態は不明です。",
+    "operationalState": {
+      "ready": "正常",
+      "degraded": "劣化",
+      "unavailable": "利用不可",
+      "unknown": "不明"
+    },
+    "reason": {
+      "not_configured": "このデプロイでは未設定",
+      "check_failed": "確認を実行し失敗しました。詳細はサーバーログにあります",
+      "no_probe_available": "構成されていますが、ヘルスチェックを公開していません",
+      "sources_degraded": "必須のスクリーニングソースが準備できていません"
+    },
+    "freshness": {
+      "live": "ただ今確認しました（{{time}}）",
+      "cached": "{{time}} 時点のキャッシュ結果"
+    },
+    "build": {
+      "commitUnknown": "このビルドにコミットは記録されていません",
+      "builtAt": "ビルド日時 {{date}}"
+    },
+    "provenance": {
+      "title": "有効な設定",
+      "help": "このプロセスが実際に読み込んだ内容です。判断は、それを生んだ設定に対してのみ再現できます。",
+      "authMode": "認証モード",
+      "baseCurrency": "基準通貨",
+      "configDigests": "設定ダイジェスト",
+      "noDigests": "設定ダイジェストは記録されていません。",
+      "policies": "ポリシー文書",
+      "source": {
+        "file": "作成済み",
+        "default": "組み込み既定値"
+      }
     }
   },
   "rules": {
@@ -1464,7 +1528,8 @@
       "nameLabel": "名前",
       "namePlaceholder": "rule_name",
       "definitionLabel": "定義（JSON）",
-      "submit": "作成"
+      "submit": "作成",
+      "invalidJson": "定義が正しい JSON ではありません。"
     },
     "import": {
       "title": "ルール一括インポート",
@@ -1623,5 +1688,29 @@
     "documentation": "ドキュメント",
     "purposeLabel": "この画面の目的",
     "stateLabel": "可用性"
+  },
+  "ruleDetail": {
+    "backToRules": "ルール一覧へ戻る",
+    "notFound": "このルールを読み込めませんでした。",
+    "identity": {
+      "title": "識別情報",
+      "canonicalId": "正式な識別子",
+      "type": "種別",
+      "createdBy": "作成者",
+      "updatedAt": "最終更新",
+      "description": "説明",
+      "unknownAuthor": "記録なし",
+      "noDescription": "説明なし"
+    },
+    "definition": {
+      "title": "有効な定義",
+      "empty": "このバージョンには定義フィールドがありません。"
+    },
+    "compare": {
+      "title": "バージョン比較",
+      "against": "比較対象",
+      "onlyVersion": "最初のバージョンのため、比較対象がありません。",
+      "unavailable": "そのバージョンは取得できません。"
+    }
   }
 }

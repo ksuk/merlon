@@ -9,6 +9,7 @@ import { translateApiError } from "@/lib/errors"
 import { Download, FileUp, Plus, PowerOff } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
+import { Link } from "react-router"
 
 function formatDateTime(iso: string, locale: string) {
   return new Date(iso).toLocaleString(locale)
@@ -39,6 +40,7 @@ export function RulesPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [showCreate, setShowCreate] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [createType, setCreateType] = useState<RuleType>("CDD_WEIGHT")
   const nameRef = useRef<HTMLInputElement>(null)
@@ -80,14 +82,22 @@ export function RulesPage() {
     try {
       definition = JSON.parse(definitionText)
     } catch {
+      // A malformed definition used to return silently, so the operator
+      // pressed the button and nothing at all happened.
+      setCreateError(t("rules.create.invalidJson"))
       return
     }
 
     setCreating(true)
+    setCreateError(null)
     try {
       await api.rules.create({ type: createType, name, definition })
       setShowCreate(false)
       await reload()
+    } catch (err: unknown) {
+      // The server's validation response was previously swallowed by a
+      // try/finally with no catch: a rejected rule looked like a no-op.
+      setCreateError(translateApiError(err, t))
     } finally {
       setCreating(false)
     }
@@ -231,6 +241,11 @@ export function RulesPage() {
                   className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
               </div>
+              {createError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {createError}
+                </p>
+              )}
               <Button type="submit" size="sm" disabled={creating}>
                 {t("rules.create.submit")}
               </Button>
@@ -277,7 +292,9 @@ export function RulesPage() {
                 <CardContent className="flex items-center justify-between p-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{rule.name}</span>
+                      <Link to={`/rules/${encodeURIComponent(rule.name)}`} className="text-sm font-medium underline">
+                        {rule.name}
+                      </Link>
                       <Badge variant="outline">{ruleTypeLabel(rule.type)}</Badge>
                       <Badge variant={rule.is_active ? "low" : "secondary"}>
                         {rule.is_active ? t("rules.status.active") : t("rules.status.inactive")}

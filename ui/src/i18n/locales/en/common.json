@@ -1007,18 +1007,42 @@
       "yamlLabel": "YAML",
       "yamlPlaceholder": "# Enter config in YAML format...\nweights:\n  country_risk: 0.3\n  product_risk: 0.2",
       "validating": "Validating...",
-      "submit": "Validate"
+      "submit": "Validate",
+      "schemaDocs": "Schema and field reference"
     },
     "types": {
       "cddWeights": "CDD weights",
       "screeningLists": "Screening lists",
-      "scenarioRules": "Scenario rules"
+      "scenarioRules": "Scenario rules",
+      "countryRisk": "Country risk"
     },
     "result": {
       "successTitle": "Validation succeeded",
       "validBadge": "Valid",
       "errorTitle": "Validation error",
-      "errorCount": "{{count}} errors"
+      "errorCount": "{{count}} errors",
+      "warningCount": "{{count}} warnings",
+      "warningsDoNotBlock": "Warnings do not block activation.",
+      "emptyInput": "Nothing was submitted. Enter or load a document first.",
+      "unchanged": "Identical to {{name}} v{{version}}. Nothing would change.",
+      "atLine": "line {{line}}",
+      "atLineColumn": "line {{line}}, column {{column}}",
+      "noPosition": "no position in the document",
+      "class": {
+        "syntax": "Syntax",
+        "schema": "Schema",
+        "cross_reference": "Cross-reference",
+        "activation": "Activation",
+        "unknown": "Validation"
+      }
+    },
+    "baseline": {
+      "title": "Start from a version this deployment runs",
+      "help": "Load an existing rule version as the baseline, then edit it. A blank box invites a paste that replaces a configuration nobody looked at.",
+      "load": "Load {{name}} v{{version}}",
+      "none": "No rule of this type is stored yet. Author a new document against the schema reference above.",
+      "current": "Baseline: {{name}} v{{version}}",
+      "unset": "No baseline loaded. Anything validated here is judged on its own, not as a change to a known version."
     }
   },
   "backtest": {
@@ -1421,7 +1445,9 @@
       "title": "Components",
       "api": "Go API",
       "engine": "Go Engine",
-      "database": "PostgreSQL"
+      "database": "PostgreSQL",
+      "screening_sources": "Screening sources",
+      "investigate": "Investigate"
     },
     "features": {
       "title": "Feature status",
@@ -1434,11 +1460,49 @@
       "monitoring": "Transaction monitoring",
       "screening": "Screening",
       "backtest": "Backtest",
-      "config": "Config validation"
+      "config": "Config validation",
+      "help": "These report what is wired, not whether it is working. Component readiness is above.",
+      "demo_data": "Synthetic demo data"
     },
     "status": {
       "enabled": "Enabled",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "notConfigured": "Not configured"
+    },
+    "refresh": "Refresh",
+    "statusUnavailable": "Runtime status could not be read, so component readiness is unknown.",
+    "operationalState": {
+      "ready": "Ready",
+      "degraded": "Degraded",
+      "unavailable": "Unavailable",
+      "unknown": "Unknown"
+    },
+    "reason": {
+      "not_configured": "Not configured in this deployment",
+      "check_failed": "The check ran and failed; detail is in the server log",
+      "no_probe_available": "Wired, but exposes no health check",
+      "sources_degraded": "A required screening source is not ready"
+    },
+    "freshness": {
+      "live": "Checked just now ({{time}})",
+      "cached": "Cached result from {{time}}"
+    },
+    "build": {
+      "commitUnknown": "Commit not recorded in this build",
+      "builtAt": "Built {{date}}"
+    },
+    "provenance": {
+      "title": "Active configuration",
+      "help": "What this process actually loaded. A decision can only be reproduced against the configuration that produced it.",
+      "authMode": "Authentication mode",
+      "baseCurrency": "Base currency",
+      "configDigests": "Configuration digests",
+      "noDigests": "No configuration digests were recorded.",
+      "policies": "Policy documents",
+      "source": {
+        "file": "Authored",
+        "default": "Built-in default"
+      }
     }
   },
   "rules": {
@@ -1464,7 +1528,8 @@
       "nameLabel": "Name",
       "namePlaceholder": "rule_name",
       "definitionLabel": "Definition (JSON)",
-      "submit": "Create"
+      "submit": "Create",
+      "invalidJson": "The definition is not valid JSON."
     },
     "import": {
       "title": "Bulk import rules",
@@ -1623,5 +1688,29 @@
     "documentation": "Documentation",
     "purposeLabel": "What this screen is for",
     "stateLabel": "Availability"
+  },
+  "ruleDetail": {
+    "backToRules": "Back to rules",
+    "notFound": "This rule could not be loaded.",
+    "identity": {
+      "title": "Identity",
+      "canonicalId": "Canonical identifier",
+      "type": "Type",
+      "createdBy": "Authored by",
+      "updatedAt": "Last updated",
+      "description": "Description",
+      "unknownAuthor": "Not recorded",
+      "noDescription": "No description"
+    },
+    "definition": {
+      "title": "Effective definition",
+      "empty": "This version carries no definition fields."
+    },
+    "compare": {
+      "title": "Compare versions",
+      "against": "Compare against",
+      "onlyVersion": "This is the first version; there is nothing to compare it with.",
+      "unavailable": "That version is no longer retrievable."
+    }
   }
 }

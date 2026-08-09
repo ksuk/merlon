@@ -61,6 +61,9 @@ const ConfigPage = lazy(() =>
 );
 const RulesPage = lazy(() =>
   import("@/pages/rules").then((m) => ({ default: m.RulesPage })),
+)
+const RuleDetailPage = lazy(() =>
+  import("@/pages/rule-detail").then((m) => ({ default: m.RuleDetailPage })),
 );
 const WhitelistPage = lazy(() =>
   import("@/pages/whitelist").then((m) => ({ default: m.WhitelistPage })),
@@ -115,6 +118,9 @@ function App() {
               <Route path="users" element={<UsersPage />} />
               <Route path="config" element={<ConfigPage />} />
               <Route path="rules" element={<RulesPage />} />
+              {/* Rules resolve by name, not by the row's primary key: the key
+                  is regenerated on every version insert. */}
+              <Route path="rules/:name" element={<RuleDetailPage />} />
               <Route path="whitelist" element={<WhitelistPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="system" element={<SystemPage />} />

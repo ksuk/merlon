@@ -599,9 +599,25 @@ export interface APIKeyCreateResponse {
   key: string
 }
 
+export type ConfigValidationErrorClass = "syntax" | "schema" | "cross_reference" | "activation"
+
+export interface ConfigValidationError {
+  field: string
+  message: string
+  // Additive: absent on a deployment running an older API. A missing line is
+  // "unknown", never "line 0", which is why these stay optional.
+  class?: ConfigValidationErrorClass
+  severity?: "error" | "warning"
+  line?: number
+  column?: number
+  path?: string
+}
+
 export interface ConfigValidationResult {
   valid: boolean
-  errors: { field: string; message: string }[]
+  errors: ConfigValidationError[]
+  // Warnings never affect valid (ADR-0025).
+  warnings?: ConfigValidationError[]
 }
 
 export interface ScreenMatch {
@@ -986,6 +1002,40 @@ export interface SystemInfo {
   components: string[]
   endpoints: number
   features: Record<string, boolean>
+}
+
+export type OperationalState = "ready" | "degraded" | "unavailable" | "unknown"
+
+export interface ComponentStatus {
+  name: string
+  /** Whether the deployment wired the component; independent of whether it works. */
+  configured: boolean
+  operational_state: OperationalState
+  reason_code?: string
+  checked_at: string
+}
+
+export interface PolicyProvenance {
+  name: string
+  schema_version?: string
+  policy_version: string
+  digest: string
+  /** "default" means this deployment has not authored the policy. */
+  source: "file" | "default"
+}
+
+export interface SystemStatus {
+  version: string
+  commit?: string
+  built_at?: string
+  auth_mode: AuthMode
+  base_currency?: string
+  config_digests: Record<string, string>
+  policies: PolicyProvenance[]
+  components: ComponentStatus[]
+  checked_at: string
+  expires_at: string
+  source: "live" | "cached"
 }
 
 // AuthMode names how the deployment authenticates callers. "disabled" is an
@@ -1704,6 +1754,8 @@ export const api = {
   system: {
     info: () => request<SystemInfo>("/system/info"),
     capabilities: () => request<Capabilities>("/system/capabilities"),
+    status: (refresh = false) =>
+      request<SystemStatus>(`/system/status${refresh ? "?refresh=true" : ""}`),
   },
   whitelist: {
     list: (status?: WhitelistEntryStatus) => {
