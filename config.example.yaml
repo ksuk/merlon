@@ -15,6 +15,3 @@ adapters:
 
 scoring:
   default_rule_set: cdd_basic_weights
-
-features:
-  enterprise_enabled: false

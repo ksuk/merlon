@@ -253,9 +253,9 @@ investigations tracked in Merlon are protected without manual steps.
 
 ## Limits of audit-log tamper resistance
 
-The self-hosted edition provides after-the-fact verification via
-`merlon-audit verify`, but database-enforced immutability, WORM storage, and
-hash chaining are not included in the current release. The deploying
+Merlon provides after-the-fact verification via `merlon-audit verify`. It does
+not provide database-enforced immutability, WORM storage, or a cryptographic
+hash chain for audit logs. The deploying
 organization is responsible for configuring database roles, backups, access
 control, and monitoring. See [Regulatory Scope](regulatory-scope.md) for
 details.
