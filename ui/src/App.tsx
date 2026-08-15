@@ -53,6 +53,9 @@ const ReportsPage = lazy(() =>
 const BacktestPage = lazy(() =>
   import("@/pages/backtest").then((m) => ({ default: m.BacktestPage })),
 );
+const CoverageAnalysesPage = lazy(() =>
+  import("@/pages/coverage-analyses").then((m) => ({ default: m.CoverageAnalysesPage })),
+);
 const WebhooksPage = lazy(() =>
   import("@/pages/webhooks").then((m) => ({ default: m.WebhooksPage })),
 );
@@ -117,6 +120,7 @@ function App() {
               <Route path="pending-evaluations" element={<PendingEvaluationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="backtest" element={<BacktestPage />} />
+              <Route path="coverage-analyses" element={<CoverageAnalysesPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />
               <Route path="apikeys" element={<APIKeysPage />} />
               <Route path="users" element={<UsersPage />} />

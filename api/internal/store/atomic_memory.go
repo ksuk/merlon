@@ -143,6 +143,7 @@ type memoryAtomicSnapshot struct {
 	batchData          map[string]*domain.BatchRun
 	backtestData       map[string]*domain.BacktestJob
 	backtestSnapshots  map[string][]string
+	backtestOutcomes   map[string][]domain.BacktestOutcomeDetail
 	reviewData         map[string]*domain.CustomerReview
 	reviewByKey        map[string]string
 }
@@ -260,6 +261,7 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 	var batchData map[string]*domain.BatchRun
 	var backtestData map[string]*domain.BacktestJob
 	var backtestSnapshots map[string][]string
+	var backtestOutcomes map[string][]domain.BacktestOutcomeDetail
 	if r.wave3 != nil {
 		r.wave3.mu.RLock()
 		identity = cloneIdentityHistory(r.wave3.identity)
@@ -286,6 +288,7 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 		r.backtest.mu.Lock()
 		backtestData = cloneBacktestJobs(r.backtest.data)
 		backtestSnapshots = cloneStringSlices(r.backtest.snapshots)
+		backtestOutcomes = cloneBacktestOutcomeDetails(r.backtest.outcomeDetails)
 		r.backtest.mu.Unlock()
 	}
 	var reviewData map[string]*domain.CustomerReview
@@ -309,7 +312,7 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 		wave3Runs: wave3Runs, wave3Results: wave3Results, wave3History: wave3History,
 		wave3Sources: wave3Sources, wave3Metadata: wave3Metadata, wave3Manifests: wave3Manifests,
 		pendingData: pendingData, pendingHistory: pendingHistory, batchData: batchData,
-		backtestData: backtestData, backtestSnapshots: backtestSnapshots, reviewData: reviewData, reviewByKey: reviewByKey}
+		backtestData: backtestData, backtestSnapshots: backtestSnapshots, backtestOutcomes: backtestOutcomes, reviewData: reviewData, reviewByKey: reviewByKey}
 }
 
 func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
@@ -395,6 +398,7 @@ func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
 		r.backtest.mu.Lock()
 		r.backtest.data = snapshot.backtestData
 		r.backtest.snapshots = snapshot.backtestSnapshots
+		r.backtest.outcomeDetails = snapshot.backtestOutcomes
 		r.backtest.mu.Unlock()
 	}
 	if r.reviews != nil {
@@ -645,6 +649,18 @@ func cloneBacktestJobs(input map[string]*domain.BacktestJob) map[string]*domain.
 	output := make(map[string]*domain.BacktestJob, len(input))
 	for key, value := range input {
 		output[key] = cloneBacktestJob(value)
+	}
+	return output
+}
+
+func cloneBacktestOutcomeDetails(input map[string][]domain.BacktestOutcomeDetail) map[string][]domain.BacktestOutcomeDetail {
+	output := make(map[string][]domain.BacktestOutcomeDetail, len(input))
+	for key, values := range input {
+		copyValues := make([]domain.BacktestOutcomeDetail, len(values))
+		for i, value := range values {
+			copyValues[i] = cloneBacktestOutcomeDetail(value)
+		}
+		output[key] = copyValues
 	}
 	return output
 }

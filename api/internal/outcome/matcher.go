@@ -111,6 +111,8 @@ type Provenance struct {
 type Evaluation struct {
 	CandidateID string          `json:"candidate_id"`
 	ReferenceID string          `json:"reference_id,omitempty"`
+	CustomerID  string          `json:"customer_id"`
+	ScenarioID  string          `json:"scenario_id,omitempty"`
 	Label       Label           `json:"label"`
 	Match       *Match          `json:"match,omitempty"`
 	ScoreTier   domain.RiskTier `json:"score_tier,omitempty"`
@@ -255,7 +257,7 @@ func match(candidates []Detection, references []Reference, options Options) Resu
 		if denominator {
 			result.Denominator++
 		}
-		evaluation := Evaluation{CandidateID: candidate.ID, Label: label, Denominator: denominator, Provenance: Provenance{MatcherVersion: MatcherVersion, Mode: options.Mode, SnapshotAt: snapshot, Assumptions: append([]string(nil), assumptions...), Source: provenanceSource}, ScoreTier: state.ScoreTier}
+		evaluation := Evaluation{CandidateID: candidate.ID, CustomerID: candidate.CustomerID, ScenarioID: candidate.ScenarioID, Label: label, Denominator: denominator, Provenance: Provenance{MatcherVersion: MatcherVersion, Mode: options.Mode, SnapshotAt: snapshot, Assumptions: append([]string(nil), assumptions...), Source: provenanceSource}, ScoreTier: state.ScoreTier}
 		if isMatched {
 			evaluation.ReferenceID, evaluation.Match = item.ReferenceID, &item
 		}

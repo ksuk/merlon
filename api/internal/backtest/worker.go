@@ -17,6 +17,10 @@ type Worker struct {
 	Transactions domain.TransactionRepository
 	Engine       engine.BacktestEngine
 	Rules        domain.RuleRepository
+	// OutcomeBuilder is optional because the current engine result contract is
+	// aggregate-only. Engines that expose alert-shaped detections can inject a
+	// matcher-backed builder without changing the durable job runner.
+	OutcomeBuilder func(context.Context, *domain.BacktestJob) (*domain.BacktestOutcomeAnalysis, []domain.BacktestOutcomeDetail, error)
 }
 
 func (w *Worker) Run(ctx context.Context, poll time.Duration) error {
@@ -116,6 +120,19 @@ func (w *Worker) execute(ctx context.Context, job *domain.BacktestJob) error {
 		return err
 	}
 	delta := diffResult(baseline, candidate)
+	if w.OutcomeBuilder != nil {
+		repository, ok := w.Jobs.(domain.BacktestOutcomeRepository)
+		if !ok {
+			return fmt.Errorf("backtest outcome repository is not configured")
+		}
+		analysis, details, err := w.OutcomeBuilder(ctx, job)
+		if err != nil {
+			return err
+		}
+		if err := repository.SaveBacktestOutcomeAnalysis(ctx, job.ID, analysis, details); err != nil {
+			return err
+		}
+	}
 	return w.Jobs.Complete(ctx, job.ID, baseline, candidate, delta)
 }
 

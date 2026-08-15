@@ -756,6 +756,7 @@ export interface BacktestJob {
   baseline?: BacktestResult
   candidate?: BacktestResult
   delta?: BacktestResult
+  outcome_analysis?: BacktestOutcomeAnalysis
   error?: string
   created_at: string
   updated_at: string
@@ -767,6 +768,109 @@ export interface BacktestJob {
     rerun_of?: string
   }
 }
+
+export type OutcomeVariant = "baseline" | "candidate" | "delta"
+export type OutcomeLabel = "TP" | "FP" | "unlabeled" | "unevaluable"
+
+export interface OutcomeSummary {
+  tp: number
+  fp: number
+  unlabeled: number
+  unevaluable: number
+  investigated: number
+  rate: number
+  denominator: number
+}
+
+export interface BacktestOutcomeAnalysis {
+  matcher_version: string
+  snapshot_at: string
+  assumptions: string[]
+  baseline: OutcomeSummary
+  candidate: OutcomeSummary
+  delta: OutcomeSummary
+  by_scenario?: Record<string, OutcomeSummary>
+  generated_at: string
+}
+
+export interface BacktestOutcomeDetail {
+  id: string
+  job_id: string
+  variant: OutcomeVariant
+  candidate_id: string
+  reference_id?: string
+  customer_id: string
+  scenario_id?: string
+  label: OutcomeLabel
+  metric?: string
+  score?: number
+  investigated: boolean
+  matched_alert_id?: string
+  matched_case_id?: string
+  matcher_version: string
+  assumptions: string[]
+  snapshot_at: string
+  provenance?: Record<string, string>
+  created_at: string
+}
+
+export interface BacktestOutcomesPage extends PaginatedResponse<BacktestOutcomeDetail> {
+  outcome_analysis?: BacktestOutcomeAnalysis
+}
+
+export type CoverageAnalysisStatus = "queued" | "running" | "completed" | "failed"
+
+export interface CoverageSummary {
+  known_matter: number
+  covered: number
+  not_covered: number
+  unevaluable: number
+  rate: number
+  denominator: number
+}
+
+export interface CoverageAnalysis {
+  id: string
+  kind: string
+  status: CoverageAnalysisStatus
+  scenario_ids?: string[]
+  customer_ids?: string[]
+  snapshot_at: string
+  matcher_version: string
+  assumptions: string[]
+  summary: CoverageSummary
+  by_scenario?: Record<string, CoverageSummary>
+  error?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+  updated_at: string
+}
+
+export interface CoverageMatterResult {
+  id: string
+  analysis_id: string
+  matter_id: string
+  customer_id: string
+  scenario_ids?: string[]
+  source: string
+  label: OutcomeLabel
+  covered: boolean
+  unevaluable: boolean
+  matched_alert_id?: string
+  matcher_version: string
+  assumptions: string[]
+  snapshot_at: string
+  provenance?: Record<string, string>
+  created_at: string
+}
+
+export interface CoverageAnalysesPage {
+  data: CoverageAnalysis[]
+  pagination: { limit: number; offset: number; has_more: boolean }
+}
+
+export type CoverageMattersPage = PaginatedResponse<CoverageMatterResult>
 
 // A customer the candidate rule set starts alerting on (added), stops
 // alerting on (removed), or treats identically (unchanged). `mixed` only
@@ -1923,6 +2027,14 @@ export const api = {
       const query = qs.toString()
       return request<AffectedBacktestCustomersPage>(`/backtests/${encodeURIComponent(id)}/affected-customers${query ? `?${query}` : ""}`)
     },
+    outcomes: (id: string, params?: CursorPageParams & { variant?: OutcomeVariant; scenarioId?: string; label?: OutcomeLabel }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.variant) qs.set("variant", params.variant)
+      if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
+      if (params?.label) qs.set("label", params.label)
+      const query = qs.toString()
+      return request<BacktestOutcomesPage>(`/backtests/${encodeURIComponent(id)}/outcomes${query ? `?${query}` : ""}`)
+    },
     cancel: async (id: string) =>
       normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" })),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>
@@ -1930,6 +2042,26 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ customer_ids: customerIds, scenario_ids: scenarioIds, description }),
       }).then(normalizeBacktestResult),
+  },
+  coverageAnalyses: {
+    list: (params?: { status?: CoverageAnalysisStatus; limit?: number; offset?: number }) => {
+      const qs = new URLSearchParams()
+      if (params?.status) qs.set("status", params.status)
+      if (params?.limit != null) qs.set("limit", String(params.limit))
+      if (params?.offset != null) qs.set("offset", String(params.offset))
+      const query = qs.toString()
+      return request<CoverageAnalysesPage>(`/coverage-analyses${query ? `?${query}` : ""}`)
+    },
+    create: (data?: { scenario_ids?: string[]; customer_ids?: string[]; snapshot_at?: string }) =>
+      request<CoverageAnalysis>("/coverage-analyses", { method: "POST", body: JSON.stringify(data ?? {}) }),
+    get: (id: string) => request<CoverageAnalysis>(`/coverage-analyses/${encodeURIComponent(id)}`),
+    matters: (id: string, params?: CursorPageParams & { scenarioId?: string; label?: OutcomeLabel }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
+      if (params?.label) qs.set("label", params.label)
+      const query = qs.toString()
+      return request<CoverageMattersPage>(`/coverage-analyses/${encodeURIComponent(id)}/matters${query ? `?${query}` : ""}`)
+    },
   },
   webhooks: {
     list: () => request<Webhook[]>("/webhooks"),

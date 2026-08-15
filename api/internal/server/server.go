@@ -11,6 +11,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/adapter"
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/casemgmt"
+	"github.com/ksuk/merlon/api/internal/coverage"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/events"
@@ -49,6 +50,7 @@ type Server struct {
 	screening                engine.ScreeningEngine
 	backtest                 engine.BacktestEngine
 	backtestJobs             domain.BacktestJobRepository
+	coverageAnalyses         *coverage.Service
 	reports                  domain.ReportRepository
 	audit                    domain.AuditRepository
 	cases                    domain.CaseRepository
@@ -133,6 +135,7 @@ type Deps struct {
 	Screening          engine.ScreeningEngine
 	Backtest           engine.BacktestEngine
 	BacktestJobs       domain.BacktestJobRepository
+	CoverageAnalyses   *coverage.Service
 	Reports            domain.ReportRepository
 	Audit              domain.AuditRepository
 	Cases              domain.CaseRepository
@@ -216,6 +219,7 @@ func New(addr string, deps Deps) *Server {
 		screening:                deps.Screening,
 		backtest:                 deps.Backtest,
 		backtestJobs:             deps.BacktestJobs,
+		coverageAnalyses:         deps.CoverageAnalyses,
 		reports:                  deps.Reports,
 		audit:                    deps.Audit,
 		cases:                    deps.Cases,
@@ -451,8 +455,13 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/backtests/preview", s.handlePreviewBacktestCohort)
 	s.route("GET /api/v1/backtests/rules", s.handleDiscoverBacktestRules)
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
+	s.route("GET /api/v1/backtests/{id}/outcomes", s.handleBacktestOutcomes)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
+	s.route("POST /api/v1/coverage-analyses", s.handleCreateCoverageAnalysis)
+	s.route("GET /api/v1/coverage-analyses", s.handleListCoverageAnalyses)
+	s.route("GET /api/v1/coverage-analyses/{id}", s.handleGetCoverageAnalysis)
+	s.route("GET /api/v1/coverage-analyses/{id}/matters", s.handleListCoverageMatters)
 
 	// Reports
 	s.route("GET /api/v1/reports/str", s.handleListSTR)

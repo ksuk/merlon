@@ -19,6 +19,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/batch"
 	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/config"
+	"github.com/ksuk/merlon/api/internal/coverage"
 	"github.com/ksuk/merlon/api/internal/crypto"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine/native"
@@ -62,6 +63,8 @@ const (
 const eddEscalationCheckInterval = time.Hour
 
 const cddReviewCheckInterval = 24 * time.Hour
+
+const coverageAnalysisCheckInterval = time.Minute
 
 // retentionPurgeSchedule is deliberately separate from transaction
 // monitoring so that a retention pass is observable and operationally
@@ -374,6 +377,7 @@ func main() {
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		deps.BacktestJobs = store.NewPgBacktestJobRepo(pool)
+		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{Repository: store.NewPgCoverageAnalysisRepo(pool)})
 		deps.Wave3 = store.NewPgWave3Repo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
@@ -394,8 +398,10 @@ func main() {
 		memoryPending := store.NewMemoryPendingEvaluationRepo()
 		memoryBatch := store.NewMemoryBatchRunRepo()
 		memoryBacktest := store.NewMemoryBacktestJobRepo()
+		memoryCoverage := store.NewMemoryCoverageAnalysisRepo()
 		memoryReviews := store.NewMemoryCustomerReviewRepo()
 		deps.BacktestJobs = memoryBacktest
+		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{Repository: memoryCoverage})
 		memoryAtomic, atomicErr := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
 			Customers: deps.Customers, Transactions: deps.Transactions, Alerts: deps.Alerts,
 			Reports: deps.Reports, Audit: deps.Audit, Cases: deps.Cases,
@@ -505,6 +511,20 @@ func main() {
 			os.Exit(1)
 		}
 		deps.DemoDataEnabled = seedResult.DemoDataEnabled()
+	}
+	// Coverage jobs use the same durable worker shape as other long-running
+	// jobs. The loader reads each source repository as of the queued snapshot;
+	// no mutable current status is synthesized after the read boundary.
+	if deps.CoverageAnalyses != nil {
+		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{
+			Repository: deps.CoverageAnalyses.Repository(),
+			Load: coverage.NewLoader(coverage.LoaderDependencies{
+				Customers: deps.Customers,
+				Alerts:    deps.Alerts,
+				Cases:     deps.Cases,
+				Reports:   deps.Reports,
+			}),
+		})
 	}
 
 	jobsCtx, cancelJobs := context.WithCancel(context.Background())
@@ -766,6 +786,14 @@ func main() {
 			}()
 		}
 		slog.Info("durable backtest workers started", "concurrency", cfg.WorkerConcurrency)
+	}
+	if runWorkerJobs && deps.CoverageAnalyses != nil {
+		go func() {
+			if err := deps.CoverageAnalyses.Run(backtestCtx, coverageAnalysisCheckInterval); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("coverage analysis worker stopped", "error", err)
+			}
+		}()
+		slog.Info("durable coverage analysis worker started", "interval", coverageAnalysisCheckInterval)
 	}
 
 	tmBatchCtx, cancelTMBatch := context.WithCancel(context.Background())
