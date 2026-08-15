@@ -195,6 +195,37 @@ func TestOpenAPISpecDocumentsHealthProbes(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsTMContractAndTransactionType(t *testing.T) {
+	spec := fetchOpenAPISpec(t)
+	components := spec["components"].(map[string]any)
+	schemas := components["schemas"].(map[string]any)
+
+	tmContract := schemas["TMContract"].(map[string]any)
+	tmProperties := tmContract["properties"].(map[string]any)
+	for _, field := range []string{"contract_version", "supported_detectors", "compatibility_warnings", "default_digest"} {
+		if _, ok := tmProperties[field]; !ok {
+			t.Errorf("TMContract.properties.%s missing", field)
+		}
+	}
+
+	status := schemas["SystemStatus"].(map[string]any)
+	statusProperties := status["properties"].(map[string]any)
+	if _, ok := statusProperties["tm_contract"]; !ok {
+		t.Error("SystemStatus.properties.tm_contract missing")
+	}
+
+	transaction := schemas["Transaction"].(map[string]any)
+	transactionProperties := transaction["properties"].(map[string]any)
+	if _, ok := transactionProperties["transaction_type"]; !ok {
+		t.Error("Transaction.properties.transaction_type missing")
+	}
+	create := schemas["CreateTransactionRequest"].(map[string]any)
+	createProperties := create["properties"].(map[string]any)
+	if _, ok := createProperties["transaction_type"]; !ok {
+		t.Error("CreateTransactionRequest.properties.transaction_type missing")
+	}
+}
+
 func TestOpenAPI_PaginationFieldsPresent(t *testing.T) {
 	spec := fetchOpenAPISpec(t)
 

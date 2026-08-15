@@ -25,6 +25,7 @@ type CreateTransactionRequest struct {
 	Amount                        float64                     `json:"amount"`
 	Currency                      string                      `json:"currency"`
 	Direction                     domain.TransactionDirection `json:"direction"`
+	TransactionType               domain.TransactionType      `json:"transaction_type,omitempty"`
 	CounterpartyID                string                      `json:"counterparty_id"`
 	CounterpartyCountry           string                      `json:"counterparty_country"`
 	Channel                       string                      `json:"channel"`
@@ -214,6 +215,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		Amount:                        req.Amount,
 		Currency:                      currency,
 		Direction:                     req.Direction,
+		TransactionType:               normalizeTransactionType(req.TransactionType),
 		CounterpartyID:                req.CounterpartyID,
 		CounterpartyCountry:           req.CounterpartyCountry,
 		Channel:                       req.Channel,
@@ -270,6 +272,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		if err := appendRequiredMutationAudit(r.Context(), r, repos, "create_transaction", "transactions", t.ID, map[string]string{
 			"customer_id": t.CustomerID, "external_id": t.ExternalID,
 			"amount": strconv.FormatFloat(t.Amount, 'f', -1, 64), "currency": t.Currency,
+			"transaction_type": string(t.TransactionType),
 		}, t.CreatedAt); err != nil {
 			return err
 		}
@@ -329,6 +332,7 @@ func transactionEquivalent(existing, requested *domain.Transaction) bool {
 		existing.Amount == requested.Amount &&
 		strings.EqualFold(existing.Currency, requested.Currency) &&
 		existing.Direction == requested.Direction &&
+		existing.TransactionType == requested.TransactionType &&
 		existing.CounterpartyID == requested.CounterpartyID &&
 		strings.EqualFold(existing.CounterpartyCountry, requested.CounterpartyCountry) &&
 		strings.EqualFold(existing.Channel, requested.Channel) &&
@@ -490,4 +494,8 @@ func isValidDirection(d domain.TransactionDirection) bool {
 	default:
 		return false
 	}
+}
+
+func normalizeTransactionType(value domain.TransactionType) domain.TransactionType {
+	return domain.TransactionType(strings.ToLower(strings.TrimSpace(string(value))))
 }

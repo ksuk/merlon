@@ -412,6 +412,7 @@ func main() {
 		deps.Screening = nativeEngine
 		deps.Backtest = nativeEngine
 		deps.Config = nativeEngine
+		deps.TMContract = nativeEngine.TMContract()
 		slog.Info("native Go engine loaded", "tm_digest", deps.ConfigDigests["tm_scenarios"])
 	} else {
 		slog.Warn("native Go engine unavailable", "error", nativeErr)

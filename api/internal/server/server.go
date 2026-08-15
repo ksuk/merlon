@@ -77,6 +77,7 @@ type Server struct {
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
 	configDigests          map[string]string
+	tmContract             engine.TMContractInfo
 	// demoDataEnabled reports whether this instance is seeded from the
 	// synthetic demogen dataset (PH7 DD3): surfaced via
 	// GET /api/v1/system features.demo_data so the UI can show a small
@@ -156,6 +157,9 @@ type Deps struct {
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
 	ConfigDigests          map[string]string
+	// TMContract is the startup contract exposed by /system/status. A zero
+	// value is filled from a reporting engine or the versioned default.
+	TMContract engine.TMContractInfo
 	// DemoDataEnabled is derived from seed provenance, and is true only when
 	// the completed seed state identifies the demogen dataset (PH7 DD3).
 	DemoDataEnabled bool
@@ -230,6 +234,7 @@ func New(addr string, deps Deps) *Server {
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
 		configDigests:            deps.ConfigDigests,
+		tmContract:               deps.TMContract,
 		demoDataEnabled:          deps.DemoDataEnabled,
 
 		screeningListStore:      deps.ScreeningListStore,
@@ -250,6 +255,19 @@ func New(addr string, deps Deps) *Server {
 		priorityPolicy: deps.CasePriorityPolicy,
 		policies:       deps.Policies,
 	}
+	if s.tmContract.ContractVersion == "" {
+		for _, candidate := range []any{deps.Monitoring, deps.Scoring} {
+			if reporter, ok := candidate.(engine.TMContractReporter); ok {
+				s.tmContract = reporter.TMContract()
+				break
+			}
+		}
+	}
+	if s.tmContract.ContractVersion == "" {
+		s.tmContract = engine.DefaultTMContractInfo()
+	}
+	s.tmContract.SupportedDetectors = append([]string(nil), s.tmContract.SupportedDetectors...)
+	s.tmContract.CompatibilityWarnings = append([]string(nil), s.tmContract.CompatibilityWarnings...)
 	if s.priorityPolicy == nil {
 		s.priorityPolicy = casemgmt.DefaultPriorityPolicy()
 	}

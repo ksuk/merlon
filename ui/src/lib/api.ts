@@ -481,6 +481,7 @@ export interface Transaction {
   amount: number
   currency: string
   direction: "inbound" | "outbound" | "internal"
+  transaction_type?: string
   counterparty_id?: string
   counterparty_country?: string
   channel?: string
@@ -1167,6 +1168,13 @@ export interface PolicyProvenance {
   source: "file" | "default"
 }
 
+export interface TMContractInfo {
+  contract_version: string
+  supported_detectors: string[]
+  compatibility_warnings?: string[]
+  default_digest?: string
+}
+
 export interface SystemStatus {
   version: string
   commit?: string
@@ -1175,6 +1183,7 @@ export interface SystemStatus {
   base_currency?: string
   config_digests: Record<string, string>
   policies: PolicyProvenance[]
+  tm_contract: TMContractInfo
   components: ComponentStatus[]
   checked_at: string
   expires_at: string
@@ -1671,7 +1680,7 @@ export const api = {
     listAll: (customerId: string) =>
       listAllPages((page) => api.transactions.list(customerId, page)),
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
-    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; travel_rule_not_applicable_reason_code?: string; executed_at: string }, idempotencyKey?: string) =>
+    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; transaction_type?: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; travel_rule_not_applicable_reason_code?: string; executed_at: string }, idempotencyKey?: string) =>
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data), ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}) }),
   },
   audit: {

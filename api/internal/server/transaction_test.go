@@ -34,7 +34,7 @@ func TestCreateTransaction(t *testing.T) {
 	s := testServer()
 	cust := createTestCustomer(t, s)
 
-	body := `{"customer_id":"` + cust.ID + `","external_id":"TX001","amount":100000,"currency":"JPY","direction":"outbound"}`
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX001","amount":100000,"currency":"JPY","direction":"outbound","transaction_type":" Deposit "}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -51,6 +51,9 @@ func TestCreateTransaction(t *testing.T) {
 	}
 	if tx.Amount != 100000 {
 		t.Errorf("amount = %f, want 100000", tx.Amount)
+	}
+	if tx.TransactionType != domain.TransactionType("deposit") {
+		t.Errorf("transaction_type = %q, want normalized deposit", tx.TransactionType)
 	}
 }
 

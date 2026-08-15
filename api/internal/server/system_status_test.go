@@ -183,6 +183,43 @@ func TestSystemStatus_CarriesActiveConfigurationProvenance(t *testing.T) {
 	}
 }
 
+func TestSystemStatus_CarriesTMContract(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:    store.NewMemoryCustomerRepo(),
+		Transactions: store.NewMemoryTransactionRepo(),
+		Alerts:       store.NewMemoryAlertRepo(),
+		Cases:        store.NewMemoryCaseRepo(),
+		TMContract: engine.TMContractInfo{
+			ContractVersion:       "2.1",
+			SupportedDetectors:    []string{"structuring", "rapid_movement"},
+			CompatibilityWarnings: []string{"legacy scenario"},
+			DefaultDigest:         "sha256:defaults",
+		},
+	})
+
+	status := fetchStatus(t, s, "")
+	if status.TMContract.ContractVersion != "2.1" {
+		t.Errorf("tm_contract.contract_version = %q, want 2.1", status.TMContract.ContractVersion)
+	}
+	if len(status.TMContract.SupportedDetectors) != 2 || status.TMContract.SupportedDetectors[0] != "structuring" {
+		t.Errorf("tm_contract.supported_detectors = %v, want supplied contract", status.TMContract.SupportedDetectors)
+	}
+	if len(status.TMContract.CompatibilityWarnings) != 1 {
+		t.Errorf("tm_contract.compatibility_warnings = %v, want one warning", status.TMContract.CompatibilityWarnings)
+	}
+	if status.TMContract.DefaultDigest != "sha256:defaults" {
+		t.Errorf("tm_contract.default_digest = %q, want supplied digest", status.TMContract.DefaultDigest)
+	}
+}
+
+func TestSystemStatus_DefaultTMContractIsAvailableInSetupMode(t *testing.T) {
+	s := New(":0", Deps{})
+	status := fetchStatus(t, s, "")
+	if status.TMContract.ContractVersion == "" || len(status.TMContract.SupportedDetectors) != 5 {
+		t.Errorf("tm_contract = %+v, want versioned five-detector contract", status.TMContract)
+	}
+}
+
 // TestSystemStatus_CachedAnswerSaysSoAndRefreshForcesALiveCheck: an operator
 // who cannot tell a cached green from a fresh one has learned nothing.
 func TestSystemStatus_CachedAnswerSaysSoAndRefreshForcesALiveCheck(t *testing.T) {

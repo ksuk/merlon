@@ -486,7 +486,7 @@ func NewPgTransactionRepo(pool DBTX) *PgTransactionRepo {
 	return &PgTransactionRepo{pool: pool}
 }
 
-const transactionColumns = "id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, COALESCE(travel_rule_not_applicable_reason_code,''), COALESCE(travel_rule_status,''), travel_rule_assessment"
+const transactionColumns = "id, customer_id, external_id, amount, currency, direction, COALESCE(transaction_type,''), counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, COALESCE(travel_rule_not_applicable_reason_code,''), COALESCE(travel_rule_status,''), travel_rule_assessment"
 
 func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var t domain.Transaction
@@ -495,7 +495,7 @@ func scanTransaction(row pgx.Row) (domain.Transaction, error) {
 	var travelRuleReason *string
 	err := row.Scan(
 		&t.ID, &t.CustomerID, &t.ExternalID, &t.Amount, &t.Currency,
-		&t.Direction, &counterpartyID, &counterpartyCountry,
+		&t.Direction, &t.TransactionType, &counterpartyID, &counterpartyCountry,
 		&channel, &t.AccountID, &counterpartyJSON, &metadataJSON,
 		&t.IdempotencyKey,
 		&t.ExecutedAt, &t.CreatedAt, &t.TravelRuleApplicable, &travelRuleEvidence, &travelRuleReason,
@@ -682,10 +682,10 @@ func (r *PgTransactionRepo) Create(ctx context.Context, t *domain.Transaction) e
 	}
 
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, travel_rule_not_applicable_reason_code, travel_rule_status, travel_rule_assessment)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,''), $21)`,
+		`INSERT INTO transactions (id, customer_id, external_id, amount, currency, direction, transaction_type, counterparty_id, counterparty_country, channel, account_id, counterparty, metadata, idempotency_key, executed_at, created_at, travel_rule_applicable, travel_rule_evidence, travel_rule_not_applicable_reason, travel_rule_not_applicable_reason_code, travel_rule_status, travel_rule_assessment)
+		VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7,''), $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NULLIF($20,''), NULLIF($21,''), $22)`,
 		t.ID, t.CustomerID, t.ExternalID, t.Amount, t.Currency,
-		string(t.Direction), t.CounterpartyID, t.CounterpartyCountry,
+		string(t.Direction), string(t.TransactionType), t.CounterpartyID, t.CounterpartyCountry,
 		t.Channel, t.AccountID, counterpartyJSON, metadataJSON, t.IdempotencyKey, t.ExecutedAt, t.CreatedAt, t.TravelRuleApplicable, wave3JSON(t.TravelRuleEvidence), t.TravelRuleNotApplicableReason,
 		t.TravelRuleNotApplicableReasonCode, t.TravelRuleStatus, wave3JSON(t.TravelRuleAssessment),
 	)

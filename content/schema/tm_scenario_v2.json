@@ -4,18 +4,32 @@
   "title": "TM Scenario Definition v2",
   "type": "object",
   "required": ["schema_version", "scenario_id", "name", "type", "conditions", "severity"],
+  "additionalProperties": false,
   "properties": {
     "schema_version": { "type": "string" },
     "scenario_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "detector": {
+      "type": "string",
+      "enum": [
+        "structuring",
+        "rapid_movement",
+        "high_frequency_small_amount",
+        "dormant_account_reactivation",
+        "high_risk_country_transfer"
+      ],
+      "description": "Explicit evaluator binding required by schema v2.1; v2.0 files use a deprecated legacy ID binding."
+    },
     "name": { "type": "string" },
     "description": { "type": "string" },
     "type": { "type": "string", "enum": ["aggregation"] },
     "conditions": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "transaction_type": { "type": "array", "items": { "type": "string" } },
         "aggregation": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "field": { "type": "string" },
             "function": { "type": "string" },
@@ -25,14 +39,17 @@
         },
         "threshold": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "by_customer_type": {
               "type": "object",
               "additionalProperties": {
                 "type": "object",
+                "additionalProperties": false,
                 "properties": {
                   "by_risk_tier": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "LOW": { "type": "number" },
                       "MEDIUM": { "type": "number" },
@@ -45,9 +62,29 @@
           }
         },
         "absolute_threshold": { "type": "number" },
-        "additional": { "type": "object" }
+        "additional": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_transactions": { "type": "number" },
+            "min_transaction_count": { "type": "number" },
+            "individual_below": { "type": "number" },
+            "inbound_threshold": { "type": "number" },
+            "outbound_threshold": { "type": "number" },
+            "outbound_ratio_min": { "type": "number" },
+            "window_hours": { "type": "number" },
+            "count_threshold": { "type": "number" },
+            "max_amount_per_txn": { "type": "number" },
+            "dormant_days": { "type": "number" },
+            "reactivation_threshold": { "type": "number" },
+            "threshold_amount": { "type": "number" },
+            "high_risk_countries": { "type": "array", "items": { "type": "string" } }
+          }
+        }
       }
     },
+    "parameters": { "type": "object" },
+    "risk_tier_adjustments": { "type": "object" },
     "evaluation_mode": {
       "type": "string",
       "enum": ["realtime", "batch", "both"],
