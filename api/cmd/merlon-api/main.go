@@ -34,6 +34,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/seed"
 	"github.com/ksuk/merlon/api/internal/server"
 	"github.com/ksuk/merlon/api/internal/store"
+	inboundwebhook "github.com/ksuk/merlon/api/internal/webhook"
 )
 
 const whitelistExpiryCheckInterval = time.Hour
@@ -69,6 +70,19 @@ const retentionPurgeSchedule = "03:00"
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (the screening workflow §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
+
+// inboundPayloadCipher adapts the existing field-level key-ring encryptor to
+// webhook.Service's string boundary.  A nil encryptor is intentionally not
+// installed; the service then uses its memory-safe ephemeral cipher.
+type inboundPayloadCipher struct{ encryptor *crypto.Encryptor }
+
+func (c inboundPayloadCipher) Encrypt(plaintext string) (string, error) {
+	return c.encryptor.Encrypt(plaintext)
+}
+
+func (c inboundPayloadCipher) Decrypt(ciphertext string) (string, error) {
+	return c.encryptor.Decrypt(ciphertext)
+}
 
 func runAdapterSyncPeriodically(ctx context.Context, service *adapterpkg.SyncService, interval time.Duration) {
 	if interval <= 0 {
@@ -335,6 +349,13 @@ func main() {
 		deps.Atomic = store.NewPgAtomicMutationRepo(pool)
 		deps.EventOutbox = store.NewPgEventOutboxRepo(pool)
 		deps.Webhooks = store.NewPgWebhookRepo(pool, encryptor)
+		inboundConfig := inboundwebhook.Config{
+			Repository: store.NewPgInboundWebhookRepo(pool), Secret: []byte(cfg.InboundWebhookSecret),
+		}
+		if encryptor != nil {
+			inboundConfig.Cipher = inboundPayloadCipher{encryptor: encryptor}
+		}
+		deps.InboundWebhooks = inboundwebhook.NewServiceWithConfig(inboundConfig)
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
@@ -379,6 +400,9 @@ func main() {
 		}
 		deps.Atomic = memoryAtomic
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.InboundWebhooks = inboundwebhook.NewServiceWithConfig(inboundwebhook.Config{
+			Repository: store.NewMemoryInboundWebhookRepo(), Secret: []byte(cfg.InboundWebhookSecret),
+		})
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
 		deps.PendingEvaluations = memoryPending
@@ -586,6 +610,12 @@ func main() {
 	if srv == nil {
 		srv = server.New(listenAddr, deps)
 	}
+	if deps.InboundWebhooks != nil {
+		deps.InboundWebhooks.SetHandler(srv.InboundRecordHandler())
+		if len(cfg.InboundWebhookSecret) == 0 {
+			slog.Warn("MERLON_INBOUND_WEBHOOK_SECRET is not set; inbound webhook endpoints will reject events")
+		}
+	}
 	if runAPIJobs && configuredAdapter != nil && configuredAdapterConfig != nil {
 		var checkpoints adapterpkg.CheckpointRepository
 		if pool != nil {
@@ -680,6 +710,14 @@ func main() {
 	if runAPIJobs && deps.Webhooks != nil {
 		go srv.RunWebhookRetryWorker(webhookRetryCtx, webhookRetryCheckInterval)
 		slog.Info("webhook retry worker started", "interval", webhookRetryCheckInterval)
+	}
+	if runAPIJobs && deps.InboundWebhooks != nil {
+		go func() {
+			if err := deps.InboundWebhooks.RunWorker(webhookRetryCtx, inboundwebhook.DefaultRetryInterval); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("inbound webhook worker stopped", "error", err)
+			}
+		}()
+		slog.Info("inbound webhook worker started", "interval", inboundwebhook.DefaultRetryInterval)
 	}
 
 	if runWorkerJobs && deps.PendingEvaluations != nil && deps.Monitoring != nil {

@@ -5,6 +5,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/adapter"
@@ -17,6 +18,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/store"
+	inboundwebhook "github.com/ksuk/merlon/api/internal/webhook"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -55,6 +57,7 @@ type Server struct {
 	atomic                   domain.AtomicMutationRepository
 	apikeys                  domain.APIKeyRepository
 	webhooks                 domain.WebhookRepository
+	inboundWebhooks          *inboundwebhook.Service
 	configEngine             engine.ConfigEngine
 	engineHealth             engine.HealthChecker
 	limiter                  *rateLimiter
@@ -137,6 +140,7 @@ type Deps struct {
 	Atomic             domain.AtomicMutationRepository
 	APIKeys            domain.APIKeyRepository
 	Webhooks           domain.WebhookRepository
+	InboundWebhooks    *inboundwebhook.Service
 	Config             engine.ConfigEngine
 	EngineHealth       engine.HealthChecker
 	RateLimit          int
@@ -218,6 +222,7 @@ func New(addr string, deps Deps) *Server {
 		atomic:                   deps.Atomic,
 		apikeys:                  deps.APIKeys,
 		webhooks:                 deps.Webhooks,
+		inboundWebhooks:          deps.InboundWebhooks,
 		configEngine:             deps.Config,
 		engineHealth:             deps.EngineHealth,
 		clientIPs:                newClientIPResolver(deps.TrustedProxyCIDRs),
@@ -337,6 +342,9 @@ func New(addr string, deps Deps) *Server {
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
+	}
+	if s.inboundWebhooks != nil {
+		s.inboundWebhooks.SetHandlerIfMissing(s.InboundRecordHandler())
 	}
 	s.routes()
 	return s
@@ -480,6 +488,10 @@ func (s *Server) routes() {
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
+	s.route("POST /api/v1/webhooks/inbound/customers", s.handleInboundCustomers)
+	s.route("POST /api/v1/webhooks/inbound/transactions", s.handleInboundTransactions)
+	s.route("GET /api/v1/webhooks/inbound/events/{id}", s.handleGetInboundEvent)
+	s.route("POST /api/v1/webhooks/inbound/events/{id}/replay", s.handleReplayInboundEvent)
 	s.route("POST /api/v1/adapters/dry-run", s.handleAdapterDryRun)
 
 	// Webhooks
@@ -592,12 +604,16 @@ func (s *Server) Start() error {
 
 func requestBodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ContentLength > maxRequestBodyBytes {
+		limit := int64(maxRequestBodyBytes)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/webhooks/inbound/customers") || strings.HasPrefix(r.URL.Path, "/api/v1/webhooks/inbound/transactions") {
+			limit = inboundwebhook.DefaultMaxBodyBytes
+		}
+		if r.ContentLength > limit {
 			writeErrorCode(w, http.StatusRequestEntityTooLarge, apierr.CodePayloadTooLarge, "request body too large")
 			return
 		}
 		if r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

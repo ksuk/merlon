@@ -22,6 +22,7 @@ type Config struct {
 	MigrationDatabaseURL string
 	MigrationBaseline    string
 	EncryptionKeyRing    string
+	InboundWebhookSecret string
 	Seed                 bool
 	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed. The seed package reads the
 	// same environment value; final synthetic-data provenance comes from the
@@ -230,6 +231,7 @@ func Load() *Config {
 		MigrationDatabaseURL:   getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
 		MigrationBaseline:      getEnv("MERLON_MIGRATION_BASELINE", ""),
 		EncryptionKeyRing:      getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
+		InboundWebhookSecret:   getEnv("MERLON_INBOUND_WEBHOOK_SECRET", ""),
 		Seed:                   getEnv("MERLON_SEED", "") == "true",
 		DemoDataDir:            strings.TrimSpace(getEnv("MERLON_DEMO_DATA_DIR", "")),
 		JWTSecret:              getEnv("MERLON_JWT_SECRET", ""),

@@ -120,7 +120,11 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/pending-evaluations/{id}/history":                    pathPendingHistory(),
 			"/api/v1/pending-evaluations/{id}/{action}":                   pathPendingTransition(),
 			"/api/v1/webhooks/inbound/customer-status":                    pathCustomerStatusWebhook(),
-			"/api/v1/adapters/dry-run":                                   pathAdapterDryRun(),
+			"/api/v1/webhooks/inbound/customers":                          pathInboundWebhook("customers"),
+			"/api/v1/webhooks/inbound/transactions":                       pathInboundWebhook("transactions"),
+			"/api/v1/webhooks/inbound/events/{id}":                        pathInboundWebhookEvent(),
+			"/api/v1/webhooks/inbound/events/{id}/replay":                 pathInboundWebhookReplay(),
+			"/api/v1/adapters/dry-run":                                    pathAdapterDryRun(),
 			"/api/v1/webhooks":                                            pathWebhooks(),
 			"/api/v1/webhooks/{id}":                                       pathWebhook(),
 			"/api/v1/webhooks/{id}/deliveries":                            pathWebhookDeliveries(),
@@ -477,6 +481,7 @@ func wave2Schemas() map[string]any {
 			"risk_score": map[string]any{"type": "number", "nullable": true}, "risk_tier": map[string]any{"type": "string", "nullable": true},
 			"last_scored_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
 			"created_at":     map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
+			"source_updated_at":  map[string]any{"type": "string", "format": "date-time", "nullable": true},
 			"kyc_missing_fields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Required identity attributes this record does not carry, per the kyc_required_fields policy for its customer type. Recomputed on read; absent when nothing is missing."},
 			"kyc_policy_version": map[string]any{"type": "string", "description": "Version of the policy that produced kyc_missing_fields"},
 		}, "id", "external_id", "customer_type", "country_code", "product_types", "attributes", "status", "created_at", "updated_at"),
@@ -485,6 +490,27 @@ func wave2Schemas() map[string]any {
 			"status":      map[string]any{"type": "string", "enum": []string{"active", "dormant", "frozen", "closed"}},
 			"reason":      map[string]any{"type": "string"},
 		}, "external_id", "status"),
+		"InboundWebhookRecord": map[string]any{"type": "object", "additionalProperties": true},
+		"InboundWebhookBatch": objectSchema(map[string]any{
+			"records": arraySchema(schemaRef("InboundWebhookRecord")),
+		}, "records"),
+		"InboundWebhookEvent": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "kind": map[string]any{"type": "string", "enum": []string{"customers", "transactions"}},
+			"payload_digest": map[string]any{"type": "string"}, "record_count": map[string]any{"type": "integer"},
+			"status":        map[string]any{"type": "string", "enum": []string{"accepted", "running", "completed", "failed", "dlq"}},
+			"attempt_count": map[string]any{"type": "integer"}, "next_attempt_at": map[string]any{"type": "string", "format": "date-time"},
+			"first_received_at": map[string]any{"type": "string", "format": "date-time"}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_error": map[string]any{"type": "string"},
+			"created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "id", "kind", "payload_digest", "record_count", "status", "attempt_count", "next_attempt_at", "first_received_at", "created_at", "updated_at"),
+		"InboundWebhookOutcome": objectSchema(map[string]any{
+			"index": map[string]any{"type": "integer"}, "entity_type": map[string]any{"type": "string"}, "external_id": map[string]any{"type": "string"},
+			"entity_id": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"accepted", "updated", "skipped", "waiting_dependency", "rejected"}},
+			"reason": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "index", "entity_type", "status", "created_at"),
+		"InboundWebhookEventView": objectSchema(map[string]any{
+			"event": schemaRef("InboundWebhookEvent"), "outcomes": arraySchema(schemaRef("InboundWebhookOutcome")),
+		}, "event", "outcomes"),
 		"AlertUpdateRequest": objectSchema(map[string]any{
 			"status":              map[string]any{"type": "string"},
 			"resolved_by":         map[string]any{"type": "string"},
@@ -1780,6 +1806,39 @@ func pathCustomerStatusWebhook() map[string]any {
 			"requestBody": jsonRequestBody(schemaWithRequiredProperties("CustomerStatusWebhookRequest", []string{"external_id", "status"})),
 			"responses":   successWithErrors("200", "Updated customer", schemaRef("Customer"), "400", "401", "404", "500", "503"),
 		},
+	}
+}
+
+func inboundWebhookHeaderParameters() []map[string]any {
+	return []map[string]any{
+		{"name": "X-Merlon-Event-Id", "in": "header", "required": true, "schema": map[string]any{"type": "string"}},
+		{"name": "X-Merlon-Timestamp", "in": "header", "required": true, "schema": map[string]any{"type": "string", "format": "date-time"}},
+		{"name": "X-Merlon-Signature", "in": "header", "required": true, "schema": map[string]any{"type": "string", "pattern": `^v1=[0-9a-f]{64}$`}},
+	}
+}
+
+func pathInboundWebhook(kind string) map[string]any {
+	return map[string]any{
+		"post": map[string]any{
+			"summary":     "Accept an authenticated inbound " + kind + " batch",
+			"parameters":  inboundWebhookHeaderParameters(),
+			"requestBody": jsonRequestBody(schemaRef("InboundWebhookBatch")),
+			"responses":   successWithErrors("202", "Durably accepted inbound webhook event", schemaRef("InboundWebhookEvent"), "400", "401", "409", "413", "500", "503"),
+		},
+	}
+}
+
+func pathInboundWebhookEvent() map[string]any {
+	return map[string]any{
+		"get": documentedJSONOperation("Get inbound webhook processing status and per-record outcomes", []map[string]any{pathIDParameter("id", "Inbound event identifier")}, nil,
+			"200", "Inbound webhook event", schemaRef("InboundWebhookEventView"), "401", "404", "500", "503"),
+	}
+}
+
+func pathInboundWebhookReplay() map[string]any {
+	return map[string]any{
+		"post": documentedJSONOperation("Replay a failed or dead-lettered inbound webhook event (Admin)", []map[string]any{pathIDParameter("id", "Inbound event identifier")}, nil,
+			"202", "Inbound webhook replay accepted", schemaRef("InboundWebhookEvent"), "401", "403", "404", "500", "503"),
 	}
 }
 

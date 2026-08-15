@@ -23,6 +23,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_MIGRATION_BASELINE` | unset | Explicit last-applied migration filename for a pre-ledger database; never inferred automatically. |
 | `MERLON_MIGRATIONS_DIR` | `migrations` | Migration command only; directory containing versioned SQL migrations. The `--migrations-dir` flag takes precedence. |
 | `MERLON_ENCRYPTION_KEY_RING` | unset | Required for production PII protection. Use the documented key-ring format accepted by `merlon-keyrotate`; loss of every referenced key makes historical encrypted values unrecoverable. Back up keys through a protected KMS or secret manager. |
+| `MERLON_INBOUND_WEBHOOK_SECRET` | unset | HMAC secret for durable customer/transaction push webhooks. Keep it in a secret manager; inbound endpoints reject requests while it is unset. |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | unset | Use an RS256 key pair for local-user authentication. |
 | `MERLON_JWT_SECRET` | unset | Development fallback only. Do not set in production when using local-user authentication. |
 | `MERLON_BOOTSTRAP_TOKEN` | unset | One-time setup secret. Rotate or remove immediately after the first administrator/API key is created. |

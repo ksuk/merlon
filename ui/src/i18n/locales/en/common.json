@@ -1625,7 +1625,21 @@
     "error": "Failed to fetch webhook data",
     "tabs": {
       "webhooks": "Webhooks",
-      "dlq": "DLQ"
+      "dlq": "DLQ",
+      "inbound": "Inbound events"
+    },
+    "inbound": {
+      "title": "Inbound event status",
+      "eventIdLabel": "Inbound event ID",
+      "eventIdPlaceholder": "evt_...",
+      "lookup": "Look up",
+      "replay": "Replay",
+      "table": {
+        "index": "Record",
+        "entity": "External ID",
+        "status": "Status",
+        "reason": "Reason"
+      }
     },
     "dlq": {
       "table": {

@@ -89,6 +89,10 @@ type Customer struct {
 	LastScoredAt *time.Time     `json:"last_scored_at,omitempty"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
+	// SourceUpdatedAt is the source system's monotonic update timestamp. It
+	// lets inbound webhook upserts ignore an older delivery without confusing
+	// transport arrival time with the core system's version.
+	SourceUpdatedAt *time.Time `json:"source_updated_at,omitempty"`
 
 	// EDD escalation tracking (the case-management workflow §EDD未実施継続時の段階的
 	// 措置). EddRequestedAt marks when the customer entered the current

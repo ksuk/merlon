@@ -1625,7 +1625,21 @@
     "error": "Webhookデータの取得に失敗しました",
     "tabs": {
       "webhooks": "Webhook",
-      "dlq": "DLQ"
+      "dlq": "DLQ",
+      "inbound": "Inboundイベント"
+    },
+    "inbound": {
+      "title": "Inboundイベントの状態",
+      "eventIdLabel": "InboundイベントID",
+      "eventIdPlaceholder": "evt_...",
+      "lookup": "照会",
+      "replay": "再実行",
+      "table": {
+        "index": "レコード",
+        "entity": "外部ID",
+        "status": "状態",
+        "reason": "理由"
+      }
     },
     "dlq": {
       "table": {

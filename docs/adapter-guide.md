@@ -233,3 +233,23 @@ Before pointing an adapter at a production system:
   (default `30`). Set this according to the external system's expected
   latency; a fetch that exceeds the timeout fails as a request error, not a
   partial result.
+
+## Durable inbound push webhooks
+
+Systems that push records rather than being polled by an adapter can use
+`POST /api/v1/webhooks/inbound/customers` and
+`POST /api/v1/webhooks/inbound/transactions`. Set
+`MERLON_INBOUND_WEBHOOK_SECRET` and sign the exact request bytes with
+`HMAC-SHA256(timestamp + "." + event_id + "." + raw_body)`, sent as
+`X-Merlon-Signature: v1=<hex>`. Timestamps must be within five minutes of the
+Merlon clock. An authenticated event is encrypted before a `202` response is
+returned; an unauthenticated body is never stored.
+
+An event ID is idempotent only when its body digest and kind are unchanged. A
+conflicting replay returns `409`. Each event is limited to 1,000 records and
+10 MiB. The durable worker starts after 30 seconds, retries dependency and
+transient failures with a one-hour backoff cap, and moves an event to the DLQ
+after eight attempts. Inspect per-record `accepted`, `updated`, `skipped`,
+`waiting_dependency`, or `rejected` outcomes at
+`GET /api/v1/webhooks/inbound/events/{id}`. Administrators can explicitly
+replay a failed/DLQ event with `POST .../{id}/replay`.

@@ -628,6 +628,37 @@ export interface WebhookDLQEntry {
   reprocessed_at?: string
 }
 
+export type InboundWebhookEventStatus = "accepted" | "running" | "completed" | "failed" | "dlq"
+export type InboundWebhookRecordStatus = "accepted" | "updated" | "skipped" | "waiting_dependency" | "rejected"
+export interface InboundWebhookOutcome {
+  index: number
+  entity_type: string
+  external_id?: string
+  entity_id?: string
+  status: InboundWebhookRecordStatus
+  reason?: string
+  created_at: string
+}
+export interface InboundWebhookEvent {
+  id: string
+  kind: "customers" | "transactions"
+  payload_digest: string
+  record_count: number
+  status: InboundWebhookEventStatus
+  attempt_count: number
+  next_attempt_at: string
+  first_received_at: string
+  last_attempt_at?: string
+  completed_at?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+export interface InboundWebhookEventView {
+  event: InboundWebhookEvent
+  outcomes: InboundWebhookOutcome[]
+}
+
 export interface STRReport {
   id: string
   alert_id: string
@@ -1859,6 +1890,12 @@ export const api = {
       request<{ success: boolean; status_code: number }>(`/webhooks/dlq/${encodeURIComponent(id)}/reprocess`, {
         method: "POST",
       }),
+    inbound: {
+      get: (id: string) =>
+        request<InboundWebhookEventView>(`/webhooks/inbound/events/${encodeURIComponent(id)}`),
+      replay: (id: string) =>
+        request<InboundWebhookEvent>(`/webhooks/inbound/events/${encodeURIComponent(id)}/replay`, { method: "POST" }),
+    },
   },
   admin: {
     apikeys: {
