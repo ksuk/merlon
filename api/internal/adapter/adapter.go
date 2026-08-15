@@ -1,6 +1,9 @@
 package adapter
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type CustomerData struct {
 	ExternalID   string
@@ -10,12 +13,28 @@ type CustomerData struct {
 	RawFields    map[string]any
 }
 
+type CustomerPage struct {
+	Customers  []CustomerData
+	NextCursor string
+	Watermark  string
+}
+
 type TransactionData struct {
-	ExternalID string
-	Amount     string
-	Currency   string
-	Type       string
-	RawFields  map[string]any
+	ExternalID         string
+	Amount             string
+	Currency           string
+	Type               string
+	RawFields          map[string]any
+	CustomerExternalID string
+	AccountExternalID  string
+	Direction          string
+	ExecutedAt         time.Time
+}
+
+type TransactionPage struct {
+	Transactions []TransactionData
+	NextCursor   string
+	Watermark    string
 }
 
 type DryRunResult struct {
@@ -30,8 +49,16 @@ type CustomerFetcher interface {
 	FetchCustomer(ctx context.Context, id string) (*CustomerData, error)
 }
 
+type CustomerPageFetcher interface {
+	FetchCustomersPage(ctx context.Context, params map[string]string) (*CustomerPage, error)
+}
+
 type TransactionFetcher interface {
 	FetchTransactions(ctx context.Context, params map[string]string) ([]TransactionData, error)
+}
+
+type TransactionPageFetcher interface {
+	FetchTransactionsPage(ctx context.Context, params map[string]string) (*TransactionPage, error)
 }
 
 type Adapter interface {

@@ -120,6 +120,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/pending-evaluations/{id}/history":                    pathPendingHistory(),
 			"/api/v1/pending-evaluations/{id}/{action}":                   pathPendingTransition(),
 			"/api/v1/webhooks/inbound/customer-status":                    pathCustomerStatusWebhook(),
+			"/api/v1/adapters/dry-run":                                   pathAdapterDryRun(),
 			"/api/v1/webhooks":                                            pathWebhooks(),
 			"/api/v1/webhooks/{id}":                                       pathWebhook(),
 			"/api/v1/webhooks/{id}/deliveries":                            pathWebhookDeliveries(),
@@ -184,6 +185,10 @@ func BuildOpenAPISpec() map[string]any {
 	}
 
 	return spec
+}
+
+func pathAdapterDryRun() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Validate adapter configuration and probe the external system", nil, nil, "200", "Adapter dry-run result", schemaRef("AdapterDryRunResult"), "400", "401", "403", "502", "503")}
 }
 
 // paginationParams describes the the HTTP API contract §1.1/§1.2 query parameters shared by
@@ -792,6 +797,7 @@ func wave3Schemas() map[string]any {
 			"pagination":  schemaRef("PaginationMeta"),
 		}, "data", "pagination"),
 		"ScreenMatch":            objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "entry_id": map[string]any{"type": "string"}, "matched_name": map[string]any{"type": "string"}, "similarity": map[string]any{"type": "number"}, "confidence": map[string]any{"type": "number", "minimum": 0, "maximum": 1}, "list_type": map[string]any{"type": "string"}, "source": map[string]any{"type": "string"}, "match_evidence": map[string]any{"type": "object", "additionalProperties": true}}, "list_id", "entry_id", "matched_name", "similarity", "list_type", "source"),
+		"AdapterDryRunResult":    objectSchema(map[string]any{"config_valid": map[string]any{"type": "boolean"}, "reachable": map[string]any{"type": "boolean"}, "auth_valid": map[string]any{"type": "boolean"}, "endpoint_results": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "errors": arraySchema(map[string]any{"type": "string"})}, "config_valid", "reachable", "auth_valid", "endpoint_results", "errors"),
 		"ScreenResult":           objectSchema(map[string]any{"customer_id": map[string]any{"type": "string"}, "hit": map[string]any{"type": "boolean"}, "matches": arraySchema(schemaRef("ScreenMatch")), "lists_checked": map[string]any{"type": "integer"}, "screened_at": map[string]any{"type": "string", "format": "date-time"}, "run_id": map[string]any{"type": "string"}, "result_ids": arraySchema(map[string]any{"type": "string"})}, "customer_id", "hit", "matches", "lists_checked", "screened_at"),
 		"ScreeningBatchOutcome":  objectSchema(map[string]any{"customer_id": map[string]any{"type": "string"}, "screened": map[string]any{"type": "boolean"}, "skipped": map[string]any{"type": "boolean"}, "skip_reason": map[string]any{"type": "string"}, "error": map[string]any{"type": "string"}}, "customer_id", "screened", "skipped"),
 		"ScreeningBatchResponse": objectSchema(map[string]any{"trigger": map[string]any{"type": "string"}, "outcomes": arraySchema(schemaRef("ScreeningBatchOutcome"))}, "trigger", "outcomes"),

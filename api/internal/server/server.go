@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/adapter"
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -76,6 +77,7 @@ type Server struct {
 	screeningResults       domain.ScreeningResultRepository
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
+	adapter                adapter.Adapter
 	configDigests          map[string]string
 	tmContract             engine.TMContractInfo
 	// demoDataEnabled reports whether this instance is seeded from the
@@ -156,6 +158,7 @@ type Deps struct {
 	ScreeningResults       domain.ScreeningResultRepository
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
+	Adapter                adapter.Adapter
 	ConfigDigests          map[string]string
 	// TMContract is the startup contract exposed by /system/status. A zero
 	// value is filled from a reporting engine or the versioned default.
@@ -233,6 +236,7 @@ func New(addr string, deps Deps) *Server {
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
+		adapter:                  deps.Adapter,
 		configDigests:            deps.ConfigDigests,
 		tmContract:               deps.TMContract,
 		demoDataEnabled:          deps.DemoDataEnabled,
@@ -476,6 +480,7 @@ func (s *Server) routes() {
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
+	s.route("POST /api/v1/adapters/dry-run", s.handleAdapterDryRun)
 
 	// Webhooks
 	s.route("POST /api/v1/webhooks", s.handleCreateWebhook)

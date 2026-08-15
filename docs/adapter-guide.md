@@ -70,6 +70,15 @@ endpoints:
       currency: "$.currency"
       type: "$.transaction_type"
       base_currency_equivalent: "$.base_currency_equivalent"
+
+sync:
+  interval: 5m
+  page_size: 500
+  initial_lookback: 24h
+  cursor_param: cursor
+  cursor_response: "$.next_cursor"
+  watermark_param: since
+  watermark_response: "$.watermark"
 ```
 
 ### Top-level fields
@@ -81,6 +90,18 @@ endpoints:
 | `timeout_seconds` | Per-request HTTP timeout. Defaults to `30` if unset or non-positive. |
 | `auth` | Authentication settings, described below. |
 | `endpoints` | A map of named endpoints. At least one is required. |
+| `sync` | Runtime schedule and pagination/watermark mapping. Defaults to 5 minutes, 500 records, and a 24-hour initial lookback. |
+
+When `MERLON_ADAPTER_CONFIG_PATH` is set, startup validates both a paginated
+customer endpoint (`fetch_customers` or the legacy `fetch_customer`) and
+`fetch_transactions`. The worker processes customer pages first, then
+transaction pages, and advances the durable checkpoint only after repository
+writes complete. Missing customers leave a `waiting_dependency` outcome for a
+later retry; they never advance a transaction into an orphan row.
+
+Administrators can probe the configured mapping and authentication without
+writing data with `POST /api/v1/adapters/dry-run`. The endpoint is admin-only
+and applies the outbound allowlist/private-address policy before a request.
 
 ### Authentication
 

@@ -51,6 +51,15 @@ endpoints:
       currency: "$.currency"
       type: "$.transaction_type"
       base_currency_equivalent: "$.base_currency_equivalent"
+
+sync:
+  interval: 5m
+  page_size: 500
+  initial_lookback: 24h
+  cursor_param: cursor
+  cursor_response: "$.next_cursor"
+  watermark_param: since
+  watermark_response: "$.watermark"
 ```
 
 ### トップレベルのフィールド
@@ -62,6 +71,15 @@ endpoints:
 | `timeout_seconds` | リクエストごとの HTTP タイムアウト。未設定または非正の値の場合、デフォルトは `30`。 |
 | `auth` | 認証設定。詳細は後述。 |
 | `endpoints` | 名前付きエンドポイントのマップ。少なくとも1つが必須。 |
+| `sync` | スケジュール、ページング、ウォーターマークの設定。既定値は5分、500件、初回参照24時間。 |
+
+`MERLON_ADAPTER_CONFIG_PATH` を設定すると、起動時にページング可能な顧客エンドポイント
+（`fetch_customers` または互換用の `fetch_customer`）と `fetch_transactions` を検証する。
+ワーカーは顧客ページを先に処理し、リポジトリへの書き込み完了後にのみ durable checkpoint を進める。
+顧客が見つからない取引は `waiting_dependency` outcome として再試行対象に残し、孤立行を作らない。
+
+管理者は `POST /api/v1/adapters/dry-run` でデータを書き込まずに設定・認証・接続性を検証できる。
+このエンドポイントは管理者専用で、送信先 allowlist とプライベートアドレス制御を適用する。
 
 ### 認証
 

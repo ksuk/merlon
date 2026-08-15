@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	adapterpkg "github.com/ksuk/merlon/api/internal/adapter"
 	"github.com/ksuk/merlon/api/internal/auth"
 	backtestworker "github.com/ksuk/merlon/api/internal/backtest"
 	"github.com/ksuk/merlon/api/internal/batch"
@@ -68,6 +69,24 @@ const retentionPurgeSchedule = "03:00"
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (the screening workflow §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
+
+func runAdapterSyncPeriodically(ctx context.Context, service *adapterpkg.SyncService, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	for {
+		if _, err := service.Run(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("adapter sync failed", "error", err)
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
 
 // startEventSubscription waits until the transport has completed its initial
 // subscription handshake. Subscribe remains blocking after that point, so
@@ -153,10 +172,30 @@ func main() {
 		slog.Error("config validation", "error", err)
 		os.Exit(1)
 	}
+	var configuredAdapter adapterpkg.Adapter
+	var configuredAdapterConfig *adapterpkg.AdapterConfig
+	if cfg.AdapterConfigPath != "" {
+		adapterConfig, adapterErr := adapterpkg.LoadAdapterConfig(cfg.AdapterConfigPath)
+		if adapterErr == nil {
+			adapterErr = adapterConfig.ValidateSync()
+		}
+		if adapterErr != nil {
+			slog.Error("adapter configuration is unusable", "path", cfg.AdapterConfigPath, "error", adapterErr)
+			os.Exit(1)
+		}
+		configuredAdapterConfig = adapterConfig
+		configuredAdapter, adapterErr = adapterpkg.NewRESTAdapter(adapterConfig, adapterpkg.SecurityConfig{BlockPrivateIPRanges: cfg.Env == "production"})
+		if adapterErr != nil {
+			slog.Error("adapter initialization", "error", adapterErr)
+			os.Exit(1)
+		}
+		slog.Info("adapter configuration loaded", "path", cfg.AdapterConfigPath, "interval", adapterConfig.Sync.Interval, "page_size", adapterConfig.Sync.PageSize)
+	}
 	runAPIJobs := cfg.Mode == "api" || cfg.Mode == "all"
 	runWorkerJobs := cfg.Mode == "worker" || cfg.Mode == "all"
 
 	deps := server.Deps{}
+	deps.Adapter = configuredAdapter
 	deps.ConfigDigests = make(map[string]string)
 	deps.EDDStage2Days = cfg.EDDStage2Days
 	deps.EDDStage3Days = cfg.EDDStage3Days
@@ -546,6 +585,16 @@ func main() {
 
 	if srv == nil {
 		srv = server.New(listenAddr, deps)
+	}
+	if runAPIJobs && configuredAdapter != nil && configuredAdapterConfig != nil {
+		var checkpoints adapterpkg.CheckpointRepository
+		if pool != nil {
+			checkpoints = store.NewPgAdapterCheckpointRepo(pool)
+		} else {
+			checkpoints = adapterpkg.NewMemoryCheckpointRepository()
+		}
+		go runAdapterSyncPeriodically(jobsCtx, &adapterpkg.SyncService{AdapterID: "core", Config: configuredAdapterConfig, Adapter: configuredAdapter, Deps: adapterpkg.SyncDependencies{Customers: deps.Customers, Transactions: deps.Transactions, Accounts: deps.Accounts, Checkpoints: checkpoints}, Owner: "merlon-api"}, configuredAdapterConfig.Sync.Interval)
+		slog.Info("adapter sync enabled", "interval", configuredAdapterConfig.Sync.Interval)
 	}
 	if runAPIJobs {
 		go srv.ResumeManualBatchRuns(jobsCtx)
