@@ -82,6 +82,20 @@ func TestEUAdapter_ParsesCSVAndMergesAliasRows(t *testing.T) {
 	}
 }
 
+func TestEUAdapter_RetainsSecondaryIdentifiersAndEntityTypeAcrossAliasRows(t *testing.T) {
+	fixture := "entry_id,name,dates_of_birth,addresses,country,entity_type\n" +
+		"EU-003,Example Person,1980-01-02|1981-02-03,1 Chiyoda Tokyo|2 Chiyoda Tokyo,JP,individual\n" +
+		"EU-003,Example P.,1982-03-04,3 Chiyoda Tokyo,JP,individual\n"
+	data, err := (&EUAdapter{ListID: "eu", Fetcher: &fakeFetcher{body: []byte(fixture)}}).FetchList(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := data.Entries[0]
+	if len(entry.DatesOfBirth) != 3 || len(entry.Addresses) != 3 || entry.Country != "JP" || entry.EntityType != "individual" {
+		t.Fatalf("entry=%+v, want all secondary values retained", entry)
+	}
+}
+
 const mofCSVFixture = "entry_id,name,country,type\n" +
 	"MOF-001,Kim Jong Un,KP,individual\n"
 

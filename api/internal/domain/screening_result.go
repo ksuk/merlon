@@ -51,6 +51,7 @@ type ScreeningResultRecord struct {
 	EntryID             string                `json:"entry_id"`
 	MatchedName         string                `json:"matched_name"`
 	Similarity          float64               `json:"similarity"`
+	Confidence          float64               `json:"confidence,omitempty"`
 	Status              ScreeningResultStatus `json:"status"`
 	FalsePositiveReason string                `json:"false_positive_reason,omitempty"`
 	ReviewedBy          string                `json:"reviewed_by,omitempty"`

@@ -769,8 +769,10 @@ export interface ScreenMatch {
   entry_id: string
   matched_name: string
   similarity: number
+  confidence?: number
   list_type: string
   source: string
+  match_evidence?: Record<string, unknown>
 }
 
 export interface ScreenResult {
@@ -793,6 +795,7 @@ export interface ScreeningResultRecord {
   entry_id: string
   matched_name: string
   similarity: number
+  confidence?: number
   status: ScreeningResultStatus
   false_positive_reason?: string
   reviewed_by?: string

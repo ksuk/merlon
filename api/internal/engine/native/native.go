@@ -5,8 +5,10 @@ package native
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -87,6 +89,8 @@ type Engine struct {
 	lists                   []screeningList
 	screeningDigest         string
 	screeningThreshold      float64
+	screeningHMACKey        []byte
+	screeningHMACKeyID      string
 }
 
 type screeningList struct {
@@ -97,9 +101,21 @@ type screeningList struct {
 	Entries []screeningEntry `yaml:"entries"`
 }
 type screeningEntry struct {
-	ID    string   `yaml:"entry_id"`
-	Names []string `yaml:"names"`
+	ID           string   `yaml:"entry_id"`
+	Names        []string `yaml:"names"`
+	DatesOfBirth []string `yaml:"dates_of_birth"`
+	Addresses    []string `yaml:"addresses"`
+	Country      string   `yaml:"country"`
+	EntityType   string   `yaml:"entity_type"`
+	// Type accepts existing list snapshots while EntityType is the canonical
+	// field for new snapshots.
+	Type string `yaml:"type"`
 }
+
+const (
+	screeningIdentifierPolicyVersion = "screening-secondary-identifiers-v1"
+	screeningIdentifierAlgorithm     = "normalized-token-similarity-v1"
+)
 
 // NewFromEnv loads the configured content roots for the native engine.
 // It returns an error for a missing required CDD/TM root; callers may keep the
@@ -152,7 +168,10 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 		paths = []string{tmPath}
 	}
 	sort.Strings(paths)
-	e := &Engine{cdd: cdd, cddDigest: digest(cddYAML), screeningThreshold: 0.85}
+	e := &Engine{cdd: cdd, cddDigest: digest(cddYAML), screeningThreshold: 0.85,
+		screeningHMACKey:   []byte(firstNonEmpty(os.Getenv("MERLON_SCREENING_HMAC_KEY"), "merlon-screening-dev-key-v1")),
+		screeningHMACKeyID: firstNonEmpty(os.Getenv("MERLON_SCREENING_HMAC_KEY_ID"), "screening-dev-v1"),
+	}
 	for _, path := range paths {
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
@@ -226,6 +245,11 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 			for _, entry := range l.Entries {
 				if len(entry.Names) == 0 {
 					return nil, fmt.Errorf("screening list %s entry %s names must not be empty", path, entry.ID)
+				}
+			}
+			for i := range l.Entries {
+				if l.Entries[i].EntityType == "" {
+					l.Entries[i].EntityType = l.Entries[i].Type
 				}
 			}
 			e.lists = append(e.lists, l)
@@ -1435,6 +1459,7 @@ func (e *Engine) ScreenCustomer(ctx context.Context, customer *domain.Customer, 
 		queries = append(queries, kana)
 	}
 	var matches []domain.ScreenMatch
+	customerIdentifiers := screeningIdentifiersForCustomer(customer)
 	checked := 0
 	e.listsMu.RLock()
 	lists := append([]screeningList(nil), e.lists...)
@@ -1464,11 +1489,31 @@ func (e *Engine) ScreenCustomer(ctx context.Context, customer *domain.Customer, 
 				}
 			}
 			if best >= e.screeningThreshold {
-				matches = append(matches, domain.ScreenMatch{ListID: l.ID, EntryID: entry.ID, MatchedName: bestName, Similarity: best, ListType: l.Type, Source: l.Source})
+				match := domain.ScreenMatch{ListID: l.ID, EntryID: entry.ID, MatchedName: bestName, Similarity: best, ListType: l.Type, Source: l.Source}
+				if entryHasSecondaryIdentifiers(entry) {
+					secondary := compareSecondaryIdentifiers(customerIdentifiers, entry)
+					match.Confidence = clampScreeningConfidence(best + secondary.adjustment)
+					match.MatchEvidence = e.screeningMatchEvidence(secondary, entry)
+				}
+				matches = append(matches, match)
 			}
 		}
 	}
-	sort.SliceStable(matches, func(i, j int) bool { return matches[i].Similarity > matches[j].Similarity })
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Confidence != matches[j].Confidence {
+			return matches[i].Confidence > matches[j].Confidence
+		}
+		if matches[i].Similarity != matches[j].Similarity {
+			return matches[i].Similarity > matches[j].Similarity
+		}
+		if matches[i].ListID != matches[j].ListID {
+			return matches[i].ListID < matches[j].ListID
+		}
+		if matches[i].EntryID != matches[j].EntryID {
+			return matches[i].EntryID < matches[j].EntryID
+		}
+		return matches[i].MatchedName < matches[j].MatchedName
+	})
 	return &domain.ScreenResult{CustomerID: customer.ID, Hit: len(matches) > 0, Matches: matches, ListsChecked: checked, ScreenedAt: time.Now().UTC()}, nil
 }
 
@@ -1480,14 +1525,286 @@ func (e *Engine) ReplaceScreeningLists(raw []screening.RawListData) {
 	for _, item := range raw {
 		l := screeningList{ID: item.ListID, Type: item.ListType, Name: item.Name, Source: item.Source}
 		for _, entry := range item.Entries {
-			l.Entries = append(l.Entries, screeningEntry{ID: entry.EntryID, Names: append([]string(nil), entry.Names...)})
+			entityType := firstNonEmpty(entry.EntityType, entry.Type)
+			l.Entries = append(l.Entries, screeningEntry{ID: entry.EntryID, Names: append([]string(nil), entry.Names...), DatesOfBirth: append([]string(nil), entry.DatesOfBirth...), Addresses: append([]string(nil), entry.Addresses...), Country: entry.Country, EntityType: entityType, Type: entry.Type})
 		}
 		lists = append(lists, l)
 	}
 	sort.Slice(lists, func(i, j int) bool { return lists[i].ID < lists[j].ID })
 	e.listsMu.Lock()
 	e.lists = lists
+	if snapshot, err := json.Marshal(lists); err == nil {
+		e.screeningDigest = digest(snapshot)
+	}
 	e.listsMu.Unlock()
+}
+
+type screeningCustomerIdentifiers struct {
+	datesOfBirth []string
+	addresses    []string
+	country      string
+	entityType   string
+}
+
+type secondaryComparison struct {
+	statuses   map[string]string
+	adjustment float64
+	dobValues  []string
+	addresses  []string
+}
+
+func entryHasSecondaryIdentifiers(entry screeningEntry) bool {
+	return len(entry.DatesOfBirth) > 0 || len(entry.Addresses) > 0 || strings.TrimSpace(entry.Country) != "" || firstNonEmpty(entry.EntityType, entry.Type) != ""
+}
+
+func screeningIdentifiersForCustomer(customer *domain.Customer) screeningCustomerIdentifiers {
+	if customer == nil {
+		return screeningCustomerIdentifiers{}
+	}
+	return screeningCustomerIdentifiers{
+		datesOfBirth: customerAttributeValues(customer.Attributes, "date_of_birth", "dob", "birth_date"),
+		addresses:    customerAttributeValues(customer.Attributes, "address", "addresses", "address_pref"),
+		country:      firstNonEmpty(customer.CountryCode, firstStringValue(customer.Attributes, "country_code", "country")),
+		entityType:   firstNonEmpty(string(customer.CustomerType), firstStringValue(customer.Attributes, "entity_type", "customer_type")),
+	}
+}
+
+func customerAttributeValues(attributes map[string]any, keys ...string) []string {
+	var values []string
+	for _, key := range keys {
+		value, ok := attributes[key]
+		if !ok {
+			continue
+		}
+		values = appendIdentifierValue(values, value)
+	}
+	return values
+}
+
+func appendIdentifierValue(values []string, value any) []string {
+	switch typed := value.(type) {
+	case string:
+		if strings.TrimSpace(typed) != "" {
+			return appendUniqueScreening(values, typed)
+		}
+	case []string:
+		for _, item := range typed {
+			values = appendIdentifierValue(values, item)
+		}
+	case []any:
+		for _, item := range typed {
+			values = appendIdentifierValue(values, item)
+		}
+	case map[string]any:
+		// Address JSONB values are converted to a stable token string solely
+		// for comparison; the value is never copied into match evidence.
+		b, _ := json.Marshal(typed)
+		if len(b) > 0 {
+			values = appendUniqueScreening(values, string(b))
+		}
+	default:
+		if value != nil {
+			values = appendUniqueScreening(values, fmt.Sprint(value))
+		}
+	}
+	return values
+}
+
+func appendUniqueScreening(values []string, additions ...string) []string {
+	for _, addition := range additions {
+		addition = strings.TrimSpace(addition)
+		if addition == "" {
+			continue
+		}
+		found := false
+		for _, value := range values {
+			if value == addition {
+				found = true
+				break
+			}
+		}
+		if !found {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func firstStringValue(attributes map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := attributes[key].(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func compareSecondaryIdentifiers(customer screeningCustomerIdentifiers, entry screeningEntry) secondaryComparison {
+	comparison := secondaryComparison{statuses: map[string]string{}}
+	entryEntityType := firstNonEmpty(entry.EntityType, entry.Type)
+	comparison.statuses["date_of_birth"], comparison.adjustment = compareIdentifierSet(customer.datesOfBirth, entry.DatesOfBirth, comparison.adjustment, 0.10)
+	comparison.statuses["address"], comparison.adjustment = compareAddressSet(customer.addresses, entry.Addresses, comparison.adjustment)
+	comparison.statuses["country"], comparison.adjustment = compareScalarIdentifier(customer.country, entry.Country, comparison.adjustment, 0.03)
+	comparison.statuses["entity_type"], comparison.adjustment = compareScalarIdentifier(customer.entityType, entryEntityType, comparison.adjustment, 0.02)
+	comparison.dobValues = append([]string(nil), customer.datesOfBirth...)
+	comparison.addresses = append([]string(nil), customer.addresses...)
+	return comparison
+}
+
+func compareIdentifierSet(customer, listed []string, adjustment, weight float64) (string, float64) {
+	if len(customer) == 0 || len(listed) == 0 {
+		return "missing", adjustment
+	}
+	for _, left := range customer {
+		for _, right := range listed {
+			if normalizeIdentifier(left) == normalizeIdentifier(right) {
+				return "match", adjustment + weight
+			}
+		}
+	}
+	return "mismatch", adjustment - weight
+}
+
+func compareScalarIdentifier(customer, listed string, adjustment, weight float64) (string, float64) {
+	if strings.TrimSpace(customer) == "" || strings.TrimSpace(listed) == "" {
+		return "missing", adjustment
+	}
+	if normalizeIdentifier(customer) == normalizeIdentifier(listed) {
+		return "match", adjustment + weight
+	}
+	return "mismatch", adjustment - weight
+}
+
+func compareAddressSet(customer, listed []string, adjustment float64) (string, float64) {
+	if len(customer) == 0 || len(listed) == 0 {
+		return "missing", adjustment
+	}
+	best := 0.0
+	for _, left := range customer {
+		for _, right := range listed {
+			best = maxFloat(best, addressTokenSimilarity(left, right))
+		}
+	}
+	if best >= 0.80 {
+		return "match", adjustment + 0.05
+	}
+	if best < 0.50 {
+		return "mismatch", adjustment - 0.05
+	}
+	return "indeterminate", adjustment
+}
+
+func normalizeIdentifier(value string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return []rune(strings.ToLower(string(r)))[0]
+		}
+		return -1
+	}, value)
+}
+
+func addressTokenSimilarity(left, right string) float64 {
+	leftTokens := identifierTokens(left)
+	rightTokens := identifierTokens(right)
+	if len(leftTokens) == 0 || len(rightTokens) == 0 {
+		if len(leftTokens) == 0 && len(rightTokens) == 0 {
+			return 1
+		}
+		return 0
+	}
+	intersection := 0
+	for token := range leftTokens {
+		if _, ok := rightTokens[token]; ok {
+			intersection++
+		}
+	}
+	return float64(2*intersection) / float64(len(leftTokens)+len(rightTokens))
+}
+
+func identifierTokens(value string) map[string]struct{} {
+	value = strings.ToLower(value)
+	var token strings.Builder
+	result := map[string]struct{}{}
+	flush := func() {
+		if token.Len() > 0 {
+			result[token.String()] = struct{}{}
+			token.Reset()
+		}
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			token.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return result
+}
+
+func clampScreeningConfidence(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
+func (e *Engine) screeningMatchEvidence(comparison secondaryComparison, entry screeningEntry) map[string]any {
+	statuses := comparison.statuses
+	overall := "match"
+	for _, status := range statuses {
+		if status == "mismatch" {
+			overall = "mismatch"
+			break
+		}
+		if status == "indeterminate" || status == "missing" {
+			overall = "indeterminate"
+		}
+	}
+	fingerprints := map[string]any{}
+	if len(comparison.dobValues) > 0 {
+		fingerprints["date_of_birth"] = e.screeningFingerprints(comparison.dobValues)
+	}
+	if len(comparison.addresses) > 0 {
+		fingerprints["address"] = e.screeningFingerprints(comparison.addresses)
+	}
+	return map[string]any{
+		"status":                      overall,
+		"policy_version":              screeningIdentifierPolicyVersion,
+		"policy_digest":               digest([]byte("screening-secondary-identifiers-v1|dob=.10|address=.05|country=.03|entity_type=.02|address_match=.80|address_mismatch=.50")),
+		"algorithm_version":           screeningIdentifierAlgorithm,
+		"list_snapshot_digest":        e.screeningDigest,
+		"secondary_identifiers":       statuses,
+		"fingerprints":                fingerprints,
+		"list_entry_identifier_count": len(entry.DatesOfBirth) + len(entry.Addresses),
+	}
+}
+
+func (e *Engine) screeningFingerprints(values []string) []map[string]string {
+	key := e.screeningHMACKey
+	if len(key) == 0 {
+		key = []byte("merlon-screening-dev-key-v1")
+	}
+	keyID := firstNonEmpty(e.screeningHMACKeyID, "screening-dev-v1")
+	out := make([]map[string]string, 0, len(values))
+	for _, value := range values {
+		mac := hmac.New(sha256.New, key)
+		_, _ = mac.Write([]byte(normalizeIdentifier(value)))
+		out = append(out, map[string]string{"key_id": keyID, "hmac_sha256": hex.EncodeToString(mac.Sum(nil))})
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 func similarity(a, b string) float64 {
 	a = normalize(a)

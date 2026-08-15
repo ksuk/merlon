@@ -26,10 +26,15 @@ import (
 // upstream source, before conversion to the native engine's screening-list
 // entry shape.
 type RawListEntry struct {
-	EntryID string
-	Names   []string
-	Country string
-	Type    string
+	EntryID      string
+	Names        []string
+	DatesOfBirth []string
+	Addresses    []string
+	Country      string
+	// EntityType is the source-neutral contract field. Type remains as a
+	// compatibility alias for existing adapters and callers.
+	EntityType string
+	Type       string
 }
 
 // RawListData is the full parsed content of one list fetch, corresponding
@@ -147,6 +152,16 @@ type ofacSDNEntry struct {
 			Country string `xml:"country"`
 		} `xml:"nationality"`
 	} `xml:"nationalityList"`
+	DateOfBirthList struct {
+		Dates []struct {
+			Date string `xml:"dateOfBirth"`
+		} `xml:"dateOfBirth"`
+	} `xml:"dateOfBirthList"`
+	AddressList struct {
+		Addresses []struct {
+			Address string `xml:",chardata"`
+		} `xml:"address"`
+	} `xml:"addressList"`
 }
 
 func parseOFACSDNXML(listID string, body []byte) (*RawListData, error) {
@@ -163,8 +178,9 @@ func parseOFACSDNXML(listID string, body []byte) (*RawListData, error) {
 	}
 	for _, e := range parsed.Entries {
 		entry := RawListEntry{
-			EntryID: e.UID,
-			Type:    strings.ToLower(e.SDNType),
+			EntryID:    e.UID,
+			EntityType: strings.ToLower(e.SDNType),
+			Type:       strings.ToLower(e.SDNType),
 		}
 		if name := strings.TrimSpace(e.FirstName + " " + e.LastName); name != "" {
 			entry.Names = append(entry.Names, name)
@@ -176,6 +192,16 @@ func parseOFACSDNXML(listID string, body []byte) (*RawListData, error) {
 		}
 		if len(e.NationalityList.Nationalities) > 0 {
 			entry.Country = e.NationalityList.Nationalities[0].Country
+		}
+		for _, dob := range e.DateOfBirthList.Dates {
+			if value := strings.TrimSpace(dob.Date); value != "" {
+				entry.DatesOfBirth = append(entry.DatesOfBirth, value)
+			}
+		}
+		for _, address := range e.AddressList.Addresses {
+			if value := strings.TrimSpace(address.Address); value != "" {
+				entry.Addresses = append(entry.Addresses, value)
+			}
 		}
 		data.Entries = append(data.Entries, entry)
 	}
@@ -284,16 +310,30 @@ func parseNameAliasCSV(body []byte) ([]RawListEntry, error) {
 		}
 		e, ok := byID[id]
 		if !ok {
-			e = &RawListEntry{
-				EntryID: id,
-				Country: field(row, col, "country"),
-				Type:    field(row, col, "type"),
+			e = &RawListEntry{EntryID: id, Country: field(row, col, "country"), EntityType: firstField(row, col, "entity_type", "type"), Type: field(row, col, "type")}
+			if e.EntityType == "" {
+				e.EntityType = e.Type
 			}
+			e.DatesOfBirth = splitIdentifierFields(firstField(row, col, "dates_of_birth", "date_of_birth", "dob"))
+			e.Addresses = splitIdentifierFields(firstField(row, col, "addresses", "address"))
 			byID[id] = e
 			order = append(order, id)
 		}
 		if name := field(row, col, "name"); name != "" {
 			e.Names = append(e.Names, name)
+		}
+		// Alias rows may carry the secondary values, so merge them rather than
+		// retaining only the first row's identifiers.
+		e.DatesOfBirth = appendUnique(e.DatesOfBirth, splitIdentifierFields(firstField(row, col, "dates_of_birth", "date_of_birth", "dob"))...)
+		e.Addresses = appendUnique(e.Addresses, splitIdentifierFields(firstField(row, col, "addresses", "address"))...)
+		if e.Country == "" {
+			e.Country = field(row, col, "country")
+		}
+		if e.EntityType == "" {
+			e.EntityType = firstField(row, col, "entity_type", "type")
+		}
+		if e.Type == "" {
+			e.Type = field(row, col, "type")
 		}
 	}
 
@@ -310,6 +350,44 @@ func field(row []string, col map[string]int, name string) string {
 		return ""
 	}
 	return strings.TrimSpace(row[i])
+}
+
+func firstField(row []string, col map[string]int, names ...string) string {
+	for _, name := range names {
+		if value := field(row, col, name); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func splitIdentifierFields(value string) []string {
+	var out []string
+	for _, item := range strings.FieldsFunc(value, func(r rune) bool { return r == '|' || r == ';' || r == '\n' }) {
+		if item = strings.TrimSpace(item); item != "" {
+			out = appendUnique(out, item)
+		}
+	}
+	return out
+}
+
+func appendUnique(values []string, additions ...string) []string {
+	for _, addition := range additions {
+		if strings.TrimSpace(addition) == "" {
+			continue
+		}
+		found := false
+		for _, value := range values {
+			if value == addition {
+				found = true
+				break
+			}
+		}
+		if !found {
+			values = append(values, addition)
+		}
+	}
+	return values
 }
 
 // mofHTMLRowPattern extracts a 4-column <tr><td>entry_id</td><td>name</td>
@@ -330,7 +408,8 @@ func parseNameAliasHTMLTable(body []byte) ([]RawListEntry, error) {
 		}
 		e, ok := byID[id]
 		if !ok {
-			e = &RawListEntry{EntryID: id, Country: strings.TrimSpace(m[3]), Type: strings.TrimSpace(m[4])}
+			typ := strings.TrimSpace(m[4])
+			e = &RawListEntry{EntryID: id, Country: strings.TrimSpace(m[3]), EntityType: typ, Type: typ}
 			byID[id] = e
 			order = append(order, id)
 		}
@@ -405,7 +484,7 @@ func parseUNXML(listID string, body []byte) (*RawListData, error) {
 }
 
 func unEntryToRaw(e unListEntry, entryType string) RawListEntry {
-	entry := RawListEntry{EntryID: e.DataID, Type: entryType}
+	entry := RawListEntry{EntryID: e.DataID, EntityType: entryType, Type: entryType}
 	if name := strings.TrimSpace(e.FirstName + " " + e.SecondName); name != "" {
 		entry.Names = append(entry.Names, name)
 	}
@@ -448,10 +527,13 @@ func (a *PEPAdapter) listType() string {
 
 type pepProviderResponse struct {
 	Entries []struct {
-		EntryID string   `json:"entry_id"`
-		Names   []string `json:"names"`
-		Country string   `json:"country"`
-		Type    string   `json:"type"`
+		EntryID      string   `json:"entry_id"`
+		Names        []string `json:"names"`
+		DatesOfBirth []string `json:"dates_of_birth"`
+		Addresses    []string `json:"addresses"`
+		Country      string   `json:"country"`
+		EntityType   string   `json:"entity_type"`
+		Type         string   `json:"type"`
 	} `json:"entries"`
 }
 
@@ -469,11 +551,18 @@ func parsePEPJSON(listID, listType string, body []byte) (*RawListData, error) {
 	}
 	for _, e := range parsed.Entries {
 		data.Entries = append(data.Entries, RawListEntry{
-			EntryID: e.EntryID,
-			Names:   e.Names,
-			Country: e.Country,
-			Type:    e.Type,
+			EntryID: e.EntryID, Names: e.Names, DatesOfBirth: e.DatesOfBirth,
+			Addresses: e.Addresses, Country: e.Country, EntityType: firstNonEmpty(e.EntityType, e.Type), Type: e.Type,
 		})
 	}
 	return data, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

@@ -66,6 +66,9 @@ func scanWorkflowResultFrom(src workflowResultScanner) (*domain.ScreeningResultR
 	if len(evidence) > 0 {
 		_ = json.Unmarshal(evidence, &out.MatchEvidence)
 	}
+	if confidence, ok := out.MatchEvidence["confidence"].(float64); ok {
+		out.Confidence = confidence
+	}
 	return &out, nil
 }
 
@@ -144,6 +147,9 @@ func (r *PgWave3Repo) PersistScreeningRun(ctx context.Context, run *domain.Scree
 		}
 		if result.MatchEvidence == nil {
 			result.MatchEvidence = map[string]any{}
+		}
+		if result.Confidence != 0 {
+			result.MatchEvidence["confidence"] = result.Confidence
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO screening_results(id,customer_id,list_id,list_type,entry_id,matched_name,similarity,status,false_positive_reason,reviewed_by,reviewed_at,screened_at,created_at,run_id,suppressed,suppression_reason,degraded,degraded_sources,match_evidence,case_id,version,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`, result.ID, domain.CanonicalUUID(result.CustomerID), result.ListID, result.ListType, result.EntryID, result.MatchedName, result.Similarity, result.Status, nullableString(result.FalsePositiveReason), nullableString(result.ReviewedBy), result.ReviewedAt, result.ScreenedAt, result.CreatedAt, run.ID, result.Suppressed, result.SuppressionReason, result.Degraded, nonNilStrings(result.DegradedSources), wave3JSON(result.MatchEvidence), nullableString(result.CaseID), result.Version, result.UpdatedAt); err != nil {
 			return err
