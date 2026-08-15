@@ -381,6 +381,7 @@ type MemoryTransactionRepo struct {
 	mu             sync.RWMutex
 	data           map[string]*domain.Transaction
 	byCustomer     map[string][]string
+	external       map[string]string
 	idempotencyKey map[string]string // idempotency key -> transaction ID
 }
 
@@ -388,8 +389,25 @@ func NewMemoryTransactionRepo() *MemoryTransactionRepo {
 	return &MemoryTransactionRepo{
 		data:           make(map[string]*domain.Transaction),
 		byCustomer:     make(map[string][]string),
+		external:       make(map[string]string),
 		idempotencyKey: make(map[string]string),
 	}
+}
+
+func (r *MemoryTransactionRepo) GetByExternalID(_ context.Context, externalID string) (*domain.Transaction, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	id, ok := r.external[externalID]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "transaction", ID: externalID}
+	}
+	t, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "transaction", ID: externalID}
+	}
+	cp := *t
+	cp.Metadata = copyAnyMap(t.Metadata)
+	return &cp, nil
 }
 
 func (r *MemoryTransactionRepo) Get(_ context.Context, id string) (*domain.Transaction, error) {
@@ -520,6 +538,12 @@ func (r *MemoryTransactionRepo) Create(_ context.Context, t *domain.Transaction)
 		r.idempotencyKey[*t.IdempotencyKey] = t.ID
 	}
 	r.data[t.ID] = t
+	if t.ExternalID != "" {
+		if existing, ok := r.external[t.ExternalID]; ok && existing != t.ID {
+			return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "external_id already exists"}
+		}
+		r.external[t.ExternalID] = t.ID
+	}
 	r.byCustomer[t.CustomerID] = append(r.byCustomer[t.CustomerID], t.ID)
 	return nil
 }
@@ -1882,6 +1906,7 @@ func (r *MemoryScreeningResultRepo) ListPastFalsePositives(_ context.Context, en
 type MemoryAccountRepo struct {
 	mu           sync.RWMutex
 	accounts     map[string]*domain.Account
+	external     map[string]string
 	customers    map[string][]domain.AccountCustomer // accountID -> links
 	customerRepo *MemoryCustomerRepo
 }
@@ -1889,6 +1914,7 @@ type MemoryAccountRepo struct {
 func NewMemoryAccountRepo(customerRepo *MemoryCustomerRepo) *MemoryAccountRepo {
 	return &MemoryAccountRepo{
 		accounts:     make(map[string]*domain.Account),
+		external:     make(map[string]string),
 		customers:    make(map[string][]domain.AccountCustomer),
 		customerRepo: customerRepo,
 	}
@@ -1901,7 +1927,13 @@ func (r *MemoryAccountRepo) Create(_ context.Context, a *domain.Account) error {
 	a.CreatedAt = now
 	a.UpdatedAt = now
 	cp := *a
+	if existing, ok := r.external[a.ExternalID]; ok && existing != a.ID {
+		return &domain.ErrConflict{Entity: "account", ID: a.ID, Reason: "external_id already exists"}
+	}
 	r.accounts[a.ID] = &cp
+	if a.ExternalID != "" {
+		r.external[a.ExternalID] = a.ID
+	}
 	return nil
 }
 
@@ -1911,6 +1943,21 @@ func (r *MemoryAccountRepo) Get(_ context.Context, id string) (*domain.Account, 
 	a, ok := r.accounts[id]
 	if !ok {
 		return nil, &domain.ErrNotFound{Entity: "account", ID: id}
+	}
+	cp := *a
+	return &cp, nil
+}
+
+func (r *MemoryAccountRepo) GetByExternalID(_ context.Context, externalID string) (*domain.Account, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	id, ok := r.external[externalID]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "account", ID: externalID}
+	}
+	a, ok := r.accounts[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "account", ID: externalID}
 	}
 	cp := *a
 	return &cp, nil

@@ -42,6 +42,19 @@ func (r *PgAccountRepo) Get(ctx context.Context, id string) (*domain.Account, er
 	return &a, nil
 }
 
+func (r *PgAccountRepo) GetByExternalID(ctx context.Context, externalID string) (*domain.Account, error) {
+	var a domain.Account
+	err := r.pool.QueryRow(ctx, `SELECT id, external_id, account_type, created_at, updated_at FROM accounts WHERE external_id=$1`, externalID).
+		Scan(&a.ID, &a.ExternalID, &a.AccountType, &a.CreatedAt, &a.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, &domain.ErrNotFound{Entity: "account", ID: externalID}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 func (r *PgAccountRepo) AddCustomer(ctx context.Context, accountID, customerID string, role domain.AccountRole) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO account_customers (account_id, customer_id, role) VALUES ($1, $2, $3)`,

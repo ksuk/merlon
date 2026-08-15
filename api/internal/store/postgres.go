@@ -554,6 +554,19 @@ func (r *PgTransactionRepo) Get(ctx context.Context, id string) (*domain.Transac
 	return &t, nil
 }
 
+func (r *PgTransactionRepo) GetByExternalID(ctx context.Context, externalID string) (*domain.Transaction, error) {
+	t, err := scanTransaction(r.pool.QueryRow(ctx,
+		`SELECT `+transactionColumns+` FROM transactions WHERE external_id = $1 AND purge_marked_at IS NULL`, externalID,
+	))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, &domain.ErrNotFound{Entity: "transaction", ID: externalID}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 func (r *PgTransactionRepo) GetByIdempotencyKey(ctx context.Context, key string) (*domain.Transaction, error) {
 	t, err := scanTransaction(r.pool.QueryRow(ctx, `SELECT `+transactionColumns+` FROM transactions WHERE idempotency_key=$1 AND purge_marked_at IS NULL`, key))
 	if errors.Is(err, pgx.ErrNoRows) {

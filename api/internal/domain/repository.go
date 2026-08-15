@@ -93,6 +93,14 @@ type TransactionIdempotencyRepository interface {
 	GetByIdempotencyKey(ctx context.Context, key string) (*Transaction, error)
 }
 
+// TransactionExternalIDRepository is the optional lookup capability used by
+// external ingestion. It keeps the stable TransactionRepository interface
+// usable by lightweight adapters while allowing imports to classify a replay
+// as skip/conflict before attempting an INSERT.
+type TransactionExternalIDRepository interface {
+	GetByExternalID(ctx context.Context, externalID string) (*Transaction, error)
+}
+
 // TransactionHistoryRepository is an optional capability used by PH9 batch
 // and realtime evaluators. It orders by event time (not ingestion time), pins
 // a created_at snapshot, and carries an explicit half-open event window.

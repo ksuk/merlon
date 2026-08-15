@@ -48,3 +48,9 @@ type AccountRepository interface {
 	// or nil if none of the linked customers has been scored yet.
 	RepresentativeRiskScore(ctx context.Context, accountID string) (*float64, error)
 }
+
+// AccountExternalIDRepository is an additive lookup capability for external
+// ingestion and adapter runtimes.
+type AccountExternalIDRepository interface {
+	GetByExternalID(ctx context.Context, externalID string) (*Account, error)
+}
