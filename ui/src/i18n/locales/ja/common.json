@@ -1851,6 +1851,8 @@
     "detail": { "title": "分析 {{id}}" },
     "stats": { "knownMatter": "既知事案", "covered": "カバー済み", "notCovered": "未カバー", "unevaluable": "評価不能", "rate": "カバレッジ率" },
     "matcher": "マッチャー: {{version}}",
+    "period": "リプレイ期間: {{from}} – {{to}}",
+    "ruleSet": "ルールセット: {{value}}",
     "snapshot": "スナップショット: {{value}}",
     "covered": "カバー済み",
     "notCovered": "未カバー",

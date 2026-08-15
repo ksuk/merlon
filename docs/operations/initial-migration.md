@@ -13,7 +13,8 @@ your core banking or ledger system.
 The supported path for an initial migration is `go run ./api/cmd/merlon-import`
 with the fixed CSV contract in ADR-0015. Run it once with `--dry-run` (the
 default), inspect the JSON report, then use `--apply` after migrations are
-current. The command writes only customers, accounts, account links, and
+current. `--apply` also requires `--actor <operator-or-service-id>` so both
+successful and failed runs have an accountable, durable audit record. The command writes only customers, accounts, account links, and
 transactions; alerts, cases, screening results, score history, and audit
 artifacts are derived by Merlon after the import. The REST replay script in
 [`scripts/migrate-initial-data.py`](https://github.com/ksuk/merlon/blob/main/scripts/migrate-initial-data.py)

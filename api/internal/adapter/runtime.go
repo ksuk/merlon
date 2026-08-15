@@ -88,6 +88,12 @@ type SyncDependencies struct {
 	Transactions domain.TransactionRepository
 	Accounts     domain.AccountRepository
 	Checkpoints  CheckpointRepository
+	Runs         SyncRunRepository
+}
+
+type SyncRunRepository interface {
+	StartSyncRun(context.Context, *SyncRun) error
+	FinishSyncRun(context.Context, *SyncRun, error) error
 }
 
 type SyncOutcome struct {
@@ -98,7 +104,10 @@ type SyncOutcome struct {
 }
 
 type SyncRun struct {
+	ID                  string         `json:"id"`
 	AdapterID           string         `json:"adapter_id"`
+	Status              string         `json:"status"`
+	Error               string         `json:"error,omitempty"`
 	StartedAt           time.Time      `json:"started_at"`
 	CompletedAt         time.Time      `json:"completed_at"`
 	CustomerAccepted    int            `json:"customer_accepted"`
@@ -121,7 +130,9 @@ type SyncService struct {
 	Now       func() time.Time
 }
 
-func (s *SyncService) Run(ctx context.Context) (*SyncRun, error) {
+const adapterLeaseDuration = 30 * time.Second
+
+func (s *SyncService) Run(ctx context.Context) (run *SyncRun, runErr error) {
 	if s.Config == nil || s.Adapter == nil {
 		return nil, fmt.Errorf("adapter config and runtime adapter are required")
 	}
@@ -143,28 +154,51 @@ func (s *SyncService) Run(ctx context.Context) (*SyncRun, error) {
 	if adapterID == "" {
 		adapterID = "rest"
 	}
-	if acquired, err := s.Deps.Checkpoints.Acquire(ctx, adapterID, owner, now, 30*time.Second); err != nil {
+	if acquired, err := s.Deps.Checkpoints.Acquire(ctx, adapterID, owner, now, adapterLeaseDuration); err != nil {
 		return nil, err
 	} else if !acquired {
 		return nil, fmt.Errorf("adapter sync lease is held")
 	}
 	defer s.Deps.Checkpoints.Release(context.Background(), adapterID, owner)
-	checkpoint, err := s.Deps.Checkpoints.Get(ctx, adapterID)
+	runCtx, cancel := context.WithCancel(ctx)
+	leaseErrors := make(chan error, 1)
+	go s.heartbeatLease(runCtx, cancel, adapterID, owner, leaseErrors)
+	defer func() { cancel() }()
+	checkpoint, err := s.Deps.Checkpoints.Get(runCtx, adapterID)
 	if err != nil {
 		return nil, err
 	}
-	run := &SyncRun{AdapterID: adapterID, StartedAt: now, AdapterDigest: digestConfig(s.Config)}
-	if err := s.syncCustomers(ctx, checkpoint, run); err != nil {
+	run = &SyncRun{ID: stableAdapterID("adapter-sync-run", adapterID+"\x00"+now.Format(time.RFC3339Nano)), AdapterID: adapterID, Status: "running", StartedAt: now, AdapterDigest: digestConfig(s.Config)}
+	if s.Deps.Runs != nil {
+		if err := s.Deps.Runs.StartSyncRun(ctx, run); err != nil {
+			return run, err
+		}
+		defer func() {
+			if run.CompletedAt.IsZero() {
+				run.CompletedAt = time.Now().UTC()
+			}
+			run.Checkpoint = *checkpoint
+			if finishErr := s.Deps.Runs.FinishSyncRun(context.WithoutCancel(ctx), run, runErr); finishErr != nil && runErr == nil {
+				runErr = finishErr
+			}
+		}()
+	}
+	if err := s.syncCustomers(runCtx, checkpoint, run); err != nil {
 		run.Failed++
 		return run, err
 	}
-	if err := s.syncTransactions(ctx, checkpoint, run); err != nil {
+	if err := s.syncTransactions(runCtx, checkpoint, run); err != nil {
 		run.Failed++
 		return run, err
 	}
 	checkpoint.UpdatedAt = now
 	checkpoint.AdapterDigest = run.AdapterDigest
-	if err := s.Deps.Checkpoints.Save(ctx, checkpoint); err != nil {
+	select {
+	case leaseErr := <-leaseErrors:
+		return run, leaseErr
+	default:
+	}
+	if err := s.Deps.Checkpoints.Save(runCtx, checkpoint); err != nil {
 		return run, err
 	}
 	run.Checkpoint = *checkpoint
@@ -173,6 +207,33 @@ func (s *SyncService) Run(ctx context.Context) (*SyncRun, error) {
 		run.CompletedAt = s.Now().UTC()
 	}
 	return run, nil
+}
+
+func (s *SyncService) heartbeatLease(ctx context.Context, cancel context.CancelFunc, adapterID, owner string, failures chan<- error) {
+	ticker := time.NewTicker(adapterLeaseDuration / 3)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case at := <-ticker.C:
+			if s.Now != nil {
+				at = s.Now().UTC()
+			}
+			acquired, err := s.Deps.Checkpoints.Acquire(ctx, adapterID, owner, at.UTC(), adapterLeaseDuration)
+			if err == nil && !acquired {
+				err = fmt.Errorf("adapter sync lease ownership was lost")
+			}
+			if err != nil {
+				select {
+				case failures <- err:
+				default:
+				}
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (s *SyncService) syncCustomers(ctx context.Context, checkpoint *SyncCheckpoint, run *SyncRun) error {
@@ -192,7 +253,8 @@ func (s *SyncService) syncCustomers(ctx context.Context, checkpoint *SyncCheckpo
 				return err
 			}
 		}
-		checkpoint.CustomerCursor, checkpoint.CustomerWatermark = page.NextCursor, page.Watermark
+		checkpoint.CustomerCursor = page.NextCursor
+		checkpoint.CustomerWatermark = advanceWatermark(checkpoint.CustomerWatermark, page.Watermark)
 		if err := s.Deps.Checkpoints.Save(ctx, checkpoint); err != nil {
 			return err
 		}
@@ -260,12 +322,19 @@ func (s *SyncService) syncTransactions(ctx context.Context, checkpoint *SyncChec
 		if err != nil {
 			return err
 		}
+		waitingBefore := run.WaitingDependency
 		for _, data := range page.Transactions {
 			if err := s.ingestTransaction(ctx, data, run); err != nil {
 				return err
 			}
 		}
-		checkpoint.TransactionCursor, checkpoint.TransactionWatermark = page.NextCursor, page.Watermark
+		if run.WaitingDependency > waitingBefore {
+			// Do not acknowledge a page containing unresolved dependencies.
+			// Already accepted records are idempotently skipped on the retry.
+			return nil
+		}
+		checkpoint.TransactionCursor = page.NextCursor
+		checkpoint.TransactionWatermark = advanceWatermark(checkpoint.TransactionWatermark, page.Watermark)
 		if err := s.Deps.Checkpoints.Save(ctx, checkpoint); err != nil {
 			return err
 		}
@@ -274,6 +343,22 @@ func (s *SyncService) syncTransactions(ctx context.Context, checkpoint *SyncChec
 		}
 		cursor = page.NextCursor
 	}
+}
+
+func advanceWatermark(current, candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return current
+	}
+	candidateAt, candidateErr := time.Parse(time.RFC3339, candidate)
+	if candidateErr != nil {
+		return current
+	}
+	currentAt, currentErr := time.Parse(time.RFC3339, strings.TrimSpace(current))
+	if currentErr != nil || candidateAt.After(currentAt) {
+		return candidate
+	}
+	return current
 }
 
 func (s *SyncService) ingestTransaction(ctx context.Context, data TransactionData, run *SyncRun) error {

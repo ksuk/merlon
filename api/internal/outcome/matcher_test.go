@@ -53,6 +53,17 @@ func TestMatcherFallsBackToIntervalOverlapAndScenarioUnion(t *testing.T) {
 	}
 }
 
+func TestMatcherDoesNotOverrideTransactionMismatchWithInterval(t *testing.T) {
+	from := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	candidates := []Detection{{ID: "candidate", CustomerID: "cust-1", ScenarioID: "scenario", TransactionIDs: []string{"candidate-tx"}, WindowFrom: &from, WindowTo: &to, DetectedAt: to, ScoreTier: domain.RiskTierHigh, ScoreTierKnown: true}}
+	references := []Reference{{Detection: Detection{ID: "reference", CustomerID: "cust-1", ScenarioID: "scenario", TransactionIDs: []string{"reference-tx"}, WindowFrom: &from, WindowTo: &to, DetectedAt: to}, State: HistoricalState{AlertStatus: domain.AlertStatusClosedTruePositive, ScoreTier: domain.RiskTierHigh, ScoreTierKnown: true}}}
+	result := MatchAlerts(candidates, references, Options{Mode: ModeBacktest, SnapshotAt: to.Add(time.Hour)})
+	if len(result.Matches) != 0 {
+		t.Fatalf("transaction mismatch was overridden by interval: %#v", result.Matches)
+	}
+}
+
 func TestMatcherPreservesUnlabeledAndMarksMissingHistoricalScoreUnevaluable(t *testing.T) {
 	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 	candidates := []Detection{

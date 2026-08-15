@@ -3,11 +3,13 @@ package backtest
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	"github.com/ksuk/merlon/api/internal/outcome"
 	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
 
@@ -21,6 +23,10 @@ type Worker struct {
 	// aggregate-only. Engines that expose alert-shaped detections can inject a
 	// matcher-backed builder without changing the durable job runner.
 	OutcomeBuilder func(context.Context, *domain.BacktestJob) (*domain.BacktestOutcomeAnalysis, []domain.BacktestOutcomeDetail, error)
+	// ReplayOutcomeBuilder consumes detections from the exact aggregate replay
+	// pass. Production wiring uses this path; the legacy callback remains for
+	// compatibility with aggregate-only test engines.
+	ReplayOutcomeBuilder func(context.Context, *domain.BacktestJob, map[domain.OutcomeVariant][]outcome.Detection) (*domain.BacktestOutcomeAnalysis, []domain.BacktestOutcomeDetail, error)
 }
 
 func (w *Worker) Run(ctx context.Context, poll time.Duration) error {
@@ -34,7 +40,9 @@ func (w *Worker) Run(ctx context.Context, poll time.Duration) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			_ = w.RunOnce(ctx) // failed jobs are durably marked; keep the worker alive
+			if err := w.RunOnce(ctx); err != nil && ctx.Err() == nil {
+				slog.Error("backtest worker iteration failed", "error", err)
+			}
 		}
 	}
 }
@@ -55,7 +63,9 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	<-monitorDone
 	if err != nil {
 		if ctx.Err() == nil {
-			_ = w.Jobs.Fail(ctx, job.ID, err.Error())
+			if failErr := w.Jobs.Fail(ctx, job.ID, err.Error()); failErr != nil {
+				slog.Error("mark backtest job failed", "job_id", job.ID, "error", failErr)
+			}
 		}
 		return err
 	}
@@ -67,6 +77,9 @@ func (w *Worker) monitorCancellation(ctx context.Context, jobID string, cancel c
 	defer ticker.Stop()
 	for {
 		job, err := w.Jobs.Get(ctx, jobID)
+		if err != nil && ctx.Err() == nil {
+			slog.Error("read backtest cancellation state", "job_id", jobID, "error", err)
+		}
 		if err == nil && job.Status == domain.BacktestJobCancelled {
 			cancel()
 			return
@@ -111,21 +124,29 @@ func (w *Worker) execute(ctx context.Context, job *domain.BacktestJob) error {
 			return err
 		}
 	}
-	baseline, err := w.runBacktest(ctx, customers, allTxns, job.ScenarioIDs, "baseline:"+job.BaselineRuleSetID, job.BaselineRuleSetID, job.BaselineRuleDefinition)
+	baseline, baselineDetections, err := w.runBacktest(ctx, customers, allTxns, job.ScenarioIDs, "baseline:"+job.BaselineRuleSetID, job.BaselineRuleSetID, job.BaselineRuleDefinition)
 	if err != nil {
 		return err
 	}
-	candidate, err := w.runBacktest(ctx, customers, allTxns, job.ScenarioIDs, "candidate:"+job.CandidateRuleSetID, job.CandidateRuleSetID, job.CandidateRuleDefinition)
+	candidate, candidateDetections, err := w.runBacktest(ctx, customers, allTxns, job.ScenarioIDs, "candidate:"+job.CandidateRuleSetID, job.CandidateRuleSetID, job.CandidateRuleDefinition)
 	if err != nil {
 		return err
 	}
 	delta := diffResult(baseline, candidate)
-	if w.OutcomeBuilder != nil {
+	if w.ReplayOutcomeBuilder != nil || w.OutcomeBuilder != nil {
 		repository, ok := w.Jobs.(domain.BacktestOutcomeRepository)
 		if !ok {
 			return fmt.Errorf("backtest outcome repository is not configured")
 		}
-		analysis, details, err := w.OutcomeBuilder(ctx, job)
+		var analysis *domain.BacktestOutcomeAnalysis
+		var details []domain.BacktestOutcomeDetail
+		if w.ReplayOutcomeBuilder != nil {
+			analysis, details, err = w.ReplayOutcomeBuilder(ctx, job, map[domain.OutcomeVariant][]outcome.Detection{
+				domain.OutcomeVariantBaseline: baselineDetections, domain.OutcomeVariantCandidate: candidateDetections,
+			})
+		} else {
+			analysis, details, err = w.OutcomeBuilder(ctx, job)
+		}
 		if err != nil {
 			return err
 		}
@@ -142,28 +163,42 @@ func (w *Worker) execute(ctx context.Context, job *domain.BacktestJob) error {
 // when the job was created; legacy jobs without that snapshot resolve through
 // the versioned repository. Failing here is safer than reporting a zero delta
 // computed with the wrong rules.
-func (w *Worker) runBacktest(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error) {
+func (w *Worker) runBacktest(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, []outcome.Detection, error) {
 	if ruleSetID == "" || ruleSetID == "active" || (len(definition) == 0 && w.Rules == nil) {
-		return w.Engine.RunBacktest(ctx, customers, transactions, scenarioIDs, description)
+		if detailed, ok := w.Engine.(engine.DetailedBacktestEngine); ok {
+			return detailed.RunBacktestDetailed(ctx, customers, transactions, scenarioIDs, description)
+		}
+		if w.ReplayOutcomeBuilder != nil {
+			return nil, nil, fmt.Errorf("engine does not expose detailed backtest detections")
+		}
+		result, err := w.Engine.RunBacktest(ctx, customers, transactions, scenarioIDs, description)
+		return result, nil, err
 	}
 	if len(definition) == 0 {
 		rule, err := w.Rules.GetActive(ctx, ruleSetID)
 		if err != nil {
-			return nil, fmt.Errorf("resolve rule set %q: %w", ruleSetID, err)
+			return nil, nil, fmt.Errorf("resolve rule set %q: %w", ruleSetID, err)
 		}
 		if rule == nil {
-			return nil, fmt.Errorf("resolve rule set %q: empty definition", ruleSetID)
+			return nil, nil, fmt.Errorf("resolve rule set %q: empty definition", ruleSetID)
 		}
 		if rule.Type != domain.RuleTypeTMScenario {
-			return nil, fmt.Errorf("rule set %q has unsupported type %q; backtests require TM_SCENARIO", ruleSetID, rule.Type)
+			return nil, nil, fmt.Errorf("rule set %q has unsupported type %q; backtests require TM_SCENARIO", ruleSetID, rule.Type)
 		}
 		definition = rule.Definition
 	}
+	if detailed, ok := w.Engine.(engine.VersionedDetailedBacktestEngine); ok {
+		return detailed.RunBacktestWithRuleSetDetailed(ctx, customers, transactions, scenarioIDs, description, ruleSetID, definition)
+	}
+	if w.ReplayOutcomeBuilder != nil {
+		return nil, nil, fmt.Errorf("engine cannot expose detailed detections for versioned rule set %q", ruleSetID)
+	}
 	versioned, ok := w.Engine.(engine.VersionedBacktestEngine)
 	if !ok {
-		return nil, fmt.Errorf("engine cannot replay versioned rule set %q", ruleSetID)
+		return nil, nil, fmt.Errorf("engine cannot replay versioned rule set %q", ruleSetID)
 	}
-	return versioned.RunBacktestWithRuleSet(ctx, customers, transactions, scenarioIDs, description, ruleSetID, definition)
+	result, err := versioned.RunBacktestWithRuleSet(ctx, customers, transactions, scenarioIDs, description, ruleSetID, definition)
+	return result, nil, err
 }
 
 // snapshotTransactions pins the same half-open event-time and inclusive

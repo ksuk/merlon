@@ -172,7 +172,7 @@ func (r *MemoryCustomerReviewRepo) update(_ context.Context, review *domain.Cust
 	if expectedVersion > 0 && current.Version != expectedVersion {
 		return &domain.ErrConflict{Entity: "customer_review", ID: id, Reason: "version does not match the version read by the client"}
 	}
-	if current.Status == domain.CustomerReviewStatusCompleted && review.Status != current.Status {
+	if current.Status == domain.CustomerReviewStatusCompleted {
 		return &domain.ErrConflict{Entity: "customer_review", ID: id, Reason: "completed review is immutable"}
 	}
 	updated := cloneCustomerReview(review)

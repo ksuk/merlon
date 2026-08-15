@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/policy"
 	inboundwebhook "github.com/ksuk/merlon/api/internal/webhook"
 )
 
@@ -50,6 +52,10 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 		outcome.Status, outcome.Reason = inboundwebhook.RecordRejected, "external_id_required"
 		return outcome, nil
 	}
+	if req.SourceUpdatedAt == nil || req.SourceUpdatedAt.IsZero() {
+		outcome.Status, outcome.Reason = inboundwebhook.RecordRejected, "source_updated_at_required"
+		return outcome, nil
+	}
 	if !domain.IsValidCustomerType(req.CustomerType) {
 		outcome.Status, outcome.Reason = inboundwebhook.RecordRejected, "invalid_customer_type"
 		return outcome, nil
@@ -71,6 +77,8 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 
 	existing, err := s.customers.GetByExternalID(ctx, req.ExternalID)
 	if err == nil && existing != nil {
+		beforeAttributes := cloneAnyMap(existing.Attributes)
+		beforeCountry, beforeStatus, beforeProducts := existing.CountryCode, existing.EffectiveStatus(), append([]string(nil), existing.ProductTypes...)
 		outcome.EntityID = existing.ID
 		if req.SourceUpdatedAt != nil && existing.SourceUpdatedAt != nil && !req.SourceUpdatedAt.After(*existing.SourceUpdatedAt) {
 			outcome.Status, outcome.Reason = inboundwebhook.RecordSkipped, "stale_source_updated_at"
@@ -81,14 +89,28 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 		existing.CustomerType, existing.CountryCode = req.CustomerType, req.CountryCode
 		existing.ProductTypes, existing.Status, existing.Attributes = req.ProductTypes, req.Status, req.Attributes
 		existing.SourceUpdatedAt = req.SourceUpdatedAt
-		if err := s.customers.Update(ctx, existing); err != nil {
-			return outcome, fmt.Errorf("update customer %s: %w", req.ExternalID, err)
+		if missing := s.kycMissingFields(existing); len(missing) > 0 && s.policies.KYC().Enforce() == policy.KYCEnforcementReject {
+			outcome.Status, outcome.Reason = inboundwebhook.RecordRejected, "missing_required_identity_fields"
+			return outcome, nil
 		}
-		if err := s.scoreInboundCustomer(ctx, existing); err != nil {
-			return outcome, err
-		}
-		if err := s.auditInboundMutation(ctx, "update", "customers", existing.ID, req.ExternalID); err != nil {
-			return outcome, fmt.Errorf("audit customer update: %w", err)
+		if err := s.runAtomic(ctx, func(repos domain.AtomicMutationRepositories) error {
+			if repos.Customers == nil || repos.Audit == nil {
+				return errAtomicMutationUnavailable
+			}
+			if err := repos.Customers.Update(ctx, existing); err != nil {
+				return err
+			}
+			if err := s.scoreInboundCustomerWithRepo(ctx, existing, repos.Customers); err != nil {
+				return err
+			}
+			if repos.IdentityHistory != nil {
+				if err := repos.IdentityHistory.AppendCustomerIdentityHistory(ctx, &domain.CustomerIdentityHistoryEntry{ID: generateID(), CustomerID: existing.ID, ChangedFields: map[string]any{"before": beforeAttributes, "after": existing.Attributes, "before_country_code": beforeCountry, "after_country_code": existing.CountryCode, "before_status": beforeStatus, "after_status": existing.EffectiveStatus(), "before_product_types": beforeProducts, "after_product_types": existing.ProductTypes}, Actor: "system:inbound-webhook", Rationale: "inbound customer update", CreatedAt: time.Now().UTC()}); err != nil {
+					return err
+				}
+			}
+			return createInboundAudit(ctx, repos.Audit, "update", "customers", existing.ID, req.ExternalID)
+		}); err != nil {
+			return outcome, fmt.Errorf("atomic customer update: %w", err)
 		}
 		outcome.Status = inboundwebhook.RecordUpdated
 		return outcome, nil
@@ -100,24 +122,35 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 	customer := &domain.Customer{ID: generateID(), ExternalID: req.ExternalID, CustomerType: req.CustomerType,
 		CountryCode: req.CountryCode, ProductTypes: req.ProductTypes, Status: req.Status, Attributes: req.Attributes,
 		SourceUpdatedAt: req.SourceUpdatedAt, CreatedAt: now, UpdatedAt: now}
-	if err := s.customers.Create(ctx, customer); err != nil {
-		return outcome, fmt.Errorf("create customer %s: %w", req.ExternalID, err)
+	if missing := s.kycMissingFields(customer); len(missing) > 0 && s.policies.KYC().Enforce() == policy.KYCEnforcementReject {
+		outcome.Status, outcome.Reason = inboundwebhook.RecordRejected, "missing_required_identity_fields"
+		return outcome, nil
 	}
-	if err := s.auditInboundMutation(ctx, "create", "customers", customer.ID, req.ExternalID); err != nil {
-		return outcome, fmt.Errorf("audit customer create: %w", err)
-	}
-	// A push-created customer receives a CDD score immediately when the native
-	// engine is available. Engine outages are dependency failures, so the
-	// durable event will retry instead of silently accepting an unscored record.
-	if err := s.scoreInboundCustomer(ctx, customer); err != nil {
-		return outcome, err
+	if err := s.runAtomic(ctx, func(repos domain.AtomicMutationRepositories) error {
+		if repos.Customers == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		if err := repos.Customers.Create(ctx, customer); err != nil {
+			return err
+		}
+		if err := s.scoreInboundCustomerWithRepo(ctx, customer, repos.Customers); err != nil {
+			return err
+		}
+		if repos.IdentityHistory != nil {
+			if err := repos.IdentityHistory.AppendCustomerIdentityHistory(ctx, &domain.CustomerIdentityHistoryEntry{ID: generateID(), CustomerID: customer.ID, ChangedFields: map[string]any{"after": customer.Attributes, "country_code": customer.CountryCode, "status": customer.EffectiveStatus()}, Actor: "system:inbound-webhook", Rationale: "inbound customer created", CreatedAt: now}); err != nil {
+				return err
+			}
+		}
+		return createInboundAudit(ctx, repos.Audit, "create", "customers", customer.ID, req.ExternalID)
+	}); err != nil {
+		return outcome, fmt.Errorf("atomic customer create: %w", err)
 	}
 	outcome.EntityID, outcome.Status = customer.ID, inboundwebhook.RecordAccepted
 	return outcome, nil
 }
 
-func (s *Server) scoreInboundCustomer(ctx context.Context, customer *domain.Customer) error {
-	if s.scoring == nil || customer == nil || customer.RiskScore != nil {
+func (s *Server) scoreInboundCustomerWithRepo(ctx context.Context, customer *domain.Customer, customers domain.CustomerRepository) error {
+	if s.scoring == nil || customer == nil {
 		return nil
 	}
 	score, err := s.scoring.ScoreCustomer(ctx, customer, "")
@@ -127,11 +160,11 @@ func (s *Server) scoreInboundCustomer(ctx context.Context, customer *domain.Cust
 	if score == nil {
 		return nil
 	}
-	if err := s.customers.SaveScoreRecord(ctx, score); err != nil {
+	if err := customers.SaveScoreRecord(ctx, score); err != nil {
 		return fmt.Errorf("%w: save customer score: %v", inboundwebhook.ErrDependency, err)
 	}
 	customer.RiskScore, customer.RiskTier, customer.LastScoredAt = &score.Score, &score.Tier, &score.ScoredAt
-	if err := s.customers.Update(ctx, customer); err != nil {
+	if err := customers.Update(ctx, customer); err != nil {
 		return fmt.Errorf("%w: update customer score: %v", inboundwebhook.ErrDependency, err)
 	}
 	return nil
@@ -204,7 +237,8 @@ func (s *Server) ingestInboundTransaction(ctx context.Context, index int, raw js
 		accountID = &account.ID
 	}
 	if req.ExecutedAt.IsZero() {
-		req.ExecutedAt = time.Now().UTC()
+		outcome.Status, outcome.Reason = inboundwebhook.RecordRejected, "executed_at_required"
+		return outcome, nil
 	}
 	if repo, ok := s.transactions.(domain.TransactionExternalIDRepository); ok {
 		existing, lookupErr := repo.GetByExternalID(ctx, req.ExternalID)
@@ -226,11 +260,16 @@ func (s *Server) ingestInboundTransaction(ctx context.Context, index int, raw js
 		Currency: req.Currency, Direction: req.Direction, TransactionType: req.TransactionType, AccountID: accountID,
 		CounterpartyID: req.CounterpartyID, CounterpartyCountry: req.CounterpartyCountry, Channel: req.Channel,
 		Metadata: req.Metadata, ExecutedAt: req.ExecutedAt, CreatedAt: now}
-	if err := s.transactions.Create(ctx, txn); err != nil {
-		return outcome, fmt.Errorf("create transaction %s: %w", req.ExternalID, err)
-	}
-	if err := s.auditInboundMutation(ctx, "create", "transactions", txn.ID, req.ExternalID); err != nil {
-		return outcome, fmt.Errorf("audit transaction create: %w", err)
+	if err := s.runAtomic(ctx, func(repos domain.AtomicMutationRepositories) error {
+		if repos.Transactions == nil || repos.Audit == nil {
+			return errAtomicMutationUnavailable
+		}
+		if err := repos.Transactions.Create(ctx, txn); err != nil {
+			return err
+		}
+		return createInboundAudit(ctx, repos.Audit, "create", "transactions", txn.ID, req.ExternalID)
+	}); err != nil {
+		return outcome, fmt.Errorf("atomic transaction create: %w", err)
 	}
 	s.monitorCreatedTransaction(ctx, customer, txn)
 	outcome.EntityID, outcome.Status = txn.ID, inboundwebhook.RecordAccepted
@@ -241,7 +280,7 @@ func inboundTransactionEqual(existing *domain.Transaction, customerID string, ac
 	if existing == nil || existing.CustomerID != customerID || existing.ExternalID != req.ExternalID || existing.Amount != req.Amount ||
 		!strings.EqualFold(existing.Currency, req.Currency) || existing.Direction != req.Direction || existing.TransactionType != req.TransactionType ||
 		existing.CounterpartyID != req.CounterpartyID || existing.CounterpartyCountry != req.CounterpartyCountry || existing.Channel != req.Channel ||
-		existing.ExecutedAt.UnixNano() != req.ExecutedAt.UnixNano() {
+		existing.ExecutedAt.UnixNano() != req.ExecutedAt.UnixNano() || !reflect.DeepEqual(existing.Metadata, req.Metadata) {
 		return false
 	}
 	if existing.AccountID == nil || accountID == nil {
@@ -250,11 +289,8 @@ func inboundTransactionEqual(existing *domain.Transaction, customerID string, ac
 	return *existing.AccountID == *accountID
 }
 
-func (s *Server) auditInboundMutation(ctx context.Context, action, resourceType, resourceID, externalID string) error {
-	if s.audit == nil {
-		return nil
-	}
-	return s.audit.Create(ctx, &domain.AuditEntry{UserID: "system:inbound-webhook", Action: action, ResourceType: resourceType, ResourceID: resourceID,
+func createInboundAudit(ctx context.Context, audit domain.AuditRepository, action, resourceType, resourceID, externalID string) error {
+	return audit.Create(ctx, &domain.AuditEntry{UserID: "system:inbound-webhook", Action: action, ResourceType: resourceType, ResourceID: resourceID,
 		Details: map[string]string{"external_id": externalID, "source": "inbound_webhook"}, CreatedAt: time.Now().UTC()})
 }
 

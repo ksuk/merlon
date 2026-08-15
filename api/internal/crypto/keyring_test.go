@@ -20,7 +20,6 @@ func TestKeyRingParsesMultipleGenerations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseKeyRing: %v", err)
 	}
-
 	k1, err := kr.Key(1)
 	if err != nil {
 		t.Fatalf("Key(1): %v", err)
@@ -28,7 +27,6 @@ func TestKeyRingParsesMultipleGenerations(t *testing.T) {
 	if len(k1) != 32 || k1[0] != 1 {
 		t.Errorf("key v1 = %v, want 32 bytes of 0x01", k1)
 	}
-
 	k2, err := kr.Key(2)
 	if err != nil {
 		t.Fatalf("Key(2): %v", err)
@@ -36,7 +34,6 @@ func TestKeyRingParsesMultipleGenerations(t *testing.T) {
 	if len(k2) != 32 || k2[0] != 2 {
 		t.Errorf("key v2 = %v, want 32 bytes of 0x02", k2)
 	}
-
 	if kr.CurrentVersion() != 2 {
 		t.Errorf("CurrentVersion() = %d, want 2 (highest version)", kr.CurrentVersion())
 	}
@@ -45,7 +42,6 @@ func TestKeyRingParsesMultipleGenerations(t *testing.T) {
 func TestKeyRingFromEnv(t *testing.T) {
 	const envVar = "MERLON_TEST_KEY_RING"
 	t.Setenv(envVar, "v1:"+testKey(9))
-
 	kr, err := NewKeyRingFromEnv(envVar)
 	if err != nil {
 		t.Fatalf("NewKeyRingFromEnv: %v", err)
@@ -76,5 +72,25 @@ func TestKeyRingKeyUnknownVersion(t *testing.T) {
 	}
 	if _, err := kr.Key(99); err == nil {
 		t.Error("expected error for unknown key_version, got nil")
+	}
+}
+
+func TestDeriveCurrentIsStablePurposeSeparatedAndVersioned(t *testing.T) {
+	ring, err := ParseKeyRing("v7:" + testKey(7))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, keyID, err := ring.DeriveCurrent("merlon/screening-fingerprint/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, _ := ring.DeriveCurrent("merlon/screening-fingerprint/v1")
+	other, _, _ := ring.DeriveCurrent("merlon/other-purpose/v1")
+	original, _ := ring.Key(7)
+	if string(first) != string(second) || string(first) == string(other) || string(first) == string(original) {
+		t.Fatal("derived key is not stable and purpose-separated")
+	}
+	if keyID != "screening:v7" {
+		t.Fatalf("key ID = %q", keyID)
 	}
 }

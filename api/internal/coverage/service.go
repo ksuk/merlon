@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -60,6 +61,12 @@ func (s *Service) Create(ctx context.Context, analysis *domain.CoverageAnalysis)
 	if analysis.Kind == "" {
 		analysis.Kind = domain.CoverageAnalysisKind
 	}
+	if analysis.From.IsZero() || analysis.To.IsZero() || !analysis.From.Before(analysis.To) {
+		return nil, fmt.Errorf("coverage analysis requires a valid half-open from/to period")
+	}
+	if analysis.RuleSetID == "" {
+		analysis.RuleSetID = "active"
+	}
 	if analysis.MatcherVersion == "" {
 		analysis.MatcherVersion = outcome.MatcherVersion
 	}
@@ -67,7 +74,7 @@ func (s *Service) Create(ctx context.Context, analysis *domain.CoverageAnalysis)
 		analysis.SnapshotAt = s.clock().UTC()
 	}
 	if len(analysis.Assumptions) == 0 {
-		analysis.Assumptions = []string{"known matter is derived from durable case/STR/alert records", "coverage reports internal known matter only"}
+		analysis.Assumptions = []string{"candidate detections are replayed over the requested half-open period", "known matter is derived from durable case/STR/alert records", "coverage reports internal known matter only"}
 	}
 	if err := s.repository.CreateCoverageAnalysis(ctx, analysis); err != nil {
 		return nil, err
@@ -157,11 +164,15 @@ func (s *Service) Analyze(ctx context.Context, analysis *domain.CoverageAnalysis
 		byScenario[scenario] = coverageSummary(scenarioResult)
 	}
 	if err := s.repository.SaveCoverageMatterResults(ctx, analysis.ID, rows); err != nil {
-		_ = s.repository.FailCoverageAnalysis(ctx, analysis.ID, err.Error())
+		if failErr := s.repository.FailCoverageAnalysis(ctx, analysis.ID, err.Error()); failErr != nil {
+			slog.Error("mark coverage analysis failed", "analysis_id", analysis.ID, "error", failErr)
+		}
 		return nil, err
 	}
 	if err := s.repository.CompleteCoverageAnalysis(ctx, analysis.ID, summary, byScenario); err != nil {
-		_ = s.repository.FailCoverageAnalysis(ctx, analysis.ID, err.Error())
+		if failErr := s.repository.FailCoverageAnalysis(ctx, analysis.ID, err.Error()); failErr != nil {
+			slog.Error("mark coverage analysis failed", "analysis_id", analysis.ID, "error", failErr)
+		}
 		return nil, err
 	}
 	completed, err := s.repository.GetCoverageAnalysis(ctx, analysis.ID)
@@ -190,7 +201,9 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	}
 	candidates, matters, err := s.load(ctx, started)
 	if err != nil {
-		_ = s.repository.FailCoverageAnalysis(ctx, started.ID, err.Error())
+		if failErr := s.repository.FailCoverageAnalysis(ctx, started.ID, err.Error()); failErr != nil {
+			slog.Error("mark coverage analysis failed", "analysis_id", started.ID, "error", failErr)
+		}
 		return err
 	}
 	_, err = s.Analyze(ctx, started, candidates, matters)
@@ -215,8 +228,7 @@ func (s *Service) Run(ctx context.Context, poll time.Duration) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := s.RunOnce(ctx); err != nil && ctx.Err() == nil {
-				// The job is durably failed by RunOnce when loading fails. Keep
-				// polling so a later queued job is not stranded by one bad row.
+				slog.Error("coverage analysis worker iteration failed", "error", err)
 			}
 		}
 	}

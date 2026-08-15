@@ -314,10 +314,10 @@ func (r *PgBacktestJobRepo) SaveBacktestOutcomeAnalysis(ctx context.Context, job
 			id = wave3ID()
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO backtest_outcome_details
-			(id,job_id,variant,candidate_id,reference_id,customer_id,scenario_id,label,metric,score,investigated,matched_alert_id,matched_case_id,matcher_version,assumptions,snapshot_at,provenance,created_at)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,COALESCE($18,now()))
-			ON CONFLICT(job_id,variant,candidate_id) DO UPDATE SET reference_id=EXCLUDED.reference_id,scenario_id=EXCLUDED.scenario_id,label=EXCLUDED.label,metric=EXCLUDED.metric,score=EXCLUDED.score,investigated=EXCLUDED.investigated,matched_alert_id=EXCLUDED.matched_alert_id,matched_case_id=EXCLUDED.matched_case_id,matcher_version=EXCLUDED.matcher_version,assumptions=EXCLUDED.assumptions,snapshot_at=EXCLUDED.snapshot_at,provenance=EXCLUDED.provenance`,
-			id, jobID, string(detail.Variant), detail.CandidateID, detail.ReferenceID, domain.CanonicalUUID(detail.CustomerID), detail.ScenarioID, detail.Label, detail.Metric, detail.Score, detail.Investigated, detail.MatchedAlertID, detail.MatchedCaseID, detail.MatcherVersion, marshalJSON(detail.Assumptions), detail.SnapshotAt, marshalJSON(detail.Provenance), nullableTime(detail.CreatedAt)); err != nil {
+			(id,job_id,variant,change_kind,candidate_id,reference_id,customer_id,scenario_id,label,metric,score,investigated,matched_alert_id,matched_case_id,matcher_version,assumptions,snapshot_at,provenance,created_at)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,COALESCE($19,now()))
+			ON CONFLICT(job_id,variant,candidate_id) DO UPDATE SET change_kind=EXCLUDED.change_kind,reference_id=EXCLUDED.reference_id,scenario_id=EXCLUDED.scenario_id,label=EXCLUDED.label,metric=EXCLUDED.metric,score=EXCLUDED.score,investigated=EXCLUDED.investigated,matched_alert_id=EXCLUDED.matched_alert_id,matched_case_id=EXCLUDED.matched_case_id,matcher_version=EXCLUDED.matcher_version,assumptions=EXCLUDED.assumptions,snapshot_at=EXCLUDED.snapshot_at,provenance=EXCLUDED.provenance`,
+			id, jobID, string(detail.Variant), detail.ChangeKind, detail.CandidateID, detail.ReferenceID, domain.CanonicalUUID(detail.CustomerID), detail.ScenarioID, detail.Label, detail.Metric, detail.Score, detail.Investigated, detail.MatchedAlertID, detail.MatchedCaseID, detail.MatcherVersion, marshalJSON(detail.Assumptions), detail.SnapshotAt, marshalJSON(detail.Provenance), nullableTime(detail.CreatedAt)); err != nil {
 			return err
 		}
 	}
@@ -350,7 +350,7 @@ func (r *PgBacktestJobRepo) GetBacktestOutcomeAnalysis(ctx context.Context, jobI
 }
 
 func (r *PgBacktestJobRepo) ListBacktestOutcomeDetails(ctx context.Context, filter domain.BacktestOutcomeFilter) ([]domain.BacktestOutcomeDetail, error) {
-	query := `SELECT id,job_id::text,variant,candidate_id,reference_id,customer_id::text,scenario_id,label,metric,score,investigated,matched_alert_id,matched_case_id,matcher_version,assumptions,snapshot_at,provenance,created_at FROM backtest_outcome_details WHERE job_id=$1`
+	query := `SELECT id,job_id::text,variant,change_kind,candidate_id,reference_id,customer_id::text,scenario_id,label,metric,score,investigated,matched_alert_id,matched_case_id,matcher_version,assumptions,snapshot_at,provenance,created_at FROM backtest_outcome_details WHERE job_id=$1`
 	args := []any{filter.JobID}
 	if filter.Variant != "" {
 		query += fmt.Sprintf(" AND variant=$%d", len(args)+1)
@@ -383,7 +383,7 @@ func (r *PgBacktestJobRepo) ListBacktestOutcomeDetails(ctx context.Context, filt
 		var item domain.BacktestOutcomeDetail
 		var variant string
 		var assumptions, provenance []byte
-		if err := rows.Scan(&item.ID, &item.JobID, &variant, &item.CandidateID, &item.ReferenceID, &item.CustomerID, &item.ScenarioID, &item.Label, &item.Metric, &item.Score, &item.Investigated, &item.MatchedAlertID, &item.MatchedCaseID, &item.MatcherVersion, &assumptions, &item.SnapshotAt, &provenance, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.JobID, &variant, &item.ChangeKind, &item.CandidateID, &item.ReferenceID, &item.CustomerID, &item.ScenarioID, &item.Label, &item.Metric, &item.Score, &item.Investigated, &item.MatchedAlertID, &item.MatchedCaseID, &item.MatcherVersion, &assumptions, &item.SnapshotAt, &provenance, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		item.Variant = domain.OutcomeVariant(variant)

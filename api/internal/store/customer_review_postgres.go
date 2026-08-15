@@ -235,36 +235,31 @@ func (r *PgCustomerReviewRepo) UpdateIfUnmodified(ctx context.Context, review *d
 func (r *PgCustomerReviewRepo) update(ctx context.Context, review *domain.CustomerReview, expectedVersion int64) error {
 	scope, _ := json.Marshal(review.Scope)
 	evidence, _ := json.Marshal(review.EvidenceRefs)
-	newVersion := review.Version
-	if newVersion <= 0 {
-		newVersion = expectedVersion + 1
-		if newVersion <= 0 {
-			newVersion = 1
-		}
-	}
-	query := `UPDATE customer_reviews SET status=$2,outcome=NULLIF($3,''),tier=$4,previous_tier=NULLIF($5,''),resulting_tier=NULLIF($6,''),assigned_to=$7,assigned_team=$8,priority=$9,due_at=$10,grace_until=$11,overdue_at=$12,policy_version=$13,policy_digest=$14,scope=$15,rationale=$16,evidence_refs=$17,previous_score_id=$18,resulting_score_id=$19,actor=$20,scheduled_at=$21,started_at=$22,completed_at=$23,updated_at=now(),version=$24 WHERE id=$1`
-	args := []any{review.ID, review.Status, review.Outcome, review.Tier, review.PreviousTier, review.ResultingTier, review.AssignedTo, review.AssignedTeam, review.Priority, review.DueAt, review.GraceUntil, review.OverdueAt, review.PolicyVersion, review.PolicyDigest, scope, review.Rationale, evidence, review.PreviousScoreID, review.ResultingScoreID, review.Actor, review.ScheduledAt, review.StartedAt, review.CompletedAt, newVersion}
+	query := `UPDATE customer_reviews SET status=$2,outcome=NULLIF($3,''),tier=$4,previous_tier=NULLIF($5,''),resulting_tier=NULLIF($6,''),assigned_to=$7,assigned_team=$8,priority=$9,due_at=$10,grace_until=$11,overdue_at=$12,policy_version=$13,policy_digest=$14,scope=$15,rationale=$16,evidence_refs=$17,previous_score_id=$18,resulting_score_id=$19,actor=$20,scheduled_at=$21,started_at=$22,completed_at=$23,updated_at=now(),version=version+1 WHERE id=$1 AND status <> 'completed'`
+	args := []any{review.ID, review.Status, review.Outcome, review.Tier, review.PreviousTier, review.ResultingTier, review.AssignedTo, review.AssignedTeam, review.Priority, review.DueAt, review.GraceUntil, review.OverdueAt, review.PolicyVersion, review.PolicyDigest, scope, review.Rationale, evidence, review.PreviousScoreID, review.ResultingScoreID, review.Actor, review.ScheduledAt, review.StartedAt, review.CompletedAt}
 	if expectedVersion > 0 {
-		query += " AND version=$25"
+		query += " AND version=$24"
 		args = append(args, expectedVersion)
 	}
-	tag, err := r.pool.Exec(ctx, query, args...)
-	if err != nil {
+	query += " RETURNING version, updated_at"
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&review.Version, &review.UpdatedAt)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
-		current, getErr := r.Get(ctx, review.ID)
-		if getErr != nil {
-			return getErr
-		}
-		if expectedVersion > 0 && current.Version != expectedVersion {
-			return &domain.ErrConflict{Entity: "customer_review", ID: review.ID, Reason: "version does not match the version read by the client"}
-		}
-		return &domain.ErrNotFound{Entity: "customer_review", ID: review.ID}
+	current, getErr := r.Get(ctx, review.ID)
+	if getErr != nil {
+		return getErr
 	}
-	review.Version = newVersion
-	review.UpdatedAt = time.Now().UTC()
-	return nil
+	if current.Status == domain.CustomerReviewStatusCompleted {
+		return &domain.ErrConflict{Entity: "customer_review", ID: review.ID, Reason: "completed review is immutable"}
+	}
+	if expectedVersion > 0 && current.Version != expectedVersion {
+		return &domain.ErrConflict{Entity: "customer_review", ID: review.ID, Reason: "version does not match the version read by the client"}
+	}
+	return &domain.ErrConflict{Entity: "customer_review", ID: review.ID, Reason: "review was modified concurrently"}
 }
 
 func (r *PgCustomerReviewRepo) UpdateReviewProjection(ctx context.Context, customerID string, next, last *time.Time, tier domain.RiskTier, policyVersion, policyDigest string) error {

@@ -7,6 +7,8 @@
 **/dist
 **/build
 **/coverage
+!api/internal/coverage
+!api/internal/coverage/**
 api/coverage.out
 api/merlon-api
 website/.docusaurus

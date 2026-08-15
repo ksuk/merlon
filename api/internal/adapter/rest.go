@@ -76,20 +76,20 @@ func resolveAuth(cfg AuthConfig) (authProvider, error) {
 	case "bearer":
 		token := os.Getenv(cfg.TokenEnv)
 		if token == "" {
-			return nil, fmt.Errorf("env var %q is empty", cfg.TokenEnv)
+			return nil, fmt.Errorf("bearer authentication credential is unavailable")
 		}
 		return bearerAuth{token: token}, nil
 	case "basic":
 		user := os.Getenv(cfg.UsernameEnv)
 		pass := os.Getenv(cfg.PasswordEnv)
 		if user == "" || pass == "" {
-			return nil, fmt.Errorf("env vars %q/%q must be set", cfg.UsernameEnv, cfg.PasswordEnv)
+			return nil, fmt.Errorf("basic authentication credentials are unavailable")
 		}
 		return basicAuth{user: user, pass: pass}, nil
 	case "header":
 		val := os.Getenv(cfg.HeaderValEnv)
 		if val == "" {
-			return nil, fmt.Errorf("env var %q is empty", cfg.HeaderValEnv)
+			return nil, fmt.Errorf("header authentication credential is unavailable")
 		}
 		return headerAuth{name: cfg.HeaderName, value: val}, nil
 	default:

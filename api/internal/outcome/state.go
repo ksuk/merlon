@@ -43,7 +43,11 @@ func HistoricalStateAt(alert domain.Alert, decisions []domain.AlertDecisionEvent
 		}
 		state.STRFiled = true
 	}
-	if tier, ok := TierAt(scores, snapshot); ok {
+	scoreAt := alert.DetectedAt
+	if scoreAt.IsZero() {
+		scoreAt = snapshot
+	}
+	if tier, ok := TierAt(scores, scoreAt); ok {
 		state.ScoreTier, state.ScoreTierKnown = tier, true
 	}
 	return state

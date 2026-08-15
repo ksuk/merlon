@@ -79,7 +79,7 @@ func (r *PgInboundWebhookRepo) ListDueEvents(ctx context.Context, now time.Time,
 		limit = 100
 	}
 	rows, err := r.pool.Query(ctx, `SELECT `+inboundEventColumns+` FROM inbound_webhook_events
-		WHERE status IN ('accepted','failed') AND next_attempt_at <= $1
+		WHERE status IN ('accepted','failed','running') AND next_attempt_at <= $1
 		ORDER BY next_attempt_at, id LIMIT $2`, now, limit)
 	if err != nil {
 		return nil, err

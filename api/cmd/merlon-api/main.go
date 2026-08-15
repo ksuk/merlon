@@ -312,12 +312,14 @@ func main() {
 	// ring leaves customers.attributes' direct PII fields in plaintext --
 	// acceptable for local/dev use but not production.
 	var encryptor *crypto.Encryptor
+	var encryptionKeyRing *crypto.KeyRing
 	if cfg.EncryptionKeyRing != "" {
 		keyRing, err := crypto.NewKeyRingFromEnv("MERLON_ENCRYPTION_KEY_RING")
 		if err != nil {
 			slog.Error("encryption key ring", "error", err)
 			os.Exit(1)
 		}
+		encryptionKeyRing = keyRing
 		encryptor = crypto.NewEncryptor(keyRing)
 		slog.Info("customer PII field encryption enabled")
 	} else {
@@ -354,7 +356,7 @@ func main() {
 		deps.CaseAlertLifecycle = store.NewPgCaseAlertLifecycleRepo(pool)
 		deps.CaseInvestigation = store.NewPgCaseInvestigationRepo(pool)
 		deps.AlertDecisions = store.NewPgAlertDecisionRepo(pool)
-		deps.Atomic = store.NewPgAtomicMutationRepo(pool)
+		deps.Atomic = store.NewPgAtomicMutationRepoWithEncryptor(pool, encryptor)
 		deps.EventOutbox = store.NewPgEventOutboxRepo(pool)
 		deps.Webhooks = store.NewPgWebhookRepo(pool, encryptor)
 		inboundConfig := inboundwebhook.Config{
@@ -490,6 +492,17 @@ func main() {
 	// consolidation. A deployment may intentionally run without rule roots
 	// during setup/migrations; engine-backed endpoints remain disabled then.
 	if nativeEngine, nativeErr := native.NewFromEnv(); nativeErr == nil {
+		if encryptionKeyRing != nil {
+			fingerprintKey, keyID, deriveErr := encryptionKeyRing.DeriveCurrent("merlon/screening-fingerprint/v1")
+			if deriveErr != nil {
+				slog.Error("derive screening fingerprint key", "error", deriveErr)
+				os.Exit(1)
+			}
+			if setErr := nativeEngine.SetScreeningFingerprintKey(fingerprintKey, keyID); setErr != nil {
+				slog.Error("configure screening fingerprint key", "error", setErr)
+				os.Exit(1)
+			}
+		}
 		deps.Scoring = nativeEngine
 		deps.Monitoring = nativeEngine
 		deps.Screening = nativeEngine
@@ -519,10 +532,13 @@ func main() {
 		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{
 			Repository: deps.CoverageAnalyses.Repository(),
 			Load: coverage.NewLoader(coverage.LoaderDependencies{
-				Customers: deps.Customers,
-				Alerts:    deps.Alerts,
-				Cases:     deps.Cases,
-				Reports:   deps.Reports,
+				Customers:      deps.Customers,
+				Alerts:         deps.Alerts,
+				Cases:          deps.Cases,
+				Reports:        deps.Reports,
+				AlertDecisions: deps.AlertDecisions,
+				Transactions:   deps.Transactions,
+				Engine:         deps.Backtest,
 			}),
 		})
 	}
@@ -664,7 +680,12 @@ func main() {
 		} else {
 			checkpoints = adapterpkg.NewMemoryCheckpointRepository()
 		}
-		go runAdapterSyncPeriodically(jobsCtx, &adapterpkg.SyncService{AdapterID: "core", Config: configuredAdapterConfig, Adapter: configuredAdapter, Deps: adapterpkg.SyncDependencies{Customers: deps.Customers, Transactions: deps.Transactions, Accounts: deps.Accounts, Checkpoints: checkpoints}, Owner: "merlon-api"}, configuredAdapterConfig.Sync.Interval)
+		var syncRuns adapterpkg.SyncRunRepository
+		if repository, ok := checkpoints.(adapterpkg.SyncRunRepository); ok {
+			syncRuns = repository
+		}
+		adapterOwner := fmt.Sprintf("merlon-api:%d:%d", os.Getpid(), time.Now().UTC().UnixNano())
+		go runAdapterSyncPeriodically(jobsCtx, &adapterpkg.SyncService{AdapterID: "core", Config: configuredAdapterConfig, Adapter: configuredAdapter, Deps: adapterpkg.SyncDependencies{Customers: deps.Customers, Transactions: deps.Transactions, Accounts: deps.Accounts, Checkpoints: checkpoints, Runs: syncRuns}, Owner: adapterOwner}, configuredAdapterConfig.Sync.Interval)
 		slog.Info("adapter sync enabled", "interval", configuredAdapterConfig.Sync.Interval)
 	}
 	if runAPIJobs {
@@ -777,7 +798,12 @@ func main() {
 	defer cancelBacktest()
 	if runWorkerJobs && deps.BacktestJobs != nil && deps.Backtest != nil {
 		for i := 0; i < cfg.WorkerConcurrency; i++ {
-			worker := &backtestworker.Worker{Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules}
+			worker := &backtestworker.Worker{
+				Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules,
+				ReplayOutcomeBuilder: backtestworker.NewReplayOutcomeBuilder(backtestworker.ReplayOutcomeDependencies{
+					Customers: deps.Customers, Alerts: deps.Alerts, Cases: deps.Cases, Reports: deps.Reports, AlertDecisions: deps.AlertDecisions,
+				}),
+			}
 			workerID := i + 1
 			go func() {
 				if err := worker.Run(backtestCtx, time.Second); err != nil && !errors.Is(err, context.Canceled) {

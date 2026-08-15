@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -111,7 +112,7 @@ func TestInboundWebhookUsesCommonRepositoryIngestor(t *testing.T) {
 	repo := store.NewMemoryInboundWebhookRepo()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	s := New(":0", Deps{Customers: customers, Transactions: transactions, InboundWebhooks: inboundwebhook.NewServiceWithConfig(inboundwebhook.Config{Repository: repo, Secret: secret, Clock: func() time.Time { return now }})})
-	body := `{"records":[{"external_id":"EXT-COMMON-1","customer_type":"individual","country_code":"JP","attributes":{"name":"Webhook User"}}]}`
+	body := fmt.Sprintf(`{"records":[{"external_id":"EXT-COMMON-1","customer_type":"individual","country_code":"JP","attributes":{"name":"Webhook User"},"source_updated_at":%q}]}`, now.Format(time.RFC3339Nano))
 	req := inboundRequest(http.MethodPost, "/api/v1/webhooks/inbound/customers", secret, "evt-common-1", now, body)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

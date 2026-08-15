@@ -2,12 +2,39 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 )
+
+func TestMemoryTransactionCreateConflictLeavesNoPartialIndexes(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMemoryTransactionRepo()
+	first := &domain.Transaction{ID: "00000000000000000000000000000001", CustomerID: "00000000000000000000000000000011", ExternalID: "external-1"}
+	if err := repo.Create(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	idempotencyValue := "idempotency-2"
+	conflicting := &domain.Transaction{ID: "00000000000000000000000000000002", CustomerID: first.CustomerID, ExternalID: first.ExternalID, IdempotencyKey: &idempotencyValue}
+	if err := repo.Create(ctx, conflicting); err == nil {
+		t.Fatal("expected external_id conflict")
+	}
+	if _, err := repo.Get(ctx, conflicting.ID); err == nil {
+		t.Fatal("conflicting transaction was partially inserted")
+	} else {
+		var notFound *domain.ErrNotFound
+		if !errors.As(err, &notFound) {
+			t.Fatalf("Get error = %v, want not found", err)
+		}
+	}
+	retry := &domain.Transaction{ID: "00000000000000000000000000000003", CustomerID: first.CustomerID, ExternalID: "external-3", IdempotencyKey: &idempotencyValue}
+	if err := repo.Create(ctx, retry); err != nil {
+		t.Fatalf("idempotency key leaked from failed insert: %v", err)
+	}
+}
 
 func TestMemoryCustomerRepo_ListByCursor_MatchesListTraversal(t *testing.T) {
 	repo := NewMemoryCustomerRepo()

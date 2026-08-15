@@ -790,6 +790,7 @@ export interface BacktestOutcomeAnalysis {
   candidate: OutcomeSummary
   delta: OutcomeSummary
   by_scenario?: Record<string, OutcomeSummary>
+  customer_period?: Array<{ customer_id: string; scenario_id: string; from: string; to: string; baseline: OutcomeSummary; candidate: OutcomeSummary; delta: OutcomeSummary }>
   generated_at: string
 }
 
@@ -797,6 +798,7 @@ export interface BacktestOutcomeDetail {
   id: string
   job_id: string
   variant: OutcomeVariant
+  change_kind?: "added" | "removed" | "changed"
   candidate_id: string
   reference_id?: string
   customer_id: string
@@ -835,6 +837,9 @@ export interface CoverageAnalysis {
   status: CoverageAnalysisStatus
   scenario_ids?: string[]
   customer_ids?: string[]
+  from: string
+  to: string
+  rule_set_id: string
   snapshot_at: string
   matcher_version: string
   assumptions: string[]
@@ -2052,7 +2057,7 @@ export const api = {
       const query = qs.toString()
       return request<CoverageAnalysesPage>(`/coverage-analyses${query ? `?${query}` : ""}`)
     },
-    create: (data?: { scenario_ids?: string[]; customer_ids?: string[]; snapshot_at?: string }) =>
+    create: (data: { from: string; to: string; rule_set_id?: string; scenario_ids?: string[]; customer_ids?: string[]; snapshot_at?: string }) =>
       request<CoverageAnalysis>("/coverage-analyses", { method: "POST", body: JSON.stringify(data ?? {}) }),
     get: (id: string) => request<CoverageAnalysis>(`/coverage-analyses/${encodeURIComponent(id)}`),
     matters: (id: string, params?: CursorPageParams & { scenarioId?: string; label?: OutcomeLabel }) => {

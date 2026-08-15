@@ -311,12 +311,15 @@ func TestMigration037BlocksMissingAndCrossCustomerLinks(t *testing.T) {
 var appRoleDMLTables = []string{
 	"account_customers",
 	"accounts",
+	"adapter_checkpoints",
+	"adapter_sync_runs",
 	"alerts",
 	"api_keys",
 	"backtest_job_affected_customers",
 	"backtest_job_customer_snapshots",
 	"backtest_job_customers",
 	"backtest_jobs",
+	"backtest_outcome_details",
 	"batch_runs",
 	"cdd_score_overrides",
 	"case_notes",
@@ -324,9 +327,15 @@ var appRoleDMLTables = []string{
 	"case_relationships",
 	"case_work_items",
 	"cases",
+	"coverage_analyses",
+	"coverage_analysis_matters",
+	"customer_reviews",
 	"customer_score_history",
 	"customers",
 	"domain_event_outbox",
+	"import_runs",
+	"inbound_webhook_events",
+	"inbound_webhook_record_outcomes",
 	"pending_evaluations",
 	"refresh_tokens",
 	"retention_policies",
@@ -348,7 +357,7 @@ var appRoleDMLTables = []string{
 	"whitelist_reviews",
 }
 
-var appRoleAppendOnlyTables = []string{"alert_decision_events", "audit_logs", "case_events", "customer_edd_events", "case_evidence", "case_relationship_events", "customer_identity_history", "pending_evaluation_history", "rule_activation_events", "screening_result_history", "str_report_events"}
+var appRoleAppendOnlyTables = []string{"adapter_sync_outcomes", "alert_decision_events", "audit_logs", "case_events", "customer_edd_events", "case_evidence", "case_relationship_events", "customer_identity_history", "import_record_outcomes", "pending_evaluation_history", "rule_activation_events", "screening_result_history", "str_report_events"}
 
 func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 	migrations, err := loadMigrations("../../../migrations")
@@ -367,7 +376,7 @@ func TestApplicationRoleGrantClassificationCoversMigrationTables(t *testing.T) {
 		}
 	}
 	classified := append(append([]string{}, appRoleDMLTables...), appRoleAppendOnlyTables...)
-	const expectedApplicationTableCount = 48
+	const expectedApplicationTableCount = 59
 	if len(migrationTables) != expectedApplicationTableCount {
 		t.Fatalf("extracted %d migration tables, want %d: %v", len(migrationTables), expectedApplicationTableCount, migrationTables)
 	}

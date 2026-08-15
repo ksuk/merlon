@@ -47,6 +47,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, er
 	if !opts.dryRun && !opts.apply {
 		opts.dryRun = true
 	}
+	if opts.apply && strings.TrimSpace(opts.actor) == "" {
+		return errors.New("--actor is required with --apply")
+	}
 	service := &ingestion.Importer{}
 	var pool *pgxpool.Pool
 	if opts.apply {
@@ -72,13 +75,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, er
 		}
 		customers := store.NewPgCustomerRepo(pool, encryptor)
 		service.Deps = ingestion.Dependencies{Customers: customers, Accounts: store.NewPgAccountRepo(pool), Transactions: store.NewPgTransactionRepo(pool)}
+		service.Recorder = &pgImportRunRecorder{pool: pool}
 	}
 	report, err := service.Run(ctx, ingestion.Options{SourceDir: opts.sourceDir, DryRun: opts.dryRun, Apply: opts.apply, OnDuplicate: opts.onDuplicate, Actor: opts.actor, ReportJSON: opts.reportJSON})
-	if err == nil && opts.apply && report != nil {
-		if persistErr := persistReport(ctx, pool, report); persistErr != nil {
-			return persistErr
-		}
-	}
 	if report != nil {
 		if opts.reportJSON != "" {
 			file, writeErr := os.OpenFile(opts.reportJSON, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
@@ -100,19 +99,34 @@ func run(ctx context.Context, args []string, getenv func(string) string, out, er
 	return err
 }
 
-func persistReport(ctx context.Context, pool *pgxpool.Pool, report *ingestion.Report) error {
-	tx, err := pool.Begin(ctx)
+type pgImportRunRecorder struct{ pool *pgxpool.Pool }
+
+func (r *pgImportRunRecorder) Start(ctx context.Context, report *ingestion.Report) error {
+	_, err := r.pool.Exec(ctx, `INSERT INTO import_runs(id,source_dir,actor,mode,status,source_files,result_counts,started_at)
+		VALUES($1,$2,$3,'apply','running','{}','{}',$4)`, report.ID, report.SourceDir, report.Actor, report.StartedAt)
+	return err
+}
+
+func (r *pgImportRunRecorder) Finish(ctx context.Context, report *ingestion.Report, runErr error) error {
+	ctx = context.WithoutCancel(ctx)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 	files, _ := json.Marshal(report.SourceFiles)
 	counts, _ := json.Marshal(report.Counts)
-	if _, err := tx.Exec(ctx, `INSERT INTO import_runs(id,source_dir,actor,mode,status,source_files,result_counts,started_at,completed_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, report.ID, report.SourceDir, report.Actor, "apply", "completed", files, counts, report.StartedAt, report.CompletedAt); err != nil {
+	status := "completed"
+	errorMessage := ""
+	if runErr != nil {
+		status = "failed"
+		errorMessage = runErr.Error()
+	}
+	if _, err := tx.Exec(ctx, `UPDATE import_runs SET status=$2,source_files=$3,result_counts=$4,error_message=$5,completed_at=$6 WHERE id=$1`, report.ID, status, files, counts, errorMessage, report.CompletedAt); err != nil {
 		return err
 	}
 	for _, outcome := range report.Outcomes {
-		if _, err := tx.Exec(ctx, `INSERT INTO import_record_outcomes(run_id,entity_type,external_id,source_file,line_number,payload_sha256,status,reason_code) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, report.ID, outcome.EntityType, outcome.ExternalID, outcome.SourceFile, outcome.Line, outcome.PayloadSHA256, outcome.Status, outcome.ReasonCode); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO import_record_outcomes(run_id,entity_type,external_id,source_file,line_number,payload_sha256,status,reason_code) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (run_id,entity_type,external_id,source_file,line_number) DO NOTHING`, report.ID, outcome.EntityType, outcome.ExternalID, outcome.SourceFile, outcome.Line, outcome.PayloadSHA256, outcome.Status, outcome.ReasonCode); err != nil {
 			return err
 		}
 	}

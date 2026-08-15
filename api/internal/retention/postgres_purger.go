@@ -53,6 +53,7 @@ var CustomerReferencingTables = []string{
 	"cdd_score_overrides",
 	"customer_edd_events",
 	"customer_identity_history",
+	"customer_reviews",
 	"customer_score_history",
 	"pending_evaluations",
 	"screening_results",
@@ -217,6 +218,7 @@ func (p *PostgresPurger) CustomerData(ctx context.Context, cutoff, now time.Time
 		  AND NOT EXISTS (SELECT 1 FROM customer_score_history sh WHERE sh.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM customer_identity_history ih WHERE ih.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM customer_edd_events ee WHERE ee.customer_id = c.id)
+		  AND NOT EXISTS (SELECT 1 FROM customer_reviews cr WHERE cr.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM cdd_score_overrides ov WHERE ov.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM screening_runs sr WHERE sr.customer_id = c.id)
 		  AND NOT EXISTS (SELECT 1 FROM screening_results res WHERE res.customer_id = c.id)

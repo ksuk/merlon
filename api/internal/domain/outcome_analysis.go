@@ -34,13 +34,25 @@ type BacktestOutcomeAnalysis struct {
 	Candidate      OutcomeSummary            `json:"candidate"`
 	Delta          OutcomeSummary            `json:"delta"`
 	ByScenario     map[string]OutcomeSummary `json:"by_scenario,omitempty"`
+	CustomerPeriod []CustomerPeriodOutcome   `json:"customer_period,omitempty"`
 	GeneratedAt    time.Time                 `json:"generated_at"`
+}
+
+type CustomerPeriodOutcome struct {
+	CustomerID string         `json:"customer_id"`
+	ScenarioID string         `json:"scenario_id"`
+	From       time.Time      `json:"from"`
+	To         time.Time      `json:"to"`
+	Baseline   OutcomeSummary `json:"baseline"`
+	Candidate  OutcomeSummary `json:"candidate"`
+	Delta      OutcomeSummary `json:"delta"`
 }
 
 type BacktestOutcomeDetail struct {
 	ID             string            `json:"id"`
 	JobID          string            `json:"job_id"`
 	Variant        OutcomeVariant    `json:"variant"`
+	ChangeKind     string            `json:"change_kind,omitempty"`
 	CandidateID    string            `json:"candidate_id"`
 	ReferenceID    string            `json:"reference_id,omitempty"`
 	CustomerID     string            `json:"customer_id"`
@@ -99,6 +111,9 @@ type CoverageAnalysis struct {
 	Status         CoverageAnalysisStatus     `json:"status"`
 	ScenarioIDs    []string                   `json:"scenario_ids,omitempty"`
 	CustomerIDs    []string                   `json:"customer_ids,omitempty"`
+	From           time.Time                  `json:"from"`
+	To             time.Time                  `json:"to"`
+	RuleSetID      string                     `json:"rule_set_id"`
 	SnapshotAt     time.Time                  `json:"snapshot_at"`
 	MatcherVersion string                     `json:"matcher_version"`
 	Assumptions    []string                   `json:"assumptions"`

@@ -6,17 +6,22 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/outcome"
+	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
 
 // LoaderDependencies describes the durable source rows used by the default
 // coverage worker. The loader deliberately reads through repositories and
 // applies the analysis snapshot before invoking BuildKnownMatterUnion.
 type LoaderDependencies struct {
-	Customers domain.CustomerRepository
-	Alerts    domain.AlertRepository
-	Cases     domain.CaseRepository
-	Reports   domain.ReportRepository
+	Customers      domain.CustomerRepository
+	Alerts         domain.AlertRepository
+	Cases          domain.CaseRepository
+	Reports        domain.ReportRepository
+	AlertDecisions domain.AlertDecisionRepository
+	Transactions   domain.TransactionRepository
+	Engine         engine.BacktestEngine
 }
 
 func NewLoader(deps LoaderDependencies) func(context.Context, *domain.CoverageAnalysis) ([]outcome.Detection, []outcome.Reference, error) {
@@ -24,7 +29,7 @@ func NewLoader(deps LoaderDependencies) func(context.Context, *domain.CoverageAn
 		if analysis == nil {
 			return nil, nil, fmt.Errorf("coverage analysis is required")
 		}
-		if deps.Customers == nil || deps.Alerts == nil || deps.Cases == nil || deps.Reports == nil {
+		if deps.Customers == nil || deps.Alerts == nil || deps.Cases == nil || deps.Reports == nil || deps.AlertDecisions == nil || deps.Transactions == nil || deps.Engine == nil {
 			return nil, nil, fmt.Errorf("coverage source repositories are not configured")
 		}
 		customerIDs, err := coverageCustomerIDs(ctx, deps.Customers, analysis.CustomerIDs)
@@ -32,11 +37,23 @@ func NewLoader(deps LoaderDependencies) func(context.Context, *domain.CoverageAn
 			return nil, nil, err
 		}
 		snapshot := analysis.SnapshotAt
-		candidateAlerts := make([]domain.Alert, 0)
+		allSnapshotAlerts := make([]domain.Alert, 0)
 		allCases := make([]domain.Case, 0)
 		allReports := make([]domain.STRReport, 0)
-		candidates := make([]outcome.Detection, 0)
+		scoresByCustomer := make(map[string][]domain.ScoreRecord, len(customerIDs))
+		selectedCustomers := make([]domain.Customer, 0, len(customerIDs))
+		transactions := make([]domain.Transaction, 0)
 		for _, customerID := range customerIDs {
+			customer, err := deps.Customers.Get(ctx, customerID)
+			if err != nil {
+				return nil, nil, err
+			}
+			selectedCustomers = append(selectedCustomers, *customer)
+			customerTransactions, err := transactionhistory.ListCustomerTransactionsAsOf(ctx, deps.Transactions, customerID, transactionhistory.Query{From: analysis.From, To: analysis.To, CreatedThrough: snapshot})
+			if err != nil {
+				return nil, nil, err
+			}
+			transactions = append(transactions, customerTransactions...)
 			alerts, err := listCustomerAlerts(ctx, deps.Alerts, customerID)
 			if err != nil {
 				return nil, nil, err
@@ -55,16 +72,45 @@ func NewLoader(deps LoaderDependencies) func(context.Context, *domain.CoverageAn
 			if err != nil {
 				return nil, nil, err
 			}
+			scoresByCustomer[customerID] = scores
 			for _, alert := range alerts {
-				if afterSnapshot(alert.DetectedAt, snapshot) || !matchesScenario(alert.ScenarioID, analysis.ScenarioIDs) {
+				if afterSnapshot(alert.DetectedAt, snapshot) {
 					continue
 				}
-				tier, known := outcome.TierAt(scores, alert.DetectedAt)
-				candidates = append(candidates, outcome.Detection{ID: alert.ID, CustomerID: alert.CustomerID, ScenarioID: alert.ScenarioID, TransactionIDs: append([]string(nil), alert.TransactionIDs...), DetectedAt: alert.DetectedAt, ScoreTier: tier, ScoreTierKnown: known})
-				candidateAlerts = append(candidateAlerts, alert)
+				decisions, err := deps.AlertDecisions.ListDecisions(ctx, alert.ID)
+				if err != nil {
+					return nil, nil, err
+				}
+				if alert.UpdatedAt.After(snapshot) {
+					alert.Status = ""
+				}
+				alert.Status = outcome.HistoricalStateAt(alert, decisions, nil, nil, nil, snapshot).AlertStatus
+				allSnapshotAlerts = append(allSnapshotAlerts, alert)
 			}
 		}
-		return candidates, BuildKnownMatterUnion(candidateAlerts, allCases, allReports), nil
+		if analysis.RuleSetID != "" && analysis.RuleSetID != "active" {
+			return nil, nil, fmt.Errorf("coverage replay rule set %q is not available from the pinned active engine", analysis.RuleSetID)
+		}
+		detailed, ok := deps.Engine.(engine.DetailedBacktestEngine)
+		if !ok {
+			return nil, nil, fmt.Errorf("coverage replay engine does not expose detailed detections")
+		}
+		_, candidates, err := detailed.RunBacktestDetailed(ctx, selectedCustomers, transactions, analysis.ScenarioIDs, "coverage:"+analysis.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		for index := range candidates {
+			candidates[index].ScoreTier, candidates[index].ScoreTierKnown = outcome.TierAt(scoresByCustomer[candidates[index].CustomerID], candidates[index].DetectedAt)
+		}
+		matters := BuildKnownMatterUnion(allSnapshotAlerts, allCases, allReports)
+		for index := range matters {
+			tier, known := outcome.TierAt(scoresByCustomer[matters[index].CustomerID], matters[index].DetectedAt)
+			matters[index].ScoreTier = tier
+			matters[index].ScoreTierKnown = known
+			matters[index].State.ScoreTier = tier
+			matters[index].State.ScoreTierKnown = known
+		}
+		return candidates, matters, nil
 	}
 }
 

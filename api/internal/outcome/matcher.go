@@ -12,7 +12,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
-const MatcherVersion = "outcome-matcher-v1"
+const MatcherVersion = "outcome-matcher-v2"
 
 type Label string
 
@@ -174,7 +174,7 @@ func match(candidates []Detection, references []Reference, options Options) Resu
 
 	assumptions := []string{
 		"alert is the primary matching granularity",
-		"transaction-set Jaccard is preferred; interval overlap is the fallback",
+		"transaction-set Jaccard is authoritative when both sides provide transaction IDs; interval overlap is used only when either side lacks IDs",
 		"candidate threshold is inclusive at 0.50",
 		"one-to-one assignment sorts overlap descending, time delta ascending, then IDs",
 		"unlabeled and unevaluable observations are excluded from rates",
@@ -289,18 +289,15 @@ func compatible(candidate, reference Detection, mode Mode) bool {
 }
 
 func overlap(candidate, reference Detection) (string, float64, bool) {
-	bestMetric, bestScore, found := "", 0.0, false
 	if len(candidate.TransactionIDs) > 0 && len(reference.TransactionIDs) > 0 {
 		if score := jaccard(candidate.TransactionIDs, reference.TransactionIDs); score >= 0 {
-			bestMetric, bestScore, found = MetricTransactions, score, true
+			return MetricTransactions, score, true
 		}
 	}
 	if score, ok := intervalOverlap(candidate.WindowFrom, candidate.WindowTo, reference.WindowFrom, reference.WindowTo); ok {
-		if !found || score > bestScore {
-			bestMetric, bestScore, found = MetricInterval, score, true
-		}
+		return MetricInterval, score, true
 	}
-	return bestMetric, bestScore, found
+	return "", 0, false
 }
 
 func jaccard(left, right []string) float64 {

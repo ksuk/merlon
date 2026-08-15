@@ -56,11 +56,19 @@ func (r *PgAccountRepo) GetByExternalID(ctx context.Context, externalID string) 
 }
 
 func (r *PgAccountRepo) AddCustomer(ctx context.Context, accountID, customerID string, role domain.AccountRole) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO account_customers (account_id, customer_id, role) VALUES ($1, $2, $3)`,
+	tag, err := r.pool.Exec(ctx,
+		`INSERT INTO account_customers (account_id, customer_id, role) VALUES ($1, $2, $3)
+		 ON CONFLICT (account_id, customer_id) DO UPDATE SET role=account_customers.role
+		 WHERE account_customers.role = EXCLUDED.role`,
 		accountID, customerID, string(role),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrConflict{Entity: "account_customer", ID: accountID + ":" + customerID, Reason: "role differs from existing link"}
+	}
+	return nil
 }
 
 func (r *PgAccountRepo) ListCustomers(ctx context.Context, accountID string) ([]domain.AccountCustomer, error) {

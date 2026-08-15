@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,12 +26,13 @@ import (
 )
 
 const (
-	DefaultMaxBodyBytes  = 10 << 20
-	DefaultMaxRecords    = 1000
-	DefaultTimestampSkew = 5 * time.Minute
-	DefaultRetryInterval = 30 * time.Second
-	DefaultMaxRetryAge   = time.Hour
-	DefaultMaxAttempts   = 8
+	DefaultMaxBodyBytes      = 10 << 20
+	DefaultMaxRecords        = 1000
+	DefaultTimestampSkew     = 5 * time.Minute
+	DefaultRetryInterval     = 30 * time.Second
+	DefaultMaxRetryAge       = time.Hour
+	DefaultMaxAttempts       = 8
+	DefaultVisibilityTimeout = 5 * time.Minute
 )
 
 type Kind string
@@ -218,17 +220,18 @@ type PayloadCipher interface {
 type RecordHandler func(context.Context, Kind, int, json.RawMessage) (RecordOutcome, error)
 
 type Config struct {
-	Repository    EventRepository
-	Secret        []byte
-	Cipher        PayloadCipher
-	Handler       RecordHandler
-	Clock         func() time.Time
-	MaxBodyBytes  int
-	MaxRecords    int
-	MaxSkew       time.Duration
-	RetryInterval time.Duration
-	MaxRetryAge   time.Duration
-	MaxAttempts   int
+	Repository        EventRepository
+	Secret            []byte
+	Cipher            PayloadCipher
+	Handler           RecordHandler
+	Clock             func() time.Time
+	MaxBodyBytes      int
+	MaxRecords        int
+	MaxSkew           time.Duration
+	RetryInterval     time.Duration
+	MaxRetryAge       time.Duration
+	MaxAttempts       int
+	VisibilityTimeout time.Duration
 }
 
 type Service struct {
@@ -240,6 +243,7 @@ type Service struct {
 	maxBodyBytes, maxRecords   int
 	retryInterval, maxRetryAge time.Duration
 	maxAttempts                int
+	visibilityTimeout          time.Duration
 }
 
 func NewService(repo EventRepository, secret []byte) *Service {
@@ -271,6 +275,10 @@ func NewServiceWithConfig(cfg Config) *Service {
 	if attempts <= 0 {
 		attempts = DefaultMaxAttempts
 	}
+	visibilityTimeout := cfg.VisibilityTimeout
+	if visibilityTimeout <= 0 {
+		visibilityTimeout = DefaultVisibilityTimeout
+	}
 	cipherImpl := cfg.Cipher
 	if cipherImpl == nil {
 		cipherImpl = newEphemeralCipher()
@@ -280,7 +288,7 @@ func NewServiceWithConfig(cfg Config) *Service {
 		auth:   Authenticator{Secret: append([]byte(nil), cfg.Secret...), Clock: clock, MaxSkew: cfg.MaxSkew},
 		cipher: cipherImpl, handler: cfg.Handler, clock: clock,
 		maxBodyBytes: maxBody, maxRecords: maxRecords,
-		retryInterval: interval, maxRetryAge: maxAge, maxAttempts: attempts,
+		retryInterval: interval, maxRetryAge: maxAge, maxAttempts: attempts, visibilityTimeout: visibilityTimeout,
 	}
 }
 
@@ -428,6 +436,9 @@ func (s *Service) Process(ctx context.Context, id string) (*Event, error) {
 	}
 	event.AttemptCount++
 	event.Status = StatusRunning
+	// A worker crash leaves the row running. NextAttemptAt is its visibility
+	// deadline, after which another worker may safely retry it.
+	event.NextAttemptAt = now.Add(s.visibilityTimeout)
 	event.LastAttemptAt = &now
 	event.UpdatedAt = now
 	if err := s.repo.UpdateEvent(ctx, event); err != nil {
@@ -534,10 +545,13 @@ func (s *Service) RunWorker(ctx context.Context, pollInterval time.Duration) err
 		case now := <-ticker.C:
 			events, err := s.repo.ListDueEvents(ctx, now.UTC(), 100)
 			if err != nil {
+				slog.Error("list due inbound webhook events", "error", err)
 				continue
 			}
 			for i := range events {
-				_, _ = s.Process(ctx, events[i].ID)
+				if _, err := s.Process(ctx, events[i].ID); err != nil && ctx.Err() == nil {
+					slog.Error("process inbound webhook event", "event_id", events[i].ID, "error", err)
+				}
 			}
 		}
 	}
@@ -648,7 +662,7 @@ func (r *MemoryEventRepository) ListDueEvents(_ context.Context, now time.Time, 
 	defer r.mu.RUnlock()
 	var result []Event
 	for _, event := range r.events {
-		if (event.Status == StatusAccepted || event.Status == StatusFailed) && !event.NextAttemptAt.After(now) {
+		if (event.Status == StatusAccepted || event.Status == StatusFailed || event.Status == StatusRunning) && !event.NextAttemptAt.After(now) {
 			result = append(result, *cloneEvent(event))
 			if limit > 0 && len(result) >= limit {
 				break

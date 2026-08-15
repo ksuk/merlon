@@ -14,7 +14,7 @@ func TestAnalyzePersistsCoveredNotCoveredAndUnevaluableMatters(t *testing.T) {
 	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
 	repo := store.NewMemoryCoverageAnalysisRepo()
 	svc := NewService(Dependencies{Repository: repo, Clock: func() time.Time { return now }})
-	analysis, err := svc.Create(context.Background(), &domain.CoverageAnalysis{ID: "coverage-1", SnapshotAt: now})
+	analysis, err := svc.Create(context.Background(), &domain.CoverageAnalysis{ID: "coverage-1", From: now.Add(-24 * time.Hour), To: now, SnapshotAt: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestRunOnceClaimsQueuedAnalysisAndCompletesIt(t *testing.T) {
 	svc := NewService(Dependencies{Repository: repo, Clock: func() time.Time { return now }, Load: func(_ context.Context, analysis *domain.CoverageAnalysis) ([]outcome.Detection, []outcome.Reference, error) {
 		return []outcome.Detection{{ID: "candidate", CustomerID: "cust-1", TransactionIDs: []string{"tx"}, DetectedAt: analysis.SnapshotAt, ScoreTier: domain.RiskTierHigh, ScoreTierKnown: true}}, []outcome.Reference{{Detection: outcome.Detection{ID: "matter", CustomerID: "cust-1", TransactionIDs: []string{"tx"}, DetectedAt: analysis.SnapshotAt, ScoreTier: domain.RiskTierHigh, ScoreTierKnown: true}}}, nil
 	}})
-	if _, err := svc.Create(context.Background(), &domain.CoverageAnalysis{ID: "queued-1", SnapshotAt: now}); err != nil {
+	if _, err := svc.Create(context.Background(), &domain.CoverageAnalysis{ID: "queued-1", From: now.Add(-24 * time.Hour), To: now, SnapshotAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.RunOnce(context.Background()); err != nil {

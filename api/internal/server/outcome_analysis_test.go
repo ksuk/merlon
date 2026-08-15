@@ -50,7 +50,7 @@ func TestCoverageAnalysisEndpointsQueueAndListMatters(t *testing.T) {
 	clock := func() time.Time { return time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC) }
 	svc := coverage.NewService(coverage.Dependencies{Repository: repo, Clock: clock})
 	s := New(":0", Deps{CoverageAnalyses: svc})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/coverage-analyses", strings.NewReader(`{"scenario_ids":["scenario-a"]}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/coverage-analyses", strings.NewReader(`{"scenario_ids":["scenario-a"],"from":"2026-08-01T00:00:00Z","to":"2026-08-15T00:00:00Z"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

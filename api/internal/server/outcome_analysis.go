@@ -57,6 +57,9 @@ func (s *Server) handleBacktestOutcomes(w http.ResponseWriter, r *http.Request) 
 type createCoverageAnalysisRequest struct {
 	ScenarioIDs []string `json:"scenario_ids,omitempty"`
 	CustomerIDs []string `json:"customer_ids,omitempty"`
+	From        string   `json:"from"`
+	To          string   `json:"to"`
+	RuleSetID   string   `json:"rule_set_id,omitempty"`
 	SnapshotAt  string   `json:"snapshot_at,omitempty"`
 }
 
@@ -70,6 +73,16 @@ func (s *Server) handleCreateCoverageAnalysis(w http.ResponseWriter, r *http.Req
 		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "invalid JSON")
 		return
 	}
+	from, err := time.Parse(time.RFC3339, strings.TrimSpace(req.From))
+	if err != nil {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "from must be RFC3339")
+		return
+	}
+	to, err := time.Parse(time.RFC3339, strings.TrimSpace(req.To))
+	if err != nil || !from.Before(to) {
+		writeErrorCode(w, http.StatusBadRequest, apierr.CodeValidationFailed, "to must be RFC3339 and after from")
+		return
+	}
 	snapshot := time.Now().UTC()
 	if strings.TrimSpace(req.SnapshotAt) != "" {
 		parsed, err := time.Parse(time.RFC3339, req.SnapshotAt)
@@ -79,7 +92,7 @@ func (s *Server) handleCreateCoverageAnalysis(w http.ResponseWriter, r *http.Req
 		}
 		snapshot = parsed.UTC()
 	}
-	analysis, err := s.coverageAnalyses.Create(r.Context(), &domain.CoverageAnalysis{ScenarioIDs: uniqueNonEmpty(req.ScenarioIDs), CustomerIDs: uniqueNonEmpty(req.CustomerIDs), SnapshotAt: snapshot})
+	analysis, err := s.coverageAnalyses.Create(r.Context(), &domain.CoverageAnalysis{ScenarioIDs: uniqueNonEmpty(req.ScenarioIDs), CustomerIDs: uniqueNonEmpty(req.CustomerIDs), From: from.UTC(), To: to.UTC(), RuleSetID: strings.TrimSpace(req.RuleSetID), SnapshotAt: snapshot})
 	if err != nil {
 		writeCoverageError(w, err)
 		return

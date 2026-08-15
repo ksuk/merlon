@@ -11,7 +11,8 @@ title: 初期データ移行
 
 初期移行では ADR-0015 の固定 CSV 契約に従い、`go run ./api/cmd/merlon-import` を使用する。
 まず `--dry-run`（デフォルト）で実行して JSON レポートを確認し、マイグレーション適用済みの
-環境で `--apply` を実行する。このコマンドが書き込むのは顧客・口座・口座リンク・取引だけで、
+環境で `--apply --actor <運用者またはサービスID>` を実行する。`--actor` は適用時に必須であり、
+成功・失敗のいずれも責任主体を含む永続的な実行記録として残る。このコマンドが書き込むのは顧客・口座・口座リンク・取引だけで、
 アラート、ケース、スクリーニング結果、スコア履歴、監査成果物は投入後に Merlon が生成する。
 小規模な互換性ロードでは、従来の REST リプレイ
 [`scripts/migrate-initial-data.py`](https://github.com/ksuk/merlon/blob/main/scripts/migrate-initial-data.py)

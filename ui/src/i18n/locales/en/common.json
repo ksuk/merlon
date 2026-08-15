@@ -1851,6 +1851,8 @@
     "detail": { "title": "Analysis {{id}}" },
     "stats": { "knownMatter": "Known matter", "covered": "Covered", "notCovered": "Not covered", "unevaluable": "Unevaluable", "rate": "Coverage rate" },
     "matcher": "Matcher: {{version}}",
+    "period": "Replay period: {{from}} – {{to}}",
+    "ruleSet": "Rule set: {{value}}",
     "snapshot": "Snapshot: {{value}}",
     "covered": "Covered",
     "notCovered": "Not covered",

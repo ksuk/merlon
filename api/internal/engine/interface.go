@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/outcome"
 )
 
 type ScoringEngine interface {
@@ -160,6 +161,17 @@ type BacktestEngine interface {
 // deployments that use a fixed configuration root.
 type VersionedBacktestEngine interface {
 	RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error)
+}
+
+// DetailedBacktestEngine exposes the alert-shaped detections produced by the
+// same replay pass as the aggregate. This prevents outcome analysis from
+// rerunning a potentially different rule/configuration snapshot.
+type DetailedBacktestEngine interface {
+	RunBacktestDetailed(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description string) (*domain.BacktestResult, []outcome.Detection, error)
+}
+
+type VersionedDetailedBacktestEngine interface {
+	RunBacktestWithRuleSetDetailed(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, []outcome.Detection, error)
 }
 
 // ConfigValidationErrorClass separates mistakes that need different fixes

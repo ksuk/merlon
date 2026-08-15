@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -158,11 +159,9 @@ func (s *Service) ensureCustomer(ctx context.Context, customer *domain.Customer,
 		} else if status == domain.CustomerReviewStatusOverdue {
 			result.Overdue++
 		}
-		var last *time.Time
-		if latest != nil {
-			last = latest.CompletedAt
-		}
-		return s.project(ctx, customer.ID, &updated, last)
+		// The active cycle has no CompletedAt by definition. Preserve the
+		// projection of the most recently completed cycle instead of erasing it.
+		return s.project(ctx, customer.ID, &updated, customer.LastReviewAt)
 	}
 
 	previousTier := domain.RiskTier("")
@@ -432,6 +431,12 @@ func (s *Service) Complete(ctx context.Context, id string, completion domain.Cus
 	}
 
 	payload, _ := json.Marshal(map[string]any{"review_id": review.ID, "customer_id": review.CustomerID, "cycle": review.Cycle, "outcome": review.Outcome, "actor": review.Actor, "resulting_score_id": lastScoreID})
+	auditAction := "customer_review.completed"
+	outboxTopic := "customer.review.completed"
+	if review.Status == domain.CustomerReviewStatusBlocked {
+		auditAction = "customer_review.blocked"
+		outboxTopic = "customer.review.blocked"
+	}
 	reviewUpdated := false
 	mutate := func(repos domain.AtomicMutationRepositories) error {
 		if score != nil {
@@ -448,10 +453,10 @@ func (s *Service) Complete(ctx context.Context, id string, completion domain.Cus
 		if repos.Audit == nil || repos.EventOutbox == nil {
 			return ErrNotConfigured
 		}
-		if err := repos.Audit.Create(ctx, &domain.AuditEntry{UserID: review.Actor, Action: "customer_review.completed", ResourceType: "customer_reviews", ResourceID: review.ID, Details: map[string]string{"outcome": string(review.Outcome), "rationale": review.Rationale, "evidence_count": fmt.Sprint(len(review.EvidenceRefs))}, CreatedAt: now}); err != nil {
+		if err := repos.Audit.Create(ctx, &domain.AuditEntry{UserID: review.Actor, Action: auditAction, ResourceType: "customer_reviews", ResourceID: review.ID, Details: map[string]string{"outcome": string(review.Outcome), "rationale": review.Rationale, "evidence_count": fmt.Sprint(len(review.EvidenceRefs))}, CreatedAt: now}); err != nil {
 			return err
 		}
-		if err := repos.EventOutbox.Enqueue(ctx, &domain.DurableEvent{ID: "customer-review:" + review.ID + ":" + fmt.Sprint(review.Version+1), Topic: "customer.review.completed", Payload: payload, ChainID: review.ID, CreatedAt: now}); err != nil {
+		if err := repos.EventOutbox.Enqueue(ctx, &domain.DurableEvent{ID: "customer-review:" + review.ID + ":" + fmt.Sprint(review.Version+1), Topic: outboxTopic, Payload: payload, ChainID: review.ID, CreatedAt: now}); err != nil {
 			return err
 		}
 		if repos.CustomerReviews != nil {
@@ -496,7 +501,9 @@ func (s *Service) RunDailySweep(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = 24 * time.Hour
 	}
-	_, _ = s.Sweep(ctx, s.clock())
+	if _, err := s.Sweep(ctx, s.clock()); err != nil && ctx.Err() == nil {
+		slog.Error("CDD review daily sweep failed", "error", err)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -504,7 +511,9 @@ func (s *Service) RunDailySweep(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_, _ = s.Sweep(ctx, s.clock())
+			if _, err := s.Sweep(ctx, s.clock()); err != nil && ctx.Err() == nil {
+				slog.Error("CDD review daily sweep failed", "error", err)
+			}
 		}
 	}
 }

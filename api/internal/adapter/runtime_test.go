@@ -71,13 +71,21 @@ func TestSyncServiceProcessesCustomersBeforeTransactionsAndPersistsCheckpoint(t 
 func TestSyncServiceKeepsTransactionPendingWhenCustomerIsMissing(t *testing.T) {
 	customers := store.NewMemoryCustomerRepo()
 	transactions := store.NewMemoryTransactionRepo()
-	fake := &fakeRuntimeAdapter{customerPages: []*adapter.CustomerPage{{}}, transactionPages: []*adapter.TransactionPage{{Transactions: []adapter.TransactionData{{ExternalID: "T-1", CustomerExternalID: "missing", Amount: "1", Direction: string(domain.DirectionInbound)}}}}}
-	run, err := (&adapter.SyncService{Config: runtimeConfig(), Adapter: fake, Deps: adapter.SyncDependencies{Customers: customers, Transactions: transactions, Checkpoints: adapter.NewMemoryCheckpointRepository()}}).Run(context.Background())
+	checkpoints := adapter.NewMemoryCheckpointRepository()
+	if err := checkpoints.Save(context.Background(), &adapter.SyncCheckpoint{AdapterID: "rest", TransactionCursor: "before", TransactionWatermark: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeRuntimeAdapter{customerPages: []*adapter.CustomerPage{{}}, transactionPages: []*adapter.TransactionPage{{NextCursor: "after", Watermark: "2026-01-02T00:00:00Z", Transactions: []adapter.TransactionData{{ExternalID: "T-1", CustomerExternalID: "missing", Amount: "1", Direction: string(domain.DirectionInbound)}}}}}
+	run, err := (&adapter.SyncService{Config: runtimeConfig(), Adapter: fake, Deps: adapter.SyncDependencies{Customers: customers, Transactions: transactions, Checkpoints: checkpoints}}).Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if run.WaitingDependency != 1 || len(run.Outcomes) != 1 || run.Outcomes[0].Status != "waiting_dependency" {
 		t.Fatalf("run=%+v", run)
+	}
+	checkpoint, _ := checkpoints.Get(context.Background(), "rest")
+	if checkpoint.TransactionCursor != "before" || checkpoint.TransactionWatermark != "2026-01-01T00:00:00Z" {
+		t.Fatalf("waiting dependency advanced checkpoint: %#v", checkpoint)
 	}
 }
 
@@ -90,5 +98,23 @@ func TestSyncServiceLeasePreventsConcurrentRun(t *testing.T) {
 	}
 	if ok, err := checkpoints.Acquire(context.Background(), "core", "worker-b", now, time.Minute); err != nil || ok {
 		t.Fatalf("second lease ok=%v err=%v", ok, err)
+	}
+}
+
+func TestSyncServicePreservesWatermarksWhenTerminalPageOmitsThem(t *testing.T) {
+	checkpoints := adapter.NewMemoryCheckpointRepository()
+	previousCustomer := "2026-01-01T00:00:00Z"
+	previousTransaction := "2026-01-02T00:00:00Z"
+	if err := checkpoints.Save(context.Background(), &adapter.SyncCheckpoint{AdapterID: "core", CustomerWatermark: previousCustomer, TransactionWatermark: previousTransaction}); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeRuntimeAdapter{customerPages: []*adapter.CustomerPage{{Watermark: ""}}, transactionPages: []*adapter.TransactionPage{{Watermark: ""}}}
+	_, err := (&adapter.SyncService{AdapterID: "core", Config: runtimeConfig(), Adapter: fake, Deps: adapter.SyncDependencies{Customers: store.NewMemoryCustomerRepo(), Transactions: store.NewMemoryTransactionRepo(), Checkpoints: checkpoints}}).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, _ := checkpoints.Get(context.Background(), "core")
+	if checkpoint.CustomerWatermark != previousCustomer || checkpoint.TransactionWatermark != previousTransaction {
+		t.Fatalf("watermarks regressed: %#v", checkpoint)
 	}
 }

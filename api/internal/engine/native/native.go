@@ -6,6 +6,7 @@ package native
 import (
 	"context"
 	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -24,6 +25,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/outcome"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"gopkg.in/yaml.v3"
 )
@@ -168,9 +170,12 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 		paths = []string{tmPath}
 	}
 	sort.Strings(paths)
+	ephemeralFingerprintKey := make([]byte, sha256.Size)
+	if _, err := cryptorand.Read(ephemeralFingerprintKey); err != nil {
+		return nil, fmt.Errorf("generate ephemeral screening fingerprint key: %w", err)
+	}
 	e := &Engine{cdd: cdd, cddDigest: digest(cddYAML), screeningThreshold: 0.85,
-		screeningHMACKey:   []byte(firstNonEmpty(os.Getenv("MERLON_SCREENING_HMAC_KEY"), "merlon-screening-dev-key-v1")),
-		screeningHMACKeyID: firstNonEmpty(os.Getenv("MERLON_SCREENING_HMAC_KEY_ID"), "screening-dev-v1"),
+		screeningHMACKey: ephemeralFingerprintKey, screeningHMACKeyID: "screening:ephemeral",
 	}
 	for _, path := range paths {
 		content, readErr := os.ReadFile(path)
@@ -1539,6 +1544,19 @@ func (e *Engine) ReplaceScreeningLists(raw []screening.RawListData) {
 	e.listsMu.Unlock()
 }
 
+// SetScreeningFingerprintKey installs the purpose-derived key selected by the
+// composition root. Local engines retain their random process-local key.
+func (e *Engine) SetScreeningFingerprintKey(key []byte, keyID string) error {
+	if len(key) < sha256.Size || strings.TrimSpace(keyID) == "" {
+		return fmt.Errorf("screening fingerprint key and key ID are required")
+	}
+	e.listsMu.Lock()
+	e.screeningHMACKey = append([]byte(nil), key...)
+	e.screeningHMACKeyID = strings.TrimSpace(keyID)
+	e.listsMu.Unlock()
+	return nil
+}
+
 type screeningCustomerIdentifiers struct {
 	datesOfBirth []string
 	addresses    []string
@@ -1771,12 +1789,15 @@ func (e *Engine) screeningMatchEvidence(comparison secondaryComparison, entry sc
 	if len(comparison.addresses) > 0 {
 		fingerprints["address"] = e.screeningFingerprints(comparison.addresses)
 	}
+	e.listsMu.RLock()
+	listDigest := e.screeningDigest
+	e.listsMu.RUnlock()
 	return map[string]any{
 		"status":                      overall,
 		"policy_version":              screeningIdentifierPolicyVersion,
 		"policy_digest":               digest([]byte("screening-secondary-identifiers-v1|dob=.10|address=.05|country=.03|entity_type=.02|address_match=.80|address_mismatch=.50")),
 		"algorithm_version":           screeningIdentifierAlgorithm,
-		"list_snapshot_digest":        e.screeningDigest,
+		"list_snapshot_digest":        listDigest,
 		"secondary_identifiers":       statuses,
 		"fingerprints":                fingerprints,
 		"list_entry_identifier_count": len(entry.DatesOfBirth) + len(entry.Addresses),
@@ -1784,11 +1805,10 @@ func (e *Engine) screeningMatchEvidence(comparison secondaryComparison, entry sc
 }
 
 func (e *Engine) screeningFingerprints(values []string) []map[string]string {
-	key := e.screeningHMACKey
-	if len(key) == 0 {
-		key = []byte("merlon-screening-dev-key-v1")
-	}
-	keyID := firstNonEmpty(e.screeningHMACKeyID, "screening-dev-v1")
+	e.listsMu.RLock()
+	key := append([]byte(nil), e.screeningHMACKey...)
+	keyID := e.screeningHMACKeyID
+	e.listsMu.RUnlock()
 	out := make([]map[string]string, 0, len(values))
 	for _, value := range values {
 		mac := hmac.New(sha256.New, key)
@@ -1852,14 +1872,24 @@ func normalize(s string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, _ string) (*domain.BacktestResult, error) {
+	result, _, err := e.RunBacktestDetailed(ctx, customers, txns, ids, "")
+	return result, err
+}
+
+func (e *Engine) RunBacktestDetailed(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, _ string) (*domain.BacktestResult, []outcome.Detection, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	started := time.Now()
 	result := &domain.BacktestResult{BacktestID: fmt.Sprintf("native-%d", started.UnixNano()), TotalCustomers: len(customers), TotalTransactions: len(txns)}
+	detections := make([]outcome.Detection, 0)
+	transactionsByID := make(map[string]domain.Transaction, len(txns))
+	for _, transaction := range txns {
+		transactionsByID[transaction.ID] = transaction
+	}
 	for _, c := range customers {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		tier := func() domain.RiskTier {
 			if c.RiskTier != nil {
@@ -1878,9 +1908,10 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 		// row (migrations 027/032); per-alert provenance would duplicate it.
 		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both", provenanceContext{})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, a := range alerts {
+			detections = append(detections, replayDetection(a, transactionsByID))
 			result.TotalAlerts++
 			found := -1
 			for i := range result.ScenarioResults {
@@ -1913,12 +1944,39 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 	})
 	for i := range result.ScenarioResults {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		sort.Strings(result.ScenarioResults[i].AffectedCustomerIDs)
 	}
 	result.ExecutionTimeMs = float64(time.Since(started).Microseconds()) / 1000
-	return result, nil
+	sort.Slice(detections, func(i, j int) bool { return detections[i].ID < detections[j].ID })
+	return result, detections, nil
+}
+
+func replayDetection(alert domain.Alert, transactions map[string]domain.Transaction) outcome.Detection {
+	ids := append([]string(nil), alert.TransactionIDs...)
+	sort.Strings(ids)
+	hash := sha256.Sum256([]byte(alert.CustomerID + "\x00" + alert.ScenarioID + "\x00" + strings.Join(ids, "\x00")))
+	detection := outcome.Detection{ID: "replay:" + hex.EncodeToString(hash[:16]), CustomerID: alert.CustomerID, ScenarioID: alert.ScenarioID, TransactionIDs: ids}
+	for _, id := range ids {
+		transaction, ok := transactions[id]
+		if !ok || transaction.ExecutedAt.IsZero() {
+			continue
+		}
+		at := transaction.ExecutedAt.UTC()
+		if detection.WindowFrom == nil || at.Before(*detection.WindowFrom) {
+			copy := at
+			detection.WindowFrom = &copy
+		}
+		if detection.WindowTo == nil || at.After(*detection.WindowTo) {
+			copy := at
+			detection.WindowTo = &copy
+		}
+		if detection.DetectedAt.IsZero() || at.After(detection.DetectedAt) {
+			detection.DetectedAt = at
+		}
+	}
+	return detection
 }
 
 // RunBacktestWithRuleSet replays a candidate TM scenario against an isolated
@@ -1927,21 +1985,29 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 // definition is replaced. This keeps candidate comparisons auditable and
 // prevents a rule-version probe from mutating the live evaluator.
 func (e *Engine) RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error) {
+	result, _, err := e.RunBacktestWithRuleSetDetailed(ctx, customers, txns, ids, description, ruleSetID, definition)
+	return result, err
+}
+
+func (e *Engine) RunBacktestWithRuleSetDetailed(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, []outcome.Detection, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if strings.TrimSpace(ruleSetID) == "" {
-		return nil, fmt.Errorf("rule set id must not be empty")
+		return nil, nil, fmt.Errorf("rule set id must not be empty")
 	}
 	s, err := parseScenario(definition)
 	if err != nil {
-		return nil, fmt.Errorf("parse rule set %q: %w", ruleSetID, err)
+		return nil, nil, fmt.Errorf("parse rule set %q: %w", ruleSetID, err)
 	}
 	if !scenarioHasSupportedDetector(s) {
-		return nil, fmt.Errorf("rule set %q has unknown scenario type: %s", ruleSetID, s.ID)
+		return nil, nil, fmt.Errorf("rule set %q has unknown scenario type: %s", ruleSetID, s.ID)
 	}
 	e.listsMu.RLock()
 	lists := append([]screeningList(nil), e.lists...)
+	screeningDigest := e.screeningDigest
+	screeningHMACKey := append([]byte(nil), e.screeningHMACKey...)
+	screeningHMACKeyID := e.screeningHMACKeyID
 	e.listsMu.RUnlock()
 	candidate := &Engine{
 		cdd:                e.cdd,
@@ -1950,10 +2016,12 @@ func (e *Engine) RunBacktestWithRuleSet(ctx context.Context, customers []domain.
 		scenarios:          []scenario{s},
 		tmDigest:           e.tmDigest,
 		lists:              lists,
-		screeningDigest:    e.screeningDigest,
+		screeningDigest:    screeningDigest,
 		screeningThreshold: e.screeningThreshold,
+		screeningHMACKey:   screeningHMACKey,
+		screeningHMACKeyID: screeningHMACKeyID,
 	}
-	return candidate.RunBacktest(ctx, customers, txns, ids, description)
+	return candidate.RunBacktestDetailed(ctx, customers, txns, ids, description)
 }
 
 func (e *Engine) ValidateConfig(ctx context.Context, typ, content string) (*engine.ConfigValidationResult, error) {

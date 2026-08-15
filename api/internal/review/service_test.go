@@ -169,6 +169,51 @@ func TestUnableToCompleteBlocksWithoutAdvancingProjection(t *testing.T) {
 	if !sameReviewProjection(before, after) {
 		t.Fatalf("blocked review advanced projection: before=%#v after=%#v", before, after)
 	}
+	entries, err := audit.List(context.Background(), domain.AuditListFilter{ResourceType: "customer_reviews", Limit: 10})
+	if err != nil || len(entries) != 1 || entries[0].Action != "customer_review.blocked" {
+		t.Fatalf("blocked audit entries = %#v, err=%v", entries, err)
+	}
+	pending, err := outbox.ListPending(context.Background(), 10)
+	if err != nil || len(pending) != 1 || pending[0].Topic != "customer.review.blocked" {
+		t.Fatalf("blocked outbox = %#v, err=%v", pending, err)
+	}
+}
+
+func TestSweepKeepsLastCompletedReviewWhenNextCycleIsActive(t *testing.T) {
+	now := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	customers := store.NewMemoryCustomerRepo()
+	reviews := store.NewMemoryCustomerReviewRepo()
+	c := reviewCustomer(t, customers, now)
+	s := NewService(Dependencies{
+		Reviews: reviews, Customers: customers,
+		Audit: store.NewMemoryAuditRepo(), Outbox: store.NewMemoryEventOutboxRepo(),
+		Clock: func() time.Time { return now },
+	})
+	if _, err := s.Sweep(context.Background(), now); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := reviews.LatestByCustomer(context.Background(), c.ID)
+	if _, err := s.Complete(context.Background(), first.ID, domain.CustomerReviewCompletion{
+		Outcome: domain.CustomerReviewOutcomeRatingUnchanged, Rationale: "checked",
+		EvidenceRefs: []string{"doc:1"}, Scope: map[string]any{"fields": []any{"all"}},
+		ExpectedVersion: first.Version, Actor: "analyst", Role: "analyst",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	completedProjection, _ := customers.Get(context.Background(), c.ID)
+	if completedProjection.LastReviewAt == nil {
+		t.Fatal("completion did not set last_review_at")
+	}
+	if _, err := s.Sweep(context.Background(), now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Sweep(context.Background(), now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := customers.Get(context.Background(), c.ID)
+	if after.LastReviewAt == nil || !after.LastReviewAt.Equal(*completedProjection.LastReviewAt) {
+		t.Fatalf("last_review_at = %v, want %v", after.LastReviewAt, completedProjection.LastReviewAt)
+	}
 }
 
 func sameReviewProjection(left, right *domain.Customer) bool {

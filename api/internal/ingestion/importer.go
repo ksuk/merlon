@@ -82,8 +82,16 @@ type Dependencies struct {
 	Transactions domain.TransactionRepository
 }
 
+// RunRecorder persists the lifecycle independently from imported records so
+// a crash or partial apply remains visible to operators.
+type RunRecorder interface {
+	Start(ctx context.Context, report *Report) error
+	Finish(ctx context.Context, report *Report, runErr error) error
+}
+
 type Importer struct {
-	Deps Dependencies
+	Deps     Dependencies
+	Recorder RunRecorder
 }
 
 type parsedBundle struct {
@@ -127,12 +135,26 @@ type transactionRow struct {
 	line                                                                                                      int
 }
 
-func (i *Importer) Run(ctx context.Context, opts Options) (*Report, error) {
+func (i *Importer) Run(ctx context.Context, opts Options) (report *Report, runErr error) {
 	if err := validateOptions(opts); err != nil {
 		return nil, err
 	}
 	started := time.Now().UTC()
-	report := &Report{ID: deterministicID("import-run", started.Format(time.RFC3339Nano)+opts.SourceDir), SourceDir: opts.SourceDir, Actor: opts.Actor, DryRun: opts.DryRun || !opts.Apply, Applied: false, StartedAt: started, SourceFiles: map[string]string{}, Counts: map[string]int{}, Outcomes: []RecordOutcome{}}
+	report = &Report{ID: deterministicID("import-run", started.Format(time.RFC3339Nano)+opts.SourceDir), SourceDir: opts.SourceDir, Actor: opts.Actor, DryRun: opts.DryRun || !opts.Apply, Applied: false, StartedAt: started, SourceFiles: map[string]string{}, Counts: map[string]int{}, Outcomes: []RecordOutcome{}}
+	if i.Recorder != nil {
+		if err := i.Recorder.Start(ctx, report); err != nil {
+			return report, fmt.Errorf("record import start: %w", err)
+		}
+		defer func() {
+			report.Counts = countOutcomes(report.Outcomes)
+			if report.CompletedAt.IsZero() {
+				report.CompletedAt = time.Now().UTC()
+			}
+			if err := i.Recorder.Finish(ctx, report, runErr); err != nil && runErr == nil {
+				runErr = fmt.Errorf("record import finish: %w", err)
+			}
+		}()
+	}
 	bundle, err := readBundle(opts.SourceDir, report)
 	if err != nil {
 		return report, err
@@ -176,6 +198,9 @@ func validateOptions(opts Options) error {
 	}
 	if opts.Apply && opts.DryRun {
 		return errors.New("--dry-run and --apply are mutually exclusive")
+	}
+	if opts.Apply && strings.TrimSpace(opts.Actor) == "" {
+		return errors.New("--actor is required with --apply")
 	}
 	if opts.OnDuplicate == "" {
 		opts.OnDuplicate = DuplicateSkip
@@ -326,6 +351,9 @@ func parseAccounts(body []byte) ([]accountRow, error) {
 		if err != nil {
 			return nil, err
 		}
+		if len(row) != len(fixedHeaders[accountsFile]) {
+			return nil, fmt.Errorf("line %d: wrong column count", line)
+		}
 		if row[0] == "" {
 			return nil, fmt.Errorf("line %d external_id is required", line)
 		}
@@ -347,6 +375,9 @@ func parseLinks(body []byte) ([]linkRow, error) {
 		if err != nil {
 			return nil, err
 		}
+		if len(row) != len(fixedHeaders[accountCustomersFile]) {
+			return nil, fmt.Errorf("line %d: wrong column count", line)
+		}
 		if row[0] == "" || row[1] == "" {
 			return nil, fmt.Errorf("line %d account and customer external_id are required", line)
 		}
@@ -367,6 +398,9 @@ func parseTransactions(body []byte) ([]transactionRow, error) {
 		}
 		if err != nil {
 			return nil, err
+		}
+		if len(row) != len(fixedHeaders[transactionsFile]) {
+			return nil, fmt.Errorf("line %d: wrong column count", line)
 		}
 		amount, err := strconv.ParseFloat(row[3], 64)
 		if err != nil {
@@ -546,7 +580,28 @@ func (i *Importer) apply(ctx context.Context, opts Options, b parsedBundle, repo
 		report.Outcomes = append(report.Outcomes, outcome("account", row.externalID, accountsFile, row.line, row.raw, "accepted", ""))
 	}
 	for _, row := range b.links {
-		if err := i.Deps.Accounts.AddCustomer(ctx, accountIDs[row.accountExternalID], customerIDs[row.customerExternalID], row.role); err != nil {
+		accountID := accountIDs[row.accountExternalID]
+		customerID := customerIDs[row.customerExternalID]
+		existingLinks, err := i.Deps.Accounts.ListCustomers(ctx, accountID)
+		if err != nil {
+			return fmt.Errorf("list links for %s: %w", row.accountExternalID, err)
+		}
+		duplicate := false
+		for _, existing := range existingLinks {
+			if existing.CustomerID != customerID {
+				continue
+			}
+			if existing.Role != row.role {
+				return fmt.Errorf("link %s/%s: role differs from existing link", row.accountExternalID, row.customerExternalID)
+			}
+			duplicate = true
+			break
+		}
+		if duplicate {
+			report.Outcomes = append(report.Outcomes, outcome("account_customer", row.accountExternalID+":"+row.customerExternalID, accountCustomersFile, row.line, row.raw, "skipped", "identical_duplicate"))
+			continue
+		}
+		if err := i.Deps.Accounts.AddCustomer(ctx, accountID, customerID, row.role); err != nil {
 			return fmt.Errorf("link %s/%s: %w", row.accountExternalID, row.customerExternalID, err)
 		}
 		report.Outcomes = append(report.Outcomes, outcome("account_customer", row.accountExternalID+":"+row.customerExternalID, accountCustomersFile, row.line, row.raw, "accepted", ""))

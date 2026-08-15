@@ -16,13 +16,13 @@ func NewPgCoverageAnalysisRepo(pool DBTX) *PgCoverageAnalysisRepo {
 	return &PgCoverageAnalysisRepo{pool: pool}
 }
 
-const coverageColumns = `id,kind,status,scenario_ids,customer_ids,snapshot_at,matcher_version,assumptions,summary,by_scenario,error,created_at,started_at,completed_at,updated_at`
+const coverageColumns = `id,kind,status,scenario_ids,customer_ids,period_from,period_to,rule_set_id,snapshot_at,matcher_version,assumptions,summary,by_scenario,error,created_at,started_at,completed_at,updated_at`
 
 func scanCoverageAnalysis(row interface{ Scan(dest ...any) error }) (*domain.CoverageAnalysis, error) {
 	var item domain.CoverageAnalysis
 	var status, kind string
 	var scenarios, customers, assumptions, summary, byScenario []byte
-	if err := row.Scan(&item.ID, &kind, &status, &scenarios, &customers, &item.SnapshotAt, &item.MatcherVersion, &assumptions, &summary, &byScenario, &item.Error, &item.CreatedAt, &item.StartedAt, &item.CompletedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &kind, &status, &scenarios, &customers, &item.From, &item.To, &item.RuleSetID, &item.SnapshotAt, &item.MatcherVersion, &assumptions, &summary, &byScenario, &item.Error, &item.CreatedAt, &item.StartedAt, &item.CompletedAt, &item.UpdatedAt); err != nil {
 		return nil, err
 	}
 	item.Kind, item.Status = kind, domain.CoverageAnalysisStatus(status)
@@ -44,7 +44,7 @@ func (r *PgCoverageAnalysisRepo) CreateCoverageAnalysis(ctx context.Context, ite
 	if item.Status == "" {
 		item.Status = domain.CoverageAnalysisQueued
 	}
-	err := r.pool.QueryRow(ctx, `INSERT INTO coverage_analyses(id,kind,status,scenario_ids,customer_ids,snapshot_at,matcher_version,assumptions,summary,by_scenario,error) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING created_at,updated_at`, item.ID, item.Kind, item.Status, marshalJSON(item.ScenarioIDs), marshalJSON(item.CustomerIDs), item.SnapshotAt, item.MatcherVersion, marshalJSON(item.Assumptions), marshalJSON(item.Summary), marshalJSON(item.ByScenario), item.Error).Scan(&item.CreatedAt, &item.UpdatedAt)
+	err := r.pool.QueryRow(ctx, `INSERT INTO coverage_analyses(id,kind,status,scenario_ids,customer_ids,period_from,period_to,rule_set_id,snapshot_at,matcher_version,assumptions,summary,by_scenario,error) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING created_at,updated_at`, item.ID, item.Kind, item.Status, marshalJSON(item.ScenarioIDs), marshalJSON(item.CustomerIDs), item.From, item.To, item.RuleSetID, item.SnapshotAt, item.MatcherVersion, marshalJSON(item.Assumptions), marshalJSON(item.Summary), marshalJSON(item.ByScenario), item.Error).Scan(&item.CreatedAt, &item.UpdatedAt)
 	return err
 }
 
@@ -92,7 +92,7 @@ func (r *PgCoverageAnalysisRepo) StartCoverageAnalysis(ctx context.Context, id s
 	var item domain.CoverageAnalysis
 	var kind, status string
 	var scenarios, customers, assumptions, summary, byScenario []byte
-	err := r.pool.QueryRow(ctx, `UPDATE coverage_analyses SET status='running',started_at=COALESCE(started_at,now()),updated_at=now() WHERE id=$1 AND status='queued' RETURNING `+coverageColumns, id).Scan(&item.ID, &kind, &status, &scenarios, &customers, &item.SnapshotAt, &item.MatcherVersion, &assumptions, &summary, &byScenario, &item.Error, &item.CreatedAt, &item.StartedAt, &item.CompletedAt, &item.UpdatedAt)
+	err := r.pool.QueryRow(ctx, `UPDATE coverage_analyses SET status='running',started_at=COALESCE(started_at,now()),updated_at=now() WHERE id=$1 AND status='queued' RETURNING `+coverageColumns, id).Scan(&item.ID, &kind, &status, &scenarios, &customers, &item.From, &item.To, &item.RuleSetID, &item.SnapshotAt, &item.MatcherVersion, &assumptions, &summary, &byScenario, &item.Error, &item.CreatedAt, &item.StartedAt, &item.CompletedAt, &item.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return r.GetCoverageAnalysis(ctx, id)
 	}

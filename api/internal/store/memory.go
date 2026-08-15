@@ -531,17 +531,25 @@ func (r *MemoryTransactionRepo) Create(_ context.Context, t *domain.Transaction)
 		accountID := domain.CanonicalUUID(*t.AccountID)
 		t.AccountID = &accountID
 	}
+	if _, exists := r.data[t.ID]; exists {
+		return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "id already exists"}
+	}
 	if t.IdempotencyKey != nil {
 		if _, exists := r.idempotencyKey[*t.IdempotencyKey]; exists {
 			return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "idempotency key already used"}
 		}
-		r.idempotencyKey[*t.IdempotencyKey] = t.ID
 	}
-	r.data[t.ID] = t
 	if t.ExternalID != "" {
 		if existing, ok := r.external[t.ExternalID]; ok && existing != t.ID {
 			return &domain.ErrConflict{Entity: "transaction", ID: t.ID, Reason: "external_id already exists"}
 		}
+	}
+	// Mutate indexes only after every uniqueness check has succeeded.
+	r.data[t.ID] = t
+	if t.IdempotencyKey != nil {
+		r.idempotencyKey[*t.IdempotencyKey] = t.ID
+	}
+	if t.ExternalID != "" {
 		r.external[t.ExternalID] = t.ID
 	}
 	r.byCustomer[t.CustomerID] = append(r.byCustomer[t.CustomerID], t.ID)
@@ -1968,6 +1976,15 @@ func (r *MemoryAccountRepo) AddCustomer(_ context.Context, accountID, customerID
 	defer r.mu.Unlock()
 	if _, ok := r.accounts[accountID]; !ok {
 		return &domain.ErrNotFound{Entity: "account", ID: accountID}
+	}
+	for _, existing := range r.customers[accountID] {
+		if existing.CustomerID != customerID {
+			continue
+		}
+		if existing.Role == role {
+			return nil
+		}
+		return &domain.ErrConflict{Entity: "account_customer", ID: accountID + ":" + customerID, Reason: "role differs from existing link"}
 	}
 	r.customers[accountID] = append(r.customers[accountID], domain.AccountCustomer{
 		AccountID:  accountID,

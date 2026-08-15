@@ -196,6 +196,62 @@ func TestBasicAuth(t *testing.T) {
 	}
 }
 
+func TestResolveAuthDoesNotExposeCredentialEnvironmentNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   AuthConfig
+		envNames []string
+		want     string
+	}{
+		{
+			name:     "bearer",
+			config:   AuthConfig{Type: "bearer", TokenEnv: "MERLON_TEST_BEARER_CREDENTIAL"},
+			envNames: []string{"MERLON_TEST_BEARER_CREDENTIAL"},
+			want:     "bearer authentication credential is unavailable",
+		},
+		{
+			name: "basic",
+			config: AuthConfig{
+				Type:        "basic",
+				UsernameEnv: "MERLON_TEST_BASIC_USERNAME",
+				PasswordEnv: "MERLON_TEST_BASIC_PASSWORD",
+			},
+			envNames: []string{"MERLON_TEST_BASIC_USERNAME", "MERLON_TEST_BASIC_PASSWORD"},
+			want:     "basic authentication credentials are unavailable",
+		},
+		{
+			name: "header",
+			config: AuthConfig{
+				Type:         "header",
+				HeaderName:   "X-Test-Credential",
+				HeaderValEnv: "MERLON_TEST_HEADER_CREDENTIAL",
+			},
+			envNames: []string{"MERLON_TEST_HEADER_CREDENTIAL"},
+			want:     "header authentication credential is unavailable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, envName := range tt.envNames {
+				t.Setenv(envName, "")
+			}
+			_, err := resolveAuth(tt.config)
+			if err == nil {
+				t.Fatal("resolveAuth() error = nil, want unavailable credential error")
+			}
+			if got := err.Error(); got != tt.want {
+				t.Fatalf("resolveAuth() error = %q, want %q", got, tt.want)
+			}
+			for _, envName := range tt.envNames {
+				if strings.Contains(err.Error(), envName) {
+					t.Errorf("resolveAuth() error disclosed credential environment name %q", envName)
+				}
+			}
+		})
+	}
+}
+
 func TestCustomHeaderAuth(t *testing.T) {
 	ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-API-Key") != "my-api-key" {

@@ -165,3 +165,20 @@ func TestServiceMovesRepeatedFailuresToDLQ(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRunningEventBecomesDueAfterVisibilityTimeout(t *testing.T) {
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	repo := NewMemoryEventRepository()
+	event := &Event{ID: "stale-running", Kind: KindCustomers, Status: StatusRunning, NextAttemptAt: now.Add(time.Minute), FirstReceivedAt: now.Add(-time.Minute), CreatedAt: now, UpdatedAt: now}
+	if err := repo.CreateEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	before, err := repo.ListDueEvents(context.Background(), now, 10)
+	if err != nil || len(before) != 0 {
+		t.Fatalf("before deadline = %#v, err=%v", before, err)
+	}
+	after, err := repo.ListDueEvents(context.Background(), now.Add(time.Minute), 10)
+	if err != nil || len(after) != 1 || after[0].ID != event.ID {
+		t.Fatalf("after deadline = %#v, err=%v", after, err)
+	}
+}

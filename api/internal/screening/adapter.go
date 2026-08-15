@@ -155,11 +155,17 @@ type ofacSDNEntry struct {
 	DateOfBirthList struct {
 		Dates []struct {
 			Date string `xml:"dateOfBirth"`
-		} `xml:"dateOfBirth"`
+		} `xml:"dateOfBirthItem"`
 	} `xml:"dateOfBirthList"`
 	AddressList struct {
 		Addresses []struct {
-			Address string `xml:",chardata"`
+			Address1 string `xml:"address1"`
+			Address2 string `xml:"address2"`
+			Address3 string `xml:"address3"`
+			City     string `xml:"city"`
+			State    string `xml:"stateOrProvince"`
+			Postal   string `xml:"postalCode"`
+			Country  string `xml:"country"`
 		} `xml:"address"`
 	} `xml:"addressList"`
 }
@@ -199,13 +205,23 @@ func parseOFACSDNXML(listID string, body []byte) (*RawListData, error) {
 			}
 		}
 		for _, address := range e.AddressList.Addresses {
-			if value := strings.TrimSpace(address.Address); value != "" {
+			if value := strings.Join(nonEmptyParts(address.Address1, address.Address2, address.Address3, address.City, address.State, address.Postal, address.Country), ", "); value != "" {
 				entry.Addresses = append(entry.Addresses, value)
 			}
 		}
 		data.Entries = append(data.Entries, entry)
 	}
 	return data, nil
+}
+
+func nonEmptyParts(values ...string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 // EUAdapter fetches the EU Financial Sanctions consolidated list (CSV, full
