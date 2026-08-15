@@ -34,6 +34,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_RATE_LIMIT` | `0` | 解決済みクライアント IP ごとの、任意のプロセス単位・1分あたりリクエスト数。補助防御としてのみ使用し、配備全体の制限は信頼済み Ingress で実施する。本番で非ゼロにする場合は `MERLON_TRUSTED_PROXY_CIDRS` が必須。 |
 | `MERLON_TRUSTED_PROXY_CIDRS` | 未設定 | `X-Forwarded-For` の供給を許可するリバースプロキシの狭い CIDR をカンマ区切りで指定する。未信頼 peer または信頼側 hop の不正値は直接 peer アドレスへフォールバックし、`/0` は拒否する。監査記録に元のクライアント IP が必要な場合は、アプリ内制限が無効でも設定する。 |
 | `MERLON_ADAPTER_CONFIG_PATH` | 未設定 | 運用担当者が管理するアダプタ設定へのパス。 |
+| `MERLON_CDD_REVIEW_POLICY_PATH` | `content/cdd_review_policy_v1.yaml` | バージョン管理された CDD 定期レビュー予定。変更管理下に置き、ダイジェストはシステム状態で公開される。 |
 | `MERLON_UI_DIR` | 未設定 | ビルド済み UI を含むディレクトリ（任意）。 |
 | `MERLON_SCREENING_IMPORT_ENABLED` | `false` | 承認済みエンドポイントの場合のみ、外部制裁リストのインポートを有効化する。 |
 | `MERLON_SCREENING_RESCREEN_ENABLED` | `false` | 定期的な顧客再スクリーニングを有効化する。 |

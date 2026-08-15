@@ -29,6 +29,7 @@ type Paths struct {
 	KYCRequiredFields  string
 	EDD                string
 	CDDRuleSelection   string
+	CDDReview          string
 	TravelRule         string
 	ScreeningReadiness string
 	SLA                string
@@ -41,6 +42,7 @@ type Set struct {
 	kyc                *KYCRequiredFieldsPolicy
 	edd                *EDDPolicy
 	cddRuleSelection   *CDDRuleSelectionPolicy
+	cddReview          *CDDReviewPolicy
 	travelRule         *TravelRulePolicy
 	screeningReadiness *ScreeningReadinessPolicy
 	sla                *SLAPolicy
@@ -68,6 +70,9 @@ func Load(paths Paths) (*Set, error) {
 	if set.cddRuleSelection, err = LoadCDDRuleSelection(paths.CDDRuleSelection); err != nil {
 		return nil, err
 	}
+	if set.cddReview, err = LoadCDDReviewPolicy(paths.CDDReview); err != nil {
+		return nil, err
+	}
 	if set.travelRule, err = LoadTravelRule(paths.TravelRule); err != nil {
 		return nil, err
 	}
@@ -80,6 +85,7 @@ func Load(paths Paths) (*Set, error) {
 	set.record(NameKYCRequiredFields, paths.KYCRequiredFields, set.kyc)
 	set.record(NameEDD, paths.EDD, set.edd)
 	set.record(NameCDDRuleSelection, paths.CDDRuleSelection, set.cddRuleSelection)
+	set.record(NameCDDReview, paths.CDDReview, set.cddReview)
 	set.record(NameTravelRule, paths.TravelRule, set.travelRule)
 	set.record(NameScreeningReadiness, paths.ScreeningReadiness, set.screeningReadiness)
 	set.record(NameSLA, paths.SLA, set.sla)
@@ -92,6 +98,7 @@ const (
 	NameKYCRequiredFields  = "kyc_required_fields"
 	NameEDD                = "edd"
 	NameCDDRuleSelection   = "cdd_rule_selection"
+	NameCDDReview          = "cdd_review"
 	NameTravelRule         = "travel_rule"
 	NameScreeningReadiness = "screening_readiness"
 	NameSLA                = "sla"
@@ -103,6 +110,7 @@ func Names() []string {
 		NameKYCRequiredFields,
 		NameEDD,
 		NameCDDRuleSelection,
+		NameCDDReview,
 		NameTravelRule,
 		NameScreeningReadiness,
 		NameSLA,
@@ -153,6 +161,15 @@ func (s *Set) CDDRuleSelection() *CDDRuleSelectionPolicy {
 	return s.cddRuleSelection
 }
 
+// CDDReview returns the versioned periodic-review schedule, or its safe
+// default when a Server was assembled without an explicit policy bundle.
+func (s *Set) CDDReview() *CDDReviewPolicy {
+	if s == nil || s.cddReview == nil {
+		return DefaultCDDReviewPolicy()
+	}
+	return s.cddReview
+}
+
 // TravelRule returns the Travel Rule applicability policy, or the in-code
 // default.
 func (s *Set) TravelRule() *TravelRulePolicy {
@@ -181,6 +198,8 @@ func (s *Set) Document(name string) (any, bool) {
 		return s.EDD(), true
 	case NameCDDRuleSelection:
 		return s.CDDRuleSelection(), true
+	case NameCDDReview:
+		return s.CDDReview(), true
 	case NameTravelRule:
 		return s.TravelRule(), true
 	case NameScreeningReadiness:

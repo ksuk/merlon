@@ -1,0 +1,21 @@
+schema_version: cdd_review_policy_v1
+policy_version: "2026-08-15-v1"
+intervals:
+  high: 365
+  medium: 730
+  low: 1095
+anchor_precedence:
+  - last_completed_review
+  - last_scored_at
+  - customer_created_at
+tier_increase_early: true
+completion:
+  requires_rationale: true
+  roles:
+    - analyst
+    - admin
+grace_days: 30
+cold_start_spread:
+  high: 30
+  medium: 90
+  low: 180

@@ -39,6 +39,7 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_RATE_LIMIT` | `0` | Optional per-process requests per minute per resolved client IP. Use only as defense in depth; enforce deployment-wide limits at the trusted ingress. In production, a non-zero value requires `MERLON_TRUSTED_PROXY_CIDRS`. |
 | `MERLON_TRUSTED_PROXY_CIDRS` | unset | Comma-separated, narrow CIDRs of reverse proxies allowed to supply `X-Forwarded-For`. Untrusted peers and malformed trusted-side hops fall back to the direct peer address; `/0` is rejected. Configure this even with the application limiter disabled when audit records need the original client IP. |
 | `MERLON_ADAPTER_CONFIG_PATH` | unset | Path to an operator-managed adapter configuration. |
+| `MERLON_CDD_REVIEW_POLICY_PATH` | `content/cdd_review_policy_v1.yaml` | Versioned CDD periodic-review schedule. Keep the policy file under change control; its digest is exposed in system status. |
 | `MERLON_UI_DIR` | unset | Optional directory containing the built UI. |
 | `MERLON_SCREENING_IMPORT_ENABLED` | `false` | Enable external sanctions-list imports only with approved endpoints. |
 | `MERLON_SCREENING_RESCREEN_ENABLED` | `false` | Enable periodic customer rescreening. |

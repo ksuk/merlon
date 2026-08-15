@@ -99,6 +99,7 @@ type Config struct {
 	KYCRequiredFieldsPath  string
 	EDDPolicyPath          string
 	CDDRuleSelectionPath   string
+	CDDReviewPolicyPath    string
 	TravelRulePolicyPath   string
 	ScreeningReadinessPath string
 	SLAPolicyPath          string
@@ -281,6 +282,7 @@ func Load() *Config {
 		KYCRequiredFieldsPath:  getEnv("MERLON_KYC_REQUIRED_FIELDS_PATH", "content/kyc_required_fields_v1.yaml"),
 		EDDPolicyPath:          getEnv("MERLON_EDD_POLICY_PATH", "content/edd_policy_v1.yaml"),
 		CDDRuleSelectionPath:   getEnv("MERLON_CDD_RULE_SELECTION_PATH", "content/cdd_rule_selection_v1.yaml"),
+		CDDReviewPolicyPath:    getEnv("MERLON_CDD_REVIEW_POLICY_PATH", "content/cdd_review_policy_v1.yaml"),
 		TravelRulePolicyPath:   getEnv("MERLON_TRAVEL_RULE_POLICY_PATH", "content/travel_rule_v1.yaml"),
 		ScreeningReadinessPath: getEnv("MERLON_SCREENING_READINESS_PATH", "content/screening_readiness_v1.yaml"),
 		SLAPolicyPath:          getEnv("MERLON_SLA_POLICY_PATH", "content/sla_policy_v1.yaml"),

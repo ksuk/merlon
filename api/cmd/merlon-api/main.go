@@ -227,6 +227,7 @@ func main() {
 		KYCRequiredFields:  cfg.KYCRequiredFieldsPath,
 		EDD:                cfg.EDDPolicyPath,
 		CDDRuleSelection:   cfg.CDDRuleSelectionPath,
+		CDDReview:          cfg.CDDReviewPolicyPath,
 		TravelRule:         cfg.TravelRulePolicyPath,
 		ScreeningReadiness: cfg.ScreeningReadinessPath,
 		SLA:                cfg.SLAPolicyPath,
@@ -253,12 +254,13 @@ func main() {
 	}
 
 	for name, path := range map[string]string{
-		"application":     cfg.ConfigPath,
-		"adapter":         cfg.AdapterConfigPath,
-		"country_risk":    cfg.CountryRiskPath,
-		"tm_scenarios":    os.Getenv("MERLON_TM_SCENARIOS_PATH"),
-		"screening_lists": os.Getenv("MERLON_SCREENING_LISTS_PATH"),
-		"case_priority":   cfg.CasePriorityPath,
+		"application":       cfg.ConfigPath,
+		"adapter":           cfg.AdapterConfigPath,
+		"country_risk":      cfg.CountryRiskPath,
+		"tm_scenarios":      os.Getenv("MERLON_TM_SCENARIOS_PATH"),
+		"screening_lists":   os.Getenv("MERLON_SCREENING_LISTS_PATH"),
+		"case_priority":     cfg.CasePriorityPath,
+		"cdd_review_policy": cfg.CDDReviewPolicyPath,
 	} {
 		if path == "" {
 			continue
