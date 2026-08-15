@@ -10,6 +10,9 @@ const DashboardPage = lazy(() =>
 const CustomersPage = lazy(() =>
   import("@/pages/customers").then((m) => ({ default: m.CustomersPage })),
 );
+const CustomerReviewsPage = lazy(() =>
+  import("@/pages/customer-reviews").then((m) => ({ default: m.CustomerReviewsPage })),
+);
 const CustomerDetailPage = lazy(() =>
   import("@/pages/customer-detail").then((m) => ({
     default: m.CustomerDetailPage,
@@ -99,6 +102,7 @@ function App() {
               <Route index element={<DashboardPage />} />
               <Route path="customers" element={<CustomersPage />} />
               <Route path="customers/:id" element={<CustomerDetailPage />} />
+              <Route path="customer-reviews" element={<CustomerReviewsPage />} />
               <Route path="alerts" element={<AlertsPage />} />
               <Route path="alerts/:id" element={<AlertDetailPage />} />
               <Route path="cases" element={<CasesPage />} />

@@ -232,6 +232,7 @@ type AtomicMutationRepositories struct {
 	PendingEvaluations PendingEvaluationWorkflowRepository
 	BatchRuns          BatchRunRepository
 	BacktestJobs       BacktestJobRepository
+	CustomerReviews    CustomerReviewRepository
 }
 
 type AtomicMutationRepository interface {

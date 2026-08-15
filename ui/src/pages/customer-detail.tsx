@@ -141,6 +141,10 @@ export function CustomerDetailPage() {
     useCallback(() => api.customers.identityHistory(id!), [id]),
     requestKey,
   )
+  const { data: reviewHistory } = useApi(
+    useCallback(() => api.customerReviews.list({ customerId: id!, limit: 20 }), [id]),
+    requestKey,
+  )
   const [scoring, setScoring] = useState(false)
   const [screening, setScreening] = useState(false)
   const [screenResult, setScreenResult] = useState<ScreenResult | null>(null)
@@ -365,6 +369,17 @@ export function CustomerDetailPage() {
           </Badge>
         )}
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">{t("customerDetail.reviewHistory.title")}</CardTitle>
+          {customer.next_review_at && <span className="text-xs text-muted-foreground">{t("customerDetail.reviewHistory.next", { date: formatDateTime(customer.next_review_at, i18n.language) })}</span>}
+        </CardHeader>
+        <CardContent>
+          {(reviewHistory?.data?.length ?? 0) === 0 ? <p className="text-sm text-muted-foreground">{t("customerDetail.reviewHistory.empty")}</p> : <ul className="space-y-2 text-sm">{reviewHistory?.data.map((review) => <li key={review.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2"><span><Badge variant={review.status === "completed" ? "low" : review.status === "overdue" ? "critical" : review.status === "blocked" ? "critical" : "secondary"}>{t(`customerReviews.status.${review.status}`)}</Badge><span className="ml-2">{t("customerDetail.reviewHistory.cycle", { cycle: review.cycle })}</span></span><span className="text-xs text-muted-foreground">{formatDateTime(review.due_at, i18n.language)}{review.outcome ? ` · ${t(`customerReviews.outcomes.${review.outcome}`)}` : ""}</span></li>)}</ul>}
+          <Link to="/customer-reviews" className="mt-3 inline-block text-sm text-primary underline-offset-4 hover:underline">{t("customerDetail.reviewHistory.openQueue")}</Link>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

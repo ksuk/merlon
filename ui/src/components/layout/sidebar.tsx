@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   RotateCcw,
   UserCog,
+  ClipboardCheck,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router"
@@ -41,6 +42,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { to: "/customers", labelKey: "nav.customers", icon: Users },
+  { to: "/customer-reviews", labelKey: "nav.customerReviews", icon: ClipboardCheck },
   { to: "/alerts", labelKey: "nav.alerts", icon: AlertTriangle },
   { to: "/cases", labelKey: "nav.cases", icon: FolderOpen },
   { to: "/transactions", labelKey: "nav.transactions", icon: ArrowLeftRight },

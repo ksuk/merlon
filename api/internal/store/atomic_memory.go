@@ -28,6 +28,7 @@ type MemoryAtomicMutationRepo struct {
 	pending       *MemoryPendingEvaluationRepo
 	batch         *MemoryBatchRunRepo
 	backtest      *MemoryBacktestJobRepo
+	reviews       *MemoryCustomerReviewRepo
 }
 
 func NewMemoryAtomicMutationRepo(repos domain.AtomicMutationRepositories) (*MemoryAtomicMutationRepo, error) {
@@ -99,6 +100,11 @@ func NewMemoryAtomicMutationRepo(repos domain.AtomicMutationRepositories) (*Memo
 			return nil, fmt.Errorf("memory atomic repository requires MemoryBacktestJobRepo")
 		}
 	}
+	if repos.CustomerReviews != nil {
+		if atomic.reviews, ok = repos.CustomerReviews.(*MemoryCustomerReviewRepo); !ok || atomic.reviews == nil {
+			return nil, fmt.Errorf("memory atomic repository requires MemoryCustomerReviewRepo")
+		}
+	}
 	return atomic, nil
 }
 
@@ -137,6 +143,8 @@ type memoryAtomicSnapshot struct {
 	batchData          map[string]*domain.BatchRun
 	backtestData       map[string]*domain.BacktestJob
 	backtestSnapshots  map[string][]string
+	reviewData         map[string]*domain.CustomerReview
+	reviewByKey        map[string]string
 }
 
 func (r *MemoryAtomicMutationRepo) RunAtomic(ctx context.Context, fn func(domain.AtomicMutationRepositories) error) error {
@@ -280,6 +288,17 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 		backtestSnapshots = cloneStringSlices(r.backtest.snapshots)
 		r.backtest.mu.Unlock()
 	}
+	var reviewData map[string]*domain.CustomerReview
+	var reviewByKey map[string]string
+	if r.reviews != nil {
+		r.reviews.mu.RLock()
+		reviewData = make(map[string]*domain.CustomerReview, len(r.reviews.data))
+		for id, value := range r.reviews.data {
+			reviewData[id] = cloneCustomerReview(value)
+		}
+		reviewByKey = cloneStringMap(r.reviews.byKey)
+		r.reviews.mu.RUnlock()
+	}
 
 	return memoryAtomicSnapshot{customers: customers, customerExternal: customerExternal, customerScores: customerScores,
 		transactions: transactions, transactionByCust: transactionByCust, transactionIdem: transactionIdem,
@@ -290,7 +309,7 @@ func (r *MemoryAtomicMutationRepo) snapshot() memoryAtomicSnapshot {
 		wave3Runs: wave3Runs, wave3Results: wave3Results, wave3History: wave3History,
 		wave3Sources: wave3Sources, wave3Metadata: wave3Metadata, wave3Manifests: wave3Manifests,
 		pendingData: pendingData, pendingHistory: pendingHistory, batchData: batchData,
-		backtestData: backtestData, backtestSnapshots: backtestSnapshots}
+		backtestData: backtestData, backtestSnapshots: backtestSnapshots, reviewData: reviewData, reviewByKey: reviewByKey}
 }
 
 func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
@@ -377,6 +396,12 @@ func (r *MemoryAtomicMutationRepo) restore(snapshot memoryAtomicSnapshot) {
 		r.backtest.data = snapshot.backtestData
 		r.backtest.snapshots = snapshot.backtestSnapshots
 		r.backtest.mu.Unlock()
+	}
+	if r.reviews != nil {
+		r.reviews.mu.Lock()
+		r.reviews.data = snapshot.reviewData
+		r.reviews.byKey = snapshot.reviewByKey
+		r.reviews.mu.Unlock()
 	}
 }
 

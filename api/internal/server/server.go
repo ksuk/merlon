@@ -16,6 +16,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/notify"
 	"github.com/ksuk/merlon/api/internal/policy"
+	"github.com/ksuk/merlon/api/internal/review"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/store"
 	inboundwebhook "github.com/ksuk/merlon/api/internal/webhook"
@@ -58,6 +59,7 @@ type Server struct {
 	apikeys                  domain.APIKeyRepository
 	webhooks                 domain.WebhookRepository
 	inboundWebhooks          *inboundwebhook.Service
+	reviews                  *review.Service
 	configEngine             engine.ConfigEngine
 	engineHealth             engine.HealthChecker
 	limiter                  *rateLimiter
@@ -141,6 +143,7 @@ type Deps struct {
 	APIKeys            domain.APIKeyRepository
 	Webhooks           domain.WebhookRepository
 	InboundWebhooks    *inboundwebhook.Service
+	CustomerReviews    *review.Service
 	Config             engine.ConfigEngine
 	EngineHealth       engine.HealthChecker
 	RateLimit          int
@@ -223,6 +226,7 @@ func New(addr string, deps Deps) *Server {
 		apikeys:                  deps.APIKeys,
 		webhooks:                 deps.Webhooks,
 		inboundWebhooks:          deps.InboundWebhooks,
+		reviews:                  deps.CustomerReviews,
 		configEngine:             deps.Config,
 		engineHealth:             deps.EngineHealth,
 		clientIPs:                newClientIPResolver(deps.TrustedProxyCIDRs),
@@ -327,6 +331,12 @@ func New(addr string, deps Deps) *Server {
 			Reports: s.reports, Audit: s.audit, Cases: s.cases,
 			CaseAlertLifecycle: s.caseAlertLifecycle, Investigation: s.caseInvestigation,
 			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox, IdentityHistory: identityHistory, Wave3: s.wave3,
+			CustomerReviews: func() domain.CustomerReviewRepository {
+				if s.reviews != nil {
+					return s.reviews.Repository()
+				}
+				return nil
+			}(),
 			PendingEvaluations: func() domain.PendingEvaluationWorkflowRepository {
 				if workflow, ok := s.pendingEvals.(domain.PendingEvaluationWorkflowRepository); ok {
 					return workflow
@@ -396,6 +406,14 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/customers/{id}/cdd-rule-sets", s.handleListCDDRuleSets)
 	s.routeHandler("POST /api/v1/customers/{id}/score-overrides/{overrideID}/approve", s.requireRolePermission(auth.PermCDDOverrideApprove, s.handleApproveCDDScoreOverride))
 	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
+
+	// Periodic CDD review queue (issues #103/#104). Reads remain available to
+	// every authenticated role; lifecycle writes require the same CDD control
+	// permission as score production.
+	s.route("GET /api/v1/customer-reviews", s.handleListCustomerReviews)
+	s.route("GET /api/v1/customer-reviews/{id}", s.handleGetCustomerReview)
+	s.routeHandler("PATCH /api/v1/customer-reviews/{id}", s.requireRolePermission(auth.PermCDDScore, s.handlePatchCustomerReview))
+	s.routeHandler("POST /api/v1/customer-reviews/{id}/complete", s.requireRolePermission(auth.PermCDDScore, s.handleCompleteCustomerReview))
 
 	// Screening (WS-7)
 	s.route("POST /api/v1/screening/check", s.handleScreeningCheck)

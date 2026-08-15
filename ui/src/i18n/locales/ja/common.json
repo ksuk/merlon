@@ -37,6 +37,7 @@
   "nav": {
     "dashboard": "ダッシュボード",
     "customers": "顧客",
+    "customerReviews": "CDDレビュー",
     "alerts": "アラート",
     "cases": "ケース",
     "transactions": "取引",
@@ -153,6 +154,13 @@
         "pending_evaluations_failed": "再試行待ちの失敗した評価",
         "pending_evaluations_exhausted": "自動では再試行されない評価"
       }
+    },
+    "cddReviews": {
+      "title": "CDDレビュー",
+      "open": "キューを開く",
+      "due": "期限到来",
+      "overdue": "期限超過",
+      "coldStart": "初回レビュー滞留"
     }
   },
   "customers": {
@@ -991,6 +999,13 @@
         "approved": "承認済",
         "rejected": "却下"
       }
+    },
+    "reviewHistory": {
+      "title": "CDDレビュー履歴",
+      "empty": "CDDレビューはまだスケジュールされていません。",
+      "next": "次回レビュー {{date}}",
+      "cycle": "{{cycle}}回目",
+      "openQueue": "レビューキューを開く"
     }
   },
   "notFound": {
@@ -1770,6 +1785,36 @@
     "documentation": "ドキュメント",
     "purposeLabel": "この画面の目的",
     "stateLabel": "可用性"
+  },
+  "customerReviews": {
+    "title": "CDDレビューキュー",
+    "subtitle": "定期レビュー、担当割当、証跡を管理します",
+    "loading": "レビューキューを読み込み中…",
+    "error": "レビューキューを読み込めませんでした: {{error}}",
+    "filter": "レビュー状態",
+    "allStatuses": "すべての状態",
+    "queueTitle": "オペレーターキュー",
+    "empty": "条件に一致するレビューはありません。",
+    "cycle": "{{cycle}}回目",
+    "unassigned": "未割当",
+    "assignTo": "担当者",
+    "assignTeam": "チーム",
+    "start": "開始",
+    "resume": "再開",
+    "assign": "割当",
+    "complete": "完了",
+    "cancel": "取消",
+    "completeTitle": "レビュー完了",
+    "selected": "レビュー {{id}}",
+    "outcome": "結果",
+    "rationale": "理由",
+    "evidence": "証跡参照",
+    "evidencePlaceholder": "doc:income-2026, case:123",
+    "stats": { "due": "期限到来", "overdue": "期限超過", "coldStart": "初回レビュー滞留" },
+    "status": { "scheduled": "予定", "due": "期限到来", "overdue": "期限超過", "in_progress": "進行中", "blocked": "ブロック", "completed": "完了" },
+    "outcomes": { "rating_unchanged": "評価変更なし", "rating_changed": "評価変更", "escalated_to_edd": "EDDへエスカレーション", "unable_to_complete": "完了不能" },
+    "tier": { "low": "低", "medium": "中", "high": "高" },
+    "table": { "customer": "顧客", "tier": "リスク層", "status": "状態", "due": "期限", "assignment": "担当", "actions": "操作" }
   },
   "ruleDetail": {
     "backToRules": "ルール一覧へ戻る",

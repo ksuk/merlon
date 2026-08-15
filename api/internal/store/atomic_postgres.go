@@ -50,6 +50,7 @@ func (r *PgAtomicMutationRepo) RunAtomic(ctx context.Context, fn func(domain.Ato
 		PendingEvaluations: NewPgPendingEvaluationRepo(tx),
 		BatchRuns:          NewPgBatchRunRepo(tx),
 		BacktestJobs:       NewPgBacktestJobRepo(tx),
+		CustomerReviews:    NewPgCustomerReviewRepo(tx),
 	}
 	if err := fn(repos); err != nil {
 		return err

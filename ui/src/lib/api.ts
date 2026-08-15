@@ -195,6 +195,7 @@ export interface DashboardStats {
   // An empty array means nothing is failing; an absent one means nothing was
   // checked. The two are rendered differently.
   exceptions?: DashboardException[]
+  cdd_review_queue?: { due: number; overdue: number; cold_start: number }
 }
 
 export interface AgeBucket {
@@ -278,6 +279,11 @@ export interface Customer {
   kyc_policy_version?: string
   created_at: string
   updated_at: string
+	  next_review_at?: string
+	  last_review_at?: string
+	  review_tier?: RiskTier
+	  review_policy_version?: string
+	  review_policy_digest?: string
   // EDD 3段階エスカレーション（the case-management workflow §EDD未実施継続時の段階的
   // 措置）。edd_requested_at が未設定なら EDD 要求状態にない。
   edd_requested_at?: string
@@ -531,6 +537,40 @@ export interface ScoreRecord {
   actor?: string
   override_evidence?: Record<string, unknown>
   scored_at: string
+}
+
+export type CustomerReviewStatus = "scheduled" | "due" | "overdue" | "in_progress" | "blocked" | "completed"
+export type CustomerReviewOutcome = "rating_unchanged" | "rating_changed" | "escalated_to_edd" | "unable_to_complete"
+
+export interface CustomerReview {
+  id: string
+  customer_id: string
+  cycle: number
+  status: CustomerReviewStatus
+  outcome?: CustomerReviewOutcome
+  tier: RiskTier
+  previous_tier?: RiskTier
+  resulting_tier?: RiskTier
+  assigned_to?: string
+  assigned_team?: string
+  priority?: CasePriority
+  due_at: string
+  grace_until: string
+  overdue_at?: string
+  policy_version: string
+  policy_digest: string
+  scope?: Record<string, unknown>
+  rationale?: string
+  evidence_refs?: string[]
+  previous_score_id?: string
+  resulting_score_id?: string
+  actor?: string
+  scheduled_at: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+  version: number
 }
 
 export interface Factor {
@@ -1570,6 +1610,24 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+  },
+  customerReviews: {
+    list: (params?: CursorPageParams & { customerId?: string; status?: CustomerReviewStatus | string; tier?: RiskTier; assignedTo?: string; team?: string; due?: "due" | "overdue" }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.tier) qs.set("tier", params.tier)
+      if (params?.assignedTo) qs.set("assigned_to", params.assignedTo)
+      if (params?.team) qs.set("team", params.team)
+      if (params?.due) qs.set("due", params.due)
+      const query = qs.toString()
+      return request<PaginatedResponse<CustomerReview>>(`/customer-reviews${query ? `?${query}` : ""}`)
+    },
+    get: (id: string) => request<CustomerReview>(`/customer-reviews/${encodeURIComponent(id)}`),
+    update: (id: string, data: { assigned_to?: string; assigned_team?: string; action?: "start" | "resume"; status?: CustomerReviewStatus; expected_version?: number }) =>
+      request<CustomerReview>(`/customer-reviews/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(data) }),
+    complete: (id: string, data: { outcome: CustomerReviewOutcome; rationale: string; evidence_refs: string[]; scope: Record<string, unknown>; expected_version?: number; rule_set_id?: string }) =>
+      request<CustomerReview>(`/customer-reviews/${encodeURIComponent(id)}/complete`, { method: "POST", body: JSON.stringify(data) }),
   },
   screening: {
     // Omitting `suppressed` returns both suppressed and unsuppressed hits,

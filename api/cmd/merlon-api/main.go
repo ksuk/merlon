@@ -30,6 +30,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/notify"
 	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/retention"
+	"github.com/ksuk/merlon/api/internal/review"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/seed"
 	"github.com/ksuk/merlon/api/internal/server"
@@ -59,6 +60,8 @@ const (
 // is one calendar day (stage 1 dedup), so hourly is more than sufficient and
 // harmless since the job is idempotent.
 const eddEscalationCheckInterval = time.Hour
+
+const cddReviewCheckInterval = 24 * time.Hour
 
 // retentionPurgeSchedule is deliberately separate from transaction
 // monitoring so that a retention pass is observable and operationally
@@ -358,6 +361,10 @@ func main() {
 			inboundConfig.Cipher = inboundPayloadCipher{encryptor: encryptor}
 		}
 		deps.InboundWebhooks = inboundwebhook.NewServiceWithConfig(inboundConfig)
+		deps.CustomerReviews = review.NewService(review.Dependencies{
+			Reviews: store.NewPgCustomerReviewRepo(pool), Customers: deps.Customers, Scoring: deps.Scoring,
+			Audit: deps.Audit, Outbox: deps.EventOutbox, Atomic: deps.Atomic, Policy: policies.CDDReview(),
+		})
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
@@ -387,6 +394,7 @@ func main() {
 		memoryPending := store.NewMemoryPendingEvaluationRepo()
 		memoryBatch := store.NewMemoryBatchRunRepo()
 		memoryBacktest := store.NewMemoryBacktestJobRepo()
+		memoryReviews := store.NewMemoryCustomerReviewRepo()
 		deps.BacktestJobs = memoryBacktest
 		memoryAtomic, atomicErr := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
 			Customers: deps.Customers, Transactions: deps.Transactions, Alerts: deps.Alerts,
@@ -394,7 +402,7 @@ func main() {
 			CaseAlertLifecycle: deps.CaseAlertLifecycle, Investigation: deps.CaseInvestigation,
 			AlertDecisions: deps.AlertDecisions, EventOutbox: deps.EventOutbox,
 			IdentityHistory: memoryWave3, Wave3: memoryWave3,
-			PendingEvaluations: memoryPending, BatchRuns: memoryBatch, BacktestJobs: memoryBacktest,
+			PendingEvaluations: memoryPending, BatchRuns: memoryBatch, BacktestJobs: memoryBacktest, CustomerReviews: memoryReviews,
 		})
 		if atomicErr != nil {
 			slog.Error("memory atomic mutation repository initialization failed", "error", atomicErr)
@@ -404,6 +412,10 @@ func main() {
 		deps.Webhooks = store.NewMemoryWebhookRepo()
 		deps.InboundWebhooks = inboundwebhook.NewServiceWithConfig(inboundwebhook.Config{
 			Repository: store.NewMemoryInboundWebhookRepo(), Secret: []byte(cfg.InboundWebhookSecret),
+		})
+		deps.CustomerReviews = review.NewService(review.Dependencies{
+			Reviews: memoryReviews, Customers: deps.Customers, Scoring: deps.Scoring,
+			Audit: deps.Audit, Outbox: deps.EventOutbox, Atomic: deps.Atomic, Policy: policies.CDDReview(),
 		})
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
@@ -481,6 +493,9 @@ func main() {
 		slog.Info("native Go engine loaded", "tm_digest", deps.ConfigDigests["tm_scenarios"])
 	} else {
 		slog.Warn("native Go engine unavailable", "error", nativeErr)
+	}
+	if deps.CustomerReviews != nil {
+		deps.CustomerReviews.SetScoring(deps.Scoring)
 	}
 
 	if cfg.Seed {
@@ -611,6 +626,10 @@ func main() {
 
 	if srv == nil {
 		srv = server.New(listenAddr, deps)
+	}
+	if runAPIJobs && deps.CustomerReviews != nil {
+		go deps.CustomerReviews.RunDailySweep(jobsCtx, cddReviewCheckInterval)
+		slog.Info("CDD review scheduler enabled", "check_interval", cddReviewCheckInterval, "policy_version", policies.CDDReview().Version())
 	}
 	if deps.InboundWebhooks != nil {
 		deps.InboundWebhooks.SetHandler(srv.InboundRecordHandler())

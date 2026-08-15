@@ -29,7 +29,7 @@ func NewPgCustomerRepo(pool DBTX, encryptor *crypto.Encryptor) *PgCustomerRepo {
 	return &PgCustomerRepo{pool: pool, encryptor: encryptor}
 }
 
-const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, edd_completed_at, edd_closed_at, COALESCE(edd_close_reason,''), COALESCE(edd_case_id::text,''), anonymized_at, source_updated_at`
+const customerColumns = `id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, edd_completed_at, edd_closed_at, COALESCE(edd_close_reason,''), COALESCE(edd_case_id::text,''), anonymized_at, source_updated_at, next_review_at, last_review_at, review_tier, COALESCE(review_policy_version,''), COALESCE(review_policy_digest,'')`
 
 func (r *PgCustomerRepo) Get(ctx context.Context, id string) (*domain.Customer, error) {
 	return r.scanCustomer(ctx, `SELECT `+customerColumns+` FROM customers WHERE id = $1 AND purge_marked_at IS NULL`, domain.CanonicalUUID(id))
@@ -44,6 +44,8 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 	var attrs []byte
 	var products []string
 	var riskTier *string
+	var reviewTier *string
+	var reviewPolicyVersion, reviewPolicyDigest string
 
 	err := r.pool.QueryRow(ctx, query, arg).Scan(
 		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode, &c.Status,
@@ -52,7 +54,8 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
 		&c.EddCompletedAt, &c.EddClosedAt, &c.EddCloseReason, &c.EddCaseID,
-		&c.AnonymizedAt, &c.SourceUpdatedAt,
+		&c.AnonymizedAt, &c.SourceUpdatedAt, &c.NextReviewAt, &c.LastReviewAt,
+		&reviewTier, &reviewPolicyVersion, &reviewPolicyDigest,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -72,6 +75,11 @@ func (r *PgCustomerRepo) scanCustomer(ctx context.Context, query string, arg any
 		rt := domain.RiskTier(*riskTier)
 		c.RiskTier = &rt
 	}
+	if reviewTier != nil {
+		rt := domain.RiskTier(*reviewTier)
+		c.ReviewTier = &rt
+	}
+	c.ReviewPolicyVersion, c.ReviewPolicyDigest = reviewPolicyVersion, reviewPolicyDigest
 	return &c, nil
 }
 
@@ -82,6 +90,8 @@ func scanCustomerRows(rows pgx.Rows, encryptor *crypto.Encryptor) (domain.Custom
 	var attrs []byte
 	var products []string
 	var riskTier *string
+	var reviewTier *string
+	var reviewPolicyVersion, reviewPolicyDigest string
 
 	if err := rows.Scan(
 		&c.ID, &c.ExternalID, &c.CustomerType, &c.CountryCode, &c.Status,
@@ -90,7 +100,8 @@ func scanCustomerRows(rows pgx.Rows, encryptor *crypto.Encryptor) (domain.Custom
 		&c.CreatedAt, &c.UpdatedAt,
 		&c.EddRequestedAt, &c.EddStage1LastSentAt, &c.EddStage2NotifiedAt, &c.EddStage3NotifiedAt,
 		&c.EddCompletedAt, &c.EddClosedAt, &c.EddCloseReason, &c.EddCaseID,
-		&c.AnonymizedAt, &c.SourceUpdatedAt,
+		&c.AnonymizedAt, &c.SourceUpdatedAt, &c.NextReviewAt, &c.LastReviewAt,
+		&reviewTier, &reviewPolicyVersion, &reviewPolicyDigest,
 	); err != nil {
 		return c, err
 	}
@@ -106,6 +117,11 @@ func scanCustomerRows(rows pgx.Rows, encryptor *crypto.Encryptor) (domain.Custom
 		rt := domain.RiskTier(*riskTier)
 		c.RiskTier = &rt
 	}
+	if reviewTier != nil {
+		rt := domain.RiskTier(*reviewTier)
+		c.ReviewTier = &rt
+	}
+	c.ReviewPolicyVersion, c.ReviewPolicyDigest = reviewPolicyVersion, reviewPolicyDigest
 	return c, nil
 }
 
@@ -281,14 +297,15 @@ func (r *PgCustomerRepo) Create(ctx context.Context, c *domain.Customer) error {
 		productTypes = []string{}
 	}
 	_, err = r.pool.Exec(ctx,
-		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, edd_completed_at, edd_closed_at, edd_close_reason, edd_case_id, source_updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,'')::uuid, $21)`,
+		`INSERT INTO customers (id, external_id, customer_type, country_code, status, product_types, attributes, risk_score, risk_tier, last_scored_at, created_at, updated_at, edd_requested_at, edd_stage1_last_sent_at, edd_stage2_notified_at, edd_stage3_notified_at, edd_completed_at, edd_closed_at, edd_close_reason, edd_case_id, source_updated_at, next_review_at, last_review_at, review_tier, review_policy_version, review_policy_digest)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NULLIF($19,''), NULLIF($20,'')::uuid, $21, $22, $23, NULLIF($24,'')::risk_tier, $25, $26)`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, status,
 		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.CreatedAt, c.UpdatedAt,
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
 		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID, c.SourceUpdatedAt,
+		c.NextReviewAt, c.LastReviewAt, riskTierValue(c.ReviewTier), c.ReviewPolicyVersion, c.ReviewPolicyDigest,
 	)
 	return err
 }
@@ -306,7 +323,7 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	}
 	c.UpdatedAt = time.Now()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$17, edd_closed_at=$18, edd_close_reason=NULLIF($19,''), edd_case_id=NULLIF($20,'')::uuid, anonymized_at=$16, source_updated_at=$21 WHERE id=$1`,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$17, edd_closed_at=$18, edd_close_reason=NULLIF($19,''), edd_case_id=NULLIF($20,'')::uuid, anonymized_at=$16, source_updated_at=$21, next_review_at=$22, last_review_at=$23, review_tier=NULLIF($24,'')::risk_tier, review_policy_version=$25, review_policy_digest=$26 WHERE id=$1`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
 		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
@@ -314,6 +331,7 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 		c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
 		c.AnonymizedAt,
 		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID, c.SourceUpdatedAt,
+		c.NextReviewAt, c.LastReviewAt, riskTierValue(c.ReviewTier), c.ReviewPolicyVersion, c.ReviewPolicyDigest,
 	)
 	if err != nil {
 		return err
@@ -337,12 +355,13 @@ func (r *PgCustomerRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Custo
 	}
 	c.UpdatedAt = time.Now().UTC()
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$18, edd_closed_at=$19, edd_close_reason=NULLIF($20,''), edd_case_id=NULLIF($21,'')::uuid, anonymized_at=$16, source_updated_at=$22 WHERE id=$1 AND updated_at=$17`,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$18, edd_closed_at=$19, edd_close_reason=NULLIF($20,''), edd_case_id=NULLIF($21,'')::uuid, anonymized_at=$16, source_updated_at=$22, next_review_at=$23, last_review_at=$24, review_tier=NULLIF($25,'')::risk_tier, review_policy_version=$26, review_policy_digest=$27 WHERE id=$1 AND updated_at=$17`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
 		productTypes, attrs, c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
 		c.UpdatedAt, c.EddRequestedAt, c.EddStage1LastSentAt, c.EddStage2NotifiedAt, c.EddStage3NotifiedAt,
 		c.AnonymizedAt, expectedUpdatedAt,
 		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID, c.SourceUpdatedAt,
+		c.NextReviewAt, c.LastReviewAt, riskTierValue(c.ReviewTier), c.ReviewPolicyVersion, c.ReviewPolicyDigest,
 	)
 	if err != nil {
 		return err
@@ -474,6 +493,13 @@ func riskTierToNullable(t *domain.RiskTier) *string {
 	}
 	s := string(*t)
 	return &s
+}
+
+func riskTierValue(t *domain.RiskTier) string {
+	if t == nil {
+		return ""
+	}
+	return string(*t)
 }
 
 // PgTransactionRepo

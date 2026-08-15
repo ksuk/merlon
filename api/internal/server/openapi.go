@@ -62,6 +62,9 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/customers/{id}":                                      pathCustomer(),
 			"/api/v1/customers/{id}/score":                                pathScoreCustomer(),
 			"/api/v1/customers/{id}/screen":                               pathScreenCustomer(),
+			"/api/v1/customer-reviews":                                    pathCustomerReviews(),
+			"/api/v1/customer-reviews/{id}":                               pathCustomerReview(),
+			"/api/v1/customer-reviews/{id}/complete":                      pathCustomerReviewComplete(),
 			"/api/v1/customers/{id}/scores":                               pathScoreHistory(),
 			"/api/v1/customers/{id}/score-explanation":                    pathCustomerScoreExplanation(),
 			"/api/v1/customers/{id}/scores/{scoreID}/explanation":         pathCustomerScoreExplanationByID(),
@@ -796,7 +799,20 @@ func wave3Schemas() map[string]any {
 			"rationale":           map[string]any{"type": "string"},
 			"expected_updated_at": map[string]any{"type": "string", "format": "date-time"},
 		}),
-		"PaginatedCustomers": objectSchema(map[string]any{"data": arraySchema(schemaRef("Customer")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"CustomerReview": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "customer_id": map[string]any{"type": "string"}, "cycle": map[string]any{"type": "integer", "minimum": 1},
+			"status":  map[string]any{"type": "string", "enum": []string{"scheduled", "due", "overdue", "in_progress", "blocked", "completed"}},
+			"outcome": map[string]any{"type": "string", "enum": []string{"rating_unchanged", "rating_changed", "escalated_to_edd", "unable_to_complete"}},
+			"tier":    map[string]any{"type": "string", "enum": []string{"low", "medium", "high"}}, "previous_tier": map[string]any{"type": "string"}, "resulting_tier": map[string]any{"type": "string"},
+			"assigned_to": map[string]any{"type": "string"}, "assigned_team": map[string]any{"type": "string"}, "priority": map[string]any{"type": "string"},
+			"due_at": map[string]any{"type": "string", "format": "date-time"}, "grace_until": map[string]any{"type": "string", "format": "date-time"}, "overdue_at": map[string]any{"type": "string", "format": "date-time", "nullable": true},
+			"policy_version": map[string]any{"type": "string"}, "policy_digest": map[string]any{"type": "string"}, "scope": map[string]any{"type": "object", "additionalProperties": true}, "rationale": map[string]any{"type": "string"}, "evidence_refs": arraySchema(map[string]any{"type": "string"}),
+			"previous_score_id": map[string]any{"type": "string"}, "resulting_score_id": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "scheduled_at": map[string]any{"type": "string", "format": "date-time"}, "started_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"}, "version": map[string]any{"type": "integer"},
+		}, "id", "customer_id", "cycle", "status", "tier", "due_at", "grace_until", "policy_version", "policy_digest", "scheduled_at", "created_at", "updated_at", "version"),
+		"PaginatedCustomerReviews":      objectSchema(map[string]any{"data": arraySchema(schemaRef("CustomerReview")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
+		"CustomerReviewPatchRequest":    objectSchema(map[string]any{"assigned_to": map[string]any{"type": "string"}, "assigned_team": map[string]any{"type": "string"}, "status": map[string]any{"type": "string"}, "action": map[string]any{"type": "string", "enum": []string{"start", "resume"}}, "expected_version": map[string]any{"type": "integer"}}),
+		"CustomerReviewCompleteRequest": objectSchema(map[string]any{"outcome": map[string]any{"type": "string", "enum": []string{"rating_unchanged", "rating_changed", "escalated_to_edd", "unable_to_complete"}}, "rationale": map[string]any{"type": "string"}, "evidence_refs": arraySchema(map[string]any{"type": "string"}), "scope": map[string]any{"type": "object", "additionalProperties": true}, "expected_version": map[string]any{"type": "integer"}, "rule_set_id": map[string]any{"type": "string"}}, "outcome", "rationale", "evidence_refs", "scope"),
+		"PaginatedCustomers":            objectSchema(map[string]any{"data": arraySchema(schemaRef("Customer")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
 		"BacktestCreateRequest": objectSchema(map[string]any{
 			"from": map[string]any{"type": "string", "format": "date-time"}, "to": map[string]any{"type": "string", "format": "date-time"},
 			"customer_ids": arraySchema(map[string]any{"type": "string"}), "customer_filter": map[string]any{"type": "object", "additionalProperties": true},
@@ -841,7 +857,7 @@ func wave3Schemas() map[string]any {
 		"ScreeningResultHistory": objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "screening_result_id": map[string]any{"type": "string"}, "from_status": map[string]any{"type": "string"}, "to_status": map[string]any{"type": "string"}, "rationale": map[string]any{"type": "string"}, "actor": map[string]any{"type": "string"}, "version": map[string]any{"type": "integer"}, "created_at": map[string]any{"type": "string", "format": "date-time"}}, "id", "screening_result_id", "from_status", "to_status", "rationale", "actor", "version", "created_at"),
 		"ScreeningSourceStatus":  objectSchema(map[string]any{"list_id": map[string]any{"type": "string"}, "list_type": map[string]any{"type": "string"}, "configured": map[string]any{"type": "boolean"}, "operational_state": map[string]any{"type": "string", "enum": []string{"never_imported", "ready", "stale", "unreadable", "failed", "unavailable"}}, "last_attempt_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_failure_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "last_success_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "age_seconds": map[string]any{"type": "integer", "nullable": true}, "freshness_threshold_seconds": map[string]any{"type": "integer"}, "consecutive_failures": map[string]any{"type": "integer"}, "diagnostic": map[string]any{"type": "string"}}, "list_id", "list_type", "configured", "operational_state", "freshness_threshold_seconds", "consecutive_failures"),
 		"PolicyDescriptor": objectSchema(map[string]any{
-			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "travel_rule", "screening_readiness", "sla"}},
+			"name":           map[string]any{"type": "string", "enum": []string{"kyc_required_fields", "edd", "cdd_rule_selection", "cdd_review", "travel_rule", "screening_readiness", "sla"}},
 			"schema_version": map[string]any{"type": "string"},
 			"policy_version": map[string]any{"type": "string"},
 			"digest":         map[string]any{"type": "string", "description": "SHA-256 of the policy document, pinned onto the decisions it produced"},
@@ -1136,6 +1152,32 @@ func pathCustomerInvestigation() map[string]any {
 
 func pathCustomerIdentityHistory() map[string]any {
 	return map[string]any{"get": map[string]any{"summary": "List customer identity change history", "parameters": append([]map[string]any{pathIDParameter("id", "Customer identifier")}, paginationParams()...), "responses": wave3PaginatedResponses("Customer identity history", schemaRef("CustomerIdentityHistory"))}}
+}
+
+func pathCustomerReviews() map[string]any {
+	parameters := append(paginationParams(),
+		map[string]any{"name": "customer_id", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "status", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "tier", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"low", "medium", "high"}}},
+		map[string]any{"name": "assigned_to", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "team", "in": "query", "schema": map[string]any{"type": "string"}},
+		map[string]any{"name": "due", "in": "query", "schema": map[string]any{"type": "string", "enum": []string{"due", "overdue"}}},
+		map[string]any{"name": "due_before", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+		map[string]any{"name": "due_after", "in": "query", "schema": map[string]any{"type": "string", "format": "date-time"}},
+	)
+	return map[string]any{"get": documentedJSONOperation("List the durable CDD review queue", parameters, nil, "200", "Customer reviews", schemaRef("PaginatedCustomerReviews"), "400", "401", "500", "503")}
+}
+
+func pathCustomerReview() map[string]any {
+	parameters := []map[string]any{pathIDParameter("id", "Customer review identifier")}
+	return map[string]any{
+		"get":   map[string]any{"summary": "Get one CDD review and its evidence", "parameters": parameters, "responses": successWithErrors("200", "Customer review", schemaRef("CustomerReview"), "401", "404", "500", "503")},
+		"patch": map[string]any{"summary": "Assign, start, or resume a CDD review", "parameters": parameters, "requestBody": jsonRequestBody(schemaRef("CustomerReviewPatchRequest")), "responses": successWithErrors("200", "Updated customer review", schemaRef("CustomerReview"), "400", "401", "403", "404", "409", "500", "503")},
+	}
+}
+
+func pathCustomerReviewComplete() map[string]any {
+	return map[string]any{"post": map[string]any{"summary": "Complete a CDD review with score, audit, and evidence links", "parameters": []map[string]any{pathIDParameter("id", "Customer review identifier")}, "requestBody": jsonRequestBody(schemaWithRequiredProperties("CustomerReviewCompleteRequest", []string{"outcome", "rationale", "evidence_refs", "scope"})), "responses": successWithErrors("200", "Completed or blocked customer review", schemaRef("CustomerReview"), "400", "401", "403", "404", "409", "500", "503")}}
 }
 
 func pathScreeningRuns() map[string]any {

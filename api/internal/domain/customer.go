@@ -94,6 +94,16 @@ type Customer struct {
 	// transport arrival time with the core system's version.
 	SourceUpdatedAt *time.Time `json:"source_updated_at,omitempty"`
 
+	// Review projection fields are the current scheduling view of the
+	// append-only customer_reviews history. The history row remains the source
+	// of truth; these fields make customer list/detail reads cheap and provide a
+	// stable snapshot for downstream consumers.
+	NextReviewAt        *time.Time `json:"next_review_at,omitempty"`
+	LastReviewAt        *time.Time `json:"last_review_at,omitempty"`
+	ReviewTier          *RiskTier  `json:"review_tier,omitempty"`
+	ReviewPolicyVersion string     `json:"review_policy_version,omitempty"`
+	ReviewPolicyDigest  string     `json:"review_policy_digest,omitempty"`
+
 	// EDD escalation tracking (the case-management workflow §EDD未実施継続時の段階的
 	// 措置). EddRequestedAt marks when the customer entered the current
 	// High-tier EDD requirement window (nil when not in that state).

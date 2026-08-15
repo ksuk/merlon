@@ -37,6 +37,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "customers": "Customers",
+    "customerReviews": "CDD reviews",
     "alerts": "Alerts",
     "cases": "Cases",
     "transactions": "Transactions",
@@ -153,6 +154,13 @@
         "pending_evaluations_failed": "Failed evaluations awaiting retry",
         "pending_evaluations_exhausted": "Evaluations that will not retry on their own"
       }
+    },
+    "cddReviews": {
+      "title": "CDD reviews",
+      "open": "Open queue",
+      "due": "Due",
+      "overdue": "Overdue",
+      "coldStart": "Cold-start backlog"
     }
   },
   "customers": {
@@ -991,6 +999,13 @@
         "approved": "Approved",
         "rejected": "Rejected"
       }
+    },
+    "reviewHistory": {
+      "title": "CDD review history",
+      "empty": "No CDD reviews have been scheduled.",
+      "next": "Next review {{date}}",
+      "cycle": "Cycle {{cycle}}",
+      "openQueue": "Open review queue"
     }
   },
   "notFound": {
@@ -1770,6 +1785,36 @@
     "documentation": "Documentation",
     "purposeLabel": "What this screen is for",
     "stateLabel": "Availability"
+  },
+  "customerReviews": {
+    "title": "CDD review queue",
+    "subtitle": "Durable periodic reviews, assignments, and evidence",
+    "loading": "Loading review queue…",
+    "error": "Could not load review queue: {{error}}",
+    "filter": "Review status",
+    "allStatuses": "All statuses",
+    "queueTitle": "Operator queue",
+    "empty": "No reviews match this filter.",
+    "cycle": "Cycle {{cycle}}",
+    "unassigned": "Unassigned",
+    "assignTo": "Assign to",
+    "assignTeam": "Team",
+    "start": "Start",
+    "resume": "Resume",
+    "assign": "Assign",
+    "complete": "Complete",
+    "cancel": "Cancel",
+    "completeTitle": "Complete review",
+    "selected": "Review {{id}}",
+    "outcome": "Outcome",
+    "rationale": "Rationale",
+    "evidence": "Evidence references",
+    "evidencePlaceholder": "doc:income-2026, case:123",
+    "stats": { "due": "Due", "overdue": "Overdue", "coldStart": "Cold-start backlog" },
+    "status": { "scheduled": "Scheduled", "due": "Due", "overdue": "Overdue", "in_progress": "In progress", "blocked": "Blocked", "completed": "Completed" },
+    "outcomes": { "rating_unchanged": "Rating unchanged", "rating_changed": "Rating changed", "escalated_to_edd": "Escalated to EDD", "unable_to_complete": "Unable to complete" },
+    "tier": { "low": "Low", "medium": "Medium", "high": "High" },
+    "table": { "customer": "Customer", "tier": "Tier", "status": "Status", "due": "Due", "assignment": "Assignment", "actions": "Actions" }
   },
   "ruleDetail": {
     "backToRules": "Back to rules",
