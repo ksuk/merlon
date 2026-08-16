@@ -6,9 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Release notes for each tagged version are generated from the corresponding
-section below, so every release must have one. Pre-release tags
-(`vX.Y.Z-rc.N` and friends) do not need a section of their own: they publish
-the section for the release they are a candidate for, or `[Unreleased]`.
+section below, so every release must have one. There is no fallback: a tag
+without its own section is rejected, and pre-release tags are not published at
+all.
 
 ## [Unreleased]
 
@@ -95,11 +95,18 @@ Two further changes are 2xx-compatible but worth noting:
   synthetic demo dataset generator.
 - Release workflow publishing a multi-architecture image with build
   provenance attestation, a CycloneDX SBOM, and a release evidence manifest.
-- Pre-release channel: `vX.Y.Z-rc.N` tags publish the same attested,
-  multi-architecture image as a production release, marked as a GitHub
-  pre-release. Governance and operational-evidence controls apply to `vX.Y.Z`
-  only, so the software can be evaluated from a published image while those
-  controls are being established.
+- Single release channel `vX.Y.Z`, with the project's governance posture
+  published alongside every release rather than encoded in a tag suffix:
+  `release-manifest.json` carries a `governance` block, the image carries
+  matching `io.github.ksuk.merlon.governance.*` labels, and the release notes
+  carry a disclosure header. All three record that the release does not assert
+  independent approval or separation of duties (ADR-0016).
+- `Governance Required` check: every pull request must carry a self-review
+  record bound to its head commit, verified by `scripts/check-self-review.mjs`.
+  It replaces the approving review a single-maintainer repository cannot
+  produce, and is never described as one.
+- Ruleset drift detection: the `main` and release-tag rulesets are committed to
+  `.github/rulesets/` and compared weekly against the live configuration.
 - Container image hardening: runs as non-root uid 10001, needs no writable
   path (`--read-only` works unmodified), declares a `/healthz/live` liveness
   healthcheck — readiness is exposed separately at `/healthz/ready` — and

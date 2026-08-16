@@ -25,23 +25,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Two channels share this workflow and differ only in what the tag
-          # promises. A production tag (vMAJOR.MINOR.PATCH) asserts the whole
-          # release checklist, including the governance and operational-evidence
-          # controls. A pre-release tag (-alpha.N/-beta.N/-rc.N) asserts only the
-          # verification and provenance controls and exists so the software can
-          # be evaluated from a published image while those governance controls
-          # are still being established. Both are immutable and attested; see
-          # docs/development/release-checklist.md for which sections apply.
-          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$'
+          # One channel: vMAJOR.MINOR.PATCH. Pre-release identifiers are
+          # rejected rather than accepted-and-labelled, because this project
+          # has no second channel to route them to. What a release does and
+          # does not assert is published with the release itself (see the
+          # governance block in release-manifest.json and the disclosure header
+          # in the release notes) instead of being encoded in a tag suffix that
+          # readers skip. See docs/development/release-checklist.md.
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           if [[ ! "$GITHUB_REF_NAME" =~ $semver ]]; then
-            echo "Release tag must be strict SemVer: vMAJOR.MINOR.PATCH, optionally" >&2
-            echo "followed by -alpha.N, -beta.N, or -rc.N (got: $GITHUB_REF_NAME)" >&2
+            echo "Release tag must be strict SemVer: vMAJOR.MINOR.PATCH" >&2
+            echo "(got: $GITHUB_REF_NAME). Pre-release identifiers are not published." >&2
             exit 1
-          fi
-          prerelease=false
-          if [[ -n "${BASH_REMATCH[4]}" ]]; then
-            prerelease=true
           fi
           if [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]]; then
             echo "Release tag must be annotated." >&2
@@ -53,7 +48,6 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "commit=$release_commit" >> "$GITHUB_OUTPUT"
           echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -70,16 +64,28 @@ jobs:
           # Release notes come from CHANGELOG.md rather than from commit
           # subjects: it makes the changelog load-bearing, so a release cannot
           # be cut without one and it cannot silently drift from what shipped.
-          #
-          # A production tag must have its own "## [X.Y.Z]" section and
-          # scripts/changelog.mjs exits non-zero without one. A pre-release tag
-          # resolves to the section for the release it is a candidate for, and
-          # failing that to "## [Unreleased]" -- Keep a Changelog has no
-          # per-pre-release heading, so demanding "## [X.Y.Z-rc.N]" would make
-          # this channel impossible to use. The section still has to be
-          # non-empty on both channels. The log line above the notes records
-          # which section was used.
-          node scripts/changelog.mjs "$GITHUB_REF_NAME" > release-notes.md
+          # The tag must have its own "## [X.Y.Z]" section; scripts/changelog.mjs
+          # exits non-zero without one and never falls back to another section.
+          node scripts/changelog.mjs "$GITHUB_REF_NAME" > changelog-section.md
+
+          # Every release states what it does and does not assert, in the
+          # release itself rather than only in the documentation. The same
+          # facts are emitted machine-readably in release-manifest.json's
+          # governance block and as an image label. This project has one
+          # maintainer, so independent approval and separation of duties do not
+          # exist here; saying so on the artifact is the honest form of that.
+          cat > release-notes.md <<'DISCLOSURE'
+          > **How this release was produced.** Every automated gate on this
+          > repository passed on the release commit, and the maintainer's
+          > self-review record is on the pull requests it contains. This release
+          > does **not** assert independent approval or separation of duties:
+          > the project has one maintainer, and one person cannot review their
+          > own work independently. The image carries a build provenance
+          > attestation, a CycloneDX SBOM, and an immutable digest regardless.
+          > See [ADR-0016](https://github.com/ksuk/merlon/blob/main/docs/decisions/0016-single-maintainer-change-control.md).
+
+          DISCLOSURE
+          cat changelog-section.md >> release-notes.md
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -137,23 +143,16 @@ jobs:
             --arg provenance_url "$PROVENANCE_URL" \
             --arg sbom "sbom-image.cdx.json" \
             --arg sbom_sha256 "$sbom_sha256" \
-            '{schema_version: 1, tag: $tag, commit: $commit, image: $image, image_digest: $digest, sbom: {file: $sbom, sha256: $sbom_sha256}, provenance: {provider: "GitHub artifact attestation", url: $provenance_url}}' \
+            '{schema_version: 2, tag: $tag, commit: $commit, image: $image, image_digest: $digest, sbom: {file: $sbom, sha256: $sbom_sha256}, provenance: {provider: "GitHub artifact attestation", url: $provenance_url}, governance: {mode: "single-maintainer", independent_approval: false, separation_of_duties: false, adr: "ADR-0016"}}' \
             > release-manifest.json
           sha256sum release-manifest.json sbom-image.cdx.json > SHA256SUMS
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
-          # --prerelease keeps the tag out of "Latest release", so an evaluation
-          # build is never presented as the production release.
-          args=(--verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME")
-          if [[ "$PRERELEASE" == true ]]; then
-            args+=(--prerelease)
-          fi
           gh release create "$GITHUB_REF_NAME" \
             release-manifest.json sbom-image.cdx.json SHA256SUMS \
-            "${args[@]}"
+            --verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME"

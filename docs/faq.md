@@ -33,11 +33,13 @@ and the honest answer is documented rather than marketed: see
 [Container Images](operations/container-images.md) and the
 [Release Checklist](development/release-checklist.md).
 
-At the time of writing the repository has one active maintainer and publishes
-pre-release tags only. Production suitability is your assessment to make
-against your own regulatory obligations — and for an AML/CFT system, that
-assessment is one you have to be able to defend to a regulator regardless of
-what any vendor claims.
+The repository has one active maintainer. Rather than encode that in a
+pre-release tag suffix nobody reads, every release states it on the artifact:
+`release-manifest.json` and the image labels record that the release does not
+assert independent approval or separation of duties. Production suitability is
+your assessment to make against your own regulatory obligations — and for an
+AML/CFT system, that assessment is one you have to be able to defend to a
+regulator regardless of what any vendor claims.
 
 ### Why is there no `latest` tag?
 

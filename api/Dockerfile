@@ -85,7 +85,11 @@ LABEL org.opencontainers.image.title="Merlon" \
       org.opencontainers.image.licenses="BUSL-1.1" \
       org.opencontainers.image.vendor="Keisuke Kuribara" \
       org.opencontainers.image.version="$VERSION" \
-      org.opencontainers.image.revision="$REVISION"
+      org.opencontainers.image.revision="$REVISION" \
+      io.github.ksuk.merlon.governance.mode="single-maintainer" \
+      io.github.ksuk.merlon.governance.independent-approval="false" \
+      io.github.ksuk.merlon.governance.separation-of-duties="false" \
+      io.github.ksuk.merlon.governance.adr="ADR-0016"
 
 # merlon-api writes nothing to the filesystem at runtime — configuration is
 # environment-driven and all state lives in PostgreSQL — so /app stays owned by

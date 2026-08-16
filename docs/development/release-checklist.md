@@ -4,58 +4,50 @@ title: Release Checklist
 
 # Release Checklist
 
-Complete this checklist for every production release. Store links to the
-public issue, pull request, workflow runs, GitHub Ruleset API response, and
-release artifacts. A checked box must point to evidence; the checklist is not
-evidence by itself.
+Complete this checklist for every release, on whichever channel is active.
+Store links to the public issue, pull request, workflow runs, GitHub Ruleset
+API response, and release artifacts. A checked box must point to evidence; the
+checklist is not evidence by itself.
 
-## Which sections apply
+## One channel
 
-Two tag shapes share one release workflow, and they differ only in what the tag
-promises.
+There is one release channel, `vX.Y.Z`. The release workflow's SemVer gate
+rejects pre-release identifiers, so there is no second channel to route a
+weaker claim to. What a release does and does not assert is published with the
+release instead — see [Disclosed, not asserted](#disclosed-not-asserted).
 
-| Section | Production release (`vX.Y.Z`) | Pre-release (`vX.Y.Z-rc.N`) |
-|---|---|---|
-| Governance and People | Required | Not applicable |
-| Verification and Security | Required | Required |
-| Operational Evidence | Required | Not applicable |
-| Version and Provenance | Required | Required |
+Release notes come from `CHANGELOG.md`. The tag needs its own `## [X.Y.Z]`
+section and the workflow refuses to publish without one; `scripts/changelog.mjs`
+never falls back to `## [Unreleased]` or to a neighbouring version. The section
+has to be non-empty.
 
-A pre-release exists so the software can be evaluated from a published,
-attested image while the governance and operational controls are still being
-established. It is built, signed, attested, and published exactly like a
-production release — the artifacts are not weaker — and it is marked
-`--prerelease` on GitHub so it never appears as the latest release.
+Every release is completable by the maintainer alone. Nothing below waits on a
+second person. That is a deliberate position, not a gap being worked around,
+and the next section is how the project stays honest about it.
 
-What a pre-release does not carry is an assertion that this repository can
-operate a production release: no independent approver, no restore exercise
-record, no vulnerability-response exercise record. It is therefore not suitable
-for production use, and [Container Images](../operations/container-images.md)
-states that boundary for operators.
+## Disclosed, not asserted
 
-Deciding that a pre-release is good enough to deploy is the operator's
-assessment to make against their own regulatory obligations. Nothing below is
-waived for a production release because a pre-release of the same code went out
-first.
+A `vX.Y.Z` tag from this repository asserts that every automated gate passed on
+the release commit and that a self-review record exists for the changes it
+contains. It does **not** assert independent approval or separation of duties,
+because a repository with one maintainer cannot produce either.
 
-Release notes come from `CHANGELOG.md` on both channels. A production tag needs
-its own `## [X.Y.Z]` section and the workflow refuses to publish without one. A
-pre-release tag needs no section of its own — Keep a Changelog has no
-per-pre-release heading — so it publishes the section for the release it is a
-candidate for, or `## [Unreleased]` when that section does not exist yet. The
-workflow log records which section was used. The section still has to be
-non-empty either way.
+That is not left to this page. The release workflow emits it with the artifact:
 
-## Governance and People
+| Output | Carries |
+|---|---|
+| `release-manifest.json` | `governance: { mode, independent_approval, separation_of_duties, adr }` at `schema_version: 2` |
+| Container image labels | `io.github.ksuk.merlon.governance.*`, the same four facts |
+| GitHub release notes | A disclosure header above the changelog section |
 
-- [ ] A named backup maintainer is listed in `MAINTAINERS.md` and has completed
-  the onboarding checklist.
-- [ ] An independent release approver is identified and is not the tag creator
-  or deployer.
-- [ ] The active `main` and release-tag Rulesets were exported and reviewed;
-  bypass actors, force pushes, tag deletion, and unreviewed merges are blocked.
-- [ ] The release issue links every included PR, and every included PR passed
-  Traceability, DCO, independent review, and CODEOWNERS review.
+An operator running a vendor assessment can therefore answer the question from
+`docker inspect` or the manifest, without reading any documentation. Whether
+that is good enough to deploy is their assessment to make against their own
+regulatory obligations — and for an AML/CFT system, one they must be able to
+defend to a regulator regardless of what any vendor claims.
+
+ADR-0016 records the decision, the rejected alternatives, and the tailoring
+against the internal quality standard.
 
 ## Verification and Security
 
@@ -66,7 +58,8 @@ non-empty either way.
   release-image dry-run, vulnerability scans, license checks, and SBOM jobs
   passed on that commit.
 - [ ] Open critical or high vulnerabilities and audit findings were resolved,
-  or a time-bounded exception was independently approved under policy.
+  or a time-bounded exception was recorded under policy with its expiry and
+  remediation. The exception is not independently approved; the record says so.
 - [ ] Official runtime support and EOL sources in
   [Dependency Lifecycle](../operations/dependency-lifecycle.md) were reviewed
   again on the release date.
@@ -81,16 +74,17 @@ non-empty either way.
 - [ ] A sanitized vulnerability-response exercise record identifies the test
   advisory, detection time, owner, severity decision, affected-component
   analysis, containment, patch/exception decision, communications, elapsed
-  time, and follow-up actions. The security owner and independent observer
-  approved it.
+  time, and follow-up actions. The security owner signed it off; the record
+  states that no independent observer was involved.
 - [ ] Migration rollback, database compatibility, encryption-key recovery,
   engine configuration digests, alert queues, and monitoring readiness were
   reviewed for this release.
 
 ## Version and Provenance
 
-- [ ] The release version is strict SemVer and uses an annotated, protected tag
-  reachable from `main`. The tag message links the release issue and approval.
+- [ ] The release version is strict SemVer with no pre-release identifier, and
+  uses an annotated, protected tag reachable from `main`. The tag message links
+  the release issue.
 - [ ] `CHANGELOG.md` describes what this tag ships. Confirm which section the
   workflow will publish with `node scripts/changelog.mjs <tag>` before tagging.
 - [ ] The release workflow published the container by immutable digest; no
@@ -103,8 +97,15 @@ non-empty either way.
 - [ ] The deployment record identifies the same image digest and includes
   post-deployment health, audit, and representative workflow checks.
 
-The repository currently has one active maintainer. Until the first four
-governance and people controls above are evidenced, production release remains
-blocked even if the release workflow is technically runnable. That block is on
-the `vX.Y.Z` channel only; pre-release tags are what the project publishes in
-the meantime.
+## Change Provenance
+
+- [ ] The release issue links every pull request included in this tag.
+- [ ] Every included pull request passed Traceability, DCO, and
+  `Governance Required` — that last one is the self-review record standing in
+  for a review nobody was available to give.
+- [ ] The active `main` and release-tag rulesets match the baseline committed
+  in `.github/rulesets/`, and the latest Ruleset Drift run is green.
+
+Nothing on this page is waived, deferred, or blocked on a second person. If a
+box cannot be checked, the release does not go out — which is the only version
+of this checklist worth having.

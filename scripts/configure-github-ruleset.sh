@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Phase 1 (default) is the configuration a single-maintainer repository can
-# actually enforce. Phase 2 (--require-approvals) is the target configuration
-# described in docs/development/repository-governance.md; it requires an
-# approving review from someone other than the author, so it can only be
-# switched on once a second maintainer exists and is listed in
-# .github/CODEOWNERS. Until then, --require-approvals would make every pull
-# request unmergeable, including the ones adding the second maintainer.
+# Phase 1 (default) is the configuration this repository operates today: one
+# maintainer, no approving review, and `Governance Required` standing in for it
+# by demanding a self-review record (ADR-0016). Phase 2 (--require-approvals)
+# is the configuration to switch to when a second Admin exists and is listed in
+# .github/CODEOWNERS — it requires an approving review from someone other than
+# the author, so applying it before then would make every pull request
+# unmergeable, including the ones adding the second maintainer.
+#
+# After changing the payload, apply it and refresh the committed baseline in
+# .github/rulesets/ in the same pull request; the Ruleset Drift workflow
+# compares the two.
 apply=false
 require_approvals=false
 
@@ -37,10 +41,16 @@ fi
 # pull request targeting main. Build & Check Docs Site is deliberately absent:
 # .github/workflows/docs-deploy.yml is path-filtered and does not report at all
 # on pull requests that touch no documentation path.
+#
+# "Governance Required" is a commit status posted by .github/workflows/
+# governance.yml, not a check-run: the self-review record it verifies arrives
+# as a comment, after the push that produced the head commit. Add it only after
+# that workflow is on main and has been seen reporting on a pull request.
 required_contexts=$(jq -n '[
   "CI Required",
   "Security Required",
   "Traceability Required",
+  "Governance Required",
   "check-signoffs"
 ] | map({context: .})')
 
@@ -88,14 +98,14 @@ tag_payload=$(jq -n '{
 
 if ! $apply; then
   if $require_approvals; then
-    echo "Dry run (phase 2, review approvals required):"
+    echo "Dry run (phase 2, approving review required):"
   else
-    echo "Dry run (phase 1, review approvals not yet enforceable):"
+    echo "Dry run (phase 1, single maintainer):"
   fi
   echo "the following active rulesets would be configured for $repository:"
   jq . <<<"$branch_payload"
   jq . <<<"$tag_payload"
-  echo "Re-run with --apply after an independent maintainer reviews the payload."
+  echo "Review the payload, re-run with --apply, then refresh .github/rulesets/."
   exit 0
 fi
 

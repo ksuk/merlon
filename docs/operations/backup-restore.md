@@ -309,12 +309,13 @@ Record the backup identifier, restore operator, application version, native
 engine configuration digests, validation results, and any exceptions in the
 organization's change-management system.
 
-Before the first production release and at least annually thereafter, perform
-an isolated restore exercise. The sanitized record must identify the source
+Before the first release and at least annually thereafter, perform an isolated
+restore exercise. The sanitized record must identify the source
 and target PostgreSQL versions, release commit and image digest, operators,
 start and completion timestamps, recovery-time result, schema migration ledger,
 health checks, representative encrypted reads, and `merlon-audit verify`
-result. Have an independent observer approve the record.
+result. With one maintainer there is no independent observer; the record says
+so rather than leaving it to be assumed.
 
 Never place credentials, encryption keys, backup locations, or customer data in
 the public repository.

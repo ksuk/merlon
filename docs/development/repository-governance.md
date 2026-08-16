@@ -16,10 +16,11 @@ dispositions. It deliberately does not copy private planning material.
 - Every PR and human-authored commit links a public issue as described in
   [Change Traceability](./change-traceability.md). The Traceability workflow
   rejects missing requirement, design, or commit references.
-- The author cannot approve their own change. Database migrations and audit
-  role changes require an independent Admin review. This is currently a
-  convention: see [Protected Main Configuration](#protected-main-configuration)
-  for what the `main` ruleset does and does not block on today.
+- No pull request is approved, because with one maintainer there is nobody to
+  approve it. What is required instead is a self-review record, enforced by the
+  `Governance Required` check — see
+  [Single-Maintainer Operating Mode](#single-maintainer-operating-mode).
+  ADR-0016 records the decision and what it does not achieve.
 - Rules API versions are inactive when created. A different authenticated
   Admin changes their active state, with the exact version decision and
   approval event committed atomically under ADR-0014.
@@ -30,9 +31,10 @@ dispositions. It deliberately does not copy private planning material.
 
 ## Protected Main Configuration
 
-The `main` ruleset is applied in two phases. Phase 1 is everything a
-single-maintainer repository can enforce server-side. Phase 2 adds the review
-requirements and cannot be switched on until a second maintainer exists.
+The `main` ruleset has two phases. Phase 1 is what a single-maintainer
+repository can enforce server-side, and is what runs today. Phase 2 adds the
+approving-review requirements and is switched on when a second Admin exists —
+see [Review date, and the path off this mode](#review-date-and-the-path-off-this-mode).
 
 ### Enforced now (phase 1)
 
@@ -45,23 +47,21 @@ requirements and cannot be switched on until a second maintainer exists.
   `<workflow> / <job>` path. A context that never reports leaves every pull
   request pending, so only checks that run unconditionally on pull requests
   targeting `main` are listed.
+- `Governance Required` is the fifth. It is not in the live ruleset yet:
+  `scripts/configure-github-ruleset.sh` lists it, and it is applied only after
+  the workflow that reports it is on `main` and has been observed reporting on
+  a pull request. The committed baseline in `.github/rulesets/` shows the live
+  configuration, so until that step lands it shows four. That is the ordering
+  described below, not a control being declared without being enforced.
 
-### Not yet enforced
+### Not enforced, and why
 
-Recorded 2026-07-25. These are declared controls that GitHub does not currently
-block on. They are listed here rather than dropped, because a control this page
-claims but does not implement is worse than a gap this page names.
-
-- **Independent approval, CODEOWNERS review, and last-push approval.** GitHub
-  does not let an author approve their own pull request, and
-  `.github/CODEOWNERS` names a single owner. Enforcing them today would make
-  every pull request unmergeable, including the one that adds a second
-  maintainer. Until then, "the author cannot approve their own change" under
-  [Change Control](#change-control) is a convention rather than a server-side
-  block, and production release stays blocked — the
-  [Release Checklist](./release-checklist.md) already makes a backup maintainer
-  a precondition. Lift by adding the second maintainer to `.github/CODEOWNERS`
-  and re-running the ruleset script with `--require-approvals`.
+- **Approving review, CODEOWNERS review, and last-push approval.** GitHub does
+  not let an author approve their own pull request, and `.github/CODEOWNERS`
+  names a single owner. Requiring them with one maintainer would make every
+  pull request unmergeable, including the one that adds a second maintainer.
+  The self-review record enforced by `Governance Required` is what stands in
+  their place; it is a compensating control and not equivalent to any of them.
 - **Documentation site build.** `Build & Check Docs Site` is path-filtered, so
   it does not report at all on pull requests that touch no documentation path.
   A required check that never reports blocks merges permanently, so it is not
@@ -70,25 +70,136 @@ claims but does not implement is worse than a gap this page names.
 
 The release-tag ruleset covers `v*.*.*` tags and prevents update and deletion.
 The release workflow independently rejects lightweight tags, non-SemVer names,
-and commits that are not reachable from `main`.
+pre-release identifiers, and commits that are not reachable from `main`.
 
 `scripts/configure-github-ruleset.sh` renders this configuration without
-changing GitHub. An independent maintainer must review the output before an
-authorized operator runs it with `--apply`, then export the active Ruleset API
-response as release evidence. Renaming or removing a gating job changes its
-check-run name, so the script must be re-applied in the same change. If the
-repository plan does not provide these rules, production release remains
-blocked; templates and CODEOWNERS are not a substitute for a server-side merge
-block.
+changing GitHub. The rendered output is reviewed before an authorized operator
+runs it with `--apply`, and the active Ruleset API response is exported and
+committed to `.github/rulesets/`. That review is a self-review, not an
+independent one; the baseline diff is what makes the change auditable
+afterwards. Renaming or removing a gating job changes its check-run name, so
+the script must be re-applied in the same change. Templates and CODEOWNERS are
+not a substitute for a server-side merge block.
+
+Adding a required context is ordered, not simultaneous: a context that never
+reports leaves every pull request pending forever. Merge the workflow, watch it
+report on a pull request, then re-apply the ruleset and refresh the baseline.
+
+## Single-Maintainer Operating Mode
+
+This repository has one active maintainer. Independent approval is therefore
+impossible by definition, not merely unimplemented. This section describes what
+applies instead. ADR-0016 records the decision, the rejected alternatives, and
+the tailoring against the internal quality standard.
+
+Every clause below is either **enforced by a mechanism** or a **plain statement
+of fact**. Rules that are declared but not enforced are deliberately absent:
+they read as controls, behave as nothing, and cost the most at audit. If
+something here looks like a rule, a workflow implements it.
+
+### One channel, and the disclosure travels with the artifact
+
+The project publishes `vX.Y.Z`. Pre-release identifiers are rejected by the
+release workflow's SemVer gate, and `scripts/changelog.mjs` requires every tag
+to have its own `CHANGELOG.md` section with no fallback.
+
+What a release does and does not assert is emitted with the release itself
+rather than left in documentation the reader may not reach:
+
+| Output | Carries |
+|---|---|
+| `release-manifest.json` | `governance: { mode, independent_approval, separation_of_duties, adr }` at `schema_version: 2` |
+| Container image labels | `io.github.ksuk.merlon.governance.*`, the same four facts |
+| GitHub release notes | A disclosure header above the changelog section |
+
+So `docker inspect` answers the vendor-assessment question without anyone
+reading this page. A `vX.Y.Z` tag here asserts that every automated gate passed
+on the release commit and that a self-review record exists; it does not assert
+independent approval or separation of duties, and says so on the artifact.
+
+### Merges require a self-review record
+
+No pull request is approved, because there is nobody to approve it. What
+replaces approval is a record of what the author did and — the part that
+matters — what they did not verify.
+
+`.github/workflows/governance.yml` posts the `Governance Required` commit
+status against the pull request head. `scripts/check-self-review.mjs` decides
+it: a comment following `.github/SELF_REVIEW_TEMPLATE.md` must exist, its
+`Head SHA` must match the current head, and all five sections must be present
+and non-empty. Pushing new commits invalidates the record — the same semantics
+as `dismiss_stale_reviews_on_push`, reproduced for a repository with no reviews
+to dismiss.
+
+The status is a commit status rather than a check-run because the record
+arrives as a comment, after the push that produced the head commit. A ruleset
+accepts either.
+
+Bot pull requests pass automatically. A bot cannot write a record, and a
+required check it can never satisfy would strand every dependency update; those
+changes are still gated by every other required check.
+
+This is a compensating control and is never called an approval.
+
+### The gates run under the same admin
+
+Every automated gate above is administered by the same Admin who authors the
+changes. A check its author can alter is a compensating control, not separation
+of duties. That cannot be argued away, so it is made detectable instead:
+
+- The active `main` and release-tag rulesets are committed to
+  `.github/rulesets/`, so weakening them appears as a reviewable diff instead
+  of only in GitHub's settings UI.
+- `.github/workflows/ruleset-drift.yml` exports the live rulesets weekly and
+  fails on any difference from that baseline — added `bypass_actors`, changed
+  `enforcement`, removed required checks.
+- `bypass_actors` stays empty and `current_user_can_bypass` stays `never`.
+
+What this does not catch: one Admin changing the live configuration and the
+baseline in the same act produces no diff. That is a design limit, stated
+rather than mitigated. What drift detection buys is that a weakening cannot
+happen *unnoticed* or *unrecorded* — the baseline commit is in Git history
+either way. It does not stop a deliberate co-ordinated change. This repository
+sits under a personal account, so there is no organization or enterprise
+ruleset layer above the repository to appeal to.
+
+Because `bypass_actors` is empty and `current_user_can_bypass` is `never`, a
+required check that becomes permanently unreportable locks the owner out of
+`main` as well. Recovery is to set the ruleset's `enforcement` to `evaluate`,
+fix the cause, and return it to `active`, recording the temporary change in the
+baseline commit. An `enforcement` change with no such record is drift.
+
+### Review date, and the path off this mode
+
+**2027-02-16, or the day a second Admin joins, whichever comes first.** Joining
+means holding repository Admin, being listed in `MAINTAINERS.md` and
+`.github/CODEOWNERS`, and having completed onboarding — the permission alone is
+not the event.
+
+That date is a statement of when this gets reconsidered, not a switch that
+trips. One-person operation is the intended model right now, not a deviation
+running out of time.
+
+When a second Admin does arrive, the move is mechanical: apply
+`scripts/configure-github-ruleset.sh --apply --require-approvals`, refresh the
+baseline, and update the governance disclosure the release emits. ADR-0016 §6
+lists the steps.
 
 ## Release Control
 
 Only an annotated semantic-version tag reachable from `main` starts the
 release workflow. It builds the pinned container image, publishes an immutable
 digest, generates an SBOM and release manifest, and requests GitHub artifact
-provenance attestation. Release approval, tag protection, restore evidence,
-vulnerability-response exercise, backup maintainer, and three successful runs
-of each required workflow are preconditions in the
+provenance attestation.
+
+There is one channel, `vX.Y.Z`. Pre-release identifiers are rejected rather
+than published on a second channel: what a release asserts is stated on the
+release itself — in `release-manifest.json`, in the image labels, and in the
+release notes header — instead of being encoded in a tag suffix.
+
+The release is self-completable. Nothing in it waits on a second person, and
+the disclosure it publishes is what keeps that honest. See
+[Single-Maintainer Operating Mode](#single-maintainer-operating-mode) and the
 [Release Checklist](./release-checklist.md).
 
 ## Accepted Historical Dispositions

@@ -21,6 +21,6 @@ Rollback / migration plan:
 - [ ] All commits are signed off (`git commit -s`)
 - [ ] No private/confidential information included
 - [ ] Every human-authored commit includes a `Refs #123` footer
-- [ ] I am not approving my own change, and any rule activation will be done by a different Admin
-- [ ] Database privilege changes were reviewed by a second Admin
+- [ ] Self-review record posted as a comment (`.github/SELF_REVIEW_TEMPLATE.md`); `Governance Required` is green
+- [ ] Any rule version activation will be performed by a different Admin than the one who created it
 - [ ] Japanese translation updated together, or filed as an issue with the needs-translation label

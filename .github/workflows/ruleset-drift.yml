@@ -1,0 +1,76 @@
+name: Ruleset Drift
+
+# Every required check on this repository is administered by the same person it
+# checks. That cannot be argued away with one maintainer, so instead it is made
+# detectable: the rulesets that protect `main` and release tags are committed
+# under .github/rulesets/, and this job fails when the live configuration stops
+# matching them.
+#
+# What it catches is a weakening that is unnoticed or unrecorded. What it
+# cannot catch is the live configuration and the baseline being changed in the
+# same act — stated in docs/development/repository-governance.md rather than
+# papered over. See ADR-0016.
+
+on:
+  schedule:
+    # Mondays, 00:17 UTC. Off the hour so the run is not queued behind the
+    # crowd of jobs every scheduler fires on the hour.
+    - cron: '17 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Ruleset Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Export live rulesets and compare with the baseline
+        env:
+          # Reading the rulesets API needs repository Administration (read).
+          # The Actions `permissions:` block has no `administration` scope to
+          # grant, so GITHUB_TOKEN may not be enough. If the first call below
+          # returns 403, create a fine-grained PAT with Administration (read)
+          # on this repository and store it as the RULESET_READ_TOKEN secret;
+          # nothing else about this job changes.
+          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! gh api "repos/$REPO/rulesets" >/dev/null 2>&1; then
+            echo "::error::Cannot read repository rulesets with the token available." >&2
+            echo "Store a fine-grained PAT with Administration (read) as the" >&2
+            echo "RULESET_READ_TOKEN secret. Failing rather than reporting a" >&2
+            echo "clean comparison that never happened." >&2
+            exit 1
+          fi
+
+          # The same filter documented in .github/rulesets/README.md. The
+          # deleted fields are per-request or per-viewer values that would
+          # produce a diff on every export; everything that decides what a
+          # ruleset enforces is kept.
+          for id in $(gh api "repos/$REPO/rulesets" --jq '.[].id'); do
+            name=$(gh api "repos/$REPO/rulesets/$id" --jq '.name')
+            gh api "repos/$REPO/rulesets/$id" \
+              | jq -S 'del(._links, .node_id, .created_at, .updated_at, .current_user_can_bypass)' \
+              > ".github/rulesets/${name}.json"
+          done
+
+          # An untracked file means a ruleset exists that the baseline does not
+          # know about, which is as much a finding as a changed one.
+          if ! git diff --exit-code --stat -- .github/rulesets/ \
+            || [[ -n "$(git ls-files --others --exclude-standard .github/rulesets/)" ]]; then
+            echo "::error::Live rulesets differ from .github/rulesets/." >&2
+            git --no-pager diff -- .github/rulesets/ >&2 || true
+            git ls-files --others --exclude-standard .github/rulesets/ >&2 || true
+            echo "Investigate before restoring the baseline: a silently reverted" >&2
+            echo "diff destroys the evidence of what changed." >&2
+            exit 1
+          fi
+
+          echo "Live rulesets match the committed baseline."

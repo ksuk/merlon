@@ -1,0 +1,105 @@
+name: Governance
+
+# This repository has one maintainer, so no pull request is ever approved by a
+# second person. Rather than declare a review rule that cannot be performed,
+# the rule is that the author leaves a self-review record — and this workflow
+# is what makes that a gate instead of an intention. See ADR-0016.
+#
+# The result is reported as a *commit status* rather than as this job's
+# check-run, for two reasons. A record is posted as a comment, which arrives
+# after the push that created the head commit, so the verdict has to be
+# re-reported against a commit this run is not attached to; and an
+# `issue_comment` run is not associated with the pull request at all. A ruleset
+# satisfies a required context from either a check-run or a commit status, so
+# `Governance Required` is published explicitly against the head SHA.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: governance-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  self-review:
+    name: Self-Review Record
+    # Two exclusions. `issue_comment` fires for issues as well as pull
+    # requests, and only the latter has anything to check. And a `pull_request`
+    # run for a fork gets a read-only token, so it could not post the status
+    # anyway — the `issue_comment` run, which always executes with base-branch
+    # code and base-repository permissions, is what reports on those. Until it
+    # does, the context is absent and the pull request stays blocked, which is
+    # the direction to fail in.
+    if: >-
+      (github.event_name == 'pull_request' && !github.event.pull_request.head.repo.fork)
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+    runs-on: ubuntu-latest
+    steps:
+      # No `ref:` on purpose. A pull_request run checks out the merge ref and
+      # an issue_comment run checks out the default branch; fork pull_request
+      # runs are excluded above, so the checker that executes is always either
+      # `main`'s copy or one only a maintainer could have pushed.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26.5.0'
+
+      - name: Verify self-review record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The head SHA comes from the API, not from the event payload, so the
+          # status is always posted against the commit that is actually at the
+          # head now. Comment bodies never reach the shell: they go to a file
+          # and are read by the checker on stdin.
+          pr=$(gh api "repos/$REPO/pulls/$PR_NUMBER")
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          author_type=$(jq -r '.user.type' <<<"$pr")
+          author_login=$(jq -r '.user.login' <<<"$pr")
+
+          post_status() {
+            gh api --method POST "repos/$REPO/statuses/$head_sha" \
+              -f state="$1" \
+              -f context='Governance Required' \
+              -f description="$2" \
+              -f target_url="$RUN_URL" >/dev/null
+            echo "$1: $2"
+          }
+
+          # Dependabot and other bots cannot write a self-review record, and a
+          # required check they can never satisfy would strand every dependency
+          # update. Their changes are still gated by every other required check.
+          if [[ "$author_type" == "Bot" ]]; then
+            post_status success "Bot pull request ($author_login); self-review not required"
+            exit 0
+          fi
+
+          # --paginate emits one JSON array per page; concatenate them.
+          gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq '[.[] | {body}]' | jq -s 'add // []' > comments.json
+
+          if reason=$(node scripts/check-self-review.mjs "$head_sha" < comments.json 2>&1 >/dev/null); then
+            post_status success "Self-review record present for ${head_sha:0:12}"
+          else
+            # A status description is truncated past ~140 characters, so the
+            # run log carries the full text and the status carries the start.
+            echo "$reason" >&2
+            post_status failure "${reason:0:140}"
+            exit 1
+          fi

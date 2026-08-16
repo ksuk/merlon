@@ -143,14 +143,18 @@ See [docs/development/setup.md](docs/development/setup.md) for detailed setup in
 
 ## Status
 
-This project is in active development and publishes **pre-release tags only**.
+This project is in active development. It publishes one release channel,
+`vX.Y.Z`, built with a provenance attestation, a CycloneDX SBOM, and an
+immutable digest.
 
-Pre-release images are built, attested, and published exactly like a production
-release — the artifacts are not weaker. What they do not assert is that this
-repository can yet operate a production release: it has one active maintainer,
-and the governance and operational-evidence controls in
-[docs/development/release-checklist.md](docs/development/release-checklist.md)
-are not evidenced. That is stated rather than worked around.
+It has one active maintainer, so the independent approval a release tag is
+often assumed to carry cannot exist here. Rather than work around that, every
+release states it: `release-manifest.json` and the image labels record
+`independent_approval: false` and `separation_of_duties: false`, and the release
+notes say so above the changelog. Merges require a self-review record enforced
+by a status check, not an approval nobody can give. See
+[ADR-0016](docs/decisions/0016-single-maintainer-change-control.md) and the
+[release checklist](docs/development/release-checklist.md).
 
 Core backend services (Go API with native rule evaluation), the operator
 dashboard, and the release provenance pipeline are implemented. See
