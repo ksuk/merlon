@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/outcome"
 )
 
 type ScoringEngine interface {
@@ -82,6 +83,39 @@ type MonitoringEngineV2 interface {
 	Evaluate(ctx context.Context, req MonitoringRequest) ([]domain.Alert, error)
 }
 
+// TMContractInfo describes the interpreted transaction-monitoring vocabulary
+// exposed by an engine. It is intentionally additive and optional so older
+// adapters can continue to satisfy the evaluation interfaces while the system
+// status endpoint still reports the native contract when it is available.
+type TMContractInfo struct {
+	ContractVersion       string   `json:"contract_version"`
+	SupportedDetectors    []string `json:"supported_detectors"`
+	CompatibilityWarnings []string `json:"compatibility_warnings,omitempty"`
+	DefaultDigest         string   `json:"default_digest,omitempty"`
+}
+
+// DefaultTMContractInfo is the contract advertised before an engine is wired.
+// This keeps setup-mode /system/status responses useful without claiming that
+// evaluation is available.
+func DefaultTMContractInfo() TMContractInfo {
+	return TMContractInfo{
+		ContractVersion: "2.1",
+		SupportedDetectors: []string{
+			"structuring",
+			"rapid_movement",
+			"high_frequency_small_amount",
+			"dormant_account_reactivation",
+			"high_risk_country_transfer",
+		},
+	}
+}
+
+// TMContractReporter is implemented by engines that can report the exact
+// interpreted contract and compatibility warnings they loaded at startup.
+type TMContractReporter interface {
+	TMContract() TMContractInfo
+}
+
 // RealtimeHistoryWindowProvider lets an engine declare the largest event-time
 // window needed by its realtime scenarios. Servers can then avoid loading a
 // customer's entire history for every newly accepted transaction. Engines
@@ -127,6 +161,17 @@ type BacktestEngine interface {
 // deployments that use a fixed configuration root.
 type VersionedBacktestEngine interface {
 	RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error)
+}
+
+// DetailedBacktestEngine exposes the alert-shaped detections produced by the
+// same replay pass as the aggregate. This prevents outcome analysis from
+// rerunning a potentially different rule/configuration snapshot.
+type DetailedBacktestEngine interface {
+	RunBacktestDetailed(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description string) (*domain.BacktestResult, []outcome.Detection, error)
+}
+
+type VersionedDetailedBacktestEngine interface {
+	RunBacktestWithRuleSetDetailed(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarioIDs []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, []outcome.Detection, error)
 }
 
 // ConfigValidationErrorClass separates mistakes that need different fixes

@@ -37,6 +37,7 @@
   "nav": {
     "dashboard": "ダッシュボード",
     "customers": "顧客",
+    "customerReviews": "CDDレビュー",
     "alerts": "アラート",
     "cases": "ケース",
     "transactions": "取引",
@@ -45,6 +46,7 @@
     "pendingEvaluations": "保留評価キュー",
     "reports": "STRレポート",
     "backtest": "バックテスト",
+    "coverageAnalyses": "既知事案カバレッジ",
     "webhooks": "Webhook",
     "apikeys": "APIキー",
     "rules": "ルール管理",
@@ -153,6 +155,13 @@
         "pending_evaluations_failed": "再試行待ちの失敗した評価",
         "pending_evaluations_exhausted": "自動では再試行されない評価"
       }
+    },
+    "cddReviews": {
+      "title": "CDDレビュー",
+      "open": "キューを開く",
+      "due": "期限到来",
+      "overdue": "期限超過",
+      "coldStart": "初回レビュー滞留"
     }
   },
   "customers": {
@@ -991,6 +1000,13 @@
         "approved": "承認済",
         "rejected": "却下"
       }
+    },
+    "reviewHistory": {
+      "title": "CDDレビュー履歴",
+      "empty": "CDDレビューはまだスケジュールされていません。",
+      "next": "次回レビュー {{date}}",
+      "cycle": "{{cycle}}回目",
+      "openQueue": "レビューキューを開く"
     }
   },
   "notFound": {
@@ -1200,6 +1216,24 @@
         }
       }
     },
+    "outcomes": {
+      "title": "履歴アウトカム分析",
+      "boundary": "内部のケース、STR、アラート判定のみを使います。ラベルなし・評価不能は率の分母から除外し、推定値として扱いません。",
+      "baseline": "ベースライン",
+      "candidate": "候補",
+      "delta": "差分",
+      "tp": "真陽性",
+      "fp": "偽陽性",
+      "unlabeled": "ラベルなし",
+      "unevaluable": "評価不能",
+      "investigated": "マッチ／調査済み",
+      "rate": "TP率（TP / 分母）",
+      "matcher": "マッチャー: {{version}}",
+      "snapshot": "スナップショット: {{value}}",
+      "yes": "はい",
+      "no": "いいえ",
+      "detail": { "variant": "種別", "candidate": "アラート", "scenario": "シナリオ", "label": "ラベル", "investigated": "調査済み" }
+    },
     "columnCustomers": "顧客数",
     "columnTransactions": "取引数",
     "columnAlerts": "アラート数",
@@ -1334,6 +1368,9 @@
     "empty": "スクリーニング結果はありません",
     "customer": "顧客",
     "match": "一致",
+    "nameSimilarity": "氏名 {{value}}%",
+    "confidence": "信頼度 {{value}}%",
+    "evidence": "生年月日証拠: {{status}}",
     "statusLabel": "状態",
     "screenedAt": "実行日時",
     "action": "操作",
@@ -1622,7 +1659,21 @@
     "error": "Webhookデータの取得に失敗しました",
     "tabs": {
       "webhooks": "Webhook",
-      "dlq": "DLQ"
+      "dlq": "DLQ",
+      "inbound": "Inboundイベント"
+    },
+    "inbound": {
+      "title": "Inboundイベントの状態",
+      "eventIdLabel": "InboundイベントID",
+      "eventIdPlaceholder": "evt_...",
+      "lookup": "照会",
+      "replay": "再実行",
+      "table": {
+        "index": "レコード",
+        "entity": "外部ID",
+        "status": "状態",
+        "reason": "理由"
+      }
     },
     "dlq": {
       "table": {
@@ -1753,6 +1804,59 @@
     "documentation": "ドキュメント",
     "purposeLabel": "この画面の目的",
     "stateLabel": "可用性"
+  },
+  "customerReviews": {
+    "title": "CDDレビューキュー",
+    "subtitle": "定期レビュー、担当割当、証跡を管理します",
+    "loading": "レビューキューを読み込み中…",
+    "error": "レビューキューを読み込めませんでした: {{error}}",
+    "filter": "レビュー状態",
+    "allStatuses": "すべての状態",
+    "queueTitle": "オペレーターキュー",
+    "empty": "条件に一致するレビューはありません。",
+    "cycle": "{{cycle}}回目",
+    "unassigned": "未割当",
+    "assignTo": "担当者",
+    "assignTeam": "チーム",
+    "start": "開始",
+    "resume": "再開",
+    "assign": "割当",
+    "complete": "完了",
+    "cancel": "取消",
+    "completeTitle": "レビュー完了",
+    "selected": "レビュー {{id}}",
+    "outcome": "結果",
+    "rationale": "理由",
+    "evidence": "証跡参照",
+    "evidencePlaceholder": "doc:income-2026, case:123",
+    "stats": { "due": "期限到来", "overdue": "期限超過", "coldStart": "初回レビュー滞留" },
+    "status": { "scheduled": "予定", "due": "期限到来", "overdue": "期限超過", "in_progress": "進行中", "blocked": "ブロック", "completed": "完了" },
+    "outcomes": { "rating_unchanged": "評価変更なし", "rating_changed": "評価変更", "escalated_to_edd": "EDDへエスカレーション", "unable_to_complete": "完了不能" },
+    "tier": { "low": "低", "medium": "中", "high": "高" },
+    "table": { "customer": "顧客", "tier": "リスク層", "status": "状態", "due": "期限", "assignment": "担当", "actions": "操作" }
+  },
+  "coverage": {
+    "title": "既知事案カバレッジ",
+    "subtitle": "内部のケース・STR・アラート判定と比較する永続ジョブ",
+    "loading": "カバレッジ分析を読み込み中…",
+    "error": "カバレッジ分析を読み込めませんでした: {{error}}",
+    "queue": "分析をキューへ追加",
+    "queueTitle": "分析ジョブ",
+    "filter": "分析状態",
+    "allStatuses": "すべての状態",
+    "empty": "カバレッジ分析はまだキューにありません。",
+    "boundary": "内部の既知事案のみを対象とします。観測されていない事象は推定せず、評価不能の行も明示します。",
+    "status": { "queued": "待機中", "running": "実行中", "completed": "完了", "failed": "失敗" },
+    "table": { "id": "分析ID", "status": "状態", "knownMatter": "既知事案件数", "rate": "カバー済み", "snapshot": "スナップショット", "matter": "事案", "customer": "顧客", "source": "由来", "label": "ラベル", "covered": "カバレッジ" },
+    "detail": { "title": "分析 {{id}}" },
+    "stats": { "knownMatter": "既知事案", "covered": "カバー済み", "notCovered": "未カバー", "unevaluable": "評価不能", "rate": "カバレッジ率" },
+    "matcher": "マッチャー: {{version}}",
+    "period": "リプレイ期間: {{from}} – {{to}}",
+    "ruleSet": "ルールセット: {{value}}",
+    "snapshot": "スナップショット: {{value}}",
+    "covered": "カバー済み",
+    "notCovered": "未カバー",
+    "unevaluable": "評価不能"
   },
   "ruleDetail": {
     "backToRules": "ルール一覧へ戻る",

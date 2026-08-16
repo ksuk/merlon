@@ -5,8 +5,9 @@
 # per-risk-tier home in the v2 schema yet, so they are kept flat under
 # conditions.additional at their v1 MEDIUM-tier (baseline) values. Full
 # evaluation semantics for this scenario are WS-5 scope.
-schema_version: "2.0"
+schema_version: "2.1"
 scenario_id: tm_rapid_movement
+detector: rapid_movement
 name: "急速資金移動検知"
 description: "短期間での大量の入出金を検知する"
 type: aggregation

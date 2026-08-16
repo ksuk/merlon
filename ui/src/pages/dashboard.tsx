@@ -6,6 +6,7 @@ import { useApi } from "@/hooks/use-api"
 import { api } from "@/lib/api"
 import { AlertTriangle, ArrowLeftRight, FolderOpen, ShieldAlert, ShieldCheck, Users } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { Link } from "react-router"
 import {
   Bar,
   BarChart,
@@ -133,6 +134,13 @@ export function DashboardPage() {
           description={t("dashboard.stats.whitelistExpiringSoonDescription", { days: WHITELIST_EXPIRING_SOON_DAYS })}
         />
       </div>
+
+      {stats.cdd_review_queue && (
+        <Card>
+          <CardHeader><CardTitle className="flex items-center justify-between text-base"><span>{t("dashboard.cddReviews.title")}</span><Link to="/customer-reviews" className="text-sm font-normal text-primary underline-offset-4 hover:underline">{t("dashboard.cddReviews.open")}</Link></CardTitle></CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3"><StatCard title={t("dashboard.cddReviews.due")} value={stats.cdd_review_queue.due} icon={ShieldAlert} /><StatCard title={t("dashboard.cddReviews.overdue")} value={stats.cdd_review_queue.overdue} icon={AlertTriangle} /><StatCard title={t("dashboard.cddReviews.coldStart")} value={stats.cdd_review_queue.cold_start} icon={Users} /></CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

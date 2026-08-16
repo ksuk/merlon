@@ -42,6 +42,7 @@ const sidebars: SidebarsConfig = {
         'compliance/data-retention',
         'case-management',
         'auth',
+        'outcome-analysis',
       ],
     },
     {

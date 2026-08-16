@@ -2,8 +2,9 @@
 # fixture at content/_sample/tm_scenarios_v1_compat/structuring_basic.yaml:
 # v1 had no customer_type dimension, so the same per-risk-tier threshold is
 # repeated for every customer_type here (the rule schema §3.1 migration item 2).
-schema_version: "2.0"
+schema_version: "2.1"
 scenario_id: tm_structuring_basic
+detector: structuring
 name: "ストラクチャリング検知（基本）"
 description: "報告閾値を回避するための取引分割を検知する"
 type: aggregation

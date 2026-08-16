@@ -10,8 +10,13 @@ type ScreenMatch struct {
 	EntryID     string  `json:"entry_id"`
 	MatchedName string  `json:"matched_name"`
 	Similarity  float64 `json:"similarity"`
-	ListType    string  `json:"list_type"`
-	Source      string  `json:"source"`
+	// Confidence is the name candidate score after secondary-identifier
+	// evidence has been applied. Similarity intentionally remains the raw name
+	// score for backwards-compatible consumers.
+	Confidence    float64        `json:"confidence,omitempty"`
+	ListType      string         `json:"list_type"`
+	Source        string         `json:"source"`
+	MatchEvidence map[string]any `json:"match_evidence,omitempty"`
 }
 
 type ScreenResult struct {

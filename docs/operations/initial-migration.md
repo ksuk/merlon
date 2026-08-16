@@ -10,15 +10,15 @@ your core banking or ledger system.
 
 ## What is supported today
 
-Merlon has no bulk-import command. The supported path is to read your export
-files and replay them through the REST API, then run the scoring and
-monitoring backfills. The reference script in
+The supported path for an initial migration is `go run ./api/cmd/merlon-import`
+with the fixed CSV contract in ADR-0015. Run it once with `--dry-run` (the
+default), inspect the JSON report, then use `--apply` after migrations are
+current. `--apply` also requires `--actor <operator-or-service-id>` so both
+successful and failed runs have an accountable, durable audit record. The command writes only customers, accounts, account links, and
+transactions; alerts, cases, screening results, score history, and audit
+artifacts are derived by Merlon after the import. The REST replay script in
 [`scripts/migrate-initial-data.py`](https://github.com/ksuk/merlon/blob/main/scripts/migrate-initial-data.py)
-implements exactly the sequence below and is a reasonable starting point to
-adapt.
-
-A native bulk loader is designed but not implemented; see ADR-0015 (Bulk Data
-Import) for its scope and why it is not simply the demo seed loader.
+remains available for small compatibility loads.
 
 :::danger[Never write customer rows with SQL]
 

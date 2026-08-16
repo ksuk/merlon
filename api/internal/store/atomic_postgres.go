@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	cryptopkg "github.com/ksuk/merlon/api/internal/crypto"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
 
@@ -12,11 +13,16 @@ import (
 // unit of work; the required durable event and audit rows are committed
 // before a response is written.
 type PgAtomicMutationRepo struct {
-	pool DBTX
+	pool      DBTX
+	encryptor *cryptopkg.Encryptor
 }
 
 func NewPgAtomicMutationRepo(pool DBTX) *PgAtomicMutationRepo {
 	return &PgAtomicMutationRepo{pool: pool}
+}
+
+func NewPgAtomicMutationRepoWithEncryptor(pool DBTX, encryptor *cryptopkg.Encryptor) *PgAtomicMutationRepo {
+	return &PgAtomicMutationRepo{pool: pool, encryptor: encryptor}
 }
 
 func (r *PgAtomicMutationRepo) RunAtomic(ctx context.Context, fn func(domain.AtomicMutationRepositories) error) error {
@@ -35,7 +41,7 @@ func (r *PgAtomicMutationRepo) RunAtomic(ctx context.Context, fn func(domain.Ato
 	}()
 
 	repos := domain.AtomicMutationRepositories{
-		Customers:          NewPgCustomerRepo(tx, nil),
+		Customers:          NewPgCustomerRepo(tx, r.encryptor),
 		Transactions:       NewPgTransactionRepo(tx),
 		Alerts:             NewPgAlertRepo(tx),
 		Reports:            NewPgSTRReportRepo(tx),
@@ -50,6 +56,7 @@ func (r *PgAtomicMutationRepo) RunAtomic(ctx context.Context, fn func(domain.Ato
 		PendingEvaluations: NewPgPendingEvaluationRepo(tx),
 		BatchRuns:          NewPgBatchRunRepo(tx),
 		BacktestJobs:       NewPgBacktestJobRepo(tx),
+		CustomerReviews:    NewPgCustomerReviewRepo(tx),
 	}
 	if err := fn(repos); err != nil {
 		return err

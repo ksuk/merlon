@@ -17,15 +17,15 @@ func NewPgBacktestJobRepo(pool DBTX) *PgBacktestJobRepo {
 	return &PgBacktestJobRepo{pool: pool}
 }
 
-const backtestJobColumns = `id,status,from_at,to_at,customer_ids,customer_filter,scenario_ids,baseline_rule_set_id,candidate_rule_set_id,baseline_rule_version,candidate_rule_version,baseline_rule_definition,candidate_rule_definition,config_digests,snapshot_at,total_customers,processed_customers,progress,eta_seconds,baseline,candidate,delta,error,created_at,started_at,completed_at,updated_at`
+const backtestJobColumns = `id,status,from_at,to_at,customer_ids,customer_filter,scenario_ids,baseline_rule_set_id,candidate_rule_set_id,baseline_rule_version,candidate_rule_version,baseline_rule_definition,candidate_rule_definition,config_digests,snapshot_at,total_customers,processed_customers,progress,eta_seconds,baseline,candidate,delta,outcome_analysis,error,created_at,started_at,completed_at,updated_at`
 
 func scanBacktestJob(row pgx.Row) (*domain.BacktestJob, error) {
 	var j domain.BacktestJob
 	var status string
 	var jobError *string
 	var baselineVersion, candidateVersion *int
-	var ids, filter, scenarios, baselineDefinition, candidateDefinition, digests, baseline, candidate, delta []byte
-	if err := row.Scan(&j.ID, &status, &j.From, &j.To, &ids, &filter, &scenarios, &j.BaselineRuleSetID, &j.CandidateRuleSetID, &baselineVersion, &candidateVersion, &baselineDefinition, &candidateDefinition, &digests, &j.SnapshotAt, &j.TotalCustomers, &j.ProcessedCustomers, &j.Progress, &j.ETASeconds, &baseline, &candidate, &delta, &jobError, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.UpdatedAt); err != nil {
+	var ids, filter, scenarios, baselineDefinition, candidateDefinition, digests, baseline, candidate, delta, outcomeAnalysis []byte
+	if err := row.Scan(&j.ID, &status, &j.From, &j.To, &ids, &filter, &scenarios, &j.BaselineRuleSetID, &j.CandidateRuleSetID, &baselineVersion, &candidateVersion, &baselineDefinition, &candidateDefinition, &digests, &j.SnapshotAt, &j.TotalCustomers, &j.ProcessedCustomers, &j.Progress, &j.ETASeconds, &baseline, &candidate, &delta, &outcomeAnalysis, &jobError, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if jobError != nil {
@@ -62,6 +62,10 @@ func scanBacktestJob(row pgx.Row) (*domain.BacktestJob, error) {
 	if len(delta) > 0 {
 		j.Delta = &domain.BacktestResult{}
 		_ = json.Unmarshal(delta, j.Delta)
+	}
+	if len(outcomeAnalysis) > 0 {
+		j.OutcomeAnalysis = &domain.BacktestOutcomeAnalysis{}
+		_ = json.Unmarshal(outcomeAnalysis, j.OutcomeAnalysis)
 	}
 	return &j, nil
 }
@@ -286,4 +290,106 @@ func (r *PgBacktestJobRepo) GetCustomerSnapshot(ctx context.Context, jobID strin
 		ids = append(ids, id)
 	}
 	return ids, true, rows.Err()
+}
+
+func (r *PgBacktestJobRepo) SaveBacktestOutcomeAnalysis(ctx context.Context, jobID string, analysis *domain.BacktestOutcomeAnalysis, details []domain.BacktestOutcomeDetail) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE backtest_jobs SET outcome_analysis=$2,updated_at=now() WHERE id=$1`, jobID, nullableJSON(analysis))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Entity: "backtest_job", ID: jobID}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM backtest_outcome_details WHERE job_id=$1`, jobID); err != nil {
+		return err
+	}
+	for _, detail := range details {
+		id := detail.ID
+		if id == "" {
+			id = wave3ID()
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO backtest_outcome_details
+			(id,job_id,variant,change_kind,candidate_id,reference_id,customer_id,scenario_id,label,metric,score,investigated,matched_alert_id,matched_case_id,matcher_version,assumptions,snapshot_at,provenance,created_at)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,COALESCE($19,now()))
+			ON CONFLICT(job_id,variant,candidate_id) DO UPDATE SET change_kind=EXCLUDED.change_kind,reference_id=EXCLUDED.reference_id,scenario_id=EXCLUDED.scenario_id,label=EXCLUDED.label,metric=EXCLUDED.metric,score=EXCLUDED.score,investigated=EXCLUDED.investigated,matched_alert_id=EXCLUDED.matched_alert_id,matched_case_id=EXCLUDED.matched_case_id,matcher_version=EXCLUDED.matcher_version,assumptions=EXCLUDED.assumptions,snapshot_at=EXCLUDED.snapshot_at,provenance=EXCLUDED.provenance`,
+			id, jobID, string(detail.Variant), detail.ChangeKind, detail.CandidateID, detail.ReferenceID, domain.CanonicalUUID(detail.CustomerID), detail.ScenarioID, detail.Label, detail.Metric, detail.Score, detail.Investigated, detail.MatchedAlertID, detail.MatchedCaseID, detail.MatcherVersion, marshalJSON(detail.Assumptions), detail.SnapshotAt, marshalJSON(detail.Provenance), nullableTime(detail.CreatedAt)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func nullableTime(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value
+}
+
+func (r *PgBacktestJobRepo) GetBacktestOutcomeAnalysis(ctx context.Context, jobID string) (*domain.BacktestOutcomeAnalysis, error) {
+	var raw []byte
+	if err := r.pool.QueryRow(ctx, `SELECT outcome_analysis FROM backtest_jobs WHERE id=$1`, jobID).Scan(&raw); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &domain.ErrNotFound{Entity: "backtest_job", ID: jobID}
+		}
+		return nil, err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	var analysis domain.BacktestOutcomeAnalysis
+	if err := json.Unmarshal(raw, &analysis); err != nil {
+		return nil, err
+	}
+	return &analysis, nil
+}
+
+func (r *PgBacktestJobRepo) ListBacktestOutcomeDetails(ctx context.Context, filter domain.BacktestOutcomeFilter) ([]domain.BacktestOutcomeDetail, error) {
+	query := `SELECT id,job_id::text,variant,change_kind,candidate_id,reference_id,customer_id::text,scenario_id,label,metric,score,investigated,matched_alert_id,matched_case_id,matcher_version,assumptions,snapshot_at,provenance,created_at FROM backtest_outcome_details WHERE job_id=$1`
+	args := []any{filter.JobID}
+	if filter.Variant != "" {
+		query += fmt.Sprintf(" AND variant=$%d", len(args)+1)
+		args = append(args, string(filter.Variant))
+	}
+	if filter.ScenarioID != "" {
+		query += fmt.Sprintf(" AND scenario_id=$%d", len(args)+1)
+		args = append(args, filter.ScenarioID)
+	}
+	if filter.Label != "" {
+		query += fmt.Sprintf(" AND label=$%d", len(args)+1)
+		args = append(args, filter.Label)
+	}
+	if filter.Cursor != nil {
+		query += fmt.Sprintf(" AND (created_at,id) > ($%d,$%d)", len(args)+1, len(args)+2)
+		args = append(args, filter.Cursor.CreatedAt, filter.Cursor.ID)
+	}
+	query += " ORDER BY created_at ASC,id ASC"
+	if filter.Limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", len(args)+1)
+		args = append(args, filter.Limit)
+	}
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []domain.BacktestOutcomeDetail{}
+	for rows.Next() {
+		var item domain.BacktestOutcomeDetail
+		var variant string
+		var assumptions, provenance []byte
+		if err := rows.Scan(&item.ID, &item.JobID, &variant, &item.ChangeKind, &item.CandidateID, &item.ReferenceID, &item.CustomerID, &item.ScenarioID, &item.Label, &item.Metric, &item.Score, &item.Investigated, &item.MatchedAlertID, &item.MatchedCaseID, &item.MatcherVersion, &assumptions, &item.SnapshotAt, &provenance, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		item.Variant = domain.OutcomeVariant(variant)
+		_ = json.Unmarshal(assumptions, &item.Assumptions)
+		_ = json.Unmarshal(provenance, &item.Provenance)
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }

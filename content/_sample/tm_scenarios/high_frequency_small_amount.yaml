@@ -2,8 +2,9 @@
 # from structuring -- flags transaction *count* within a short window
 # regardless of total sum, so many small transfers below the per-transaction
 # cap are caught even if their sum never reaches structuring's threshold.
-schema_version: "2.0"
+schema_version: "2.1"
 scenario_id: tm_high_frequency_small_amount
+detector: high_frequency_small_amount
 name: "高頻度小口取引検知"
 description: "短時間に多数の小口取引が発生した場合に検知する"
 type: aggregation

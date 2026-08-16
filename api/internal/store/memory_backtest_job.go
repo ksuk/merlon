@@ -15,14 +15,15 @@ type MemoryBacktestJobRepo struct {
 	snapshots map[string][]string
 	// affected holds the completed job's per-scenario outcome rows, ordered by
 	// (customer_id, scenario_id) the way the PostgreSQL index returns them.
-	affected map[string][]domain.BacktestAffectedCustomer
+	affected       map[string][]domain.BacktestAffectedCustomer
+	outcomeDetails map[string][]domain.BacktestOutcomeDetail
 }
 
 func NewMemoryBacktestJobRepo() *MemoryBacktestJobRepo {
 	return &MemoryBacktestJobRepo{
 		data:      make(map[string]*domain.BacktestJob),
 		snapshots: make(map[string][]string),
-		affected:  make(map[string][]domain.BacktestAffectedCustomer),
+		affected:  make(map[string][]domain.BacktestAffectedCustomer), outcomeDetails: make(map[string][]domain.BacktestOutcomeDetail),
 	}
 }
 
@@ -48,7 +49,23 @@ func cloneBacktestJob(j *domain.BacktestJob) *domain.BacktestJob {
 	cp.Baseline = cloneBacktestResult(j.Baseline)
 	cp.Candidate = cloneBacktestResult(j.Candidate)
 	cp.Delta = cloneBacktestResult(j.Delta)
+	cp.OutcomeAnalysis = cloneBacktestOutcomeAnalysis(j.OutcomeAnalysis)
 	return &cp
+}
+
+func cloneBacktestOutcomeAnalysis(in *domain.BacktestOutcomeAnalysis) *domain.BacktestOutcomeAnalysis {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Assumptions = append([]string(nil), in.Assumptions...)
+	if in.ByScenario != nil {
+		out.ByScenario = make(map[string]domain.OutcomeSummary, len(in.ByScenario))
+		for key, value := range in.ByScenario {
+			out.ByScenario[key] = value
+		}
+	}
+	return &out
 }
 
 func cloneBacktestResult(in *domain.BacktestResult) *domain.BacktestResult {
@@ -252,4 +269,74 @@ func (r *MemoryBacktestJobRepo) GetCustomerSnapshot(_ context.Context, jobID str
 	}
 	ids, found := r.snapshots[jobID]
 	return append([]string(nil), ids...), found, nil
+}
+
+func (r *MemoryBacktestJobRepo) SaveBacktestOutcomeAnalysis(_ context.Context, jobID string, analysis *domain.BacktestOutcomeAnalysis, details []domain.BacktestOutcomeDetail) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.data[jobID]
+	if !ok {
+		return &domain.ErrNotFound{Entity: "backtest_job", ID: jobID}
+	}
+	job.OutcomeAnalysis = cloneBacktestOutcomeAnalysis(analysis)
+	job.UpdatedAt = time.Now().UTC()
+	copyDetails := make([]domain.BacktestOutcomeDetail, len(details))
+	for i, detail := range details {
+		copyDetails[i] = cloneBacktestOutcomeDetail(detail)
+	}
+	sort.Slice(copyDetails, func(i, j int) bool {
+		if copyDetails[i].Variant != copyDetails[j].Variant {
+			return copyDetails[i].Variant < copyDetails[j].Variant
+		}
+		if copyDetails[i].ScenarioID != copyDetails[j].ScenarioID {
+			return copyDetails[i].ScenarioID < copyDetails[j].ScenarioID
+		}
+		return copyDetails[i].ID < copyDetails[j].ID
+	})
+	r.outcomeDetails[jobID] = copyDetails
+	return nil
+}
+
+func (r *MemoryBacktestJobRepo) GetBacktestOutcomeAnalysis(_ context.Context, jobID string) (*domain.BacktestOutcomeAnalysis, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.data[jobID]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "backtest_job", ID: jobID}
+	}
+	return cloneBacktestOutcomeAnalysis(job.OutcomeAnalysis), nil
+}
+
+func (r *MemoryBacktestJobRepo) ListBacktestOutcomeDetails(_ context.Context, filter domain.BacktestOutcomeFilter) ([]domain.BacktestOutcomeDetail, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.data[filter.JobID]; !ok {
+		return nil, &domain.ErrNotFound{Entity: "backtest_job", ID: filter.JobID}
+	}
+	items := make([]domain.BacktestOutcomeDetail, 0)
+	for _, detail := range r.outcomeDetails[filter.JobID] {
+		if (filter.Variant != "" && detail.Variant != filter.Variant) || (filter.ScenarioID != "" && detail.ScenarioID != filter.ScenarioID) || (filter.Label != "" && detail.Label != filter.Label) {
+			continue
+		}
+		if filter.Cursor != nil && (detail.CreatedAt.Before(filter.Cursor.CreatedAt) || (detail.CreatedAt.Equal(filter.Cursor.CreatedAt) && detail.ID <= filter.Cursor.ID)) {
+			continue
+		}
+		items = append(items, cloneBacktestOutcomeDetail(detail))
+		if filter.Limit > 0 && len(items) >= filter.Limit {
+			break
+		}
+	}
+	return items, nil
+}
+
+func cloneBacktestOutcomeDetail(in domain.BacktestOutcomeDetail) domain.BacktestOutcomeDetail {
+	out := in
+	out.Assumptions = append([]string(nil), in.Assumptions...)
+	if in.Provenance != nil {
+		out.Provenance = make(map[string]string, len(in.Provenance))
+		for key, value := range in.Provenance {
+			out.Provenance[key] = value
+		}
+	}
+	return out
 }

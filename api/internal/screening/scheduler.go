@@ -283,12 +283,18 @@ func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Custom
 
 	records := make([]domain.ScreeningResultRecord, 0, len(screenResult.Matches))
 	for _, m := range screenResult.Matches {
+		evidence := cloneMatchEvidence(m.MatchEvidence)
+		if evidence == nil {
+			evidence = map[string]any{}
+		}
+		evidence["source"] = m.Source
+		evidence["confidence"] = m.Confidence
 		records = append(records, domain.ScreeningResultRecord{
 			ID: newScreeningResultID(), CustomerID: c.ID, ListID: m.ListID, ListType: m.ListType,
-			EntryID: m.EntryID, MatchedName: m.MatchedName, Similarity: m.Similarity,
+			EntryID: m.EntryID, MatchedName: m.MatchedName, Similarity: m.Similarity, Confidence: m.Confidence,
 			Status: domain.ScreeningResultStatusNew, ScreenedAt: screenResult.ScreenedAt, CreatedAt: screenResult.ScreenedAt,
 			Degraded: degradation.Degraded, DegradedSources: append([]string(nil), degradation.Sources...),
-			MatchEvidence: map[string]any{"source": m.Source},
+			MatchEvidence: evidence,
 		})
 	}
 	suppressRepeatFalsePositives(ctx, deps, c.ID, records)
@@ -311,6 +317,17 @@ func screenOneForBatch(ctx context.Context, deps SchedulerDeps, c *domain.Custom
 		}
 	}
 	return CustomerScreenOutcome{CustomerID: c.ID, Screened: true}
+}
+
+func cloneMatchEvidence(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 // suppressRepeatFalsePositives marks a hit the same customer has already ruled

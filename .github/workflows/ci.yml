@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - run: make verify-go GO_TEST_FLAGS='-coverprofile=coverage.out -covermode=atomic'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - run: make test-integration
       # MERLON_REQUIRE_... is what stops this step from passing vacuously: with
       # only the RUN flag, a runner without Docker or a typo in the variable
@@ -113,7 +113,7 @@ jobs:
       # needs the same pinned Go toolchain as the Go verification job.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - name: Verify synchronized container pins
         run: make verify-container-pins
       # Kept beside the container pins so every "same version declared twice"

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/buildinfo"
+	"github.com/ksuk/merlon/api/internal/engine"
 )
 
 // OperationalState is what a component is actually doing, as distinct from
@@ -56,16 +57,17 @@ type ComponentStatus struct {
 // SystemStatus is the whole answer, including how old it is and where it came
 // from, so an operator can tell a live check from a cached one.
 type SystemStatus struct {
-	Version       string             `json:"version"`
-	Commit        string             `json:"commit,omitempty"`
-	BuiltAt       string             `json:"built_at,omitempty"`
-	AuthMode      AuthMode           `json:"auth_mode"`
-	BaseCurrency  string             `json:"base_currency,omitempty"`
-	ConfigDigests map[string]string  `json:"config_digests"`
-	Policies      []PolicyProvenance `json:"policies"`
-	Components    []ComponentStatus  `json:"components"`
-	CheckedAt     time.Time          `json:"checked_at"`
-	ExpiresAt     time.Time          `json:"expires_at"`
+	Version       string                `json:"version"`
+	Commit        string                `json:"commit,omitempty"`
+	BuiltAt       string                `json:"built_at,omitempty"`
+	AuthMode      AuthMode              `json:"auth_mode"`
+	BaseCurrency  string                `json:"base_currency,omitempty"`
+	ConfigDigests map[string]string     `json:"config_digests"`
+	Policies      []PolicyProvenance    `json:"policies"`
+	TMContract    engine.TMContractInfo `json:"tm_contract"`
+	Components    []ComponentStatus     `json:"components"`
+	CheckedAt     time.Time             `json:"checked_at"`
+	ExpiresAt     time.Time             `json:"expires_at"`
 	// Source is "live" when this response ran the checks and "cached" when it
 	// reused a recent result. A page that cannot tell the difference cannot
 	// tell a stale green from a fresh one.
@@ -217,6 +219,7 @@ func (s *Server) buildSystemStatus(ctx context.Context, now time.Time) *SystemSt
 		BaseCurrency:  s.tmBaseCurrency,
 		ConfigDigests: digests,
 		Policies:      policies,
+		TMContract:    s.tmContract,
 		Components:    components,
 		CheckedAt:     now,
 		ExpiresAt:     now.Add(systemStatusTTL),

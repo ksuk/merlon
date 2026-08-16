@@ -19,6 +19,8 @@ import {
   ShieldAlert,
   RotateCcw,
   UserCog,
+  ClipboardCheck,
+  BarChart3,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation } from "react-router"
@@ -41,6 +43,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/", labelKey: "nav.dashboard", icon: LayoutDashboard },
   { to: "/customers", labelKey: "nav.customers", icon: Users },
+  { to: "/customer-reviews", labelKey: "nav.customerReviews", icon: ClipboardCheck },
   { to: "/alerts", labelKey: "nav.alerts", icon: AlertTriangle },
   { to: "/cases", labelKey: "nav.cases", icon: FolderOpen },
   { to: "/transactions", labelKey: "nav.transactions", icon: ArrowLeftRight },
@@ -49,6 +52,7 @@ const navItems: NavItem[] = [
   { to: "/pending-evaluations", labelKey: "nav.pendingEvaluations", icon: RotateCcw },
   { to: "/reports", labelKey: "nav.reports", icon: FileText },
   { to: "/backtest", labelKey: "nav.backtest", icon: FlaskConical },
+  { to: "/coverage-analyses", labelKey: "nav.coverageAnalyses", icon: BarChart3 },
   { to: "/webhooks", labelKey: "nav.webhooks", icon: Webhook, capability: "webhooks.manage" },
   { to: "/apikeys", labelKey: "nav.apikeys", icon: KeyRound, capability: "api_keys.manage" },
   { to: "/users", labelKey: "nav.users", icon: UserCog, capability: "users.manage" },

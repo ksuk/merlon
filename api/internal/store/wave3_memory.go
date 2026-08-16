@@ -140,6 +140,9 @@ func (r *MemoryWave3Repo) PersistScreeningRun(_ context.Context, run *domain.Scr
 		if result.MatchEvidence == nil {
 			result.MatchEvidence = map[string]any{}
 		}
+		if result.Confidence != 0 {
+			result.MatchEvidence["confidence"] = result.Confidence
+		}
 		r.results[result.ID] = cloneScreeningRecord(&result)
 	}
 	return nil

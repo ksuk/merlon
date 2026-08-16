@@ -51,6 +51,15 @@ endpoints:
       currency: "$.currency"
       type: "$.transaction_type"
       base_currency_equivalent: "$.base_currency_equivalent"
+
+sync:
+  interval: 5m
+  page_size: 500
+  initial_lookback: 24h
+  cursor_param: cursor
+  cursor_response: "$.next_cursor"
+  watermark_param: since
+  watermark_response: "$.watermark"
 ```
 
 ### トップレベルのフィールド
@@ -62,6 +71,15 @@ endpoints:
 | `timeout_seconds` | リクエストごとの HTTP タイムアウト。未設定または非正の値の場合、デフォルトは `30`。 |
 | `auth` | 認証設定。詳細は後述。 |
 | `endpoints` | 名前付きエンドポイントのマップ。少なくとも1つが必須。 |
+| `sync` | スケジュール、ページング、ウォーターマークの設定。既定値は5分、500件、初回参照24時間。 |
+
+`MERLON_ADAPTER_CONFIG_PATH` を設定すると、起動時にページング可能な顧客エンドポイント
+（`fetch_customers` または互換用の `fetch_customer`）と `fetch_transactions` を検証する。
+ワーカーは顧客ページを先に処理し、リポジトリへの書き込み完了後にのみ durable checkpoint を進める。
+顧客が見つからない取引は `waiting_dependency` outcome として再試行対象に残し、孤立行を作らない。
+
+管理者は `POST /api/v1/adapters/dry-run` でデータを書き込まずに設定・認証・接続性を検証できる。
+このエンドポイントは管理者専用で、送信先 allowlist とプライベートアドレス制御を適用する。
 
 ### 認証
 
@@ -122,3 +140,19 @@ endpoints:
 - **冪等性**: アダプタ層自体はレコードの重複排除を行わず、各呼び出しについて外部システムのレスポンスに含まれる内容をそのまま返す。外部システムがポーリング間で重複のない結果セットを保証しない場合（例えば、クロックスキューのある `since` ウィンドウ）、アダプタ自体が重複排除を行うと想定するのではなく、顧客・取引エンドポイントにおける Merlon API 自体の外部 ID 処理に頼って重複レコードを回避すること。
 - **エラー処理**: アダプタの呼び出しはフェイルクローズである。2xx 以外の HTTP レスポンス、JSON デコードの失敗、必須の `response_root` の欠如、送信セキュリティチェックに失敗した URL は、いずれも部分的なデータではなくエラーを返す（`api/internal/adapter/rest.go`）。レスポンスボディは読み込み時に 10 MiB に上限が設定され、エラーメッセージにはレスポンスボディの切り詰められたプレビューのみが含まれ、大きなペイロードや機密情報がログに漏出することを防ぐ。
 - **タイムアウト**: すべての HTTP リクエストは `timeout_seconds`（デフォルト `30`）の対象となる。外部システムの想定レイテンシに応じて設定すること。タイムアウトを超えたフェッチは、部分的な結果としてではなくリクエストエラーとして失敗する。
+
+## durable な inbound push webhook
+
+アダプタのポーリングではなくレコードを push するシステムは、
+`POST /api/v1/webhooks/inbound/customers` と
+`POST /api/v1/webhooks/inbound/transactions` を利用できる。
+`MERLON_INBOUND_WEBHOOK_SECRET` を設定し、リクエストの正確なバイト列に対して
+`HMAC-SHA256(timestamp + "." + event_id + "." + raw_body)` を計算し、
+`X-Merlon-Signature: v1=<hex>` として送信する。タイムスタンプは Merlon の時計から
+5分以内でなければならない。認証済みイベントは `202` を返す前に暗号化され、未認証の本文は保存されない。
+
+イベント ID は本文ダイジェストと種別が変わらない場合に限り冪等である。異なる本文の再送は `409` を返す。
+1イベントは最大1,000レコード、10 MiBに制限される。durable worker は30秒後に開始し、依存関係や一時的な失敗を
+最大1時間のバックオフで再試行し、8回で DLQ に移す。レコードごとの `accepted`、`updated`、`skipped`、
+`waiting_dependency`、`rejected` の結果は `GET /api/v1/webhooks/inbound/events/{id}` で確認できる。
+管理者は `POST .../{id}/replay` で失敗または DLQ のイベントを明示的に再実行できる。

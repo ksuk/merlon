@@ -195,6 +195,7 @@ export interface DashboardStats {
   // An empty array means nothing is failing; an absent one means nothing was
   // checked. The two are rendered differently.
   exceptions?: DashboardException[]
+  cdd_review_queue?: { due: number; overdue: number; cold_start: number }
 }
 
 export interface AgeBucket {
@@ -278,6 +279,11 @@ export interface Customer {
   kyc_policy_version?: string
   created_at: string
   updated_at: string
+	  next_review_at?: string
+	  last_review_at?: string
+	  review_tier?: RiskTier
+	  review_policy_version?: string
+	  review_policy_digest?: string
   // EDD 3段階エスカレーション（the case-management workflow §EDD未実施継続時の段階的
   // 措置）。edd_requested_at が未設定なら EDD 要求状態にない。
   edd_requested_at?: string
@@ -481,6 +487,7 @@ export interface Transaction {
   amount: number
   currency: string
   direction: "inbound" | "outbound" | "internal"
+  transaction_type?: string
   counterparty_id?: string
   counterparty_country?: string
   channel?: string
@@ -530,6 +537,40 @@ export interface ScoreRecord {
   actor?: string
   override_evidence?: Record<string, unknown>
   scored_at: string
+}
+
+export type CustomerReviewStatus = "scheduled" | "due" | "overdue" | "in_progress" | "blocked" | "completed"
+export type CustomerReviewOutcome = "rating_unchanged" | "rating_changed" | "escalated_to_edd" | "unable_to_complete"
+
+export interface CustomerReview {
+  id: string
+  customer_id: string
+  cycle: number
+  status: CustomerReviewStatus
+  outcome?: CustomerReviewOutcome
+  tier: RiskTier
+  previous_tier?: RiskTier
+  resulting_tier?: RiskTier
+  assigned_to?: string
+  assigned_team?: string
+  priority?: CasePriority
+  due_at: string
+  grace_until: string
+  overdue_at?: string
+  policy_version: string
+  policy_digest: string
+  scope?: Record<string, unknown>
+  rationale?: string
+  evidence_refs?: string[]
+  previous_score_id?: string
+  resulting_score_id?: string
+  actor?: string
+  scheduled_at: string
+  started_at?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+  version: number
 }
 
 export interface Factor {
@@ -627,6 +668,37 @@ export interface WebhookDLQEntry {
   reprocessed_at?: string
 }
 
+export type InboundWebhookEventStatus = "accepted" | "running" | "completed" | "failed" | "dlq"
+export type InboundWebhookRecordStatus = "accepted" | "updated" | "skipped" | "waiting_dependency" | "rejected"
+export interface InboundWebhookOutcome {
+  index: number
+  entity_type: string
+  external_id?: string
+  entity_id?: string
+  status: InboundWebhookRecordStatus
+  reason?: string
+  created_at: string
+}
+export interface InboundWebhookEvent {
+  id: string
+  kind: "customers" | "transactions"
+  payload_digest: string
+  record_count: number
+  status: InboundWebhookEventStatus
+  attempt_count: number
+  next_attempt_at: string
+  first_received_at: string
+  last_attempt_at?: string
+  completed_at?: string
+  last_error?: string
+  created_at: string
+  updated_at: string
+}
+export interface InboundWebhookEventView {
+  event: InboundWebhookEvent
+  outcomes: InboundWebhookOutcome[]
+}
+
 export interface STRReport {
   id: string
   alert_id: string
@@ -684,6 +756,7 @@ export interface BacktestJob {
   baseline?: BacktestResult
   candidate?: BacktestResult
   delta?: BacktestResult
+  outcome_analysis?: BacktestOutcomeAnalysis
   error?: string
   created_at: string
   updated_at: string
@@ -695,6 +768,114 @@ export interface BacktestJob {
     rerun_of?: string
   }
 }
+
+export type OutcomeVariant = "baseline" | "candidate" | "delta"
+export type OutcomeLabel = "TP" | "FP" | "unlabeled" | "unevaluable"
+
+export interface OutcomeSummary {
+  tp: number
+  fp: number
+  unlabeled: number
+  unevaluable: number
+  investigated: number
+  rate: number
+  denominator: number
+}
+
+export interface BacktestOutcomeAnalysis {
+  matcher_version: string
+  snapshot_at: string
+  assumptions: string[]
+  baseline: OutcomeSummary
+  candidate: OutcomeSummary
+  delta: OutcomeSummary
+  by_scenario?: Record<string, OutcomeSummary>
+  customer_period?: Array<{ customer_id: string; scenario_id: string; from: string; to: string; baseline: OutcomeSummary; candidate: OutcomeSummary; delta: OutcomeSummary }>
+  generated_at: string
+}
+
+export interface BacktestOutcomeDetail {
+  id: string
+  job_id: string
+  variant: OutcomeVariant
+  change_kind?: "added" | "removed" | "changed"
+  candidate_id: string
+  reference_id?: string
+  customer_id: string
+  scenario_id?: string
+  label: OutcomeLabel
+  metric?: string
+  score?: number
+  investigated: boolean
+  matched_alert_id?: string
+  matched_case_id?: string
+  matcher_version: string
+  assumptions: string[]
+  snapshot_at: string
+  provenance?: Record<string, string>
+  created_at: string
+}
+
+export interface BacktestOutcomesPage extends PaginatedResponse<BacktestOutcomeDetail> {
+  outcome_analysis?: BacktestOutcomeAnalysis
+}
+
+export type CoverageAnalysisStatus = "queued" | "running" | "completed" | "failed"
+
+export interface CoverageSummary {
+  known_matter: number
+  covered: number
+  not_covered: number
+  unevaluable: number
+  rate: number
+  denominator: number
+}
+
+export interface CoverageAnalysis {
+  id: string
+  kind: string
+  status: CoverageAnalysisStatus
+  scenario_ids?: string[]
+  customer_ids?: string[]
+  from: string
+  to: string
+  rule_set_id: string
+  snapshot_at: string
+  matcher_version: string
+  assumptions: string[]
+  summary: CoverageSummary
+  by_scenario?: Record<string, CoverageSummary>
+  error?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+  updated_at: string
+}
+
+export interface CoverageMatterResult {
+  id: string
+  analysis_id: string
+  matter_id: string
+  customer_id: string
+  scenario_ids?: string[]
+  source: string
+  label: OutcomeLabel
+  covered: boolean
+  unevaluable: boolean
+  matched_alert_id?: string
+  matcher_version: string
+  assumptions: string[]
+  snapshot_at: string
+  provenance?: Record<string, string>
+  created_at: string
+}
+
+export interface CoverageAnalysesPage {
+  data: CoverageAnalysis[]
+  pagination: { limit: number; offset: number; has_more: boolean }
+}
+
+export type CoverageMattersPage = PaginatedResponse<CoverageMatterResult>
 
 // A customer the candidate rule set starts alerting on (added), stops
 // alerting on (removed), or treats identically (unchanged). `mixed` only
@@ -768,8 +949,10 @@ export interface ScreenMatch {
   entry_id: string
   matched_name: string
   similarity: number
+  confidence?: number
   list_type: string
   source: string
+  match_evidence?: Record<string, unknown>
 }
 
 export interface ScreenResult {
@@ -792,6 +975,7 @@ export interface ScreeningResultRecord {
   entry_id: string
   matched_name: string
   similarity: number
+  confidence?: number
   status: ScreeningResultStatus
   false_positive_reason?: string
   reviewed_by?: string
@@ -1167,6 +1351,13 @@ export interface PolicyProvenance {
   source: "file" | "default"
 }
 
+export interface TMContractInfo {
+  contract_version: string
+  supported_detectors: string[]
+  compatibility_warnings?: string[]
+  default_digest?: string
+}
+
 export interface SystemStatus {
   version: string
   commit?: string
@@ -1175,6 +1366,7 @@ export interface SystemStatus {
   base_currency?: string
   config_digests: Record<string, string>
   policies: PolicyProvenance[]
+  tm_contract: TMContractInfo
   components: ComponentStatus[]
   checked_at: string
   expires_at: string
@@ -1528,6 +1720,24 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+  customerReviews: {
+    list: (params?: CursorPageParams & { customerId?: string; status?: CustomerReviewStatus | string; tier?: RiskTier; assignedTo?: string; team?: string; due?: "due" | "overdue" }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.customerId) qs.set("customer_id", params.customerId)
+      if (params?.status) qs.set("status", params.status)
+      if (params?.tier) qs.set("tier", params.tier)
+      if (params?.assignedTo) qs.set("assigned_to", params.assignedTo)
+      if (params?.team) qs.set("team", params.team)
+      if (params?.due) qs.set("due", params.due)
+      const query = qs.toString()
+      return request<PaginatedResponse<CustomerReview>>(`/customer-reviews${query ? `?${query}` : ""}`)
+    },
+    get: (id: string) => request<CustomerReview>(`/customer-reviews/${encodeURIComponent(id)}`),
+    update: (id: string, data: { assigned_to?: string; assigned_team?: string; action?: "start" | "resume"; status?: CustomerReviewStatus; expected_version?: number }) =>
+      request<CustomerReview>(`/customer-reviews/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(data) }),
+    complete: (id: string, data: { outcome: CustomerReviewOutcome; rationale: string; evidence_refs: string[]; scope: Record<string, unknown>; expected_version?: number; rule_set_id?: string }) =>
+      request<CustomerReview>(`/customer-reviews/${encodeURIComponent(id)}/complete`, { method: "POST", body: JSON.stringify(data) }),
+  },
   screening: {
     // Omitting `suppressed` returns both suppressed and unsuppressed hits,
     // which is the historical queue contents; pass false to hide repeat false
@@ -1671,7 +1881,7 @@ export const api = {
     listAll: (customerId: string) =>
       listAllPages((page) => api.transactions.list(customerId, page)),
     get: (id: string) => request<Transaction>(`/transactions/${encodeURIComponent(id)}`),
-    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; travel_rule_not_applicable_reason_code?: string; executed_at: string }, idempotencyKey?: string) =>
+    create: (data: { customer_id: string; external_id: string; amount: number; currency: string; direction: string; transaction_type?: string; counterparty_id?: string; counterparty_country?: string; channel?: string; account_id?: string; counterparty?: Record<string, unknown>; metadata?: Record<string, unknown>; travel_rule_applicable?: boolean; travel_rule_evidence?: Record<string, unknown>; travel_rule_not_applicable_reason?: string; travel_rule_not_applicable_reason_code?: string; executed_at: string }, idempotencyKey?: string) =>
       request<Transaction>("/transactions", { method: "POST", body: JSON.stringify(data), ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}) }),
   },
   audit: {
@@ -1822,6 +2032,14 @@ export const api = {
       const query = qs.toString()
       return request<AffectedBacktestCustomersPage>(`/backtests/${encodeURIComponent(id)}/affected-customers${query ? `?${query}` : ""}`)
     },
+    outcomes: (id: string, params?: CursorPageParams & { variant?: OutcomeVariant; scenarioId?: string; label?: OutcomeLabel }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.variant) qs.set("variant", params.variant)
+      if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
+      if (params?.label) qs.set("label", params.label)
+      const query = qs.toString()
+      return request<BacktestOutcomesPage>(`/backtests/${encodeURIComponent(id)}/outcomes${query ? `?${query}` : ""}`)
+    },
     cancel: async (id: string) =>
       normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" })),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>
@@ -1829,6 +2047,26 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ customer_ids: customerIds, scenario_ids: scenarioIds, description }),
       }).then(normalizeBacktestResult),
+  },
+  coverageAnalyses: {
+    list: (params?: { status?: CoverageAnalysisStatus; limit?: number; offset?: number }) => {
+      const qs = new URLSearchParams()
+      if (params?.status) qs.set("status", params.status)
+      if (params?.limit != null) qs.set("limit", String(params.limit))
+      if (params?.offset != null) qs.set("offset", String(params.offset))
+      const query = qs.toString()
+      return request<CoverageAnalysesPage>(`/coverage-analyses${query ? `?${query}` : ""}`)
+    },
+    create: (data: { from: string; to: string; rule_set_id?: string; scenario_ids?: string[]; customer_ids?: string[]; snapshot_at?: string }) =>
+      request<CoverageAnalysis>("/coverage-analyses", { method: "POST", body: JSON.stringify(data ?? {}) }),
+    get: (id: string) => request<CoverageAnalysis>(`/coverage-analyses/${encodeURIComponent(id)}`),
+    matters: (id: string, params?: CursorPageParams & { scenarioId?: string; label?: OutcomeLabel }) => {
+      const qs = buildCursorQuery(params)
+      if (params?.scenarioId) qs.set("scenario_id", params.scenarioId)
+      if (params?.label) qs.set("label", params.label)
+      const query = qs.toString()
+      return request<CoverageMattersPage>(`/coverage-analyses/${encodeURIComponent(id)}/matters${query ? `?${query}` : ""}`)
+    },
   },
   webhooks: {
     list: () => request<Webhook[]>("/webhooks"),
@@ -1847,6 +2085,12 @@ export const api = {
       request<{ success: boolean; status_code: number }>(`/webhooks/dlq/${encodeURIComponent(id)}/reprocess`, {
         method: "POST",
       }),
+    inbound: {
+      get: (id: string) =>
+        request<InboundWebhookEventView>(`/webhooks/inbound/events/${encodeURIComponent(id)}`),
+      replay: (id: string) =>
+        request<InboundWebhookEvent>(`/webhooks/inbound/events/${encodeURIComponent(id)}/replay`, { method: "POST" }),
+    },
   },
   admin: {
     apikeys: {

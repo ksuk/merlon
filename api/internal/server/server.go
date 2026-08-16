@@ -5,17 +5,22 @@ import (
 	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/adapter"
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/casemgmt"
+	"github.com/ksuk/merlon/api/internal/coverage"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/events"
 	"github.com/ksuk/merlon/api/internal/notify"
 	"github.com/ksuk/merlon/api/internal/policy"
+	"github.com/ksuk/merlon/api/internal/review"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/store"
+	inboundwebhook "github.com/ksuk/merlon/api/internal/webhook"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -45,6 +50,7 @@ type Server struct {
 	screening                engine.ScreeningEngine
 	backtest                 engine.BacktestEngine
 	backtestJobs             domain.BacktestJobRepository
+	coverageAnalyses         *coverage.Service
 	reports                  domain.ReportRepository
 	audit                    domain.AuditRepository
 	cases                    domain.CaseRepository
@@ -54,6 +60,8 @@ type Server struct {
 	atomic                   domain.AtomicMutationRepository
 	apikeys                  domain.APIKeyRepository
 	webhooks                 domain.WebhookRepository
+	inboundWebhooks          *inboundwebhook.Service
+	reviews                  *review.Service
 	configEngine             engine.ConfigEngine
 	engineHealth             engine.HealthChecker
 	limiter                  *rateLimiter
@@ -76,7 +84,9 @@ type Server struct {
 	screeningResults       domain.ScreeningResultRepository
 	retention              domain.RetentionRepository
 	accounts               domain.AccountRepository
+	adapter                adapter.Adapter
 	configDigests          map[string]string
+	tmContract             engine.TMContractInfo
 	// demoDataEnabled reports whether this instance is seeded from the
 	// synthetic demogen dataset (PH7 DD3): surfaced via
 	// GET /api/v1/system features.demo_data so the UI can show a small
@@ -125,6 +135,7 @@ type Deps struct {
 	Screening          engine.ScreeningEngine
 	Backtest           engine.BacktestEngine
 	BacktestJobs       domain.BacktestJobRepository
+	CoverageAnalyses   *coverage.Service
 	Reports            domain.ReportRepository
 	Audit              domain.AuditRepository
 	Cases              domain.CaseRepository
@@ -134,6 +145,8 @@ type Deps struct {
 	Atomic             domain.AtomicMutationRepository
 	APIKeys            domain.APIKeyRepository
 	Webhooks           domain.WebhookRepository
+	InboundWebhooks    *inboundwebhook.Service
+	CustomerReviews    *review.Service
 	Config             engine.ConfigEngine
 	EngineHealth       engine.HealthChecker
 	RateLimit          int
@@ -155,7 +168,11 @@ type Deps struct {
 	ScreeningResults       domain.ScreeningResultRepository
 	Retention              domain.RetentionRepository
 	Accounts               domain.AccountRepository
+	Adapter                adapter.Adapter
 	ConfigDigests          map[string]string
+	// TMContract is the startup contract exposed by /system/status. A zero
+	// value is filled from a reporting engine or the versioned default.
+	TMContract engine.TMContractInfo
 	// DemoDataEnabled is derived from seed provenance, and is true only when
 	// the completed seed state identifies the demogen dataset (PH7 DD3).
 	DemoDataEnabled bool
@@ -202,6 +219,7 @@ func New(addr string, deps Deps) *Server {
 		screening:                deps.Screening,
 		backtest:                 deps.Backtest,
 		backtestJobs:             deps.BacktestJobs,
+		coverageAnalyses:         deps.CoverageAnalyses,
 		reports:                  deps.Reports,
 		audit:                    deps.Audit,
 		cases:                    deps.Cases,
@@ -211,6 +229,8 @@ func New(addr string, deps Deps) *Server {
 		atomic:                   deps.Atomic,
 		apikeys:                  deps.APIKeys,
 		webhooks:                 deps.Webhooks,
+		inboundWebhooks:          deps.InboundWebhooks,
+		reviews:                  deps.CustomerReviews,
 		configEngine:             deps.Config,
 		engineHealth:             deps.EngineHealth,
 		clientIPs:                newClientIPResolver(deps.TrustedProxyCIDRs),
@@ -229,7 +249,9 @@ func New(addr string, deps Deps) *Server {
 		screeningResults:         deps.ScreeningResults,
 		retention:                deps.Retention,
 		accounts:                 deps.Accounts,
+		adapter:                  deps.Adapter,
 		configDigests:            deps.ConfigDigests,
+		tmContract:               deps.TMContract,
 		demoDataEnabled:          deps.DemoDataEnabled,
 
 		screeningListStore:      deps.ScreeningListStore,
@@ -250,6 +272,19 @@ func New(addr string, deps Deps) *Server {
 		priorityPolicy: deps.CasePriorityPolicy,
 		policies:       deps.Policies,
 	}
+	if s.tmContract.ContractVersion == "" {
+		for _, candidate := range []any{deps.Monitoring, deps.Scoring} {
+			if reporter, ok := candidate.(engine.TMContractReporter); ok {
+				s.tmContract = reporter.TMContract()
+				break
+			}
+		}
+	}
+	if s.tmContract.ContractVersion == "" {
+		s.tmContract = engine.DefaultTMContractInfo()
+	}
+	s.tmContract.SupportedDetectors = append([]string(nil), s.tmContract.SupportedDetectors...)
+	s.tmContract.CompatibilityWarnings = append([]string(nil), s.tmContract.CompatibilityWarnings...)
 	if s.priorityPolicy == nil {
 		s.priorityPolicy = casemgmt.DefaultPriorityPolicy()
 	}
@@ -300,6 +335,12 @@ func New(addr string, deps Deps) *Server {
 			Reports: s.reports, Audit: s.audit, Cases: s.cases,
 			CaseAlertLifecycle: s.caseAlertLifecycle, Investigation: s.caseInvestigation,
 			AlertDecisions: s.alertDecisions, EventOutbox: s.eventOutbox, IdentityHistory: identityHistory, Wave3: s.wave3,
+			CustomerReviews: func() domain.CustomerReviewRepository {
+				if s.reviews != nil {
+					return s.reviews.Repository()
+				}
+				return nil
+			}(),
 			PendingEvaluations: func() domain.PendingEvaluationWorkflowRepository {
 				if workflow, ok := s.pendingEvals.(domain.PendingEvaluationWorkflowRepository); ok {
 					return workflow
@@ -315,6 +356,9 @@ func New(addr string, deps Deps) *Server {
 	}
 	if deps.RateLimit > 0 {
 		s.limiter = newRateLimiter(deps.RateLimit, time.Minute)
+	}
+	if s.inboundWebhooks != nil {
+		s.inboundWebhooks.SetHandlerIfMissing(s.InboundRecordHandler())
 	}
 	s.routes()
 	return s
@@ -367,6 +411,14 @@ func (s *Server) routes() {
 	s.routeHandler("POST /api/v1/customers/{id}/score-overrides/{overrideID}/approve", s.requireRolePermission(auth.PermCDDOverrideApprove, s.handleApproveCDDScoreOverride))
 	s.route("POST /api/v1/customers/{id}/screen", s.handleScreenCustomer)
 
+	// Periodic CDD review queue (issues #103/#104). Reads remain available to
+	// every authenticated role; lifecycle writes require the same CDD control
+	// permission as score production.
+	s.route("GET /api/v1/customer-reviews", s.handleListCustomerReviews)
+	s.route("GET /api/v1/customer-reviews/{id}", s.handleGetCustomerReview)
+	s.routeHandler("PATCH /api/v1/customer-reviews/{id}", s.requireRolePermission(auth.PermCDDScore, s.handlePatchCustomerReview))
+	s.routeHandler("POST /api/v1/customer-reviews/{id}/complete", s.requireRolePermission(auth.PermCDDScore, s.handleCompleteCustomerReview))
+
 	// Screening (WS-7)
 	s.route("POST /api/v1/screening/check", s.handleScreeningCheck)
 	s.route("GET /api/v1/screening/runs", s.handleListScreeningRuns)
@@ -403,8 +455,13 @@ func (s *Server) routes() {
 	s.route("POST /api/v1/backtests/preview", s.handlePreviewBacktestCohort)
 	s.route("GET /api/v1/backtests/rules", s.handleDiscoverBacktestRules)
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
+	s.route("GET /api/v1/backtests/{id}/outcomes", s.handleBacktestOutcomes)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
+	s.route("POST /api/v1/coverage-analyses", s.handleCreateCoverageAnalysis)
+	s.route("GET /api/v1/coverage-analyses", s.handleListCoverageAnalyses)
+	s.route("GET /api/v1/coverage-analyses/{id}", s.handleGetCoverageAnalysis)
+	s.route("GET /api/v1/coverage-analyses/{id}/matters", s.handleListCoverageMatters)
 
 	// Reports
 	s.route("GET /api/v1/reports/str", s.handleListSTR)
@@ -458,6 +515,11 @@ func (s *Server) routes() {
 
 	// Inbound webhooks (core system notifications, the data model §1.1.2)
 	s.route("POST /api/v1/webhooks/inbound/customer-status", s.handleCustomerStatusWebhook)
+	s.route("POST /api/v1/webhooks/inbound/customers", s.handleInboundCustomers)
+	s.route("POST /api/v1/webhooks/inbound/transactions", s.handleInboundTransactions)
+	s.route("GET /api/v1/webhooks/inbound/events/{id}", s.handleGetInboundEvent)
+	s.route("POST /api/v1/webhooks/inbound/events/{id}/replay", s.handleReplayInboundEvent)
+	s.route("POST /api/v1/adapters/dry-run", s.handleAdapterDryRun)
 
 	// Webhooks
 	s.route("POST /api/v1/webhooks", s.handleCreateWebhook)
@@ -569,12 +631,16 @@ func (s *Server) Start() error {
 
 func requestBodyLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.ContentLength > maxRequestBodyBytes {
+		limit := int64(maxRequestBodyBytes)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/webhooks/inbound/customers") || strings.HasPrefix(r.URL.Path, "/api/v1/webhooks/inbound/transactions") {
+			limit = inboundwebhook.DefaultMaxBodyBytes
+		}
+		if r.ContentLength > limit {
 			writeErrorCode(w, http.StatusRequestEntityTooLarge, apierr.CodePayloadTooLarge, "request body too large")
 			return
 		}
 		if r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

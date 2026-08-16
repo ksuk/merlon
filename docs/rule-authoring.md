@@ -151,8 +151,9 @@ alert it produces. **Author new scenarios against the v2 schema**,
 `content/_sample/tm_scenarios/structuring_basic.yaml`:
 
 ```yaml
-schema_version: "2.0"
+schema_version: "2.1"
 scenario_id: tm_structuring_basic
+detector: structuring
 name: "Structuring Detection (Basic)"
 description: "Detects transaction splitting intended to evade reporting thresholds"
 type: aggregation
@@ -186,7 +187,11 @@ tags:
 ```
 
 Required fields: `schema_version`, `scenario_id`, `name`, `type` (currently
-only `aggregation` is defined), `conditions`, and `severity`. Under
+only `aggregation` is defined), `conditions`, and `severity`. Schema v2.1
+also requires the explicit `detector`. Supported detectors are `structuring`,
+`rapid_movement`, `high_frequency_small_amount`,
+`dormant_account_reactivation`, and `high_risk_country_transfer`; the value
+is the evaluator binding and is not inferred from `scenario_id`. Under
 `conditions`, `threshold.by_customer_type` lets a scenario set a different
 threshold per customer type, and within each customer type,
 `by_risk_tier.{LOW,MEDIUM,HIGH}` sets thresholds by the customer's CDD risk
@@ -195,6 +200,18 @@ principle: a customer's CDD score determines which TM threshold applies to
 them. `evaluation_mode` controls whether the scenario runs in the batch job,
 inline, or both; if omitted, v2 scenarios default to `batch`.
 
+`conditions.transaction_type` optionally restricts a scenario to canonical
+source tokens. Transactions without an explicit token use the direction
+fallback `inbound → transfer_in`, `outbound → transfer_out`, and
+`internal → transfer`. For aggregation, set `field: amount`,
+`group_by: customer_id`, a positive duration such as `24h`, and
+`function: sum` or `count`; the period is the event-time window used by the
+evaluator. Unknown keys and unsupported aggregation shapes fail startup
+validation. The `absolute_threshold` condition is a detector safety valve: it
+is evaluated after the detector-specific candidate and cannot be bypassed by
+lowering a risk-tier threshold (the default is 10,000,000 for amount metrics
+and 25 for the high-frequency count metric).
+
 ### Legacy v1 content
 
 No bundled content uses the older `tm_scenario_v1` format any more — every
@@ -202,12 +219,15 @@ sample under `content/_sample/tm_scenarios/` is v2, and the original v1 files
 are kept only as compatibility test fixtures in
 `content/_sample/tm_scenarios_v1_compat/`. Author new scenarios against v2.
 
-The Engine still accepts v1 files so that any content written before the v2
-rollout keeps working. Per ADR-0006 (tm_scenario_v2 Schema and v1 Dual
-Support) it dual-supports them for at least 12 months, internally converting
+The Engine still accepts v1 and v2.0 files so that any content written before
+the explicit-detector rollout keeps working. Per ADR-0006 and ADR-0026 it
+dual-supports them through **2027-08-15**, internally converting
 v1's flat `risk_tier_adjustments` into the equivalent "same threshold for
 every customer type" v2 shape at load time, without changing the resulting
-evaluation semantics. `content/schema/tm_scenario_v1.json`
+evaluation semantics. Legacy files may infer a detector only from known
+scenario ID prefixes; System Status reports a compatibility warning for each
+such file, and an unknown ID fails startup. Migrate these files before the
+deadline rather than relying on inference. `content/schema/tm_scenario_v1.json`
 ([reference](./api/schema/tm_scenario_v1.md)) is maintained until 2027-07-04;
 its removal will be decided separately at that point.
 

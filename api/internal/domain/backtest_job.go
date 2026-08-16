@@ -62,23 +62,24 @@ type BacktestJob struct {
 	// Definitions are immutable job inputs. They are intentionally omitted from
 	// the public job representation because rule bodies can contain sensitive
 	// operational policy; the version and digest are sufficient for audit APIs.
-	BaselineRuleDefinition  json.RawMessage   `json:"-"`
-	CandidateRuleDefinition json.RawMessage   `json:"-"`
-	ConfigDigests           map[string]string `json:"config_digests,omitempty"`
-	SnapshotAt              time.Time         `json:"snapshot_at"`
-	TotalCustomers          int               `json:"total_customers"`
-	ProcessedCustomers      int               `json:"processed_customers"`
-	Progress                float64           `json:"progress"`
-	ETASeconds              *int64            `json:"eta_seconds,omitempty"`
-	Baseline                *BacktestResult   `json:"baseline,omitempty"`
-	Candidate               *BacktestResult   `json:"candidate,omitempty"`
-	Delta                   *BacktestResult   `json:"delta,omitempty"`
-	Error                   string            `json:"error,omitempty"`
-	CreatedAt               time.Time         `json:"created_at"`
-	StartedAt               *time.Time        `json:"started_at,omitempty"`
-	CompletedAt             *time.Time        `json:"completed_at,omitempty"`
-	UpdatedAt               time.Time         `json:"updated_at"`
-	Metadata                *BacktestMetadata `json:"metadata,omitempty"`
+	BaselineRuleDefinition  json.RawMessage          `json:"-"`
+	CandidateRuleDefinition json.RawMessage          `json:"-"`
+	ConfigDigests           map[string]string        `json:"config_digests,omitempty"`
+	SnapshotAt              time.Time                `json:"snapshot_at"`
+	TotalCustomers          int                      `json:"total_customers"`
+	ProcessedCustomers      int                      `json:"processed_customers"`
+	Progress                float64                  `json:"progress"`
+	ETASeconds              *int64                   `json:"eta_seconds,omitempty"`
+	Baseline                *BacktestResult          `json:"baseline,omitempty"`
+	Candidate               *BacktestResult          `json:"candidate,omitempty"`
+	Delta                   *BacktestResult          `json:"delta,omitempty"`
+	OutcomeAnalysis         *BacktestOutcomeAnalysis `json:"outcome_analysis,omitempty"`
+	Error                   string                   `json:"error,omitempty"`
+	CreatedAt               time.Time                `json:"created_at"`
+	StartedAt               *time.Time               `json:"started_at,omitempty"`
+	CompletedAt             *time.Time               `json:"completed_at,omitempty"`
+	UpdatedAt               time.Time                `json:"updated_at"`
+	Metadata                *BacktestMetadata        `json:"metadata,omitempty"`
 }
 
 // MarshalJSON keeps empty backtest result collections as arrays. This applies

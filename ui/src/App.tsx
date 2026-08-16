@@ -10,6 +10,9 @@ const DashboardPage = lazy(() =>
 const CustomersPage = lazy(() =>
   import("@/pages/customers").then((m) => ({ default: m.CustomersPage })),
 );
+const CustomerReviewsPage = lazy(() =>
+  import("@/pages/customer-reviews").then((m) => ({ default: m.CustomerReviewsPage })),
+);
 const CustomerDetailPage = lazy(() =>
   import("@/pages/customer-detail").then((m) => ({
     default: m.CustomerDetailPage,
@@ -49,6 +52,9 @@ const ReportsPage = lazy(() =>
 );
 const BacktestPage = lazy(() =>
   import("@/pages/backtest").then((m) => ({ default: m.BacktestPage })),
+);
+const CoverageAnalysesPage = lazy(() =>
+  import("@/pages/coverage-analyses").then((m) => ({ default: m.CoverageAnalysesPage })),
 );
 const WebhooksPage = lazy(() =>
   import("@/pages/webhooks").then((m) => ({ default: m.WebhooksPage })),
@@ -99,6 +105,7 @@ function App() {
               <Route index element={<DashboardPage />} />
               <Route path="customers" element={<CustomersPage />} />
               <Route path="customers/:id" element={<CustomerDetailPage />} />
+              <Route path="customer-reviews" element={<CustomerReviewsPage />} />
               <Route path="alerts" element={<AlertsPage />} />
               <Route path="alerts/:id" element={<AlertDetailPage />} />
               <Route path="cases" element={<CasesPage />} />
@@ -113,6 +120,7 @@ function App() {
               <Route path="pending-evaluations" element={<PendingEvaluationsPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="backtest" element={<BacktestPage />} />
+              <Route path="coverage-analyses" element={<CoverageAnalysesPage />} />
               <Route path="webhooks" element={<WebhooksPage />} />
               <Route path="apikeys" element={<APIKeysPage />} />
               <Route path="users" element={<UsersPage />} />

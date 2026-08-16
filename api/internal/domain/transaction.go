@@ -10,6 +10,12 @@ const (
 	DirectionInternal TransactionDirection = "internal"
 )
 
+// TransactionType is the source-system transaction vocabulary used by TM
+// scenarios. It intentionally remains an open canonical token: institutions
+// may add source-specific types without an API migration, while scenario
+// configuration still matches exact normalized values.
+type TransactionType string
+
 type Transaction struct {
 	ID                  string               `json:"id"`
 	CustomerID          string               `json:"customer_id"`
@@ -17,6 +23,7 @@ type Transaction struct {
 	Amount              float64              `json:"amount"`
 	Currency            string               `json:"currency"`
 	Direction           TransactionDirection `json:"direction"`
+	TransactionType     TransactionType      `json:"transaction_type,omitempty"`
 	CounterpartyID      string               `json:"counterparty_id,omitempty"`
 	CounterpartyCountry string               `json:"counterparty_country,omitempty"`
 	Channel             string               `json:"channel,omitempty"`

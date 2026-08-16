@@ -3,6 +3,8 @@
 package crypto
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -89,4 +91,24 @@ func (k *KeyRing) Key(version uint8) ([]byte, error) {
 		return nil, fmt.Errorf("crypto: unknown key_version %d", version)
 	}
 	return key, nil
+}
+
+// DeriveCurrent derives a purpose-separated key from the current encryption
+// generation without reusing the AES key bytes directly.
+func (k *KeyRing) DeriveCurrent(purpose string) ([]byte, string, error) {
+	if k == nil || strings.TrimSpace(purpose) == "" {
+		return nil, "", fmt.Errorf("crypto: derivation purpose is required")
+	}
+	key, err := k.Key(k.current)
+	if err != nil {
+		return nil, "", err
+	}
+	// HKDF-SHA256 extract with the RFC 5869 all-zero default salt.
+	extract := hmac.New(sha256.New, make([]byte, sha256.Size))
+	_, _ = extract.Write(key)
+	prk := extract.Sum(nil)
+	expand := hmac.New(sha256.New, prk)
+	_, _ = expand.Write([]byte(purpose))
+	_, _ = expand.Write([]byte{1})
+	return expand.Sum(nil), fmt.Sprintf("screening:v%d", k.current), nil
 }

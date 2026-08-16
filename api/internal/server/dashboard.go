@@ -107,6 +107,26 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	stats.Workload = workload
 	stats.Exceptions = s.dashboardExceptions(ctx, &stats, now)
+	if s.reviews != nil {
+		items, reviewErr := s.reviews.List(ctx, domain.CustomerReviewFilter{Statuses: []domain.CustomerReviewStatus{domain.CustomerReviewStatusScheduled, domain.CustomerReviewStatusDue, domain.CustomerReviewStatusOverdue}, AsOf: now, Limit: 10000})
+		if reviewErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, reviewErr.Error())
+			return
+		}
+		queue := &domain.CustomerReviewQueueStats{}
+		for _, item := range items {
+			switch item.Status {
+			case domain.CustomerReviewStatusOverdue:
+				queue.Overdue++
+			case domain.CustomerReviewStatusDue:
+				queue.Due++
+			}
+			if item.Cycle == 1 && item.PreviousScoreID == "" {
+				queue.ColdStart++
+			}
+		}
+		stats.CDDReviewQueue = queue
+	}
 
 	writeJSON(w, http.StatusOK, stats)
 }
