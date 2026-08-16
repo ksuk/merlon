@@ -1,0 +1,125 @@
+name: Governance
+
+# This repository has one maintainer, so no pull request is ever approved by a
+# second person. Rather than declare a review rule that cannot be performed,
+# the rule is that the author leaves a self-review record — and this workflow
+# is what makes that a gate instead of an intention. See ADR-0016.
+#
+# The result is reported as a *commit status* rather than as this job's
+# check-run, for two reasons. A record is posted as a comment, which arrives
+# after the push that created the head commit, so the verdict has to be
+# re-reported against a commit this run is not attached to; and an
+# `issue_comment` run is not associated with the pull request at all. A ruleset
+# satisfies a required context from either a check-run or a commit status, so
+# `Governance Required` is published explicitly against the head SHA.
+#
+# `pull_request_target`, not `pull_request`, and the distinction is load-bearing
+# three times over. It runs in the base context, so the token can write a status
+# on a fork's pull request and on Dependabot's — a `pull_request` run is handed a
+# read-only token for both, which would leave every dependency update blocked on
+# a status the bot cannot cause anyone to post. It checks out `main`, so the
+# checker that judges a pull request is never the copy that pull request ships.
+# And it is safe here only because nothing from the head is executed: no `ref:`
+# below, and comment bodies reach the checker on stdin. Do not add a `ref:`.
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  # `deleted` matters as much as the other two: the status is posted against a
+  # commit and stays there, so deleting the record that justified a green
+  # `Governance Required` would otherwise leave the green behind and let the
+  # pull request merge with its evidence gone.
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: governance-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  self-review:
+    name: Self-Review Record
+    # One exclusion: `issue_comment` fires for issues as well as pull requests,
+    # and only the latter has anything to check. Fork pull requests are no
+    # longer excluded — under `pull_request_target` they run in the base
+    # context like any other, so they are reported on rather than left waiting
+    # for a comment to arrive.
+    if: >-
+      github.event_name == 'pull_request_target'
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request)
+    runs-on: ubuntu-latest
+    steps:
+      # No `ref:` on purpose, and it is a security property rather than a
+      # default: both triggers check out the base branch, so the checker that
+      # runs is always `main`'s copy. Checking out the head here would hand any
+      # fork's pull request a write-scoped token — the `pull_request_target`
+      # footgun. Nothing from the head is executed in this job at all.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '26.5.0'
+
+      - name: Verify self-review record
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The head SHA comes from the API, not from the event payload, so the
+          # status is always posted against the commit that is actually at the
+          # head now. Comment bodies never reach the shell: they go to a file
+          # and are read by the checker on stdin.
+          pr=$(gh api "repos/$REPO/pulls/$PR_NUMBER")
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          author_type=$(jq -r '.user.type' <<<"$pr")
+          author_login=$(jq -r '.user.login' <<<"$pr")
+
+          post_status() {
+            gh api --method POST "repos/$REPO/statuses/$head_sha" \
+              -f state="$1" \
+              -f context='Governance Required' \
+              -f description="$2" \
+              -f target_url="$RUN_URL" >/dev/null
+            echo "$1: $2"
+          }
+
+          # Dependabot and other bots cannot write a self-review record, and a
+          # required check they can never satisfy would strand every dependency
+          # update. Their changes are still gated by every other required check.
+          # This exemption only works because the run is `pull_request_target`:
+          # a Dependabot-triggered `pull_request` run gets a read-only token, so
+          # the POST below would 403 and the exemption would never be published.
+          if [[ "$author_type" == "Bot" ]]; then
+            post_status success "Bot pull request ($author_login); self-review not required"
+            exit 0
+          fi
+
+          # --paginate emits one JSON array per page; concatenate them. The
+          # author login is projected alongside each body and is not optional:
+          # this repository is public and the head SHA is public, so a record
+          # judged on shape alone is one any passer-by can post. The checker
+          # binds the record to "$author_login" and ignores everyone else.
+          gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq '[.[] | {body, user: {login: .user.login}}]' \
+            | jq -s 'add // []' > comments.json
+
+          if reason=$(node scripts/check-self-review.mjs "$head_sha" "$author_login" < comments.json 2>&1 >/dev/null); then
+            post_status success "Self-review record present for ${head_sha:0:12}"
+          else
+            # A status description is truncated past ~140 characters, so the
+            # run log carries the full text and the status carries the start.
+            echo "$reason" >&2
+            post_status failure "${reason:0:140}"
+            exit 1
+          fi

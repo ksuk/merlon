@@ -3,7 +3,7 @@
 // alerts, cases, screening, audit logs, and rule definitions), scored and
 // evaluated through the real native engine so a live re-score/re-evaluation
 // during a demo reproduces the same values (Auditability First). See
-// .release-tasks/PH7-demo-publication.md Appendix A.
+// .tasks/archive/PH7-demo-publication.md Appendix A.
 //
 // Usage:
 //

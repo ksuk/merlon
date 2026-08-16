@@ -15,7 +15,7 @@
 // Both paths write through the same Repos (store) interfaces — the loader
 // makes no assumption about whether it's talking to the in-memory store or
 // PostgreSQL (Configuration as the Product / D-b in
-// .release-tasks/PH7-demo-publication.md).
+// .tasks/archive/PH7-demo-publication.md).
 package seed
 
 import (

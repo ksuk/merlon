@@ -11,7 +11,7 @@
 // and evaluated through the same single native.Engine instance, and every
 // alert produced by actually calling the engine's realtime/batch evaluation
 // on the seeded transactions (never a hand-computed "should fire" guess).
-// See .release-tasks/PH7-demo-publication.md Appendix A5-A9.
+// See .tasks/archive/PH7-demo-publication.md Appendix A5-A9.
 package demogen
 
 import (

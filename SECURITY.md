@@ -25,12 +25,13 @@ Please include:
 
 ### Response Exercise
 
-Before the first production release and at least annually thereafter, run a
-tabletop exercise using a fictional advisory. Record detection and
-acknowledgment times, owner, severity decision, affected-version analysis,
-containment, patch or exception decision, coordinated communications, elapsed
-time against the targets above, and follow-up actions. A security owner and an
-independent observer must approve the sanitized record. Do not include exploit
+Before the first release and at least annually thereafter, run a tabletop
+exercise using a fictional advisory. Record detection and acknowledgment times,
+owner, severity decision, affected-version analysis, containment, patch or
+exception decision, coordinated communications, elapsed time against the
+targets above, and follow-up actions. The security owner signs off the
+sanitized record; with one maintainer there is no independent observer, and the
+record states that rather than leaving it to be assumed. Do not include exploit
 details, credentials, private advisory content, or customer data in the public
 repository.
 

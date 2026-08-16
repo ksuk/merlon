@@ -16,31 +16,46 @@ ghcr.io/ksuk/merlon
 
 | タグ | 指すもの | 不変か | 適する用途 |
 |---|---|---|---|
-| `vX.Y.Z` | 本番リリース | はい | 自組織での評価を経た本番運用 |
-| `vX.Y.Z-rc.N` | 評価用プレリリースビルド | はい | 評価、テスト、デモ |
+| `vX.Y.Z` | リリース | はい | 自組織での評価を経た任意のデプロイ |
 | `@sha256:...` | 特定のビルドそのもの | はい | 固定したいあらゆるデプロイ |
 
 意図的に存在しないものが2つある。
 
 **`latest` タグは無い。** 可変タグは、同じ `docker pull` を別の日に実行した2台のホストが、同じバージョンを報告しながら異なるソフトウェアを動かしうることを意味する。規制記録を生成するシステムにおいて、これは擁護できる立場ではない。ここでのリリース同一性はダイジェストであり、バージョンタグはそれを指す利便性にすぎない。
 
-**ローリングな `main` / `dev` タグも無い。** 公開されるすべてのイメージは、`main` の祖先である注釈付きの保護されたタグに対応し、かつ `CHANGELOG.md` の節に対応する。ブランチの先頭から公開されるものは何も無い。
+**ローリングな `main` / `dev` タグも、プレリリースチャネルも無い。** 公開されるすべてのイメージは、`main` の祖先である注釈付きの保護されたタグに対応し、かつ `CHANGELOG.md` の節に対応する。ブランチの先頭から公開されるものは何も無く、プレリリース識別子を持つタグは公開されずに拒否される。
 
-### `vX.Y.Z-rc.N` は劣った成果物ではない
+### リリースタグが主張することと、しないこと
 
-プレリリースは、同一のワークフロー、同一のマルチアーキテクチャビルド、同一のビルド来歴証明（provenance attestation）、SBOM、証跡マニフェストによって生成される。成果物の種類として違いは無い。
+かつてここには、プロジェクトのガバナンス統制が未整備であることをタグ名で伝えることを役割とする第2のチャネルがあった。タグのサフィックスはそれを伝える手段としては弱い。読み飛ばされるし、意味は結局ドキュメントの中にしかない。同じ事実は現在、問い合わせ可能な形で成果物とともに配られる。
 
-違うのは、ビルドについてではなく**プロジェクト**について何を主張しているかである。本番リリースは、[リリースチェックリスト](../development/release-checklist.md)のガバナンス統制と運用証跡（独立したリリース承認者、記録された復元演習、記録された脆弱性対応演習）を追加で主張する。それらが証跡として整うまで、本リポジトリはプレリリースのみを公開する。
+本プロジェクトのメンテナは1名である。したがって `vX.Y.Z` イメージが主張するのは、リリースコミット上で `CI Required` と `Security Required` が通過したことであり、これはイメージのビルド前にリリースワークフローが検証する。ADR-0016 以降にマージされた PR は加えて `Governance Required` が強制するセルフレビュー証跡を持つが、その証跡は PR 上にあり、リリース側では再検証しない。独立した承認と職務分離は**主張しない**。1人が自分の作業を独立してレビューすることはできないためであり、その事実はイメージ自身が述べる。
 
-評価、概念実証、テスト環境においてこの区別は問題にならない。本番運用においては、チェックリストを読み、自組織の規制上の義務に照らして判断すること。
+```bash
+docker inspect ghcr.io/ksuk/merlon:v0.1.0 \
+  --format '{{json .Config.Labels}}' | jq 'with_entries(select(.key | startswith("io.github.ksuk.merlon.governance")))'
+```
+
+```json
+{
+  "io.github.ksuk.merlon.governance.mode": "single-maintainer",
+  "io.github.ksuk.merlon.governance.independent-approval": "false",
+  "io.github.ksuk.merlon.governance.separation-of-duties": "false",
+  "io.github.ksuk.merlon.governance.adr": "ADR-0016"
+}
+```
+
+同じ4項目は、すべての GitHub Release の `release-manifest.json` と、リリースノート冒頭のヘッダにも記載される。ビルド自体が弱くなるわけではない。マルチアーキテクチャビルド、来歴証明、SBOM、証跡マニフェストは他のどのリリースとも同一である。
+
+それが導入に足るかどうかは、自組織の規制上の義務に照らして判断すべき事項である。AML/CFT システムにおいては、その判断はベンダーが何を主張していようと当局に対して説明できるものでなければならない。開示の背景は[単独メンテナモード](../development/repository-governance.md)と ADR-0016 に記載している。
 
 ## 取得
 
 タグで取得して内容を確認し、ダイジェストで再デプロイする。
 
 ```bash
-docker pull ghcr.io/ksuk/merlon:v0.1.0-rc.1
-docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/ksuk/merlon:v0.1.0-rc.1
+docker pull ghcr.io/ksuk/merlon:v0.1.0
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/ksuk/merlon:v0.1.0
 ```
 
 実行前に検証すること。各リリースには `release-manifest.json`、`sbom-image.cdx.json`、`SHA256SUMS` が添付され、イメージには GitHub のビルド来歴証明が付与されている。検証手順は[アップグレード](upgrade.md)にある。
@@ -71,7 +86,7 @@ docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/ksuk/merlon:v0.1.0-rc
 標準的な OCI アノテーションを設定している。`org.opencontainers.image.revision` は、取得したイメージを、その来歴証明が発行された対象のコミットに結び付ける。
 
 ```bash
-docker inspect ghcr.io/ksuk/merlon:v0.1.0-rc.1 \
+docker inspect ghcr.io/ksuk/merlon:v0.1.0 \
   --format '{{json .Config.Labels}}'
 ```
 

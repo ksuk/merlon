@@ -74,5 +74,11 @@ Do not include any of the following in contributions:
 - Do not push directly to `main` or force-push shared branches.
 - Do not approve your own pull request or activate/deactivate a rule version
   you created. A different Admin must perform the activation action.
+- Every pull request needs a self-review record posted as a comment
+  (`.github/SELF_REVIEW_TEMPLATE.md`) **by its author**. The
+  `Governance Required` check enforces it, ignores a record posted by anyone
+  else, and rejects one that does not match the current head commit. With one
+  maintainer nothing is approved, so this record is what stands in its place —
+  see [repository governance](docs/development/repository-governance.md).
 - Migration changes must use the dedicated migration role and include an
   upgrade/restore note. See [repository governance](docs/development/repository-governance.md).

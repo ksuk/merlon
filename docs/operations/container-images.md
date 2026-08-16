@@ -18,8 +18,7 @@ is not bundled; you supply it.
 
 | Tag | Points to | Immutable | Suitable for |
 |---|---|---|---|
-| `vX.Y.Z` | A production release | Yes | Production, after your own assessment |
-| `vX.Y.Z-rc.N` | A pre-release build for evaluation | Yes | Evaluation, testing, demos |
+| `vX.Y.Z` | A release | Yes | Any deployment, after your own assessment |
 | `@sha256:...` | One exact build | Yes | Any deployment you want pinned |
 
 Two things are deliberately absent.
@@ -30,34 +29,62 @@ reporting the same version, which is not a defensible position for a system
 that produces regulatory records. Release identity here is the digest; the
 version tag is a convenience that points at one.
 
-**There is no rolling `main` or `dev` tag.** Every published image corresponds
-to an annotated, protected tag that is an ancestor of `main`, and to a
-`CHANGELOG.md` section. Nothing is published from a branch head.
+**There is no rolling `main` or `dev` tag, and no pre-release channel.** Every
+published image corresponds to an annotated, protected tag that is an ancestor
+of `main`, and to a `CHANGELOG.md` section. Nothing is published from a branch
+head, and a tag carrying a pre-release identifier is rejected rather than
+published.
 
-### `vX.Y.Z-rc.N` is not a lesser artifact
+### What a release tag asserts, and what it does not
 
-A pre-release is built by the same workflow, on the same multi-architecture
-build, with the same provenance attestation, SBOM, and evidence manifest. The
-artifacts are identical in kind.
+There used to be a second channel here whose job was to signal, through its
+name, that the project's governance controls were incomplete. A tag suffix is a
+weak way to say that: readers skip it, and its meaning is only in the
+documentation anyway. The same facts now travel with the artifact, in a form
+you can query.
 
-The difference is what the tag asserts about the *project*, not about the
-build: a production release additionally asserts the governance and operational
-controls in the [release checklist](../development/release-checklist.md) —
-an independent release approver, a recorded restore exercise, a recorded
-vulnerability-response exercise. Until those are evidenced, this repository
-publishes pre-releases only.
+This project has one maintainer. A `vX.Y.Z` image therefore asserts that
+`CI Required` and `Security Required` passed on the release commit, which the
+release workflow verifies before the image is built. Pull requests merged after
+ADR-0016 additionally carry a self-review record enforced by
+`Governance Required`; that record lives on the pull request and the release
+does not re-verify it. The image does **not** assert independent approval or
+separation of duties — one person cannot review their own work
+independently — and it says so on itself:
 
-For an evaluation, a proof of concept, or a test environment, that distinction
-does not matter. For production, read the checklist and decide against your own
-regulatory obligations.
+```bash
+docker inspect ghcr.io/ksuk/merlon:v0.1.0 \
+  --format '{{json .Config.Labels}}' | jq 'with_entries(select(.key | startswith("io.github.ksuk.merlon.governance")))'
+```
+
+```json
+{
+  "io.github.ksuk.merlon.governance.mode": "single-maintainer",
+  "io.github.ksuk.merlon.governance.independent-approval": "false",
+  "io.github.ksuk.merlon.governance.separation-of-duties": "false",
+  "io.github.ksuk.merlon.governance.adr": "ADR-0016"
+}
+```
+
+The same four facts are in `release-manifest.json` on every GitHub release, and
+in a header above the release notes. The build itself is not weaker for it: the
+same multi-architecture build, provenance attestation, SBOM, and evidence
+manifest as any other release.
+
+Whether that is good enough to deploy is your assessment to make against your
+own regulatory obligations — and for an AML/CFT system, one you have to be able
+to defend to a regulator regardless of what any vendor claims. The reasoning
+behind the disclosure is in
+[Single-Maintainer Operating Mode](../development/repository-governance.md) and
+ADR-0016.
 
 ## Pulling
 
 Pull by tag to see what you got, then redeploy by digest:
 
 ```bash
-docker pull ghcr.io/ksuk/merlon:v0.1.0-rc.1
-docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/ksuk/merlon:v0.1.0-rc.1
+docker pull ghcr.io/ksuk/merlon:v0.1.0
+docker inspect --format '{{index .RepoDigests 0}}' ghcr.io/ksuk/merlon:v0.1.0
 ```
 
 Verify before running it. Every release attaches `release-manifest.json`,
@@ -104,7 +131,7 @@ Standard OCI annotations are set, including
 commit its provenance attestation was issued for:
 
 ```bash
-docker inspect ghcr.io/ksuk/merlon:v0.1.0-rc.1 \
+docker inspect ghcr.io/ksuk/merlon:v0.1.0 \
   --format '{{json .Config.Labels}}'
 ```
 

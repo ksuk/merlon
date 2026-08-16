@@ -4,5 +4,11 @@
     "typescript-lsp@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bash .claude/scripts/codex-direct-review.sh)",
+      "Bash(bash .claude/scripts/codex-review-last.sh *)"
+    ]
   }
 }

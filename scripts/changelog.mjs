@@ -18,10 +18,10 @@
 // Exits non-zero if the version has no section, so a release stops rather
 // than publishing empty notes.
 //
-// A production tag resolves only to its own section. A pre-release tag
-// (-alpha.N/-beta.N/-rc.N) falls back to the release it is a candidate for and
-// then to Unreleased, because Keep a Changelog has no per-pre-release heading
-// to write. See findReleaseNotesSection.
+// A tag resolves only to its own section. There is no fallback: the project
+// publishes one channel, `vX.Y.Z`, and the gate exists so a release cannot be
+// cut without a changelog entry describing it. A fallback would quietly defeat
+// that.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -77,61 +77,16 @@ function versionMatches(sectionVersion, wanted) {
   return normalizeVersion(sectionVersion) === normalizeVersion(wanted);
 }
 
-const PRERELEASE_SUFFIX = /-(alpha|beta|rc)\.(?:0|[1-9][0-9]*)$/;
-
-/**
- * The `X.Y.Z` a pre-release tag is a candidate for, or null for a production
- * tag. The suffix set matches the SemVer gate in
- * .github/workflows/release.yml, so the two channels agree on what a
- * pre-release is.
- */
-function baseVersion(version) {
-  const normalized = normalizeVersion(version);
-  return PRERELEASE_SUFFIX.test(normalized)
-    ? normalized.replace(PRERELEASE_SUFFIX, "")
-    : null;
-}
-
 /**
  * Find the section for `version`, or return null. `version` may be given with
  * or without a leading `v` (`v1.2.3` and `1.2.3` both match `## [1.2.3]`).
+ *
+ * This is the only resolution path. `vX.Y.Z` cannot be published without a
+ * changelog entry describing it, so there is deliberately no fallback to
+ * `[Unreleased]` or to a neighbouring version.
  */
 export function findSection(text, version) {
   return parseChangelog(text).find((s) => versionMatches(s.version, version)) ?? null;
-}
-
-/**
- * Find the section whose body should become `version`'s release notes.
- * Returns `{ section, matched }` — `matched` is "exact", "base", or
- * "unreleased" — or null when nothing resolves.
- *
- * A production tag resolves ONLY to its own section. The gate exists so
- * `vX.Y.Z` cannot be published without a changelog entry describing it, and a
- * fallback would quietly defeat that.
- *
- * A pre-release tag has no section of its own to find: Keep a Changelog has no
- * per-pre-release heading, so requiring `## [1.2.3-rc.1]` would make the
- * pre-release channel unusable. It falls back to the release it is a candidate
- * for, then to Unreleased. Both describe the same work — a pre-release is a
- * snapshot of it — and the body must still be non-empty, so the changelog
- * stays load-bearing on both channels.
- */
-export function findReleaseNotesSection(text, version) {
-  const sections = parseChangelog(text);
-
-  const exact = sections.find((s) => versionMatches(s.version, version));
-  if (exact) return { section: exact, matched: "exact" };
-
-  const base = baseVersion(version);
-  if (base === null) return null;
-
-  const baseSection = sections.find((s) => versionMatches(s.version, base));
-  if (baseSection) return { section: baseSection, matched: "base" };
-
-  const unreleased = sections.find((s) => versionMatches(s.version, "unreleased"));
-  if (unreleased) return { section: unreleased, matched: "unreleased" };
-
-  return null;
 }
 
 /** Read CHANGELOG.md from the repository root. */
@@ -148,35 +103,22 @@ function main(argv) {
   }
 
   const text = readChangelog();
-  const resolved = findReleaseNotesSection(text, version);
+  const section = findSection(text, version);
 
-  if (!resolved) {
+  if (!section) {
     const available = parseChangelog(text).map((s) => s.version).join(", ");
-    const base = baseVersion(version);
-    const remedy =
-      base === null
-        ? `Add a "## [${normalizeVersion(version)}] - YYYY-MM-DD" section ` +
-          `describing this release before tagging.`
-        : `Add a "## [${base}] - YYYY-MM-DD" or "## [Unreleased]" section ` +
-          `describing this pre-release before tagging.`;
     console.error(
       `CHANGELOG.md has no section for ${version}.\n` +
-        `${remedy}\n` +
+        `Add a "## [${normalizeVersion(version)}] - YYYY-MM-DD" section ` +
+        `describing this release before tagging.\n` +
         `Sections present: ${available || "(none)"}`
     );
     return 1;
   }
 
-  const { section, matched } = resolved;
   if (!section.body) {
     console.error(`CHANGELOG.md section for ${version} is empty (${section.heading}).`);
     return 1;
-  }
-
-  if (matched !== "exact") {
-    // The workflow log is the only record of which section a pre-release
-    // published its notes from, so state it rather than leaving it inferred.
-    console.error(`${version} has no section of its own; using ${section.heading}`);
   }
 
   process.stdout.write(`${section.body}\n`);
