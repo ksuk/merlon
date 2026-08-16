@@ -102,11 +102,19 @@ Two further changes are 2xx-compatible but worth noting:
   carry a disclosure header. All three record that the release does not assert
   independent approval or separation of duties (ADR-0016).
 - `Governance Required` check: every pull request must carry a self-review
-  record bound to its head commit, verified by `scripts/check-self-review.mjs`.
-  It replaces the approving review a single-maintainer repository cannot
-  produce, and is never described as one.
+  record posted by its author and bound to its head commit, verified by
+  `scripts/check-self-review.mjs`. A record from anyone else is ignored and
+  deleting the record turns the check red again, so the gate cannot be
+  satisfied by a passer-by on a public repository. It replaces the approving
+  review a single-maintainer repository cannot produce, and is never described
+  as one.
 - Ruleset drift detection: the `main` and release-tag rulesets are committed to
   `.github/rulesets/` and compared weekly against the live configuration.
+  Rulesets deleted from the live configuration are reported as drift alongside
+  modified and unknown ones.
+- Release gate verifying that `CI Required` and `Security Required` concluded
+  successfully on the release commit before any image is published, so the
+  disclosure header the release carries is checked rather than asserted.
 - Container image hardening: runs as non-root uid 10001, needs no writable
   path (`--read-only` works unmodified), declares a `/healthz/live` liveness
   healthcheck — readiness is exposed separately at `/healthz/ready` — and

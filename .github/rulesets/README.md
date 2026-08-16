@@ -59,6 +59,11 @@ identifiers it contains. Check the diff before committing it. The export needs
 only read access to repository administration — do not run it with a token
 scoped more broadly than that.
 
+The drift job clears this directory of `*.json` before exporting, so a ruleset
+deleted from the live configuration appears as a deleted file. Exporting over
+the existing files would have left the most serious weakening — the protection
+removed outright — as the one case producing no diff at all.
+
 What the baseline cannot detect is a change made to the live configuration and
 to this directory in the same act. That limit is stated in
 [repository governance](../../docs/development/repository-governance.md) rather

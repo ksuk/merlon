@@ -113,9 +113,12 @@ rather than left in documentation the reader may not reach:
 | GitHub release notes | A disclosure header above the changelog section |
 
 So `docker inspect` answers the vendor-assessment question without anyone
-reading this page. A `vX.Y.Z` tag here asserts that every automated gate passed
-on the release commit and that a self-review record exists; it does not assert
-independent approval or separation of duties, and says so on the artifact.
+reading this page. A `vX.Y.Z` tag here asserts that `CI Required` and
+`Security Required` passed on the release commit, verified by the release
+workflow before publication; pull requests merged after ADR-0016 also carry a
+self-review record, enforced at merge time rather than re-checked at release
+time. It does not assert independent approval or separation of duties, and says
+so on the artifact.
 
 ### Merges require a self-review record
 
@@ -125,15 +128,34 @@ matters — what they did not verify.
 
 `.github/workflows/governance.yml` posts the `Governance Required` commit
 status against the pull request head. `scripts/check-self-review.mjs` decides
-it: a comment following `.github/SELF_REVIEW_TEMPLATE.md` must exist, its
-`Head SHA` must match the current head, and all five sections must be present
-and non-empty. Pushing new commits invalidates the record — the same semantics
-as `dismiss_stale_reviews_on_push`, reproduced for a repository with no reviews
-to dismiss.
+it: a comment following `.github/SELF_REVIEW_TEMPLATE.md` must exist, it must
+have been posted **by the pull request author**, its `Head SHA` must match the
+current head, and all five sections must be present and non-empty. Pushing new
+commits invalidates the record — the same semantics as
+`dismiss_stale_reviews_on_push`, reproduced for a repository with no reviews to
+dismiss.
+
+The author binding is not a formality. This repository is public and a head SHA
+is public, so a record checked for shape alone is one any passer-by could post,
+and the only review control the project has would be satisfiable by a stranger.
+Comments from anyone other than the author are not records.
+
+Deleting the record re-opens the gate. The workflow subscribes to
+`issue_comment` deletions as well as creations and edits, because the verdict
+is a commit status that persists once posted: without the deletion event, a
+green `Governance Required` would outlive the evidence that produced it.
 
 The status is a commit status rather than a check-run because the record
 arrives as a comment, after the push that produced the head commit. A ruleset
 accepts either.
+
+The trigger is `pull_request_target`, not `pull_request`. It runs in the base
+context, which is what lets the job write a status on fork and Dependabot pull
+requests — a `pull_request` run receives a read-only token for both, so a bot's
+pull request could never be reported on and would stay blocked forever. It also
+means the checker that judges a pull request is always `main`'s copy, never the
+one that pull request ships. Nothing from the head is executed: the checkout
+takes no `ref:`, and comment bodies reach the checker on standard input.
 
 Bot pull requests pass automatically. A bot cannot write a record, and a
 required check it can never satisfy would strand every dependency update; those
@@ -152,7 +174,11 @@ of duties. That cannot be argued away, so it is made detectable instead:
   of only in GitHub's settings UI.
 - `.github/workflows/ruleset-drift.yml` exports the live rulesets weekly and
   fails on any difference from that baseline — added `bypass_actors`, changed
-  `enforcement`, removed required checks.
+  `enforcement`, removed required checks. It clears the baseline directory
+  before exporting, so a ruleset *deleted* from the live configuration shows up
+  as a deleted file rather than as an untouched one. Exporting over the top
+  would have left the strongest weakening — removing the protection
+  entirely — as the single case the check could not see.
 - `bypass_actors` stays empty and `current_user_can_bypass` stays `never`.
 
 What this does not catch: one Admin changing the live configuration and the

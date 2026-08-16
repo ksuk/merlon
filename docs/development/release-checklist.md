@@ -27,10 +27,15 @@ and the next section is how the project stays honest about it.
 
 ## Disclosed, not asserted
 
-A `vX.Y.Z` tag from this repository asserts that every automated gate passed on
-the release commit and that a self-review record exists for the changes it
-contains. It does **not** assert independent approval or separation of duties,
-because a repository with one maintainer cannot produce either.
+A `vX.Y.Z` tag from this repository asserts that `CI Required` and
+`Security Required` passed on the release commit — and the release workflow
+verifies that before it publishes anything, rather than asserting it on trust.
+Pull requests merged after ADR-0016 additionally carry a self-review record,
+enforced at merge time by `Governance Required`. The release does not re-verify
+those records: `Governance Required` is posted against pull request head
+commits, and the merge commit a tag points at is a different SHA that never
+carries it. The tag does **not** assert independent approval or separation of
+duties, because a repository with one maintainer cannot produce either.
 
 That is not left to this page. The release workflow emits it with the artifact:
 

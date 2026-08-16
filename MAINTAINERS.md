@@ -24,8 +24,9 @@ creation and approval, not a precondition it is currently blocked on.
 - No pull request is approved. With one maintainer there is nobody to approve
   it, so instead every pull request carries a self-review record — intent,
   blast radius, rollback, gates passed, and what was **not** verified — checked
-  by `Governance Required` and bound to the head commit. It is a compensating
-  control, and calling it anything else would be the actual governance failure.
+  by `Governance Required` and bound to both the head commit and the pull
+  request author. It is a compensating control, and calling it anything else
+  would be the actual governance failure.
 - Rule version activation still requires a different Admin than the one who
   created the version (ADR-0014). That control is enforced in the product, not
   in this repository, and it is the operator's two Admins that satisfy it.

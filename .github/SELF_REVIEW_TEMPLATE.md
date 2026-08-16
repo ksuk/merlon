@@ -14,7 +14,11 @@ Bot pull requests are exempt — a bot cannot write one.
 
 The checker requires the `## Self-review record` heading, a `**Head SHA:**`
 line matching the pull request head, and all five `###` sections present and
-non-empty. Copy the block below verbatim and fill it in.
+non-empty. It also requires that **you, the pull request author, posted it** —
+this repository is public and the head SHA is public, so a record judged on
+shape alone would be one any passer-by could post. A record from anyone else is
+ignored, and deleting a record turns the check red again. Copy the block below
+verbatim and fill it in.
 
 ---
 

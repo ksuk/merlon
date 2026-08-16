@@ -43,10 +43,13 @@ weak way to say that: readers skip it, and its meaning is only in the
 documentation anyway. The same facts now travel with the artifact, in a form
 you can query.
 
-This project has one maintainer. A `vX.Y.Z` image therefore asserts that every
-automated gate passed on the release commit and that a self-review record
-exists for the changes it contains. It does **not** assert independent approval
-or separation of duties — one person cannot review their own work
+This project has one maintainer. A `vX.Y.Z` image therefore asserts that
+`CI Required` and `Security Required` passed on the release commit, which the
+release workflow verifies before the image is built. Pull requests merged after
+ADR-0016 additionally carry a self-review record enforced by
+`Governance Required`; that record lives on the pull request and the release
+does not re-verify it. The image does **not** assert independent approval or
+separation of duties — one person cannot review their own work
 independently — and it says so on itself:
 
 ```bash

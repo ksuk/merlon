@@ -9,20 +9,31 @@
 // the `Governance Required` status stays red. See ADR-0016 and
 // .github/SELF_REVIEW_TEMPLATE.md.
 //
-// The record binds to the head SHA, so pushing new commits invalidates it and
-// a fresh record is required — the same semantics as GitHub's
-// `dismiss_stale_reviews_on_push`, reproduced for a repository that has no
-// reviews to dismiss.
+// The record binds to two things, and it has to bind to both or it gates
+// nothing:
+//
+//   * the head SHA, so pushing new commits invalidates it and a fresh record
+//     is required — the same semantics as GitHub's
+//     `dismiss_stale_reviews_on_push`, reproduced for a repository that has no
+//     reviews to dismiss; and
+//   * the pull request author, because this repository is public and anyone
+//     can comment on a pull request. A head SHA is public too, so a record
+//     checked for shape alone could be posted by a passer-by and would satisfy
+//     the only review control this project has.
 //
 // Library:
 //   import { checkSelfReview } from "./check-self-review.mjs";
 //
 // CLI (used by .github/workflows/governance.yml):
 //   gh api ...comments > comments.json
-//   node scripts/check-self-review.mjs <head-sha> < comments.json
+//   node scripts/check-self-review.mjs <head-sha> <author-login> < comments.json
 // Exits 0 when a valid record is present, 1 when it is not, 2 on bad usage.
 // Comment bodies are read from stdin and never interpolated into a shell
-// command, so a comment cannot inject anything into the workflow.
+// command, so a comment cannot inject anything into the workflow. No text a
+// commenter controls reaches a returned `reason` either — the reasons quote
+// only the fixed section titles, a regex-constrained hex SHA, and the author
+// login the workflow passed in — so the reason is safe to publish verbatim in
+// a commit status description.
 
 import { readFileSync } from "node:fs";
 
@@ -92,30 +103,57 @@ export function checkComment(body, headSha) {
 
 /**
  * Check every comment on a pull request. `comments` is the GitHub issue
- * comments array; only the `body` field is read.
+ * comments array; only `body` and `user.login` are read. `authorLogin` is the
+ * pull request author — comments by anyone else are not records and are
+ * skipped before their shape is ever considered.
  *
  * The newest usable record wins, so a corrected re-post supersedes an earlier
  * malformed one. When no comment is a record at all the reason says so; when
  * some were records but none were usable, the most recent complaint is
- * returned, because that is the one the author needs to act on.
+ * returned, because that is the one the author needs to act on. A well-formed
+ * record from somebody other than the author gets its own reason rather than
+ * being reported as absence — it is the shape a forged record would take, and
+ * it belongs in the run log.
  */
-export function checkSelfReview(comments, headSha) {
+export function checkSelfReview(comments, headSha, authorLogin) {
   const sha = String(headSha).toLowerCase();
   if (!/^[0-9a-f]{7,40}$/.test(sha)) {
     return { ok: false, reason: `not a commit sha: ${headSha}` };
   }
 
+  const author = String(authorLogin ?? "").toLowerCase();
+  // GitHub logins are case-insensitive, so compare them that way. An empty
+  // author would match nothing and silently fail the gate closed; that is the
+  // safe direction, but it is a caller bug, so say which.
+  if (!/^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}(?:\[bot\])?$/.test(author)) {
+    return { ok: false, reason: `not a GitHub login: ${authorLogin}` };
+  }
+
   let lastReason = null;
+  let foreignRecord = false;
   for (const comment of comments) {
     const result = checkComment(String(comment?.body ?? ""), sha);
+    const byAuthor = String(comment?.user?.login ?? "").toLowerCase() === author;
+    if (!byAuthor) {
+      if (result.ok || result.reason) foreignRecord = true;
+      continue;
+    }
     if (result.ok) return result;
     if (result.reason) lastReason = result.reason;
   }
 
+  if (lastReason) return { ok: false, reason: lastReason };
+  if (foreignRecord) {
+    return {
+      ok: false,
+      reason:
+        `a self-review record was posted by someone other than @${author} — ` +
+        `only the author's own record satisfies this gate`,
+    };
+  }
   return {
     ok: false,
     reason:
-      lastReason ??
       "no self-review record found — post one using .github/SELF_REVIEW_TEMPLATE.md",
   };
 }
@@ -125,9 +163,11 @@ function readStdin() {
 }
 
 function main(argv) {
-  const headSha = argv[0];
-  if (!headSha) {
-    console.error("usage: node scripts/check-self-review.mjs <head-sha> < comments.json");
+  const [headSha, authorLogin] = argv;
+  if (!headSha || !authorLogin) {
+    console.error(
+      "usage: node scripts/check-self-review.mjs <head-sha> <author-login> < comments.json",
+    );
     return 2;
   }
 
@@ -143,7 +183,7 @@ function main(argv) {
     return 2;
   }
 
-  const { ok, reason } = checkSelfReview(comments, headSha);
+  const { ok, reason } = checkSelfReview(comments, headSha, authorLogin);
   if (ok) {
     console.log("Self-review record present for the current head commit.");
     return 0;

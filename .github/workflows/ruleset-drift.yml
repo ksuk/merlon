@@ -50,24 +50,44 @@ jobs:
             exit 1
           fi
 
+          # Read the list into a variable first, so a failed call aborts here
+          # under `set -e` rather than silently producing an empty loop after
+          # the baseline has been cleared.
+          ids=$(gh api "repos/$REPO/rulesets" --jq '.[].id')
+
+          # Clear the baseline before exporting over it. Without this the loop
+          # only ever writes the rulesets that still exist, so deleting a live
+          # ruleset leaves its tracked file untouched and byte-identical, the
+          # diff comes back empty, and the job reports a match — the one drift
+          # that matters most would be the one drift this job cannot see.
+          # Emptied first, the deletion shows up as a deleted file. Only *.json
+          # is removed; .github/rulesets/README.md is documentation, not export
+          # output. The checkout is disposable, so nothing outlives the run.
+          rm -f .github/rulesets/*.json
+
           # The same filter documented in .github/rulesets/README.md. The
           # deleted fields are per-request or per-viewer values that would
           # produce a diff on every export; everything that decides what a
           # ruleset enforces is kept.
-          for id in $(gh api "repos/$REPO/rulesets" --jq '.[].id'); do
+          for id in $ids; do
             name=$(gh api "repos/$REPO/rulesets/$id" --jq '.name')
             gh api "repos/$REPO/rulesets/$id" \
               | jq -S 'del(._links, .node_id, .created_at, .updated_at, .current_user_can_bypass)' \
               > ".github/rulesets/${name}.json"
           done
 
-          # An untracked file means a ruleset exists that the baseline does not
-          # know about, which is as much a finding as a changed one.
+          # Three findings, one comparison. A modified file is a ruleset whose
+          # rules changed, a deleted file is a ruleset that no longer exists
+          # live, and an untracked file is one the baseline does not know
+          # about. `git diff` reports the first two; `git ls-files --others`
+          # reports the third.
           if ! git diff --exit-code --stat -- .github/rulesets/ \
             || [[ -n "$(git ls-files --others --exclude-standard .github/rulesets/)" ]]; then
             echo "::error::Live rulesets differ from .github/rulesets/." >&2
             git --no-pager diff -- .github/rulesets/ >&2 || true
             git ls-files --others --exclude-standard .github/rulesets/ >&2 || true
+            echo "A deleted file means the ruleset no longer exists live, which" >&2
+            echo "is the finding to treat as urgent: the protection is off now." >&2
             echo "Investigate before restoring the baseline: a silently reverted" >&2
             echo "diff destroys the evidence of what changed." >&2
             exit 1
