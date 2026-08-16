@@ -28,25 +28,59 @@ the baseline is refreshed in the same pull request.
 `.github/workflows/ruleset-drift.yml` compares the two weekly and on
 `workflow_dispatch`.
 
-Reading the rulesets API needs repository Administration (read), which the
-Actions `permissions:` block cannot grant to `GITHUB_TOKEN`. If the workflow
-reports that it cannot read them, store a fine-grained PAT with that permission
-as the `RULESET_READ_TOKEN` secret. The job fails rather than reporting a clean
-comparison it never made.
+`--apply` refreshes this directory itself. To re-export without changing
+anything:
 
 ```bash
-for id in $(gh api repos/ksuk/merlon/rulesets --jq '.[].id'); do
-  name=$(gh api "repos/ksuk/merlon/rulesets/$id" --jq '.name')
-  gh api "repos/ksuk/merlon/rulesets/$id" \
-    | jq -S 'del(._links, .node_id, .created_at, .updated_at, .current_user_can_bypass)' \
-    > ".github/rulesets/${name}.json"
-done
+REPO=ksuk/merlon bash scripts/ruleset-baseline.sh --export-all .github/rulesets
 ```
 
-The deleted fields are per-request or per-viewer values that would produce a
-diff on every export. Everything that determines what the ruleset enforces is
-kept, including `enforcement`, `bypass_actors`, and the required check
-contexts.
+`scripts/ruleset-baseline.sh` is the only place that defines what a canonical
+baseline looks like. The drift workflow, `configure-github-ruleset.sh`, and this
+document are all callers. The filter used to be copied by hand into each of
+them, which is a canonical form maintained in three places and therefore a
+canonical form waiting to disagree with itself.
+
+The stripped fields (`_links`, `node_id`, `created_at`, `updated_at`,
+`current_user_can_bypass`) are per-request or per-viewer values that would
+produce a diff on every export. Everything that determines what the ruleset
+enforces is kept, including `enforcement`, `bypass_actors`, and the required
+check contexts. `current_user_can_bypass` is asserted to be `never` at export
+time, before it is stripped — it answers for the identity making the request,
+so it is checked on every run rather than committed here.
+
+## The token, and why this is not a 403
+
+Reading administration fields needs repository Administration (read), which the
+Actions `permissions:` block cannot grant to `GITHUB_TOKEN`. Store a
+fine-grained PAT scoped to this repository with that permission and nothing
+else as the `RULESET_READ_TOKEN` secret.
+
+The failure without it is quieter than a permission error, and it already
+happened once. Listing and fetching rulesets **succeed** for a caller without
+Administration; `bypass_actors` is simply omitted from the response rather than
+refused. On this job's first real run that produced a diff claiming the live
+rulesets had changed, when nothing had. An omitted key is indistinguishable
+from an empty one to anything comparing values.
+
+**Never resolve that failure by committing the export, and never delete
+`bypass_actors` from these files to make a comparison pass.** A baseline
+without the key would report green forever while being structurally unable to
+show a bypass actor being added — the single weakening this baseline exists to
+catch. The export is now validated for the fields themselves before any
+comparison is made, and `make verify-ruleset-baseline` fails on every pull
+request if a baseline here is missing one.
+
+That check is in the `release-dry-run` job of `.github/workflows/ci.yml`, which
+feeds the already-required `CI Required` context. Its being required depends on
+three properties of the current setup: no merge queue is configured, the `main`
+ruleset forces changes through pull requests, and `bypass_actors` is empty. If
+a merge queue is ever introduced, `ci.yml` needs a `merge_group` trigger or the
+check stops running on the path that merges.
+
+An unregistered secret that the correctness of a control depends on is exactly
+the kind of gap ADR-0016 exists to make visible, so it is stated here rather
+than assumed.
 
 An unexplained diff on `bypass_actors`, `enforcement`, or
 `required_status_checks` is the case this baseline exists to catch. Investigate

@@ -30,10 +30,16 @@ example — and guard scripts fail the build when the copies disagree:
 | `scripts/check-toolchain-pins.sh` | Go and Node.js versions match across the Dockerfile, all workflows, `go.mod`, and the dev container |
 | `scripts/check-wrangler-pin.sh` | The Wrangler version in `package.json` matches the one the deploy workflow runs |
 | `scripts/check-env-vars.sh` | Every environment variable the code reads is documented, and every documented variable is read |
+| `scripts/ruleset-baseline.sh` | The committed ruleset baselines carry every field the drift check compares, `bypass_actors` above all, and are in canonical export form |
 
 Each guard fails if it finds **zero** occurrences of what it is checking, not
 just on a mismatch. A control that silently stops checking anything when a step
 is renamed is worse than no control, because it reports success.
+
+The last row is that rule applied to a guard that had broken it. The rulesets
+API omits `bypass_actors` for a caller without repository Administration, so
+the drift check was comparing a field it could not see — zero occurrences read
+as agreement rather than as a failure.
 
 These run as required checks on every pull request.
 

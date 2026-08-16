@@ -179,21 +179,41 @@ of duties. That cannot be argued away, so it is made detectable instead:
   as a deleted file rather than as an untouched one. Exporting over the top
   would have left the strongest weakening — removing the protection
   entirely — as the single case the check could not see.
-- `bypass_actors` stays empty and `current_user_can_bypass` stays `never`.
+- `bypass_actors` is empty in the committed baseline, and the export asserts
+  `current_user_can_bypass` is `never` for the identity it runs as — the
+  maintainer's Administration-read PAT. That field is per-viewer, so it is
+  checked on every run rather than committed to the baseline.
+- The export is validated before any comparison is made. A token that cannot
+  read administration fields receives `bypass_actors` *omitted* rather than
+  refused, and an omitted key is indistinguishable from an empty one to
+  anything comparing values. That is not a hypothetical: it is what this job
+  reported as drift on its first real run. `scripts/ruleset-baseline.sh` now
+  fails with a token diagnosis and prints no diff, because a diff is what
+  invites someone to commit the degraded export.
+- `make verify-ruleset-baseline` runs on every pull request, inside the job
+  that feeds `CI Required`. The drift job is weekly and never sees a pull
+  request, so this is what catches a degraded baseline on the way in.
 
-What this does not catch: one Admin changing the live configuration and the
-baseline in the same act produces no diff. That is a design limit, stated
-rather than mitigated. What drift detection buys is that a weakening cannot
-happen *unnoticed* or *unrecorded* — the baseline commit is in Git history
-either way. It does not stop a deliberate co-ordinated change. This repository
-sits under a personal account, so there is no organization or enterprise
-ruleset layer above the repository to appeal to.
+What this does not catch, in layers. The weekly job compares live against
+committed, so a baseline degraded on its own is caught the following Monday.
+The pull-request check catches it at merge time. Neither stops a single change
+that removes the pull-request check, commits the degraded baseline, and
+disables the drift workflow together — nor one Admin changing the live
+configuration and the baseline in the same act, which produces no diff at all.
+Those are design limits, stated rather than mitigated. What drift detection
+buys is that a weakening cannot happen *unnoticed* or *unrecorded* — the
+baseline commit is in Git history either way. It does not stop a deliberate
+co-ordinated change. This repository sits under a personal account, so there is
+no organization or enterprise ruleset layer above the repository to appeal to.
 
-Because `bypass_actors` is empty and `current_user_can_bypass` is `never`, a
-required check that becomes permanently unreportable locks the owner out of
-`main` as well. Recovery is to set the ruleset's `enforcement` to `evaluate`,
-fix the cause, and return it to `active`, recording the temporary change in the
-baseline commit. An `enforcement` change with no such record is drift.
+Because `bypass_actors` is empty and the export asserts the maintainer cannot
+bypass, a required check that becomes permanently unreportable locks the owner
+out of `main` as well. That includes a guard added to an already-required job:
+if `verify-ruleset-baseline` ever fails wrongly, the pull request fixing it
+cannot merge either. Recovery is the same in both cases — set the ruleset's
+`enforcement` to `evaluate`, fix the cause, and return it to `active`,
+recording the temporary change in the baseline commit. An `enforcement` change
+with no such record is drift.
 
 ### Review date, and the path off this mode
 

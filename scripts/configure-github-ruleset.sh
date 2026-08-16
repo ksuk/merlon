@@ -125,3 +125,26 @@ configure_ruleset() {
 
 configure_ruleset "main-release-governance" "$branch_payload"
 configure_ruleset "release-tag-governance" "$tag_payload"
+
+# Refresh the committed baseline from what the server actually stored, not from
+# the payload just sent. The two are not the same thing: GitHub fills in
+# defaults (`required_reviewers: []` among them), and the baseline has to match
+# what the drift check will read back, or the next Monday's run reports drift
+# against this very change.
+#
+# This step is also what makes an existing claim true. The governance docs say
+# the active Ruleset API response is exported and committed; until now this
+# script sent the payload and exported nothing, leaving the export as a manual
+# snippet in .github/rulesets/README.md that was easy to forget. Under
+# ADR-0016's rule a clause is either machine-enforced or a plain disclosure,
+# and "someone will remember to run the snippet" is neither.
+#
+# The operator running --apply holds Administration (write) by definition, so
+# the export sees bypass_actors here and the shared canonicalizer's completeness
+# check passes. If it ever does not, the failure is the useful kind: it means
+# the ruleset was changed by a token that cannot read back what it wrote.
+baseline_dir="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)/.github/rulesets"
+echo "Refreshing the committed baseline in ${baseline_dir}"
+rm -f "${baseline_dir}"/*.json
+REPO="$repository" bash "$(dirname "${BASH_SOURCE[0]}")/ruleset-baseline.sh" --export-all "$baseline_dir"
+echo "Commit the refreshed baseline in the same pull request as this change."

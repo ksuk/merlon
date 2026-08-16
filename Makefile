@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -60,6 +60,9 @@ verify-openapi-coverage: generate-openapi ## Verify the OpenAPI document still c
 
 verify-toolchain-pins: ## Verify the build images, workflows, go.mod, and DevContainer name the same Go and Node.js
 	@bash scripts/check-toolchain-pins.sh
+
+verify-ruleset-baseline: ## Verify the committed ruleset baselines carry every field the drift check compares
+	@bash scripts/ruleset-baseline.sh --check .github/rulesets/*.json
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo dev)
 # COMMIT and BUILT_AT identify which build produced a record (#83). They stay
