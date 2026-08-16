@@ -131,6 +131,20 @@ jobs:
       # told to set that nothing reads.
       - name: Verify synchronized environment variables
         run: make verify-env-vars
+      # The drift workflow that compares .github/rulesets/ against the live
+      # configuration runs weekly and never sees a pull request, so it cannot
+      # catch a degraded baseline on the way in. This offline check does: it
+      # fails if a committed baseline is missing a field the comparison depends
+      # on — bypass_actors above all — or is not in canonical export form.
+      #
+      # That combination is what turns a noisy failure into a silent one. A
+      # token without Administration (read) exports rulesets with bypass_actors
+      # omitted; committing that to make the drift job green would leave a
+      # baseline structurally unable to show a bypass actor being added, and
+      # the job would report a match forever. Catching it here means the
+      # attempt has to be deliberate rather than expedient.
+      - name: Verify ruleset baseline completeness
+        run: make verify-ruleset-baseline
       # The OpenAPI document is the contract the project promises to keep
       # compatible. A route registered but never published is callable and
       # unpromised, so this ratchets coverage rather than letting it slip.

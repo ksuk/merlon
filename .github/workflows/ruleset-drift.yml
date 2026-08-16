@@ -30,51 +30,71 @@ jobs:
 
       - name: Export live rulesets and compare with the baseline
         env:
-          # Reading the rulesets API needs repository Administration (read).
-          # The Actions `permissions:` block has no `administration` scope to
-          # grant, so GITHUB_TOKEN may not be enough. If the first call below
-          # returns 403, create a fine-grained PAT with Administration (read)
-          # on this repository and store it as the RULESET_READ_TOKEN secret;
-          # nothing else about this job changes.
+          # Reading administration fields off the rulesets API needs repository
+          # Administration (read), and the Actions `permissions:` block has no
+          # `administration` scope to grant, so GITHUB_TOKEN is not enough.
+          #
+          # The failure is quieter than a 403, which is why this job's first
+          # real run reported nonsense. Listing and fetching rulesets succeed
+          # for a non-admin caller; `bypass_actors` is simply *omitted from the
+          # response* rather than refused. An omitted key is indistinguishable
+          # from an empty one to anything comparing values, so the job compared
+          # a degraded view against a complete baseline and called the
+          # difference drift. The fallback below is kept — it lets the job run
+          # and fail loudly with the right diagnosis — but the exported data is
+          # now checked for the fields themselves, not for HTTP success.
+          #
+          # Fix: a fine-grained PAT scoped to this repository with
+          # Administration (read) and nothing else, stored as the
+          # RULESET_READ_TOKEN secret. Nothing else about this job changes.
           GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if ! gh api "repos/$REPO/rulesets" >/dev/null 2>&1; then
-            echo "::error::Cannot read repository rulesets with the token available." >&2
-            echo "Store a fine-grained PAT with Administration (read) as the" >&2
-            echo "RULESET_READ_TOKEN secret. Failing rather than reporting a" >&2
-            echo "clean comparison that never happened." >&2
+          # Export into a temporary directory first. The working tree is not
+          # touched until the export has proved it is trustworthy, which is
+          # what separates the two ways this job can fail: a token that cannot
+          # see administration fields must never reach the comparison, because
+          # its output would read as drift and invite the reader to commit it.
+          #
+          # This also makes the old ordering requirement structural rather than
+          # stated. The list used to be read into a variable specifically so a
+          # failed call aborted before `rm -f` cleared the baseline; now
+          # nothing is cleared until every ruleset has been fetched and
+          # validated. The rule is worth keeping in mind anyway, so it is
+          # recorded here rather than deleted with the code that needed it.
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+
+          # Every verdict below belongs to scripts/ruleset-baseline.sh: it is
+          # the one place that knows what a canonical baseline looks like, so
+          # this workflow, the README, and configure-github-ruleset.sh cannot
+          # drift apart on the answer. It fails with 3 when the token cannot
+          # see admin-only fields such as bypass_actors — the case that
+          # produced a bogus "rulesets differ" on this job's first real run.
+          status=0
+          REPO="$REPO" bash scripts/ruleset-baseline.sh --export-all "$tmp" || status=$?
+
+          if [[ $status -eq 3 ]]; then
+            echo "::error::Ruleset export is permission-degraded (RULESET_READ_TOKEN not registered). This is NOT drift." >&2
+            exit 1
+          fi
+          if [[ $status -ne 0 ]]; then
+            echo "::error::Could not export the live rulesets; no comparison was made." >&2
             exit 1
           fi
 
-          # Read the list into a variable first, so a failed call aborts here
-          # under `set -e` rather than silently producing an empty loop after
-          # the baseline has been cleared.
-          ids=$(gh api "repos/$REPO/rulesets" --jq '.[].id')
-
-          # Clear the baseline before exporting over it. Without this the loop
-          # only ever writes the rulesets that still exist, so deleting a live
-          # ruleset leaves its tracked file untouched and byte-identical, the
-          # diff comes back empty, and the job reports a match — the one drift
-          # that matters most would be the one drift this job cannot see.
-          # Emptied first, the deletion shows up as a deleted file. Only *.json
-          # is removed; .github/rulesets/README.md is documentation, not export
-          # output. The checkout is disposable, so nothing outlives the run.
+          # Only now is the baseline replaced. Clearing it first is what makes
+          # a ruleset *deleted* from the live configuration show up as a
+          # deleted file: exporting over the top would leave its tracked file
+          # untouched and byte-identical, so the removal of a protection
+          # entirely — the most serious weakening there is — would be the one
+          # case producing no diff. Only *.json is removed; README.md is
+          # documentation, not export output.
           rm -f .github/rulesets/*.json
-
-          # The same filter documented in .github/rulesets/README.md. The
-          # deleted fields are per-request or per-viewer values that would
-          # produce a diff on every export; everything that decides what a
-          # ruleset enforces is kept.
-          for id in $ids; do
-            name=$(gh api "repos/$REPO/rulesets/$id" --jq '.name')
-            gh api "repos/$REPO/rulesets/$id" \
-              | jq -S 'del(._links, .node_id, .created_at, .updated_at, .current_user_can_bypass)' \
-              > ".github/rulesets/${name}.json"
-          done
+          cp "$tmp"/*.json .github/rulesets/
 
           # Three findings, one comparison. A modified file is a ruleset whose
           # rules changed, a deleted file is a ruleset that no longer exists
@@ -83,9 +103,11 @@ jobs:
           # reports the third.
           if ! git diff --exit-code --stat -- .github/rulesets/ \
             || [[ -n "$(git ls-files --others --exclude-standard .github/rulesets/)" ]]; then
-            echo "::error::Live rulesets differ from .github/rulesets/." >&2
+            echo "::error::Live rulesets differ from .github/rulesets/. This IS drift." >&2
             git --no-pager diff -- .github/rulesets/ >&2 || true
             git ls-files --others --exclude-standard .github/rulesets/ >&2 || true
+            echo "The export was validated before this comparison, so this is a" >&2
+            echo "real difference in the live configuration, not a token problem." >&2
             echo "A deleted file means the ruleset no longer exists live, which" >&2
             echo "is the finding to treat as urgent: the protection is off now." >&2
             echo "Investigate before restoring the baseline: a silently reverted" >&2

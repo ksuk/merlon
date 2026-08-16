@@ -111,7 +111,13 @@ Two further changes are 2xx-compatible but worth noting:
 - Ruleset drift detection: the `main` and release-tag rulesets are committed to
   `.github/rulesets/` and compared weekly against the live configuration.
   Rulesets deleted from the live configuration are reported as drift alongside
-  modified and unknown ones.
+  modified and unknown ones. The export is validated before any comparison is
+  made — a token that cannot read `bypass_actors` receives it omitted rather
+  than refused, so the check now proves it can see the field instead of
+  reporting its absence as a difference. `scripts/ruleset-baseline.sh` is the
+  single definition of the canonical baseline, shared by the drift workflow,
+  `configure-github-ruleset.sh`, and `make verify-ruleset-baseline`, which runs
+  on every pull request so a degraded baseline cannot be committed unnoticed.
 - Release gate verifying that `CI Required` and `Security Required` concluded
   successfully on the release commit before any image is published, so the
   disclosure header the release carries is checked rather than asserted.
