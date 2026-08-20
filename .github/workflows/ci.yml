@@ -138,7 +138,7 @@ jobs:
       # on — bypass_actors above all — or is not in canonical export form.
       #
       # That combination is what turns a noisy failure into a silent one. A
-      # token without Administration (read) exports rulesets with bypass_actors
+      # token without write access to the ruleset exports it with bypass_actors
       # omitted; committing that to make the drift job green would leave a
       # baseline structurally unable to show a bypass actor being added, and
       # the job would report a match forever. Catching it here means the

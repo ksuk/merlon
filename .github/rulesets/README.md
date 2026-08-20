@@ -51,14 +51,23 @@ so it is checked on every run rather than committed here.
 
 ## The token, and why this is not a 403
 
-Reading administration fields needs repository Administration (read), which the
-Actions `permissions:` block cannot grant to `GITHUB_TOKEN`. Store a
-fine-grained PAT scoped to this repository with that permission and nothing
-else as the `RULESET_READ_TOKEN` secret.
+Reading administration fields needs **write access to the ruleset**, not read.
+GitHub's wording is exact: "the `bypass_actors` property is only returned if the
+user making the API request has write access to the ruleset." The Actions
+`permissions:` block has no `administration` scope to grant at any level, so
+`GITHUB_TOKEN` cannot see the field however it is configured.
 
-The failure without it is quieter than a permission error, and it already
-happened once. Listing and fetching rulesets **succeed** for a caller without
-Administration; `bypass_actors` is simply omitted from the response rather than
+That makes the obvious remedy worse than it looks. A `RULESET_READ_TOKEN` that
+could actually read `bypass_actors` would need Administration **write** — a
+credential able to delete every ruleset in this repository, stored as an Actions
+secret, in order to verify that nobody can bypass those rulesets. The credential
+would itself be a bypass mechanism, living in Actions secrets instead of in the
+`bypass_actors` list. This project does not store one; see the verification
+section below for what is checked instead.
+
+The failure mode is quieter than a permission error, and it already happened
+once. Listing and fetching rulesets **succeed** for a caller without ruleset
+write access; `bypass_actors` is simply omitted from the response rather than
 refused. On this job's first real run that produced a diff claiming the live
 rulesets had changed, when nothing had. An omitted key is indistinguishable
 from an empty one to anything comparing values.
@@ -78,9 +87,26 @@ ruleset forces changes through pull requests, and `bypass_actors` is empty. If
 a merge queue is ever introduced, `ci.yml` needs a `merge_group` trigger or the
 check stops running on the path that merges.
 
-An unregistered secret that the correctness of a control depends on is exactly
-the kind of gap ADR-0016 exists to make visible, so it is stated here rather
-than assumed.
+## What is verified, and what is not
+
+The weekly job verifies everything `GITHUB_TOKEN` can actually see: `enforcement`,
+`rules` including `required_status_checks`, `conditions`, and whether each ruleset
+still exists. Those cover the weakening that happens by accident — `enforcement`
+dropped to `evaluate` to unblock something and never restored, a required context
+removed, a ruleset deleted.
+
+`bypass_actors` is not in that set and cannot be, for the reason above. It is
+verified instead when an administrator runs the export with their own token, which
+`--apply` does as part of every intentional ruleset change. Adding an actor is a
+deliberate act rather than a slip, so it is checked at the moments a person is
+already acting rather than continuously.
+
+**As committed today the weekly job still fails on this**, because it treats a
+missing `bypass_actors` as a hard error. Representing it as an explicit
+`unverifiable` state instead — so the field is neither silently dropped nor a
+permanent red — is tracked in
+[#117](https://github.com/ksuk/merlon/issues/117). A control that is red forever
+stops being read, which is its own failure.
 
 An unexplained diff on `bypass_actors`, `enforcement`, or
 `required_status_checks` is the case this baseline exists to catch. Investigate
@@ -89,9 +115,13 @@ happened.
 
 This baseline is public. `bypass_actors` and `required_reviewers` are empty
 today; if either becomes populated, the export will publish the actor and team
-identifiers it contains. Check the diff before committing it. The export needs
-only read access to repository administration — do not run it with a token
-scoped more broadly than that.
+identifiers it contains — information GitHub deliberately withholds from callers
+without ruleset write access. Check the diff before committing it, and decide
+whether publishing those identifiers is acceptable rather than assuming it.
+
+An export that includes `bypass_actors` necessarily runs with Administration
+write. Run it interactively as an administrator; do not store that credential
+anywhere a workflow can reach it.
 
 The drift job clears this directory of `*.json` before exporting, so a ruleset
 deleted from the live configuration appears as a deleted file. Exporting over
