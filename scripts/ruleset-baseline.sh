@@ -25,6 +25,11 @@
 #   ruleset-baseline.sh --check FILE...                     # audit committed baselines
 #   ruleset-baseline.sh --export-all DIR                    # fetch live -> DIR (needs gh)
 #
+# --canonicalize and --export-all accept --comparable, which drops bypass_actors
+# from both the requirement and the output. That is the form the weekly drift
+# job compares, because GITHUB_TOKEN cannot see the field at all -- see the
+# three states below.
+#
 # Exit codes are distinct so callers can choose an annotation without matching
 # on message text, which would make the prose load-bearing:
 #   0  ok
@@ -32,6 +37,19 @@
 #   2  usage error
 #   3  permission-degraded response (the token cannot see admin-only fields)
 #   4  the requesting identity can bypass the ruleset
+#
+# bypass_actors has three states, and collapsing them is the failure this script
+# exists to prevent:
+#
+#   verified-empty     an administrator's export saw []
+#   verified-nonempty  an administrator's export saw actors listed -- a finding
+#   unverifiable       the caller could not see the field
+#
+# "Absent" and "empty" are different claims. A caller without ruleset write
+# access gets the key omitted, which is indistinguishable from [] to anything
+# comparing values -- so the omission is never silently treated as emptiness.
+# Strict mode (the default) refuses to proceed on it. Comparable mode drops the
+# field from both sides deliberately and the caller states that it did.
 set -euo pipefail
 
 readonly EXIT_MALFORMED=1
@@ -49,6 +67,11 @@ readonly EXIT_BYPASSABLE=4
 # docs/security/supply-chain.md.
 readonly REQUIRED_KEYS=(bypass_actors conditions enforcement name rules target)
 
+# The same list minus the one field an Actions token cannot see. Used only by
+# --comparable, and kept as its own constant rather than computed by filtering
+# so that adding a key to REQUIRED_KEYS forces a decision about this list too.
+readonly COMPARABLE_KEYS=(conditions enforcement name rules target)
+
 # Per-request or per-viewer values. They would produce a diff on every export
 # depending on who ran it and when, so they are stripped from the committed
 # form -- but `current_user_can_bypass` is asserted against *before* it is
@@ -59,9 +82,12 @@ readonly FILTER='del(._links, .node_id, .created_at, .updated_at, .current_user_
 usage() {
   cat >&2 <<'USAGE'
 usage:
-  ruleset-baseline.sh --canonicalize < raw-ruleset.json
+  ruleset-baseline.sh --canonicalize [--comparable] < raw-ruleset.json
   ruleset-baseline.sh --check FILE...
-  ruleset-baseline.sh --export-all DIR
+  ruleset-baseline.sh --export-all [--comparable] DIR
+
+--comparable drops bypass_actors from the requirement and the output, for
+callers that cannot see it. Not valid with --check.
 USAGE
 }
 
@@ -72,7 +98,18 @@ USAGE
 # token message; checking bypassability first would report the Actions app's
 # viewpoint and send the reader after the wrong problem.
 canonicalize() {
+  local comparable=${1:-strict}
   local raw name
+  local -a required=("${REQUIRED_KEYS[@]}")
+  local filter="$FILTER"
+
+  if [[ "$comparable" == comparable ]]; then
+    required=("${COMPARABLE_KEYS[@]}")
+    # Dropped from the output as well as the requirement. Leaving it in would
+    # put a field in the comparable form that one side can never populate,
+    # which is the diff this mode exists to stop producing.
+    filter="${FILTER%)} , .bypass_actors)"
+  fi
 
   if ! raw=$(jq -e '.' 2>/dev/null); then
     echo "Input is not valid JSON." >&2
@@ -86,7 +123,7 @@ canonicalize() {
   name=$(jq -r '.name // "(unnamed)"' <<<"$raw")
 
   local key
-  for key in "${REQUIRED_KEYS[@]}"; do
+  for key in "${required[@]}"; do
     if [[ "$(jq -r --arg k "$key" 'has($k)' <<<"$raw")" != "true" ]]; then
       degraded_error "$name" "$key"
       return "$EXIT_DEGRADED"
@@ -111,7 +148,7 @@ EOF
     return "$EXIT_BYPASSABLE"
   fi
 
-  jq -S "$FILTER" <<<"$raw"
+  jq -S "$filter" <<<"$raw"
 }
 
 # The message the maintainer reads at 00:17 on a Monday. It has one job beyond
@@ -211,7 +248,7 @@ check_files() {
 # deliberately the only mode with no judgment in it -- every verdict below is
 # canonicalize's.
 export_all() {
-  local dir=$1 repo=${REPO:-${GITHUB_REPOSITORY:-}}
+  local dir=$1 comparable=${2:-strict} repo=${REPO:-${GITHUB_REPOSITORY:-}}
 
   if [[ -z "$repo" ]]; then
     echo "Set REPO or GITHUB_REPOSITORY to owner/name." >&2
@@ -256,7 +293,7 @@ export_all() {
     fi
 
     status=0
-    canonicalize <<<"$raw" > "$dir/$name.json" || status=$?
+    canonicalize "$comparable" <<<"$raw" > "$dir/$name.json" || status=$?
     if [[ $status -ne 0 ]]; then
       rm -f "$dir/$name.json"
       return "$status"
@@ -265,18 +302,39 @@ export_all() {
 }
 
 main() {
-  case "${1:-}" in
+  # --comparable is accepted in any position so that neither `--export-all DIR
+  # --comparable` nor `--comparable --export-all DIR` is a surprise. It is never
+  # valid with --check: a committed baseline is written by an administrator and
+  # must carry bypass_actors, and letting the audit relax that would let a
+  # degraded baseline pass the very check that exists to catch it.
+  local mode=strict
+  local -a args=()
+  local a
+  for a in "$@"; do
+    if [[ "$a" == --comparable ]]; then
+      mode=comparable
+    else
+      args+=("$a")
+    fi
+  done
+
+  case "${args[0]:-}" in
     --canonicalize)
-      [[ $# -eq 1 ]] || { usage; return "$EXIT_USAGE"; }
-      canonicalize
+      [[ ${#args[@]} -eq 1 ]] || { usage; return "$EXIT_USAGE"; }
+      canonicalize "$mode"
       ;;
     --check)
-      shift
-      check_files "$@"
+      if [[ "$mode" == comparable ]]; then
+        echo "--check does not accept --comparable: a committed baseline must" >&2
+        echo "carry bypass_actors, and relaxing that here would let a degraded" >&2
+        echo "baseline pass the check that exists to catch it." >&2
+        return "$EXIT_USAGE"
+      fi
+      check_files "${args[@]:1}"
       ;;
     --export-all)
-      [[ $# -eq 2 ]] || { usage; return "$EXIT_USAGE"; }
-      export_all "$2"
+      [[ ${#args[@]} -eq 2 ]] || { usage; return "$EXIT_USAGE"; }
+      export_all "${args[1]}" "$mode"
       ;;
     *)
       usage

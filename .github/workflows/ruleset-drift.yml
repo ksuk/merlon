@@ -69,20 +69,25 @@ jobs:
           # nothing is cleared until every ruleset has been fetched and
           # validated. The rule is worth keeping in mind anyway, so it is
           # recorded here rather than deleted with the code that needed it.
-          tmp=$(mktemp -d)
-          trap 'rm -rf "$tmp"' EXIT
+          # Two comparable renderings, compared directly. The working tree is
+          # never touched: `git diff` cannot be the comparison here, because
+          # what is committed carries bypass_actors and what this job can fetch
+          # does not, so any diff against HEAD would report that difference
+          # forever. See the three states in scripts/ruleset-baseline.sh.
+          live=$(mktemp -d)
+          base=$(mktemp -d)
+          trap 'rm -rf "$live" "$base"' EXIT
 
-          # Every verdict below belongs to scripts/ruleset-baseline.sh: it is
-          # the one place that knows what a canonical baseline looks like, so
-          # this workflow, the README, and configure-github-ruleset.sh cannot
-          # drift apart on the answer. It fails with 3 when the token cannot
-          # see admin-only fields such as bypass_actors — the case that
-          # produced a bogus "rulesets differ" on this job's first real run.
+          # Every verdict belongs to scripts/ruleset-baseline.sh, the one place
+          # that knows what a canonical baseline looks like. --comparable drops
+          # bypass_actors from the requirement and the output; everything else
+          # is still required, so a response degraded in any *other* way still
+          # fails with exit 3 rather than quietly narrowing the comparison.
           status=0
-          REPO="$REPO" bash scripts/ruleset-baseline.sh --export-all "$tmp" || status=$?
+          REPO="$REPO" bash scripts/ruleset-baseline.sh --export-all --comparable "$live" || status=$?
 
           if [[ $status -eq 3 ]]; then
-            echo "::error::Ruleset export is permission-degraded (RULESET_READ_TOKEN not registered). This is NOT drift." >&2
+            echo "::error::The ruleset export is missing a field this job does need. This is NOT drift." >&2
             exit 1
           fi
           if [[ $status -ne 0 ]]; then
@@ -90,33 +95,44 @@ jobs:
             exit 1
           fi
 
-          # Only now is the baseline replaced. Clearing it first is what makes
-          # a ruleset *deleted* from the live configuration show up as a
-          # deleted file: exporting over the top would leave its tracked file
-          # untouched and byte-identical, so the removal of a protection
-          # entirely — the most serious weakening there is — would be the one
-          # case producing no diff. Only *.json is removed; README.md is
-          # documentation, not export output.
-          rm -f .github/rulesets/*.json
-          cp "$tmp"/*.json .github/rulesets/
+          shopt -s nullglob
+          committed=(.github/rulesets/*.json)
+          shopt -u nullglob
+          if [[ ${#committed[@]} -eq 0 ]]; then
+            echo "::error::No committed ruleset baseline to compare against." >&2
+            exit 1
+          fi
+          for f in "${committed[@]}"; do
+            bash scripts/ruleset-baseline.sh --canonicalize --comparable \
+              < "$f" > "$base/$(basename "$f")"
+          done
 
-          # Three findings, one comparison. A modified file is a ruleset whose
-          # rules changed, a deleted file is a ruleset that no longer exists
-          # live, and an untracked file is one the baseline does not know
-          # about. `git diff` reports the first two; `git ls-files --others`
-          # reports the third.
-          if ! git diff --exit-code --stat -- .github/rulesets/ \
-            || [[ -n "$(git ls-files --others --exclude-standard .github/rulesets/)" ]]; then
+          # bypass_actors, stated rather than dropped. The whole point of the
+          # three states is that "the caller could not see it" is a different
+          # claim from "it is empty", so this job says which one it is holding
+          # and names the evidence for the other.
+          echo "bypass_actors: unverifiable in this run."
+          echo "  GITHUB_TOKEN cannot read it -- GitHub returns the field only to a"
+          echo "  caller with write access to the ruleset, and this project does not"
+          echo "  store such a credential. Last administrator-verified values:"
+          for f in "${committed[@]}"; do
+            recorded=$(jq -c '.bypass_actors' "$f")
+            when=$(git log -1 --format='%h %ad' --date=short -- "$f")
+            echo "    $(basename "$f" .json): $recorded  (recorded in $when)"
+          done
+
+          if ! diff -ru "$base" "$live" >/tmp/drift.diff 2>&1; then
             echo "::error::Live rulesets differ from .github/rulesets/. This IS drift." >&2
-            git --no-pager diff -- .github/rulesets/ >&2 || true
-            git ls-files --others --exclude-standard .github/rulesets/ >&2 || true
+            cat /tmp/drift.diff >&2
             echo "The export was validated before this comparison, so this is a" >&2
             echo "real difference in the live configuration, not a token problem." >&2
-            echo "A deleted file means the ruleset no longer exists live, which" >&2
-            echo "is the finding to treat as urgent: the protection is off now." >&2
+            echo "A file present only under the baseline means the ruleset no longer" >&2
+            echo "exists live: the protection is off now, and that is the urgent" >&2
+            echo "reading. A file present only under the live export is a ruleset" >&2
+            echo "the baseline does not know about." >&2
             echo "Investigate before restoring the baseline: a silently reverted" >&2
             echo "diff destroys the evidence of what changed." >&2
             exit 1
           fi
 
-          echo "Live rulesets match the committed baseline."
+          echo "Live rulesets match the committed baseline on every field this job can see."

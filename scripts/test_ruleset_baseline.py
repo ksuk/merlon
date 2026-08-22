@@ -120,6 +120,98 @@ class CanonicalizeTests(unittest.TestCase):
         self.assertEqual(self.canonicalize([]).returncode, MALFORMED)
 
 
+class ComparableModeTests(unittest.TestCase):
+    """The mode the weekly drift job runs in.
+
+    It cannot see `bypass_actors` at all, so it compares a rendering without
+    that field on both sides. The risk in doing so is that "the caller could
+    not see it" quietly becomes "it is empty" -- which is the #115 defect
+    wearing a different hat. These tests pin the boundary: comparable mode
+    relaxes exactly one field and nothing else, and it never leaks the field
+    into its output where only one side could populate it.
+    """
+
+    def run_mode(self, payload: object, *flags: str) -> subprocess.CompletedProcess[str]:
+        text = payload if isinstance(payload, str) else json.dumps(payload)
+        return subprocess.run(
+            ["bash", str(SCRIPT), "--canonicalize", *flags],
+            input=text,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_absent_bypass_actors_is_accepted(self) -> None:
+        payload = raw_response()
+        del payload["bypass_actors"]
+        self.assertEqual(self.run_mode(payload, "--comparable").returncode, OK)
+
+    def test_strict_still_rejects_what_comparable_accepts(self) -> None:
+        payload = raw_response()
+        del payload["bypass_actors"]
+        self.assertEqual(self.run_mode(payload).returncode, DEGRADED)
+
+    # Comparable mode relaxes ONE field. Anything else missing still means the
+    # response cannot be trusted, and narrowing the comparison further would be
+    # the same failure at a smaller scale.
+    def test_every_other_key_is_still_required(self) -> None:
+        for key in ("conditions", "enforcement", "name", "rules", "target"):
+            with self.subTest(missing=key):
+                payload = raw_response()
+                del payload[key]
+                self.assertEqual(self.run_mode(payload, "--comparable").returncode, DEGRADED)
+
+    # If the field survived into the output, one side of the weekly comparison
+    # could populate it and the other never could -- a permanent diff.
+    def test_output_never_carries_bypass_actors(self) -> None:
+        for payload in (raw_response(), raw_response(bypass_actors=[{"actor_id": 5}])):
+            result = self.run_mode(payload, "--comparable")
+            self.assertEqual(result.returncode, OK)
+            self.assertNotIn("bypass_actors", json.loads(result.stdout))
+
+    def test_bypassable_viewer_is_still_a_finding(self) -> None:
+        payload = raw_response(current_user_can_bypass="always")
+        self.assertEqual(self.run_mode(payload, "--comparable").returncode, BYPASSABLE)
+
+    def test_flag_order_does_not_matter(self) -> None:
+        payload = raw_response()
+        del payload["bypass_actors"]
+        a = subprocess.run(
+            ["bash", str(SCRIPT), "--canonicalize", "--comparable"],
+            input=json.dumps(payload), capture_output=True, text=True, check=False,
+        )
+        b = subprocess.run(
+            ["bash", str(SCRIPT), "--comparable", "--canonicalize"],
+            input=json.dumps(payload), capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(a.returncode, OK)
+        self.assertEqual(b.returncode, OK)
+        self.assertEqual(a.stdout, b.stdout)
+
+    # The load-bearing property of the whole design: a degraded live export and
+    # a complete committed baseline render identically, so the weekly job can be
+    # green without anyone deleting bypass_actors from the baseline to get there.
+    def test_degraded_live_and_complete_baseline_render_identically(self) -> None:
+        degraded = raw_response()
+        del degraded["bypass_actors"]
+        complete = raw_response()
+        a = self.run_mode(degraded, "--comparable")
+        b = self.run_mode(complete, "--comparable")
+        self.assertEqual(a.returncode, OK)
+        self.assertEqual(b.returncode, OK)
+        self.assertEqual(a.stdout, b.stdout)
+
+    # A committed baseline must never be audited in the relaxed mode: that is
+    # exactly how a degraded baseline would slip past the guard meant to catch it.
+    def test_check_refuses_comparable(self) -> None:
+        files = sorted(BASELINE_DIR.glob("*.json"))
+        result = subprocess.run(
+            ["bash", str(SCRIPT), "--check", "--comparable", *map(str, files)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, USAGE)
+
+
 class CheckTests(unittest.TestCase):
     def check(self, *paths: pathlib.Path | str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

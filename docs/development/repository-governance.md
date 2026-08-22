@@ -183,9 +183,15 @@ of duties. That cannot be argued away, so it is made detectable instead:
   administrator runs the export with their own token. Reading it needs
   Administration **write**, so no credential capable of it is stored in Actions:
   one would be able to delete every ruleset here, which is a bypass mechanism
-  kept in order to check for bypass mechanisms. The weekly job therefore
-  verifies what `GITHUB_TOKEN` can see and states that this field is not among
-  it (see [#117](https://github.com/ksuk/merlon/issues/117)).
+  kept in order to check for bypass mechanisms.
+- The field therefore has three states — `verified-empty`, `verified-nonempty`,
+  and `unverifiable` — and the weekly job holds the third one explicitly. It
+  compares a rendering that omits `bypass_actors` from both sides, prints the
+  last administrator-verified value with the commit that recorded it, and still
+  requires every other field, so a response degraded in any other way fails
+  rather than narrowing the comparison. Naming the state is the point: "the
+  caller could not see it" and "it is empty" are different claims, and treating
+  them as one is the defect this whole area exists to avoid.
 - The same export asserts `current_user_can_bypass` is `never` for the identity
   it runs as. That field is per-viewer, so it is checked on every run rather
   than committed to the baseline.
