@@ -9,7 +9,17 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +27,8 @@ import { checkComment, checkSelfReview } from "./check-self-review.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(__dirname, "check-self-review.mjs");
+const REPO_ROOT = path.join(__dirname, "..");
+const WORKFLOW = path.join(REPO_ROOT, ".github", "workflows", "governance.yml");
 
 const HEAD = "abc1234def5678901234567890123456789abcde";
 const AUTHOR = "ksuk";
@@ -162,4 +174,79 @@ test("the CLI rejects malformed stdin and a missing argument", () => {
   assert.equal(runCLI([HEAD, AUTHOR], "not json").code, 2);
   assert.equal(runCLI([HEAD], "[]").code, 2);
   assert.equal(runCLI([], "[]").code, 2);
+});
+
+function verificationStepScript() {
+  const workflow = readFileSync(WORKFLOW, "utf8");
+  const step = workflow.indexOf("      - name: Verify self-review record\n");
+  assert.notEqual(step, -1);
+
+  const runMarker = "        run: |\n";
+  const run = workflow.indexOf(runMarker, step);
+  assert.notEqual(run, -1);
+
+  const lines = workflow.slice(run + runMarker.length).split("\n");
+  const script = [];
+  for (const line of lines) {
+    if (line !== "" && !line.startsWith("          ")) break;
+    script.push(line.startsWith("          ") ? line.slice(10) : line);
+  }
+  return `${script.join("\n")}\n`;
+}
+
+// A missing record is a failed governance verdict, not a failed reporter. The
+// commit status remains the ruleset gate; the workflow run cannot be repaired
+// by the later issue_comment run and therefore must not leave a stale failure.
+test("the workflow reports a missing record without failing its job script", () => {
+  const scratch = mkdtempSync(path.join(os.tmpdir(), "merlon-governance-test-"));
+  const gh = path.join(scratch, "gh");
+  const statusState = path.join(scratch, "status-state");
+  const scratchScripts = path.join(scratch, "scripts");
+  mkdirSync(scratchScripts);
+  copyFileSync(CLI, path.join(scratchScripts, "check-self-review.mjs"));
+
+  writeFileSync(
+    gh,
+    `#!/usr/bin/env bash
+set -euo pipefail
+
+case "$*" in
+  *"/pulls/"*)
+    printf '%s\\n' '{"head":{"sha":"${HEAD}"},"user":{"type":"User","login":"${AUTHOR}"}}'
+    ;;
+  *"/comments"*)
+    printf '%s\\n' '[]'
+    ;;
+  *"/statuses/"*)
+    for arg in "$@"; do
+      case "$arg" in
+        state=*) printf '%s\\n' "\${arg#state=}" > "$STATUS_STATE_FILE" ;;
+      esac
+    done
+    ;;
+  *) exit 99 ;;
+esac
+`,
+  );
+  chmodSync(gh, 0o755);
+
+  try {
+    const result = spawnSync("bash", ["-c", verificationStepScript()], {
+      cwd: scratch,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${scratch}:${process.env.PATH}`,
+        REPO: "ksuk/merlon",
+        PR_NUMBER: "120",
+        RUN_URL: "https://example.invalid/run",
+        STATUS_STATE_FILE: statusState,
+      },
+    });
+
+    assert.equal(result.status, 0);
+    assert.equal(readFileSync(statusState, "utf8").trim(), "failure");
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
