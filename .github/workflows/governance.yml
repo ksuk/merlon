@@ -121,5 +121,23 @@ jobs:
             # run log carries the full text and the status carries the start.
             echo "$reason" >&2
             post_status failure "${reason:0:140}"
-            exit 1
+
+            # This job reports the verdict; it is not the verdict. The required
+            # ruleset context is the `Governance Required` commit status posted
+            # above, which remains failure and blocks the pull request until a
+            # valid record exists. Exiting nonzero here creates a second verdict
+            # as this run's check-run, but that check-run cannot follow the
+            # lifecycle of the evidence: the pull_request_target run necessarily
+            # happens before the author posts the record, while the later
+            # issue_comment run is not associated with the pull request and
+            # cannot turn the earlier check-run green. The result would be a
+            # permanent failure beside a correctly updated required status.
+            #
+            # Let the reporter succeed after it has published the failure. This
+            # does not weaken the gate: a missing, stale, malformed, or deleted
+            # record still leaves `Governance Required` red, and deleting a
+            # record still re-runs this path because `deleted` remains subscribed
+            # above. It only prevents the run itself from preserving an obsolete
+            # failure after a later event has changed the commit-status verdict.
+            exit 0
           fi
