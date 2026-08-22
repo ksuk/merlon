@@ -156,12 +156,13 @@ window.
 POSIX provides no atomic replacement for the directory as a whole. A signal or
 `mv` failure during the final per-file commit can still leave a mixture of old
 and new JSON, or leave an obsolete file that the completed export would have
-removed. Restore tracked baseline files with
-`git checkout -- .github/rulesets/`. If a newly added live ruleset left an
-untracked JSON file, identify it with
-`git status --short .github/rulesets/` and remove that file explicitly before
-rerunning the export. This residual window is deliberately stated rather than
-described as a transaction the filesystem does not provide.
+removed. A hard termination that prevents cleanup from running can also leave
+a hidden `.ruleset-export.*` staging directory. Restore tracked baseline files
+with `git checkout -- .github/rulesets/`. If a newly added live ruleset left an
+untracked JSON file, or if a staging directory remains, identify it with
+`git status --short .github/rulesets/` and remove only that path explicitly
+before rerunning the export. This residual window is deliberately stated
+rather than described as a transaction the filesystem does not provide.
 
 What the baseline cannot detect is a change made to the live configuration and
 to this directory in the same act. That limit is stated in

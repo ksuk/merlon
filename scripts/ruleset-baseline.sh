@@ -288,10 +288,12 @@ check_files() {
 # is ready. Each rename is atomic because the temporary directory is created
 # inside DIR, on the same filesystem, but the set of renames is not: a signal or
 # mv failure can leave a mixture of the previous and new exports (and obsolete
-# files may remain until the removal loop finishes). Restore tracked files with
-# `git checkout -- .github/rulesets/`; if a newly added ruleset left an untracked
-# JSON file, identify it with `git status --short .github/rulesets/` and remove
-# that file explicitly. Then investigate the failure and rerun the export.
+# files may remain until the removal loop finishes). A hard termination that
+# prevents the RETURN trap from running can also leave a hidden
+# `.ruleset-export.*` staging directory. Restore tracked files with
+# `git checkout -- .github/rulesets/`; identify any untracked exported JSON or
+# staging directory with `git status --short .github/rulesets/` and remove only
+# those paths explicitly. Then investigate the failure and rerun the export.
 export_all() {
   local dir=$1 comparable=${2:-strict} repo=${REPO:-${GITHUB_REPOSITORY:-}}
   local scratch commit_stage cleanup
