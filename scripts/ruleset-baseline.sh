@@ -273,18 +273,28 @@ check_files() {
 # that needs the network, and deliberately the only mode with no judgment in it
 # -- every verdict below is canonicalize's.
 #
-# It is transactional: everything is built in a scratch directory and moved into
-# place only once every ruleset has been fetched and validated. Two reasons, both
-# learned the hard way. Writing straight into DIR made the command in the release
-# checklist fail on a normal checkout, because the files it was about to produce
-# were already there and the collision guard fired -- reporting "two rulesets
-# share a name", which is not what had happened and sends the reader hunting for
-# a duplicate that does not exist. And clearing DIR first, which is what the
-# callers used to do, meant a mid-way failure left the baseline short a file.
-# Neither is possible now: DIR is untouched until the export is complete.
+# The replacement is staged, not transactional: everything is built and
+# validated in a scratch directory, then copied under temporary names inside
+# DIR before any existing baseline is touched. Writing straight into DIR made
+# the release-checklist command fail on a normal checkout because the files it
+# was about to produce were already there and the collision guard reported that
+# two live rulesets shared a name. Clearing DIR before the fetch had the opposite
+# failure: a mid-way network or validation error left the baseline short a file.
+# Staging closes both of those windows and ensures a copy failure leaves the
+# existing JSON intact.
+#
+# POSIX has no atomic directory replacement. The final commit therefore renames
+# each staged file into place and removes obsolete JSON only after every new file
+# is ready. Each rename is atomic because the temporary directory is created
+# inside DIR, on the same filesystem, but the set of renames is not: a signal or
+# mv failure can leave a mixture of the previous and new exports (and obsolete
+# files may remain until the removal loop finishes). Restore tracked files with
+# `git checkout -- .github/rulesets/`; if a newly added ruleset left an untracked
+# JSON file, identify it with `git status --short .github/rulesets/` and remove
+# that file explicitly. Then investigate the failure and rerun the export.
 export_all() {
   local dir=$1 comparable=${2:-strict} repo=${REPO:-${GITHUB_REPOSITORY:-}}
-  local scratch
+  local scratch commit_stage
 
   if [[ -z "$repo" ]]; then
     echo "Set REPO or GITHUB_REPOSITORY to owner/name." >&2
@@ -342,10 +352,51 @@ export_all() {
     fi
   done
 
-  # Commit point. Only *.json is cleared: a deleted ruleset has to show up as a
-  # deleted file, and anything else in DIR (README.md) is not export output.
-  rm -f "$dir"/*.json
-  cp "$scratch"/*.json "$dir"/
+  # Copy under temporary names on the target filesystem before entering the
+  # per-file commit window. If this copy fails, RETURN cleanup removes only the
+  # hidden staging directory and every existing baseline remains byte-for-byte
+  # intact.
+  commit_stage=$(mktemp -d "$dir/.ruleset-export.XXXXXX")
+  # shellcheck disable=SC2064  # expand both validated mktemp paths now
+  trap "rm -rf '$scratch' '$commit_stage'" RETURN
+  status=0
+  cp "$scratch"/*.json "$commit_stage"/ || status=$?
+  if [[ $status -ne 0 ]]; then
+    # An explicit return is needed for the RETURN trap. Letting `set -e` abort
+    # the shell here would preserve the baselines but strand the hidden stage.
+    return "$status"
+  fi
+
+  # Commit one file at a time. A rename within DIR replaces an existing file
+  # atomically, so the old file is never removed before its complete successor
+  # is ready. The loop as a whole cannot be atomic; the function comment above
+  # states the residual mixed-version window and recovery instead of calling it
+  # a transaction that POSIX cannot provide.
+  local staged target
+  for staged in "$commit_stage"/*.json; do
+    name=${staged##*/}
+    status=0
+    mv -f -- "$staged" "$dir/$name" || status=$?
+    if [[ $status -ne 0 ]]; then
+      return "$status"
+    fi
+  done
+
+  # Remove rulesets that no longer exist only after all replacements landed.
+  # Anything else in DIR (README.md and the hidden stage) is not export output.
+  # An interruption here leaves obsolete evidence visible rather than deleting
+  # a baseline that the newly staged export expected to contain.
+  for target in "$dir"/*.json; do
+    [[ -e "$target" ]] || continue
+    name=${target##*/}
+    if [[ ! -e "$scratch/$name" ]]; then
+      status=0
+      rm -f -- "$target" || status=$?
+      if [[ $status -ne 0 ]]; then
+        return "$status"
+      fi
+    fi
+  done
 }
 
 main() {
