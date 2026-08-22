@@ -16,6 +16,7 @@ into a test failure.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -313,6 +314,66 @@ class UsageTests(unittest.TestCase):
     def test_export_all_requires_a_directory(self) -> None:
         self.assertEqual(self.run_script("--export-all").returncode, USAGE)
         self.assertEqual(self.run_script("--export-all", "/nonexistent/dir").returncode, USAGE)
+
+
+class ExportAllTests(unittest.TestCase):
+    def test_staging_copy_failure_preserves_existing_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            # The cleanup trap must not build shell source by interpolating the
+            # caller's path. An apostrophe used to break its quoting and leave
+            # the hidden staging directory behind after the injected failure.
+            target = root / "ruleset's"
+            target.mkdir()
+            existing = {
+                "main-release-governance.json": "old main baseline\n",
+                "removed-live-ruleset.json": "old release baseline\n",
+            }
+            for name, content in existing.items():
+                (target / name).write_text(content, encoding="utf-8")
+
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            gh = bin_dir / "gh"
+            gh.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" --paginate "* ]]; then
+  printf '1\\n'
+else
+  printf '%s\\n' "$FAKE_RULESET"
+fi
+""",
+                encoding="utf-8",
+            )
+            gh.chmod(0o755)
+
+            copy_failure = 17
+            cp = bin_dir / "cp"
+            cp.write_text(
+                f"#!/usr/bin/env bash\nexit {copy_failure}\n",
+                encoding="utf-8",
+            )
+            cp.chmod(0o755)
+
+            result = subprocess.run(
+                ["bash", str(SCRIPT), "--export-all", str(target)],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={
+                    **os.environ,
+                    "FAKE_RULESET": json.dumps(raw_response()),
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "REPO": "ksuk/merlon",
+                },
+            )
+
+            self.assertEqual(result.returncode, copy_failure)
+            self.assertEqual(
+                {path.name: path.read_text(encoding="utf-8") for path in target.iterdir()},
+                existing,
+            )
 
 
 if __name__ == "__main__":

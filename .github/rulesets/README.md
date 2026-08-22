@@ -145,10 +145,24 @@ about appears as the reverse. Exporting over the existing files would have left
 the most serious weakening — the protection removed outright — as the one case
 producing no diff at all.
 
-`--export-all` does write here, and it is transactional: everything is built in
-a scratch directory and moved into place only after every ruleset has been
-fetched and validated, so a failure part-way through cannot leave this
-directory short a file.
+`--export-all` does write here, using a staged replacement rather than an atomic
+transaction. It builds and validates everything in a scratch directory, copies
+the completed export to temporary names inside this directory, then renames
+each JSON file into place and removes obsolete JSON last. A fetch, validation,
+or staging-copy failure therefore leaves the existing baseline untouched, and
+each same-filesystem rename replaces one complete file without an absent-file
+window.
+
+POSIX provides no atomic replacement for the directory as a whole. A signal or
+`mv` failure during the final per-file commit can still leave a mixture of old
+and new JSON, or leave an obsolete file that the completed export would have
+removed. A hard termination that prevents cleanup from running can also leave
+a hidden `.ruleset-export.*` staging directory. Restore tracked baseline files
+with `git checkout -- .github/rulesets/`. If a newly added live ruleset left an
+untracked JSON file, or if a staging directory remains, identify it with
+`git status --short .github/rulesets/` and remove only that path explicitly
+before rerunning the export. This residual window is deliberately stated
+rather than described as a transaction the filesystem does not provide.
 
 What the baseline cannot detect is a change made to the live configuration and
 to this directory in the same act. That limit is stated in
