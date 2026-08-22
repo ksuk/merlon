@@ -118,6 +118,12 @@ Two further changes are 2xx-compatible but worth noting:
   single definition of the canonical baseline, shared by the drift workflow,
   `configure-github-ruleset.sh`, and `make verify-ruleset-baseline`, which runs
   on every pull request so a degraded baseline cannot be committed unnoticed.
+  `bypass_actors` carries three explicit states — `verified-empty`,
+  `verified-nonempty`, and `unverifiable` — because reading it needs write
+  access to the ruleset and no such credential is stored in Actions. The weekly
+  run holds `unverifiable`, names the last administrator-verified value, and
+  compares a rendering that omits the field from both sides; verification itself
+  is a release-checklist step run by an administrator.
 - Release gate verifying that `CI Required` and `Security Required` concluded
   successfully on the release commit before any image is published, so the
   disclosure header the release carries is checked rather than asserted.

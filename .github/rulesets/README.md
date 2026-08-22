@@ -101,17 +101,31 @@ verified instead when an administrator runs the export with their own token, whi
 deliberate act rather than a slip, so it is checked at the moments a person is
 already acting rather than continuously.
 
-**As committed today the weekly job still fails on this**, because it treats a
-missing `bypass_actors` as a hard error. Representing it as an explicit
-`unverifiable` state instead — so the field is neither silently dropped nor a
-permanent red — is tracked in
-[#117](https://github.com/ksuk/merlon/issues/117). A control that is red forever
-stops being read, which is its own failure.
+`bypass_actors` has three states, and the reason to name them is that
+collapsing any two is how this check goes blind:
+
+| State | Meaning |
+|---|---|
+| `verified-empty` | an administrator's export saw `[]` |
+| `verified-nonempty` | an administrator's export saw actors listed — a finding |
+| `unverifiable` | the caller could not see the field |
+
+The weekly job holds `unverifiable`, says so in its output, and prints the last
+administrator-verified value for each ruleset with the commit that recorded it.
+It compares a rendering that omits the field from **both** sides
+(`--comparable`), so the omission cannot masquerade as agreement, and every
+other field is still required — a response degraded in any other way still
+fails rather than narrowing the comparison further.
+
+`--check` refuses `--comparable`. A committed baseline is written by an
+administrator and must carry `bypass_actors`; relaxing the audit would let a
+degraded baseline pass the guard that exists to catch it.
 
 An unexplained diff on `bypass_actors`, `enforcement`, or
 `required_status_checks` is the case this baseline exists to catch. Investigate
 before restoring it — a silently reverted diff destroys the evidence of what
-happened.
+happened. Note that only the last two are visible to the weekly job;
+`bypass_actors` surfaces when an administrator re-exports.
 
 This baseline is public. `bypass_actors` and `required_reviewers` are empty
 today; if either becomes populated, the export will publish the actor and team
@@ -123,10 +137,18 @@ An export that includes `bypass_actors` necessarily runs with Administration
 write. Run it interactively as an administrator; do not store that credential
 anywhere a workflow can reach it.
 
-The drift job clears this directory of `*.json` before exporting, so a ruleset
-deleted from the live configuration appears as a deleted file. Exporting over
-the existing files would have left the most serious weakening — the protection
-removed outright — as the one case producing no diff at all.
+The drift job never writes into this directory. It renders both the live
+configuration and the committed baseline into temporary directories and
+compares those, so a ruleset deleted from the live configuration appears as a
+file present on the baseline side only, and one the baseline does not know
+about appears as the reverse. Exporting over the existing files would have left
+the most serious weakening — the protection removed outright — as the one case
+producing no diff at all.
+
+`--export-all` does write here, and it is transactional: everything is built in
+a scratch directory and moved into place only after every ruleset has been
+fetched and validated, so a failure part-way through cannot leave this
+directory short a file.
 
 What the baseline cannot detect is a change made to the live configuration and
 to this directory in the same act. That limit is stated in

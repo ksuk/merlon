@@ -110,6 +110,16 @@ against the internal quality standard.
   for a review nobody was available to give.
 - [ ] The active `main` and release-tag rulesets match the baseline committed
   in `.github/rulesets/`, and the latest Ruleset Drift run is green.
+- [ ] `bypass_actors` was verified by an administrator for this release, not
+  merely carried forward. The weekly Ruleset Drift run cannot check it —
+  reading the field needs write access to the ruleset, and no such credential
+  is stored — so it holds the state `unverifiable` and this is where the
+  verification actually happens. Run
+  `REPO=ksuk/merlon bash scripts/ruleset-baseline.sh --export-all .github/rulesets`
+  with an administrator's own token, confirm the value is `[]` for every
+  ruleset, and record any diff. A release states its governance posture on the
+  artifact; this is the step that makes the `bypass_actors` half of it true at
+  the moment of publication rather than at some earlier moment.
 
 Nothing on this page is waived, deferred, or blocked on a second person. If a
 box cannot be checked, the release does not go out — which is the only version
