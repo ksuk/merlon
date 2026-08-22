@@ -173,12 +173,13 @@ of duties. That cannot be argued away, so it is made detectable instead:
   `.github/rulesets/`, so weakening them appears as a reviewable diff instead
   of only in GitHub's settings UI.
 - `.github/workflows/ruleset-drift.yml` exports the live rulesets weekly and
-  fails on any difference from that baseline — added `bypass_actors`, changed
-  `enforcement`, removed required checks. It clears the baseline directory
-  before exporting, so a ruleset *deleted* from the live configuration shows up
-  as a deleted file rather than as an untouched one. Exporting over the top
-  would have left the strongest weakening — removing the protection
-  entirely — as the single case the check could not see.
+  fails on any difference from that baseline in the fields it can read — a
+  changed `enforcement`, a removed required check, an altered condition. It
+  compares two renderings built in temporary directories rather than diffing the
+  working tree, so a ruleset *deleted* from the live configuration appears as a
+  file present on one side only, and a ruleset the baseline does not know about
+  appears as the reverse. Removing a protection entirely is therefore visible,
+  which it would not be if the export were written over the existing files.
 - `bypass_actors` is empty in the committed baseline, recorded whenever an
   administrator runs the export with their own token. Reading it needs
   Administration **write**, so no credential capable of it is stored in Actions:

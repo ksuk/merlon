@@ -95,7 +95,7 @@ class CanonicalizeTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["bypass_actors"], actors)
 
     def test_every_decision_bearing_key_is_required(self) -> None:
-        for key in ("conditions", "enforcement", "name", "rules", "target"):
+        for key in ("conditions", "current_user_can_bypass", "enforcement", "name", "rules", "target"):
             with self.subTest(missing=key):
                 payload = raw_response()
                 del payload[key]
@@ -173,6 +173,18 @@ class ComparableModeTests(unittest.TestCase):
         payload = raw_response(current_user_can_bypass="always")
         self.assertEqual(self.run_mode(payload, "--comparable").returncode, BYPASSABLE)
 
+    # The same absent-versus-empty trap, one field over. A caller that cannot
+    # read administration fields cannot answer the bypass question either, so
+    # comparable mode must not accept the field's absence as "never" -- it
+    # asserts nothing instead, and the workflow says so.
+    def test_absent_bypass_field_is_not_read_as_never(self) -> None:
+        payload = raw_response()
+        del payload["current_user_can_bypass"]
+        # Strict: the field has to be observed to be asserted.
+        self.assertEqual(self.run_mode(payload).returncode, DEGRADED)
+        # Comparable: accepted, but nothing is claimed about bypassing.
+        self.assertEqual(self.run_mode(payload, "--comparable").returncode, OK)
+
     def test_flag_order_does_not_matter(self) -> None:
         payload = raw_response()
         del payload["bypass_actors"]
@@ -235,6 +247,17 @@ class CheckTests(unittest.TestCase):
 
     # The guard must pass against what is committed today, or the pull request
     # that introduces it reds itself.
+    # The baseline schema and the response schema are different objects. A
+    # committed baseline has current_user_can_bypass stripped by design, so
+    # requiring it there would fail every correctly produced baseline.
+    def test_baseline_schema_does_not_demand_the_per_viewer_field(self) -> None:
+        for f in sorted(BASELINE_DIR.glob("*.json")):
+            with self.subTest(baseline=f.name):
+                self.assertNotIn(
+                    "current_user_can_bypass", json.loads(f.read_text(encoding="utf-8"))
+                )
+        self.assertEqual(self.check(*sorted(BASELINE_DIR.glob("*.json"))).returncode, OK)
+
     def test_committed_baselines_pass(self) -> None:
         files = sorted(BASELINE_DIR.glob("*.json"))
         self.assertTrue(files, "expected committed ruleset baselines to exist")

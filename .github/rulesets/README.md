@@ -124,7 +124,8 @@ degraded baseline pass the guard that exists to catch it.
 An unexplained diff on `bypass_actors`, `enforcement`, or
 `required_status_checks` is the case this baseline exists to catch. Investigate
 before restoring it — a silently reverted diff destroys the evidence of what
-happened.
+happened. Note that only the last two are visible to the weekly job;
+`bypass_actors` surfaces when an administrator re-exports.
 
 This baseline is public. `bypass_actors` and `required_reviewers` are empty
 today; if either becomes populated, the export will publish the actor and team
@@ -136,10 +137,18 @@ An export that includes `bypass_actors` necessarily runs with Administration
 write. Run it interactively as an administrator; do not store that credential
 anywhere a workflow can reach it.
 
-The drift job clears this directory of `*.json` before exporting, so a ruleset
-deleted from the live configuration appears as a deleted file. Exporting over
-the existing files would have left the most serious weakening — the protection
-removed outright — as the one case producing no diff at all.
+The drift job never writes into this directory. It renders both the live
+configuration and the committed baseline into temporary directories and
+compares those, so a ruleset deleted from the live configuration appears as a
+file present on the baseline side only, and one the baseline does not know
+about appears as the reverse. Exporting over the existing files would have left
+the most serious weakening — the protection removed outright — as the one case
+producing no diff at all.
+
+`--export-all` does write here, and it is transactional: everything is built in
+a scratch directory and moved into place only after every ruleset has been
+fetched and validated, so a failure part-way through cannot leave this
+directory short a file.
 
 What the baseline cannot detect is a change made to the live configuration and
 to this directory in the same act. That limit is stated in

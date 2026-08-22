@@ -27,6 +27,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, because this job names the commit that last recorded
+          # each baseline's bypass_actors. At the default depth of 1 there is no
+          # path history, so `git log -1 -- <file>` resolves to HEAD for every
+          # file — which would report the newest commit as the verification
+          # date and make stale evidence look fresh. That is the exact failure
+          # this job exists to prevent, so it must not commit it itself.
+          fetch-depth: 0
 
       - name: Export live rulesets and compare with the baseline
         env:
@@ -46,12 +54,13 @@ jobs:
           # and fail loudly with the right diagnosis — but the exported data is
           # now checked for the fields themselves, not for HTTP success.
           #
-          # There is deliberately no stored credential here. A token able to
-          # read `bypass_actors` would need Administration write, which can
-          # delete every ruleset in this repository — a standing bypass kept in
-          # Actions secrets in order to check that nobody can bypass. See
-          # .github/rulesets/README.md for what is verified instead, and when.
-          GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          # Bound to GITHUB_TOKEN directly, with no secret fallback. The
+          # fallback that used to be here would still have selected a stored
+          # RULESET_READ_TOKEN if one existed, injecting exactly the
+          # write-capable credential this design says it does not use — and
+          # then discarding its extra visibility anyway, since --comparable
+          # ignores bypass_actors. If that secret was ever created, delete it.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         shell: bash
         run: |
@@ -111,10 +120,13 @@ jobs:
           # three states is that "the caller could not see it" is a different
           # claim from "it is empty", so this job says which one it is holding
           # and names the evidence for the other.
-          echo "bypass_actors: unverifiable in this run."
-          echo "  GITHUB_TOKEN cannot read it -- GitHub returns the field only to a"
+          echo "bypass_actors and current_user_can_bypass: unverifiable in this run."
+          echo "  GITHUB_TOKEN cannot read either -- GitHub returns them only to a"
           echo "  caller with write access to the ruleset, and this project does not"
-          echo "  store such a credential. Last administrator-verified values:"
+          echo "  store such a credential. This run asserts nothing about who can"
+          echo "  bypass these rulesets; it verifies the fields it can actually see."
+          echo "  Both are verified by an administrator at release time, per"
+          echo "  docs/development/release-checklist.md. Last recorded values:"
           for f in "${committed[@]}"; do
             recorded=$(jq -c '.bypass_actors' "$f")
             when=$(git log -1 --format='%h %ad' --date=short -- "$f")

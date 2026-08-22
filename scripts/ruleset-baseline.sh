@@ -65,12 +65,30 @@ readonly EXIT_BYPASSABLE=4
 # guard that quietly checks less is worse than no guard: it still reports
 # success. Same rule as the other guards in this directory, stated in
 # docs/security/supply-chain.md.
-readonly REQUIRED_KEYS=(bypass_actors conditions enforcement name rules target)
+# Three lists, not one, because a raw API response and a committed baseline are
+# not the same object and must not share a schema. Collapsing them is how a
+# relaxation meant for one caller silently relaxes the audit of the other.
+#
+# What a raw response must carry to be trusted. `current_user_can_bypass` is
+# here even though it is stripped from the committed form: it has to be
+# *observed* to be asserted, and it is the only evidence that the identity
+# running the export cannot sidestep the ruleset it is exporting.
+readonly RESPONSE_KEYS=(
+  bypass_actors conditions current_user_can_bypass enforcement name rules target
+)
 
-# The same list minus the one field an Actions token cannot see. Used only by
-# --comparable, and kept as its own constant rather than computed by filtering
-# so that adding a key to REQUIRED_KEYS forces a decision about this list too.
-readonly COMPARABLE_KEYS=(conditions enforcement name rules target)
+# What a raw response must carry when the caller cannot see administration
+# fields. Both per-permission fields drop out together: a token that cannot read
+# `bypass_actors` has no standing to answer the bypass question either, and
+# accepting a missing `current_user_can_bypass` as "never" would be the same
+# absent-reads-as-benign failure one field over. Comparable mode therefore
+# asserts nothing about bypassing, and says so.
+readonly RESPONSE_KEYS_COMPARABLE=(conditions enforcement name rules target)
+
+# What a committed baseline must carry. `current_user_can_bypass` is absent by
+# design (per-viewer, stripped at export), so requiring it here would fail every
+# baseline that was correctly produced.
+readonly BASELINE_KEYS=(bypass_actors conditions enforcement name rules target)
 
 # Per-request or per-viewer values. They would produce a diff on every export
 # depending on who ran it and when, so they are stripped from the committed
@@ -100,11 +118,11 @@ USAGE
 canonicalize() {
   local comparable=${1:-strict}
   local raw name
-  local -a required=("${REQUIRED_KEYS[@]}")
+  local -a required=("${RESPONSE_KEYS[@]}")
   local filter="$FILTER"
 
   if [[ "$comparable" == comparable ]]; then
-    required=("${COMPARABLE_KEYS[@]}")
+    required=("${RESPONSE_KEYS_COMPARABLE[@]}")
     # Dropped from the output as well as the requirement. Leaving it in would
     # put a field in the comparable form that one side can never populate,
     # which is the diff this mode exists to stop producing.
@@ -134,9 +152,16 @@ canonicalize() {
   # strictly better evidence than inferring it from an empty bypass_actors --
   # the two are not the same claim. It is per-viewer, so it is asserted here
   # and then deleted rather than committed.
+  #
+  # In comparable mode the field is not required and is not asserted: a caller
+  # that cannot see administration fields cannot answer this question either,
+  # and there is no default that would be honest. Absence is never read as
+  # "never" -- that would be the whole absent-versus-empty failure again, one
+  # field over. The strict path requires the key, so `// "never"` here can only
+  # be reached in comparable mode, where the loop below is skipped entirely.
   local can_bypass
-  can_bypass=$(jq -r '.current_user_can_bypass // "never"' <<<"$raw")
-  if [[ "$can_bypass" != "never" ]]; then
+  can_bypass=$(jq -r '.current_user_can_bypass // "unverifiable"' <<<"$raw")
+  if [[ "$can_bypass" != never && "$can_bypass" != unverifiable ]]; then
     cat >&2 <<EOF
 Ruleset "$name" reports current_user_can_bypass = "$can_bypass" for the
 identity this export runs as. The governance documentation asserts "never":
@@ -210,7 +235,7 @@ check_files() {
       continue
     fi
 
-    for key in "${REQUIRED_KEYS[@]}"; do
+    for key in "${BASELINE_KEYS[@]}"; do
       if [[ "$(jq -r --arg k "$key" 'has($k)' "$file")" != "true" ]]; then
         echo "$file: missing required key \"$key\"." >&2
         echo "  A baseline without it cannot evidence what the drift check compares." >&2
@@ -244,11 +269,22 @@ check_files() {
   echo "Ruleset baselines carry every field the drift check compares (${#files[@]} file(s))."
 }
 
-# Fetch every live ruleset into DIR. The only mode that needs the network, and
-# deliberately the only mode with no judgment in it -- every verdict below is
-# canonicalize's.
+# Fetch every live ruleset into DIR, replacing whatever was there. The only mode
+# that needs the network, and deliberately the only mode with no judgment in it
+# -- every verdict below is canonicalize's.
+#
+# It is transactional: everything is built in a scratch directory and moved into
+# place only once every ruleset has been fetched and validated. Two reasons, both
+# learned the hard way. Writing straight into DIR made the command in the release
+# checklist fail on a normal checkout, because the files it was about to produce
+# were already there and the collision guard fired -- reporting "two rulesets
+# share a name", which is not what had happened and sends the reader hunting for
+# a duplicate that does not exist. And clearing DIR first, which is what the
+# callers used to do, meant a mid-way failure left the baseline short a file.
+# Neither is possible now: DIR is untouched until the export is complete.
 export_all() {
   local dir=$1 comparable=${2:-strict} repo=${REPO:-${GITHUB_REPOSITORY:-}}
+  local scratch
 
   if [[ -z "$repo" ]]; then
     echo "Set REPO or GITHUB_REPOSITORY to owner/name." >&2
@@ -266,6 +302,10 @@ export_all() {
   # `set -e`, rather than producing an empty loop that looks like success.
   local ids
   ids=$(gh api --paginate "repos/$repo/rulesets" --jq '.[].id')
+
+  scratch=$(mktemp -d)
+  # shellcheck disable=SC2064  # expand $scratch now, not at trap time
+  trap "rm -rf '$scratch'" RETURN
 
   if [[ -z "$ids" ]]; then
     echo "No rulesets exist on $repo." >&2
@@ -287,18 +327,25 @@ export_all() {
       echo "Ruleset $id has a name unusable as a filename: ${name@Q}" >&2
       return "$EXIT_MALFORMED"
     fi
-    if [[ -e "$dir/$name.json" ]]; then
-      echo "Two rulesets share the name \"$name\"; refusing to overwrite." >&2
+    # The scratch directory starts empty, so this can only fire on a genuine
+    # collision between two live rulesets -- never on a file that was simply
+    # already committed.
+    if [[ -e "$scratch/$name.json" ]]; then
+      echo "Two live rulesets share the name \"$name\"; refusing to overwrite." >&2
       return "$EXIT_MALFORMED"
     fi
 
     status=0
-    canonicalize "$comparable" <<<"$raw" > "$dir/$name.json" || status=$?
+    canonicalize "$comparable" <<<"$raw" > "$scratch/$name.json" || status=$?
     if [[ $status -ne 0 ]]; then
-      rm -f "$dir/$name.json"
       return "$status"
     fi
   done
+
+  # Commit point. Only *.json is cleared: a deleted ruleset has to show up as a
+  # deleted file, and anything else in DIR (README.md) is not export output.
+  rm -f "$dir"/*.json
+  cp "$scratch"/*.json "$dir"/
 }
 
 main() {
