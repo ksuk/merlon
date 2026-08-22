@@ -125,9 +125,10 @@ degraded_error() {
 The exported ruleset "$name" has no "$key" key.
 
 This is a TOKEN problem, not drift. The rulesets API returns administration
-fields such as bypass_actors only to callers with repository Administration
-(read). A caller without it receives the key omitted entirely, not an empty
-list -- and an omitted key is indistinguishable from "no bypass actors" to
+fields such as bypass_actors only to callers with *write* access to the
+ruleset -- it will not show you who can bypass a rule unless you could also
+change that rule. A caller without it receives the key omitted entirely, not an
+empty list, and an omitted key is indistinguishable from "no bypass actors" to
 anything that compares values.
 
 Do NOT commit this export, and do NOT remove the key from
@@ -135,9 +136,11 @@ Do NOT commit this export, and do NOT remove the key from
 green forever while being structurally unable to see a bypass actor being
 added, which is the single weakening this baseline exists to catch.
 
-Fix: create a fine-grained PAT scoped to this repository with Administration
-(read) and nothing else, store it as the RULESET_READ_TOKEN secret, then
-re-run: Actions -> Ruleset Drift -> Run workflow.
+Reading it requires Administration write, which is a credential that can
+delete every ruleset here. This project does not store one in Actions. Run
+this export locally with an administrator's own token instead:
+
+  REPO=<owner>/<name> bash scripts/ruleset-baseline.sh --export-all .github/rulesets
 EOF
 }
 

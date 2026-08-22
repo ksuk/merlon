@@ -97,6 +97,24 @@
 
 **この追記が主張しないこと。** 上記は事故と近道を塞ぐものであり、決意した単独 Admin を止めない。単一の変更で PR チェックを削除し、劣化したベースラインをコミットし、ドリフトワークフローを無効化することは依然として可能である。§5 冒頭の設計限界はそのまま有効である。
 
+#### 追記 2026-08-20 — 上の追記に含まれる権限記述が誤っていた（#117）
+
+2026-08-16 の追記は「Rulesets API は `bypass_actors` を repository Administration (read) を持つ呼び出し元にしか返さない」と書いた。**これは誤りである。** 正しくは *write* である。GitHub の記述は次のとおり。
+
+> To prevent leaking sensitive information, the `bypass_actors` property is only returned if the user making the API request has **write access to the ruleset**.
+
+前の追記を書き換えず、訂正として重ねて記録する。統制の変更を差分として残すという本 ADR の要求は、本 ADR の記録自体にも、そしてその記録の誤りにも等しく適用される。
+
+**なぜこの違いが結論を変えるか。** 誤った記述のもとでは「Administration: read の PAT を `RULESET_READ_TOKEN` として登録すればよい」という対処が導かれ、実際にそう文書化していた。その手順は動かない。read では当該フィールドは返らないためである。
+
+より重要なのは、正しい権限が要求するものである。`bypass_actors` を読めるトークンは **本リポジトリのすべての Ruleset を削除できる**。それを Actions シークレットとして常設することは、「誰もバイパスできない」ことを検証するために、`bypass_actors` のリストではなく Actions シークレットに住むバイパス機構を1つ置くことに等しい。本 ADR §5 が認めた「単独 Admin の意図的な同時改変は止められない」という限界に、常設クレデンシャルを足す形になる。
+
+**したがって本プロジェクトはこのトークンを保存しない。** `bypass_actors` の検証は、管理者が自分のトークンでエクスポートを実行する時点 — すなわち `--apply` を伴うすべての意図的な Ruleset 変更 — に行う。週次ジョブが検証するのは `GITHUB_TOKEN` が実際に見える範囲（`enforcement`、`rules`、`conditions`、Ruleset の存在）に限る。
+
+**受け入れたリスク。** `bypass_actors` は継続監視の対象から外れる。具体的には、単独 Admin のアカウントを侵害した攻撃者がバイパス主体を追加して直接 push し、コミット済みベースラインの更新までは思い至らない、という経路の検出が週次からリリース時に後退する。これは実質的な低下であり、Ruleset 書き込み権限を Actions に常設することとの比較の上で意図的に受け入れる。2人目の Admin の参加、administration 権限を持つ GitHub App の導入、または本 ADR のレビュー期日に再評価する。
+
+三状態（`verified-empty` / `verified-nonempty` / `unverifiable`）による表現は #117 で扱う。
+
 ### 6. 将来: 作成と承認の分離
 
 第2 Admin が着任した時点で、次に移行する。

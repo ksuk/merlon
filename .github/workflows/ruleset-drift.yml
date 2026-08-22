@@ -30,9 +30,11 @@ jobs:
 
       - name: Export live rulesets and compare with the baseline
         env:
-          # Reading administration fields off the rulesets API needs repository
-          # Administration (read), and the Actions `permissions:` block has no
-          # `administration` scope to grant, so GITHUB_TOKEN is not enough.
+          # Reading administration fields off the rulesets API needs *write*
+          # access to the ruleset, not read: GitHub returns `bypass_actors`
+          # only to a caller that could also change it. The Actions
+          # `permissions:` block has no `administration` scope at any level, so
+          # GITHUB_TOKEN cannot see the field however it is configured.
           #
           # The failure is quieter than a 403, which is why this job's first
           # real run reported nonsense. Listing and fetching rulesets succeed
@@ -44,9 +46,11 @@ jobs:
           # and fail loudly with the right diagnosis — but the exported data is
           # now checked for the fields themselves, not for HTTP success.
           #
-          # Fix: a fine-grained PAT scoped to this repository with
-          # Administration (read) and nothing else, stored as the
-          # RULESET_READ_TOKEN secret. Nothing else about this job changes.
+          # There is deliberately no stored credential here. A token able to
+          # read `bypass_actors` would need Administration write, which can
+          # delete every ruleset in this repository — a standing bypass kept in
+          # Actions secrets in order to check that nobody can bypass. See
+          # .github/rulesets/README.md for what is verified instead, and when.
           GH_TOKEN: ${{ secrets.RULESET_READ_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         shell: bash

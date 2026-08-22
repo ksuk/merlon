@@ -179,13 +179,20 @@ of duties. That cannot be argued away, so it is made detectable instead:
   as a deleted file rather than as an untouched one. Exporting over the top
   would have left the strongest weakening — removing the protection
   entirely — as the single case the check could not see.
-- `bypass_actors` is empty in the committed baseline, and the export asserts
-  `current_user_can_bypass` is `never` for the identity it runs as — the
-  maintainer's Administration-read PAT. That field is per-viewer, so it is
-  checked on every run rather than committed to the baseline.
-- The export is validated before any comparison is made. A token that cannot
-  read administration fields receives `bypass_actors` *omitted* rather than
-  refused, and an omitted key is indistinguishable from an empty one to
+- `bypass_actors` is empty in the committed baseline, recorded whenever an
+  administrator runs the export with their own token. Reading it needs
+  Administration **write**, so no credential capable of it is stored in Actions:
+  one would be able to delete every ruleset here, which is a bypass mechanism
+  kept in order to check for bypass mechanisms. The weekly job therefore
+  verifies what `GITHUB_TOKEN` can see and states that this field is not among
+  it (see [#117](https://github.com/ksuk/merlon/issues/117)).
+- The same export asserts `current_user_can_bypass` is `never` for the identity
+  it runs as. That field is per-viewer, so it is checked on every run rather
+  than committed to the baseline.
+- The export is validated before any comparison is made. A token without
+  **write** access to the ruleset receives `bypass_actors` *omitted* rather than
+  refused — GitHub will not show who can bypass a rule to a caller who could not
+  also change it — and an omitted key is indistinguishable from an empty one to
   anything comparing values. That is not a hypothetical: it is what this job
   reported as drift on its first real run. `scripts/ruleset-baseline.sh` now
   fails with a token diagnosis and prints no diff, because a diff is what
