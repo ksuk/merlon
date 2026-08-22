@@ -320,7 +320,10 @@ class ExportAllTests(unittest.TestCase):
     def test_staging_copy_failure_preserves_existing_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
-            target = root / "rulesets"
+            # The cleanup trap must not build shell source by interpolating the
+            # caller's path. An apostrophe used to break its quoting and leave
+            # the hidden staging directory behind after the injected failure.
+            target = root / "ruleset's"
             target.mkdir()
             existing = {
                 "main-release-governance.json": "old main baseline\n",

@@ -294,7 +294,7 @@ check_files() {
 # that file explicitly. Then investigate the failure and rerun the export.
 export_all() {
   local dir=$1 comparable=${2:-strict} repo=${REPO:-${GITHUB_REPOSITORY:-}}
-  local scratch commit_stage
+  local scratch commit_stage cleanup
 
   if [[ -z "$repo" ]]; then
     echo "Set REPO or GITHUB_REPOSITORY to owner/name." >&2
@@ -314,8 +314,12 @@ export_all() {
   ids=$(gh api --paginate "repos/$repo/rulesets" --jq '.[].id')
 
   scratch=$(mktemp -d)
-  # shellcheck disable=SC2064  # expand $scratch now, not at trap time
-  trap "rm -rf '$scratch'" RETURN
+  # RETURN traps are shell source, so interpolating a caller-controlled path in
+  # hand-written quotes is not safe: an apostrophe in DIR would break cleanup.
+  # `%q` produces Bash-safe words, and the trap clears itself before removing
+  # the exact mktemp path so it cannot fire again when main returns.
+  printf -v cleanup 'trap - RETURN; rm -rf -- %q' "$scratch"
+  trap "$cleanup" RETURN
 
   if [[ -z "$ids" ]]; then
     echo "No rulesets exist on $repo." >&2
@@ -357,8 +361,8 @@ export_all() {
   # hidden staging directory and every existing baseline remains byte-for-byte
   # intact.
   commit_stage=$(mktemp -d "$dir/.ruleset-export.XXXXXX")
-  # shellcheck disable=SC2064  # expand both validated mktemp paths now
-  trap "rm -rf '$scratch' '$commit_stage'" RETURN
+  printf -v cleanup 'trap - RETURN; rm -rf -- %q %q' "$scratch" "$commit_stage"
+  trap "$cleanup" RETURN
   status=0
   cp "$scratch"/*.json "$commit_stage"/ || status=$?
   if [[ $status -ne 0 ]]; then
