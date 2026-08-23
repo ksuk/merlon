@@ -168,4 +168,4 @@ CREATE TABLE alerts_2026_07 PARTITION OF alerts
 
 ## 監査ログ改竄耐性の境界
 
-自己ホスト版は `merlon-audit verify` による事後検証を提供するが、DB強制の不変性、WORMストレージ、ハッシュチェーンは現行リリースには含まれない。導入組織はDBロール、バックアップ、アクセス制御、監視を設定する責任を負う。詳細は [Regulatory Scope](regulatory-scope.md) を参照。
+Merlon は `merlon-audit verify` による事後検証を提供する。DB強制の不変性、WORMストレージ、監査ログのハッシュチェーンは提供しない。導入組織はDBロール、バックアップ、アクセス制御、監視を設定する責任を負う。詳細は [Regulatory Scope](regulatory-scope.md) を参照。

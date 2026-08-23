@@ -1,4 +1,4 @@
-# Merlon Content Packs
+# Merlon Content
 
 ## Production warning
 
@@ -9,7 +9,7 @@ Sample rules and thresholds are public by design and can be used to infer detect
 ## ディレクトリ構成
 
 ### `_sample/`
-無償で提供するサンプルルール。**Apache-2.0** でライセンスされる（[`_sample/LICENSE`](_sample/LICENSE)）。
+サンプルルール。**Apache-2.0** でライセンスされる（[`_sample/LICENSE`](_sample/LICENSE)）。
 
 - `tm_structuring_basic` — 基本的な分割送金検知シナリオ（[`tm_structuring.json`](_sample/tm_structuring.json)）
 - `cdd_basic_weights` — 基本的な CDD リスクウェイト（[`cdd_basic_weights.yaml`](_sample/cdd_basic_weights.yaml)）
@@ -39,9 +39,19 @@ Sample rules and thresholds are public by design and can be used to infer detect
 
 詳細は [configuration.md](../docs/configuration.md) を参照。
 
-## Enterprise コンテンツパック（将来）
+## このディレクトリが含むもの
 
-業種別・リスク類型別にチューニングされたルールプリセットを、Enterprise 向けコンテンツパックとして提供する予定である。コンテンツパックはソフトウェア本体（BSL 1.1）とは独立した商用ライセンスで提供される。
+`content/` には、`_sample/`（動作確認用サンプル）、`schema/`（スキーマ定義）、
+および次の出荷時デフォルトのポリシーファイルを置く。
+
+- `case_priority_v1.yaml`
+- `cdd_review_policy_v1.yaml`
+- `cdd_rule_selection_v1.yaml`
+- `edd_policy_v1.yaml`
+- `kyc_required_fields_v1.yaml`
+- `screening_readiness_v1.yaml`
+- `sla_policy_v1.yaml`
+- `travel_rule_v1.yaml`
 
 ## Engine configuration audit boundary
 

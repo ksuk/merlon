@@ -10,7 +10,7 @@ Deploying organizations are responsible for mapping Merlon to their own obligati
 
 ## Legal holds
 
-This edition has no per-record legal-hold mechanism. Preservation
+Merlon has no per-record legal-hold mechanism. Preservation
 obligations that outlast the configured retention periods must be handled
 operationally by the deploying organization; see
 [Data Retention Policy](data-retention.md#legal-holds) for the procedure and
@@ -18,4 +18,4 @@ its limits.
 
 ## Audit-log integrity boundary
 
-The self-hosted edition supports post-hoc verification through `merlon-audit verify`. It does not provide database-enforced immutability or a cryptographic hash chain for audit logs. Operators must enforce database roles, backups, access controls, and monitoring appropriate to their environment. Database-enforced WORM controls and hash-chain integrity are future enterprise capabilities, not guarantees of this edition.
+Merlon supports post-hoc verification through `merlon-audit verify`. It does not provide database-enforced immutability, database-enforced WORM controls, or a cryptographic hash chain for audit logs. Operators must enforce database roles, backups, access controls, and monitoring appropriate to their environment.
