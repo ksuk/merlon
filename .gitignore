@@ -36,8 +36,8 @@ docker-compose.override.yml
 # Test artifacts
 .playwright-mcp/
 
-# Local release-planning workspace (not part of the product; never publish)
-/.release-tasks/
+# Local internal task workspace (planning notes, PR/issue response drafts; not part of the product; never publish)
+/.tasks/
 
 # Generated demo dataset (merlon-demogen output; regenerate with `make demogen`)
 deploy/seed/demo/*.json

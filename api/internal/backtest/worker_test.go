@@ -148,6 +148,30 @@ func TestWorkerRunsDurableJobWithoutCreatingAlerts(t *testing.T) {
 	}
 }
 
+func TestWorkerPersistsOptionalOutcomeAnalysisBeforeCompletion(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	customers := store.NewMemoryCustomerRepo()
+	if err := customers.Create(ctx, &domain.Customer{ID: "outcome-customer", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	jobs := store.NewMemoryBacktestJobRepo()
+	job := &domain.BacktestJob{ID: "outcome-job", From: now.Add(-time.Hour), To: now.Add(time.Hour), CustomerIDs: []string{"outcome-customer"}, BaselineRuleSetID: "active", CandidateRuleSetID: "candidate", SnapshotAt: now}
+	if err := jobs.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	w := &Worker{Jobs: jobs, Customers: customers, Transactions: store.NewMemoryTransactionRepo(), Engine: &engine.MockBacktestEngine{Result: &domain.BacktestResult{TotalCustomers: 1}}, OutcomeBuilder: func(_ context.Context, job *domain.BacktestJob) (*domain.BacktestOutcomeAnalysis, []domain.BacktestOutcomeDetail, error) {
+		return &domain.BacktestOutcomeAnalysis{MatcherVersion: "outcome-matcher-v1", SnapshotAt: job.SnapshotAt}, nil, nil
+	}}
+	if err := w.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := jobs.GetBacktestOutcomeAnalysis(ctx, job.ID)
+	if err != nil || got == nil || got.MatcherVersion != "outcome-matcher-v1" {
+		t.Fatalf("analysis=%#v err=%v", got, err)
+	}
+}
+
 func TestWorkerUsesCustomersReturnedByFilterScanWithoutRefetching(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()

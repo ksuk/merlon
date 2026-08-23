@@ -4,8 +4,9 @@
 # country_risk_table content can replace it later without changing the
 # engine-side evaluate logic (01_gap-analysis.md, scope note in
 # ws05-tm-enhancement.md Task 8).
-schema_version: "2.0"
+schema_version: "2.1"
 scenario_id: tm_high_risk_country_transfer
+detector: high_risk_country_transfer
 name: "ハイリスク国送金検知"
 description: "ハイリスク国への送金を検知する"
 type: aggregation

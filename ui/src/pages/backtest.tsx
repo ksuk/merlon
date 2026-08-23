@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useApi } from "@/hooks/use-api"
-import { api, type AffectedBacktestCustomersPage, type BacktestCohortPreview, type BacktestDeltaKind, type BacktestJob, type BacktestResult, type Customer } from "@/lib/api"
+import { api, type AffectedBacktestCustomersPage, type BacktestCohortPreview, type BacktestDeltaKind, type BacktestJob, type BacktestOutcomeAnalysis, type BacktestOutcomesPage, type BacktestResult, type Customer, type OutcomeVariant } from "@/lib/api"
 import { FlaskConical, Play, RotateCcw, X } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -45,6 +45,12 @@ export function BacktestPage() {
       ? api.backtest.affectedCustomers(job.id, affectedScenario ? { scenarioId: affectedScenario } : undefined)
       : Promise.resolve({ data: [], pagination: { has_more: false } } as AffectedBacktestCustomersPage),
     job?.id && job.status === "completed" ? `${job.id}:${affectedScenario}` : "no-completed-job",
+  )
+  const { data: outcomePage } = useApi(
+    () => job?.id && job.status === "completed" && job.outcome_analysis
+      ? api.backtest.outcomes(job.id, { limit: 50 })
+      : Promise.resolve({ data: [], pagination: { has_more: false }, outcome_analysis: job?.outcome_analysis } as BacktestOutcomesPage),
+    job?.id && job.status === "completed" && job.outcome_analysis ? `outcomes:${job.id}` : "no-completed-outcomes",
   )
   const [pollMessage, setPollMessage] = useState<PollMessage | null>(null)
   const [from, setFrom] = useState(() => new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
@@ -244,6 +250,7 @@ export function BacktestPage() {
     (counts, kind) => ({ ...counts, [kind]: counts[kind] + 1 }),
     { added: 0, removed: 0, unchanged: 0, mixed: 0 } as Record<BacktestDeltaKind, number>,
   )
+  const outcomeAnalysis = outcomePage?.outcome_analysis ?? job?.outcome_analysis
 
   if (loading) {
     return (
@@ -426,6 +433,10 @@ export function BacktestPage() {
         </Card>
       )}
 
+      {job && job.status === "completed" && outcomeAnalysis && (
+        <OutcomeAnalysisCard analysis={outcomeAnalysis} details={outcomePage?.data ?? []} />
+      )}
+
       <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.history")}</CardTitle></CardHeader><CardContent>{jobHistory?.data.length ? <Table><TableHeader><TableRow><TableHead>{t("backtest.job.historyId")}</TableHead><TableHead>{t("backtest.job.historyStatus")}</TableHead><TableHead>{t("backtest.job.historyComparison")}</TableHead></TableRow></TableHeader><TableBody>{jobHistory.data.map((item) => <TableRow key={item.id}><TableCell className="font-mono text-xs">{item.id}</TableCell><TableCell><Badge variant={item.status === "failed" ? "critical" : "outline"}>{t(`backtest.job.status.${item.status}`)}</Badge></TableCell><TableCell className="text-xs">{item.baseline_rule_set_id} → {item.candidate_rule_set_id}{item.metadata?.rerun_of ? ` (${item.metadata.rerun_of})` : ""}</TableCell></TableRow>)}</TableBody></Table> : <p className="text-sm text-muted-foreground">{t("backtest.job.historyEmpty")}</p>}</CardContent></Card>
 
       {result && (
@@ -529,4 +540,53 @@ function DeltaKindBadge({ kind }: { kind?: BacktestDeltaKind }) {
 function ComparisonColumn({ label, result }: { label: string; result?: BacktestResult }) {
   const { t } = useTranslation()
   return <div className="rounded-md border p-3"><h3 className="text-sm font-semibold">{label}</h3><dl className="mt-2 space-y-1 text-sm"><div className="flex justify-between"><dt className="text-muted-foreground">{t("backtest.columnCustomers")}</dt><dd>{result?.total_customers ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">{t("backtest.columnTransactions")}</dt><dd>{result?.total_transactions ?? "-"}</dd></div><div className="flex justify-between"><dt className="text-muted-foreground">{t("backtest.columnAlerts")}</dt><dd>{result?.total_alerts ?? "-"}</dd></div></dl></div>
+}
+
+function OutcomeAnalysisCard({ analysis, details }: { analysis: BacktestOutcomeAnalysis; details: Array<{ id: string; variant: OutcomeVariant; candidate_id: string; scenario_id?: string; label: string; investigated: boolean }> }) {
+  const { t } = useTranslation()
+  const variants: Array<[OutcomeVariant, string, typeof analysis.baseline]> = [
+    ["baseline", t("backtest.outcomes.baseline"), analysis.baseline],
+    ["candidate", t("backtest.outcomes.candidate"), analysis.candidate],
+    ["delta", t("backtest.outcomes.delta"), analysis.delta],
+  ]
+  return (
+    <Card data-testid="backtest-outcome-analysis">
+      <CardHeader><CardTitle className="text-base">{t("backtest.outcomes.title")}</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">{t("backtest.outcomes.boundary")}</p>
+        <div className="grid gap-3 md:grid-cols-3">
+          {variants.map(([variant, label, summary]) => (
+            <div key={variant} className="rounded-md border p-3">
+              <h3 className="text-sm font-semibold">{label}</h3>
+              <dl className="mt-2 space-y-1 text-sm">
+                <MetricRow label={t("backtest.outcomes.tp")} value={summary.tp} />
+                <MetricRow label={t("backtest.outcomes.fp")} value={summary.fp} />
+                <MetricRow label={t("backtest.outcomes.unlabeled")} value={summary.unlabeled} />
+                <MetricRow label={t("backtest.outcomes.unevaluable")} value={summary.unevaluable} />
+                <MetricRow label={t("backtest.outcomes.investigated")} value={summary.investigated} />
+                <MetricRow label={t("backtest.outcomes.rate")} value={`${(summary.rate * 100).toFixed(1)}% (${summary.tp}/${summary.denominator})`} />
+              </dl>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-md border p-3 text-xs text-muted-foreground">
+          <p>{t("backtest.outcomes.matcher", { version: analysis.matcher_version })}</p>
+          <p>{t("backtest.outcomes.snapshot", { value: new Date(analysis.snapshot_at).toLocaleString() })}</p>
+          {analysis.assumptions.map((assumption) => <p key={assumption}>- {assumption}</p>)}
+        </div>
+        {details.length > 0 && (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>{t("backtest.outcomes.detail.variant")}</TableHead><TableHead>{t("backtest.outcomes.detail.candidate")}</TableHead><TableHead>{t("backtest.outcomes.detail.scenario")}</TableHead><TableHead>{t("backtest.outcomes.detail.label")}</TableHead><TableHead>{t("backtest.outcomes.detail.investigated")}</TableHead></TableRow></TableHeader>
+              <TableBody>{details.map((detail) => <TableRow key={detail.id}><TableCell>{detail.variant}</TableCell><TableCell className="font-mono text-xs">{detail.candidate_id}</TableCell><TableCell className="font-mono text-xs">{detail.scenario_id ?? "-"}</TableCell><TableCell><Badge variant={detail.label === "TP" ? "low" : detail.label === "FP" ? "critical" : "outline"}>{detail.label}</Badge></TableCell><TableCell>{detail.investigated ? t("backtest.outcomes.yes") : t("backtest.outcomes.no")}</TableCell></TableRow>)}</TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function MetricRow({ label, value }: { label: string; value: string | number }) {
+  return <div className="flex justify-between gap-2"><dt className="text-muted-foreground">{label}</dt><dd>{value}</dd></div>
 }

@@ -10,6 +10,11 @@ permissions:
   packages: write
   id-token: write
   attestations: write
+  # Read-only, and only so the release can verify the claim it publishes about
+  # the gates that ran on the release commit. Declaring any permission sets
+  # every unlisted one to none, so both have to be named.
+  checks: read
+  statuses: read
 
 jobs:
   publish:
@@ -25,23 +30,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Two channels share this workflow and differ only in what the tag
-          # promises. A production tag (vMAJOR.MINOR.PATCH) asserts the whole
-          # release checklist, including the governance and operational-evidence
-          # controls. A pre-release tag (-alpha.N/-beta.N/-rc.N) asserts only the
-          # verification and provenance controls and exists so the software can
-          # be evaluated from a published image while those governance controls
-          # are still being established. Both are immutable and attested; see
-          # docs/development/release-checklist.md for which sections apply.
-          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$'
+          # One channel: vMAJOR.MINOR.PATCH. Pre-release identifiers are
+          # rejected rather than accepted-and-labelled, because this project
+          # has no second channel to route them to. What a release does and
+          # does not assert is published with the release itself (see the
+          # governance block in release-manifest.json and the disclosure header
+          # in the release notes) instead of being encoded in a tag suffix that
+          # readers skip. See docs/development/release-checklist.md.
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           if [[ ! "$GITHUB_REF_NAME" =~ $semver ]]; then
-            echo "Release tag must be strict SemVer: vMAJOR.MINOR.PATCH, optionally" >&2
-            echo "followed by -alpha.N, -beta.N, or -rc.N (got: $GITHUB_REF_NAME)" >&2
+            echo "Release tag must be strict SemVer: vMAJOR.MINOR.PATCH" >&2
+            echo "(got: $GITHUB_REF_NAME). Pre-release identifiers are not published." >&2
             exit 1
-          fi
-          prerelease=false
-          if [[ -n "${BASH_REMATCH[4]}" ]]; then
-            prerelease=true
           fi
           if [[ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != tag ]]; then
             echo "Release tag must be annotated." >&2
@@ -53,11 +53,73 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "commit=$release_commit" >> "$GITHUB_OUTPUT"
           echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '26.5.0'
+
+      # The release notes assert that every automated gate passed on the
+      # release commit. That is a checkable claim, so it is checked here rather
+      # than asserted on trust — a release that says its gates passed while
+      # they did not is worse than one that says nothing.
+      #
+      # Only the two aggregates that run on `push` to main are required. They
+      # are named explicitly rather than "every check-run was successful",
+      # because that form silently weakens to a tautology the moment a workflow
+      # stops running, and it would also sweep in unrelated or advisory runs.
+      # `Governance Required` is deliberately absent: it is posted against pull
+      # request head commits, never against the merge commit a tag points at,
+      # so requiring it here would deadlock every release permanently.
+      #
+      # A tag pushed before main's CI finishes fails this step. That is the
+      # intended direction — the fix is to retag once the checks are green, not
+      # to publish an image whose evidence does not exist yet.
+      - name: Verify required checks passed on the release commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=('CI Required' 'Security Required')
+
+          # Both a check-run conclusion and a commit status count, for the same
+          # reason the governance gate publishes a status: a ruleset accepts
+          # either, so the release must accept either too. Both endpoints are
+          # the "latest per name" form on purpose — check-runs defaults to
+          # filter=latest, and /status is the combined view. The per-status
+          # history endpoint would also return superseded entries, so a failure
+          # that was already re-run green would read as a failure forever.
+          conclusions=$(
+            {
+              gh api --paginate "repos/$REPO/commits/$RELEASE_COMMIT/check-runs" \
+                --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion // "")"'
+              gh api "repos/$REPO/commits/$RELEASE_COMMIT/status" \
+                --jq '.statuses[] | "\(.context)\tcompleted\t\(.state)"'
+            }
+          )
+
+          failed=0
+          for context in "${required[@]}"; do
+            verdict=$(awk -F'\t' -v c="$context" '$1 == c && $2 == "completed" { print $3 }' \
+              <<<"$conclusions" | sort -u | paste -sd, -)
+            if [[ -z "$verdict" ]]; then
+              echo "::error::No completed '$context' run on $RELEASE_COMMIT." >&2
+              failed=1
+            elif [[ "$verdict" != "success" ]]; then
+              echo "::error::'$context' on $RELEASE_COMMIT concluded: $verdict" >&2
+              failed=1
+            else
+              echo "$context: success"
+            fi
+          done
+
+          if [[ "$failed" -ne 0 ]]; then
+            echo "Refusing to publish a release that claims its gates passed." >&2
+            exit 1
+          fi
 
       # This step gates the release and must stay ahead of the image build:
       # once an image is pushed under the release tag it is public, and a
@@ -70,16 +132,42 @@ jobs:
           # Release notes come from CHANGELOG.md rather than from commit
           # subjects: it makes the changelog load-bearing, so a release cannot
           # be cut without one and it cannot silently drift from what shipped.
+          # The tag must have its own "## [X.Y.Z]" section; scripts/changelog.mjs
+          # exits non-zero without one and never falls back to another section.
+          node scripts/changelog.mjs "$GITHUB_REF_NAME" > changelog-section.md
+
+          # Every release states what it does and does not assert, in the
+          # release itself rather than only in the documentation. The same
+          # facts are emitted machine-readably in release-manifest.json's
+          # governance block and as an image label. This project has one
+          # maintainer, so independent approval and separation of duties do not
+          # exist here; saying so on the artifact is the honest form of that.
           #
-          # A production tag must have its own "## [X.Y.Z]" section and
-          # scripts/changelog.mjs exits non-zero without one. A pre-release tag
-          # resolves to the section for the release it is a candidate for, and
-          # failing that to "## [Unreleased]" -- Keep a Changelog has no
-          # per-pre-release heading, so demanding "## [X.Y.Z-rc.N]" would make
-          # this channel impossible to use. The section still has to be
-          # non-empty on both channels. The log line above the notes records
-          # which section was used.
-          node scripts/changelog.mjs "$GITHUB_REF_NAME" > release-notes.md
+          # Each sentence below is either verified above or is a disclosure —
+          # ADR-0016's rule applied to the release's own wording. The gate claim
+          # is verified by "Verify required checks passed on the release
+          # commit". The self-review claim is *not* verified and is scoped
+          # accordingly: `Governance Required` is posted against pull request
+          # head commits, and a squash or merge commit on main is a different
+          # SHA that never carries it, so the release cannot confirm from here
+          # which of its pull requests had a record. Stating it as a scoped
+          # disclosure is the only accurate form. Do not upgrade this to a
+          # categorical claim without a mechanism that actually checks it.
+          cat > release-notes.md <<'DISCLOSURE'
+          > **How this release was produced.** The `CI Required` and
+          > `Security Required` gates are verified to have passed on the release
+          > commit before this release is published. Pull requests merged after
+          > [ADR-0016](https://github.com/ksuk/merlon/blob/main/docs/decisions/0016-single-maintainer-change-control.md)
+          > additionally carry a maintainer self-review record, enforced at merge
+          > time by the `Governance Required` status; that record is on the pull
+          > request, and this release does not re-verify it. This release does
+          > **not** assert independent approval or separation of duties: the
+          > project has one maintainer, and one person cannot review their own
+          > work independently. The image carries a build provenance attestation,
+          > a CycloneDX SBOM, and an immutable digest regardless.
+
+          DISCLOSURE
+          cat changelog-section.md >> release-notes.md
 
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
@@ -137,23 +225,16 @@ jobs:
             --arg provenance_url "$PROVENANCE_URL" \
             --arg sbom "sbom-image.cdx.json" \
             --arg sbom_sha256 "$sbom_sha256" \
-            '{schema_version: 1, tag: $tag, commit: $commit, image: $image, image_digest: $digest, sbom: {file: $sbom, sha256: $sbom_sha256}, provenance: {provider: "GitHub artifact attestation", url: $provenance_url}}' \
+            '{schema_version: 2, tag: $tag, commit: $commit, image: $image, image_digest: $digest, sbom: {file: $sbom, sha256: $sbom_sha256}, provenance: {provider: "GitHub artifact attestation", url: $provenance_url}, governance: {mode: "single-maintainer", independent_approval: false, separation_of_duties: false, adr: "ADR-0016"}}' \
             > release-manifest.json
           sha256sum release-manifest.json sbom-image.cdx.json > SHA256SUMS
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         shell: bash
         run: |
           set -euo pipefail
-          # --prerelease keeps the tag out of "Latest release", so an evaluation
-          # build is never presented as the production release.
-          args=(--verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME")
-          if [[ "$PRERELEASE" == true ]]; then
-            args+=(--prerelease)
-          fi
           gh release create "$GITHUB_REF_NAME" \
             release-manifest.json sbom-image.cdx.json SHA256SUMS \
-            "${args[@]}"
+            --verify-tag --notes-file release-notes.md --title "$GITHUB_REF_NAME"

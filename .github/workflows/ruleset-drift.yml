@@ -1,0 +1,150 @@
+name: Ruleset Drift
+
+# Every required check on this repository is administered by the same person it
+# checks. That cannot be argued away with one maintainer, so instead it is made
+# detectable: the rulesets that protect `main` and release tags are committed
+# under .github/rulesets/, and this job fails when the live configuration stops
+# matching them.
+#
+# What it catches is a weakening that is unnoticed or unrecorded. What it
+# cannot catch is the live configuration and the baseline being changed in the
+# same act — stated in docs/development/repository-governance.md rather than
+# papered over. See ADR-0016.
+
+on:
+  schedule:
+    # Mondays, 00:17 UTC. Off the hour so the run is not queued behind the
+    # crowd of jobs every scheduler fires on the hour.
+    - cron: '17 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Ruleset Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, because this job names the commit that last recorded
+          # each baseline's bypass_actors. At the default depth of 1 there is no
+          # path history, so `git log -1 -- <file>` resolves to HEAD for every
+          # file — which would report the newest commit as the verification
+          # date and make stale evidence look fresh. That is the exact failure
+          # this job exists to prevent, so it must not commit it itself.
+          fetch-depth: 0
+
+      - name: Export live rulesets and compare with the baseline
+        env:
+          # Reading administration fields off the rulesets API needs *write*
+          # access to the ruleset, not read: GitHub returns `bypass_actors`
+          # only to a caller that could also change it. The Actions
+          # `permissions:` block has no `administration` scope at any level, so
+          # GITHUB_TOKEN cannot see the field however it is configured.
+          #
+          # The failure is quieter than a 403, which is why this job's first
+          # real run reported nonsense. Listing and fetching rulesets succeed
+          # for a non-admin caller; `bypass_actors` is simply *omitted from the
+          # response* rather than refused. An omitted key is indistinguishable
+          # from an empty one to anything comparing values, so the job compared
+          # a degraded view against a complete baseline and called the
+          # difference drift. The fallback below is kept — it lets the job run
+          # and fail loudly with the right diagnosis — but the exported data is
+          # now checked for the fields themselves, not for HTTP success.
+          #
+          # Bound to GITHUB_TOKEN directly, with no secret fallback. The
+          # fallback that used to be here would still have selected a stored
+          # RULESET_READ_TOKEN if one existed, injecting exactly the
+          # write-capable credential this design says it does not use — and
+          # then discarding its extra visibility anyway, since --comparable
+          # ignores bypass_actors. If that secret was ever created, delete it.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Export into a temporary directory first. The working tree is not
+          # touched until the export has proved it is trustworthy, which is
+          # what separates the two ways this job can fail: a token that cannot
+          # see administration fields must never reach the comparison, because
+          # its output would read as drift and invite the reader to commit it.
+          #
+          # This also makes the old ordering requirement structural rather than
+          # stated. The list used to be read into a variable specifically so a
+          # failed call aborted before `rm -f` cleared the baseline; now
+          # nothing is cleared until every ruleset has been fetched and
+          # validated. The rule is worth keeping in mind anyway, so it is
+          # recorded here rather than deleted with the code that needed it.
+          # Two comparable renderings, compared directly. The working tree is
+          # never touched: `git diff` cannot be the comparison here, because
+          # what is committed carries bypass_actors and what this job can fetch
+          # does not, so any diff against HEAD would report that difference
+          # forever. See the three states in scripts/ruleset-baseline.sh.
+          live=$(mktemp -d)
+          base=$(mktemp -d)
+          trap 'rm -rf "$live" "$base"' EXIT
+
+          # Every verdict belongs to scripts/ruleset-baseline.sh, the one place
+          # that knows what a canonical baseline looks like. --comparable drops
+          # bypass_actors from the requirement and the output; everything else
+          # is still required, so a response degraded in any *other* way still
+          # fails with exit 3 rather than quietly narrowing the comparison.
+          status=0
+          REPO="$REPO" bash scripts/ruleset-baseline.sh --export-all --comparable "$live" || status=$?
+
+          if [[ $status -eq 3 ]]; then
+            echo "::error::The ruleset export is missing a field this job does need. This is NOT drift." >&2
+            exit 1
+          fi
+          if [[ $status -ne 0 ]]; then
+            echo "::error::Could not export the live rulesets; no comparison was made." >&2
+            exit 1
+          fi
+
+          shopt -s nullglob
+          committed=(.github/rulesets/*.json)
+          shopt -u nullglob
+          if [[ ${#committed[@]} -eq 0 ]]; then
+            echo "::error::No committed ruleset baseline to compare against." >&2
+            exit 1
+          fi
+          for f in "${committed[@]}"; do
+            bash scripts/ruleset-baseline.sh --canonicalize --comparable \
+              < "$f" > "$base/$(basename "$f")"
+          done
+
+          # bypass_actors, stated rather than dropped. The whole point of the
+          # three states is that "the caller could not see it" is a different
+          # claim from "it is empty", so this job says which one it is holding
+          # and names the evidence for the other.
+          echo "bypass_actors and current_user_can_bypass: unverifiable in this run."
+          echo "  GITHUB_TOKEN cannot read either -- GitHub returns them only to a"
+          echo "  caller with write access to the ruleset, and this project does not"
+          echo "  store such a credential. This run asserts nothing about who can"
+          echo "  bypass these rulesets; it verifies the fields it can actually see."
+          echo "  Both are verified by an administrator at release time, per"
+          echo "  docs/development/release-checklist.md. Last recorded values:"
+          for f in "${committed[@]}"; do
+            recorded=$(jq -c '.bypass_actors' "$f")
+            when=$(git log -1 --format='%h %ad' --date=short -- "$f")
+            echo "    $(basename "$f" .json): $recorded  (recorded in $when)"
+          done
+
+          if ! diff -ru "$base" "$live" >/tmp/drift.diff 2>&1; then
+            echo "::error::Live rulesets differ from .github/rulesets/. This IS drift." >&2
+            cat /tmp/drift.diff >&2
+            echo "The export was validated before this comparison, so this is a" >&2
+            echo "real difference in the live configuration, not a token problem." >&2
+            echo "A file present only under the baseline means the ruleset no longer" >&2
+            echo "exists live: the protection is off now, and that is the urgent" >&2
+            echo "reading. A file present only under the live export is a ruleset" >&2
+            echo "the baseline does not know about." >&2
+            echo "Investigate before restoring the baseline: a silently reverted" >&2
+            echo "diff destroys the evidence of what changed." >&2
+            exit 1
+          fi
+
+          echo "Live rulesets match the committed baseline on every field this job can see."

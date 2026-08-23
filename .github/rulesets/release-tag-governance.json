@@ -1,0 +1,25 @@
+{
+  "bypass_actors": [],
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/tags/v*.*.*"
+      ]
+    }
+  },
+  "enforcement": "active",
+  "id": 19734314,
+  "name": "release-tag-governance",
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    }
+  ],
+  "source": "ksuk/merlon",
+  "source_type": "Repository",
+  "target": "tag"
+}

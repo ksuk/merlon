@@ -12,7 +12,7 @@ is not the image swap — it is the schema migration, which is forward-only.
 
 | Situation | Approach |
 |---|---|
-| Local evaluation | Pull the newest pre-release tag, upgrade freely |
+| Local evaluation | Pull the newest version tag, upgrade freely |
 | Shared or test environment | Pin a version tag, upgrade deliberately, keep a backup |
 | Production | Pin the **digest**, rehearse on a copy of production data, back up immediately before, never upgrade two versions blind |
 

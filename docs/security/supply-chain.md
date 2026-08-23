@@ -30,10 +30,16 @@ example — and guard scripts fail the build when the copies disagree:
 | `scripts/check-toolchain-pins.sh` | Go and Node.js versions match across the Dockerfile, all workflows, `go.mod`, and the dev container |
 | `scripts/check-wrangler-pin.sh` | The Wrangler version in `package.json` matches the one the deploy workflow runs |
 | `scripts/check-env-vars.sh` | Every environment variable the code reads is documented, and every documented variable is read |
+| `scripts/ruleset-baseline.sh` | The committed ruleset baselines carry every field the drift check compares, `bypass_actors` above all, and are in canonical export form |
 
 Each guard fails if it finds **zero** occurrences of what it is checking, not
 just on a mismatch. A control that silently stops checking anything when a step
 is renamed is worse than no control, because it reports success.
+
+The last row is that rule applied to a guard that had broken it. The rulesets
+API omits `bypass_actors` for a caller without repository Administration, so
+the drift check was comparing a field it could not see — zero occurrences read
+as agreement rather than as a failure.
 
 These run as required checks on every pull request.
 
@@ -77,8 +83,8 @@ matters because it means a stale exception is silently covering nothing.
 Publishing is triggered only by an annotated Git tag, and the workflow refuses
 to proceed unless:
 
-1. The tag is strict SemVer, optionally with an `-alpha.N`/`-beta.N`/`-rc.N`
-   pre-release identifier.
+1. The tag is strict SemVer, `vMAJOR.MINOR.PATCH`. A pre-release identifier is
+   rejected: this project publishes one channel.
 2. The tag is **annotated**, not lightweight.
 3. The tagged commit is an **ancestor of `main`**.
 4. `CHANGELOG.md` has a section for that version.
@@ -96,7 +102,7 @@ cannot unpublish it.
 | Multi-architecture image (`linux/amd64`, `linux/arm64`) | The software |
 | GitHub build provenance attestation, pushed to the registry | Ties the image digest to the workflow, repository, and commit that built it |
 | CycloneDX SBOM of the image | Component inventory for your own scanning |
-| `release-manifest.json` | Tag, commit, image, digest, SBOM hash, provenance URL |
+| `release-manifest.json` | Tag, commit, image, digest, SBOM hash, provenance URL, and a `governance` block stating what the release does not assert |
 | `SHA256SUMS` | Integrity of the attached files |
 
 [Upgrading](../operations/upgrade.md) has the consumer-side verification
@@ -128,7 +134,7 @@ Recorded here rather than omitted, because a reviewer will find them anyway:
 | SBOMs are generated but not scanned in CI | They are published for you to scan; no gate consumes them yet |
 | No static application security testing (CodeQL or equivalent) | Not currently configured |
 | No published container-image CVE scan | Scan the published SBOM or image yourself |
-| One active maintainer | Stated in `MAINTAINERS.md`; production release is gated on resolving it |
+| One active maintainer | Stated in `MAINTAINERS.md`, and disclosed on every release in `release-manifest.json` and the image labels. Merges require a self-review record enforced by `Governance Required` (ADR-0016) |
 
 See [Accepted Risks](accepted-risks/index.md) for the ones that are deliberate
 rather than pending.

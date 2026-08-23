@@ -28,6 +28,12 @@ const ofacFixture = `<?xml version="1.0"?>
     <nationalityList>
       <nationality><country>Korea, North</country></nationality>
     </nationalityList>
+    <dateOfBirthList>
+      <dateOfBirthItem><dateOfBirth>03 Jan 1984</dateOfBirth></dateOfBirthItem>
+    </dateOfBirthList>
+    <addressList>
+      <address><address1>1 Example Street</address1><city>Pyongyang</city><country>Korea, North</country></address>
+    </addressList>
   </sdnEntry>
   <sdnEntry>
     <uid>9001</uid>
@@ -60,6 +66,12 @@ func TestOFACAdapter_ParsesSDNXML(t *testing.T) {
 	if first.Country != "Korea, North" {
 		t.Errorf("first.Country = %q", first.Country)
 	}
+	if len(first.DatesOfBirth) != 1 || first.DatesOfBirth[0] != "03 Jan 1984" {
+		t.Errorf("first.DatesOfBirth = %v", first.DatesOfBirth)
+	}
+	if len(first.Addresses) != 1 || first.Addresses[0] != "1 Example Street, Pyongyang, Korea, North" {
+		t.Errorf("first.Addresses = %v", first.Addresses)
+	}
 }
 
 const euCSVFixture = "entry_id,name,country,type\n" +
@@ -79,6 +91,20 @@ func TestEUAdapter_ParsesCSVAndMergesAliasRows(t *testing.T) {
 	}
 	if data.Entries[0].EntryID != "EU-001" || len(data.Entries[0].Names) != 2 {
 		t.Errorf("entries[0] = %+v", data.Entries[0])
+	}
+}
+
+func TestEUAdapter_RetainsSecondaryIdentifiersAndEntityTypeAcrossAliasRows(t *testing.T) {
+	fixture := "entry_id,name,dates_of_birth,addresses,country,entity_type\n" +
+		"EU-003,Example Person,1980-01-02|1981-02-03,1 Chiyoda Tokyo|2 Chiyoda Tokyo,JP,individual\n" +
+		"EU-003,Example P.,1982-03-04,3 Chiyoda Tokyo,JP,individual\n"
+	data, err := (&EUAdapter{ListID: "eu", Fetcher: &fakeFetcher{body: []byte(fixture)}}).FetchList(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := data.Entries[0]
+	if len(entry.DatesOfBirth) != 3 || len(entry.Addresses) != 3 || entry.Country != "JP" || entry.EntityType != "individual" {
+		t.Fatalf("entry=%+v, want all secondary values retained", entry)
 	}
 }
 

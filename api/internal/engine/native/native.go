@@ -5,8 +5,11 @@ package native
 
 import (
 	"context"
+	"crypto/hmac"
+	cryptorand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -22,6 +25,7 @@ import (
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/metrics"
+	"github.com/ksuk/merlon/api/internal/outcome"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"gopkg.in/yaml.v3"
 )
@@ -54,25 +58,41 @@ type countryRisk struct {
 }
 
 type scenario struct {
-	ID          string
-	Name        string
-	Description string
-	Mode        string
-	Severity    domain.AlertSeverity
-	Parameters  map[string]any
-	Thresholds  map[string]map[string]float64
+	ID                string
+	Name              string
+	Description       string
+	SchemaVersion     string
+	Detector          string
+	LegacyRouting     bool
+	LegacyWindowAlias bool
+	Mode              string
+	Severity          domain.AlertSeverity
+	Parameters        map[string]any
+	Thresholds        map[string]map[string]float64
+	TransactionTypes  []string
+	Aggregation       aggregationSpec
+}
+
+type aggregationSpec struct {
+	Field    string
+	Function string
+	Period   time.Duration
+	GroupBy  string
 }
 
 type Engine struct {
-	cdd                cddConfig
-	cddDigest          string
-	country            *countryRisk
-	scenarios          []scenario
-	tmDigest           string
-	listsMu            sync.RWMutex
-	lists              []screeningList
-	screeningDigest    string
-	screeningThreshold float64
+	cdd                     cddConfig
+	cddDigest               string
+	country                 *countryRisk
+	scenarios               []scenario
+	tmDigest                string
+	tmCompatibilityWarnings []string
+	listsMu                 sync.RWMutex
+	lists                   []screeningList
+	screeningDigest         string
+	screeningThreshold      float64
+	screeningHMACKey        []byte
+	screeningHMACKeyID      string
 }
 
 type screeningList struct {
@@ -83,9 +103,21 @@ type screeningList struct {
 	Entries []screeningEntry `yaml:"entries"`
 }
 type screeningEntry struct {
-	ID    string   `yaml:"entry_id"`
-	Names []string `yaml:"names"`
+	ID           string   `yaml:"entry_id"`
+	Names        []string `yaml:"names"`
+	DatesOfBirth []string `yaml:"dates_of_birth"`
+	Addresses    []string `yaml:"addresses"`
+	Country      string   `yaml:"country"`
+	EntityType   string   `yaml:"entity_type"`
+	// Type accepts existing list snapshots while EntityType is the canonical
+	// field for new snapshots.
+	Type string `yaml:"type"`
 }
+
+const (
+	screeningIdentifierPolicyVersion = "screening-secondary-identifiers-v1"
+	screeningIdentifierAlgorithm     = "normalized-token-similarity-v1"
+)
 
 // NewFromEnv loads the configured content roots for the native engine.
 // It returns an error for a missing required CDD/TM root; callers may keep the
@@ -138,7 +170,13 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 		paths = []string{tmPath}
 	}
 	sort.Strings(paths)
-	e := &Engine{cdd: cdd, cddDigest: digest(cddYAML), screeningThreshold: 0.85}
+	ephemeralFingerprintKey := make([]byte, sha256.Size)
+	if _, err := cryptorand.Read(ephemeralFingerprintKey); err != nil {
+		return nil, fmt.Errorf("generate ephemeral screening fingerprint key: %w", err)
+	}
+	e := &Engine{cdd: cdd, cddDigest: digest(cddYAML), screeningThreshold: 0.85,
+		screeningHMACKey: ephemeralFingerprintKey, screeningHMACKeyID: "screening:ephemeral",
+	}
 	for _, path := range paths {
 		content, readErr := os.ReadFile(path)
 		if readErr != nil {
@@ -148,8 +186,14 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 		if parseErr != nil {
 			return nil, fmt.Errorf("parse TM config %s: %w", path, parseErr)
 		}
-		if !knownScenarioID(s.ID) {
+		if !scenarioHasSupportedDetector(s) {
 			return nil, fmt.Errorf("unknown scenario type: %s", s.ID)
+		}
+		if s.LegacyRouting {
+			e.tmCompatibilityWarnings = append(e.tmCompatibilityWarnings, fmt.Sprintf("scenario %q uses deprecated ID-based detector routing; declare detector before 2027-08-15", s.ID))
+		}
+		if s.LegacyWindowAlias {
+			e.tmCompatibilityWarnings = append(e.tmCompatibilityWarnings, fmt.Sprintf("scenario %q uses deprecated conditions.additional.window_hours; use conditions.aggregation.period before 2027-08-15", s.ID))
 		}
 		e.scenarios = append(e.scenarios, s)
 	}
@@ -208,11 +252,26 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 					return nil, fmt.Errorf("screening list %s entry %s names must not be empty", path, entry.ID)
 				}
 			}
+			for i := range l.Entries {
+				if l.Entries[i].EntityType == "" {
+					l.Entries[i].EntityType = l.Entries[i].Type
+				}
+			}
 			e.lists = append(e.lists, l)
 		}
 		e.screeningDigest, _ = config.DigestPath(screeningPath)
 	}
 	return e, nil
+}
+
+// TMContract reports the contract the native engine actually loaded. The
+// active TM digest is exposed as the default reference so an operator can
+// reconcile the status page with the immutable evaluation provenance.
+func (e *Engine) TMContract() engine.TMContractInfo {
+	info := engine.DefaultTMContractInfo()
+	info.DefaultDigest = e.tmDigest
+	info.CompatibilityWarnings = append([]string(nil), e.tmCompatibilityWarnings...)
+	return info
 }
 
 func validateCountryRisk(table countryRisk) error {
@@ -294,19 +353,58 @@ func normalizeRiskTierMap[T any](values map[string]T, field string) (map[string]
 	return normalized, nil
 }
 
-func knownScenarioID(id string) bool {
-	id = strings.ToLower(id)
-	for _, prefix := range []string{
-		"tm_structuring", "test_structuring", "tm_rapid_movement", "test_rapid_movement",
-		"tm_high_frequency_small_amount", "test_high_frequency_small_amount",
-		"tm_dormant_account_reactivation", "test_dormant_account_reactivation",
-		"tm_high_risk_country_transfer", "test_high_risk_country_transfer",
+const (
+	detectorStructuring = "structuring"
+	detectorRapid       = "rapid_movement"
+	detectorHFSA        = "high_frequency_small_amount"
+	detectorDormant     = "dormant_account_reactivation"
+	detectorHighRisk    = "high_risk_country_transfer"
+)
+
+var supportedDetectors = map[string]struct{}{
+	detectorStructuring: {}, detectorRapid: {}, detectorHFSA: {},
+	detectorDormant: {}, detectorHighRisk: {},
+}
+
+// legacyDetectorForID is deliberately limited to the prefixes accepted by
+// the pre-v2.1 loader. New documents must declare detector explicitly; this
+// compatibility map only keeps already-valid v1/v2.0 files running during the
+// contract-stability window.
+func legacyDetectorForID(id string) (string, bool) {
+	id = strings.ToLower(strings.TrimSpace(id))
+	for _, item := range []struct {
+		prefix   string
+		detector string
+	}{
+		{"tm_structuring", detectorStructuring}, {"test_structuring", detectorStructuring},
+		{"tm_rapid_movement", detectorRapid}, {"test_rapid_movement", detectorRapid},
+		{"tm_high_frequency_small_amount", detectorHFSA}, {"test_high_frequency_small_amount", detectorHFSA},
+		{"tm_dormant_account_reactivation", detectorDormant}, {"test_dormant_account_reactivation", detectorDormant},
+		{"tm_high_risk_country_transfer", detectorHighRisk}, {"test_high_risk_country_transfer", detectorHighRisk},
 	} {
-		if strings.HasPrefix(id, prefix) {
-			return true
+		if strings.HasPrefix(id, item.prefix) {
+			return item.detector, true
 		}
 	}
-	return false
+	return "", false
+}
+
+func knownScenarioID(id string) bool {
+	_, ok := legacyDetectorForID(id)
+	return ok
+}
+
+func supportedDetector(detector string) bool {
+	_, ok := supportedDetectors[strings.ToLower(strings.TrimSpace(detector))]
+	return ok
+}
+
+func scenarioHasSupportedDetector(s scenario) bool {
+	if supportedDetector(s.Detector) {
+		return true
+	}
+	_, ok := legacyDetectorForID(s.ID)
+	return ok
 }
 
 func isYAML(name string) bool {
@@ -323,13 +421,32 @@ func parseScenario(content []byte) (scenario, error) {
 	if strings.HasPrefix(schemaVersion, "2") {
 		defaultMode = "batch"
 	}
-	s := scenario{ID: stringValue(raw["scenario_id"]), Name: stringValue(raw["name"]), Description: stringValue(raw["description"]), Mode: strings.ToLower(stringValue(raw["evaluation_mode"])), Parameters: map[string]any{}, Thresholds: map[string]map[string]float64{}}
+	s := scenario{ID: stringValue(raw["scenario_id"]), Name: stringValue(raw["name"]), Description: stringValue(raw["description"]), SchemaVersion: schemaVersion, Detector: strings.ToLower(strings.TrimSpace(stringValue(raw["detector"]))), Mode: strings.ToLower(stringValue(raw["evaluation_mode"])), Parameters: map[string]any{}, Thresholds: map[string]map[string]float64{}}
 	if s.Mode == "" {
 		s.Mode = defaultMode
 	}
 	s.Severity = domain.AlertSeverity(strings.ToLower(stringValue(raw["severity"])))
 	if s.Severity == "" {
 		s.Severity = domain.AlertSeverityMedium
+	}
+	if err := validateScenarioTopLevel(raw); err != nil {
+		return scenario{}, err
+	}
+	if scenarioType := strings.ToLower(strings.TrimSpace(stringValue(raw["type"]))); scenarioType != "" && scenarioType != "aggregation" {
+		return scenario{}, fieldErrorf("type", "unsupported TM scenario type %q", scenarioType)
+	} else if strings.HasPrefix(schemaVersion, "2.1") && scenarioType == "" {
+		return scenario{}, fieldErrorf("type", "schema v2.1 requires type")
+	}
+	if strings.HasPrefix(schemaVersion, "2.1") && s.Detector == "" {
+		return scenario{}, fieldErrorf("detector", "schema v2.1 requires detector")
+	}
+	if s.Detector != "" && !supportedDetector(s.Detector) {
+		return scenario{}, fieldErrorf("detector", "unsupported detector %q", s.Detector)
+	}
+	if s.Detector == "" {
+		if detector, ok := legacyDetectorForID(s.ID); ok {
+			s.Detector, s.LegacyRouting = detector, true
+		}
 	}
 	if p, ok := raw["parameters"].(map[string]any); ok {
 		for k, v := range p {
@@ -357,16 +474,53 @@ func parseScenario(content []byte) (scenario, error) {
 			}
 		}
 	}
-	if conditions, ok := raw["conditions"].(map[string]any); ok {
+	if rawConditions, exists := raw["conditions"]; exists {
+		conditions, ok := rawConditions.(map[string]any)
+		if !ok {
+			return scenario{}, fieldErrorf("conditions", "conditions must be an object")
+		}
+		if err := validateScenarioConditions(conditions); err != nil {
+			return scenario{}, err
+		}
 		if absolute, ok := conditions["absolute_threshold"]; ok {
 			s.Parameters["absolute_threshold"] = absolute
 		}
-		if add, ok := conditions["additional"].(map[string]any); ok {
+		if types, ok := conditions["transaction_type"]; ok {
+			parsed, err := parseTransactionTypes(types)
+			if err != nil {
+				return scenario{}, err
+			}
+			s.TransactionTypes = parsed
+		}
+		if rawAggregation, exists := conditions["aggregation"]; exists {
+			aggregation, ok := rawAggregation.(map[string]any)
+			if !ok {
+				return scenario{}, fieldErrorf("conditions.aggregation", "aggregation must be an object")
+			}
+			parsed, err := parseAggregation(aggregation)
+			if err != nil {
+				return scenario{}, err
+			}
+			s.Aggregation = parsed
+			s.Parameters["window_seconds"] = float64(parsed.Period.Seconds())
+		}
+		if rawAdditional, exists := conditions["additional"]; exists {
+			add, ok := rawAdditional.(map[string]any)
+			if !ok {
+				return scenario{}, fieldErrorf("conditions.additional", "additional must be an object")
+			}
+			if _, legacy := add["window_hours"]; legacy && !strings.HasPrefix(schemaVersion, "2.1") {
+				s.LegacyWindowAlias = true
+			}
 			for k, v := range add {
 				s.Parameters[k] = v
 			}
 		}
-		if th, ok := conditions["threshold"].(map[string]any); ok {
+		if rawThreshold, exists := conditions["threshold"]; exists {
+			th, ok := rawThreshold.(map[string]any)
+			if !ok {
+				return scenario{}, fieldErrorf("conditions.threshold", "threshold must be an object")
+			}
 			if byType, ok := th["by_customer_type"].(map[string]any); ok {
 				for ct, v := range byType {
 					if m, ok := v.(map[string]any); ok {
@@ -388,7 +542,155 @@ func parseScenario(content []byte) (scenario, error) {
 	if s.ID == "" {
 		return scenario{}, fieldErrorf("scenario_id", "scenario_id is required")
 	}
+	if err := validateDetectorAggregation(s); err != nil {
+		return scenario{}, err
+	}
 	return s, nil
+}
+
+func validateDetectorAggregation(s scenario) error {
+	if s.Aggregation.Function == "" {
+		return nil
+	}
+	want := map[string]string{
+		detectorStructuring: "sum",
+		detectorRapid:       "sum",
+		detectorHFSA:        "count",
+		detectorDormant:     "sum",
+		detectorHighRisk:    "sum",
+	}
+	if expected, ok := want[s.Detector]; ok && s.Aggregation.Function != expected {
+		return fieldErrorf("conditions.aggregation.function", "detector %q requires aggregation function %s", s.Detector, expected)
+	}
+	return nil
+}
+
+func validateScenarioTopLevel(raw map[string]any) error {
+	allowed := map[string]struct{}{
+		"schema_version": {}, "scenario_id": {}, "name": {}, "description": {}, "detector": {},
+		"type": {}, "conditions": {}, "parameters": {}, "risk_tier_adjustments": {},
+		"evaluation_mode": {}, "severity": {}, "tags": {},
+	}
+	for key := range raw {
+		if _, ok := allowed[key]; !ok {
+			return fieldErrorf(key, "unknown TM scenario key %q", key)
+		}
+	}
+	return nil
+}
+
+func validateScenarioConditions(conditions map[string]any) error {
+	allowed := map[string]struct{}{"transaction_type": {}, "aggregation": {}, "threshold": {}, "absolute_threshold": {}, "additional": {}}
+	for key := range conditions {
+		if _, ok := allowed[key]; !ok {
+			return fieldErrorf("conditions."+key, "unknown TM condition %q", key)
+		}
+	}
+	if additional, ok := conditions["additional"].(map[string]any); ok {
+		allowedAdditional := map[string]struct{}{
+			"min_transactions": {}, "min_transaction_count": {}, "individual_below": {},
+			"inbound_threshold": {}, "outbound_threshold": {}, "outbound_ratio_min": {},
+			"window_hours": {}, "count_threshold": {}, "max_amount_per_txn": {},
+			"dormant_days": {}, "reactivation_threshold": {}, "threshold_amount": {},
+			"high_risk_countries": {},
+		}
+		for key := range additional {
+			if _, ok := allowedAdditional[key]; !ok {
+				return fieldErrorf("conditions.additional."+key, "unknown TM additional parameter %q", key)
+			}
+		}
+	}
+	if aggregation, ok := conditions["aggregation"].(map[string]any); ok {
+		for key := range aggregation {
+			switch key {
+			case "field", "function", "period", "group_by":
+			default:
+				return fieldErrorf("conditions.aggregation."+key, "unknown aggregation key %q", key)
+			}
+		}
+	}
+	if rawThreshold, exists := conditions["threshold"]; exists {
+		threshold, ok := rawThreshold.(map[string]any)
+		if !ok {
+			return fieldErrorf("conditions.threshold", "threshold must be an object")
+		}
+		for key := range threshold {
+			if key != "by_customer_type" {
+				return fieldErrorf("conditions.threshold."+key, "unknown threshold key %q", key)
+			}
+		}
+		if rawByType, exists := threshold["by_customer_type"]; exists {
+			byType, ok := rawByType.(map[string]any)
+			if !ok {
+				return fieldErrorf("conditions.threshold.by_customer_type", "by_customer_type must be an object")
+			}
+			for customerType, rawCustomer := range byType {
+				customer, ok := rawCustomer.(map[string]any)
+				if !ok {
+					return fieldErrorf("conditions.threshold.by_customer_type."+customerType, "customer type thresholds must be an object")
+				}
+				for key := range customer {
+					if key != "by_risk_tier" {
+						return fieldErrorf("conditions.threshold.by_customer_type."+customerType+"."+key, "unknown customer type threshold key %q", key)
+					}
+				}
+				rawTier, exists := customer["by_risk_tier"]
+				if !exists {
+					continue
+				}
+				byTier, ok := rawTier.(map[string]any)
+				if !ok {
+					return fieldErrorf("conditions.threshold.by_customer_type."+customerType+".by_risk_tier", "risk tier thresholds must be an object")
+				}
+				for key := range byTier {
+					switch strings.ToUpper(key) {
+					case "LOW", "MEDIUM", "HIGH":
+					default:
+						return fieldErrorf("conditions.threshold.by_customer_type."+customerType+".by_risk_tier."+key, "unknown risk tier %q", key)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func parseTransactionTypes(value any) ([]string, error) {
+	items, ok := value.([]any)
+	if !ok {
+		if strings.TrimSpace(stringValue(value)) != "" {
+			return []string{strings.ToLower(strings.TrimSpace(stringValue(value)))}, nil
+		}
+		return nil, fieldErrorf("conditions.transaction_type", "transaction_type must be an array of strings")
+	}
+	out := make([]string, 0, len(items))
+	for i, item := range items {
+		token := strings.ToLower(strings.TrimSpace(stringValue(item)))
+		if token == "" {
+			return nil, fieldErrorf(fmt.Sprintf("conditions.transaction_type[%d]", i), "transaction type must not be empty")
+		}
+		out = append(out, token)
+	}
+	return out, nil
+}
+
+func parseAggregation(raw map[string]any) (aggregationSpec, error) {
+	field, function, groupBy := strings.ToLower(strings.TrimSpace(stringValue(raw["field"]))), strings.ToLower(strings.TrimSpace(stringValue(raw["function"]))), strings.ToLower(strings.TrimSpace(stringValue(raw["group_by"])))
+	if field != "amount" {
+		return aggregationSpec{}, fieldErrorf("conditions.aggregation.field", "aggregation field must be amount")
+	}
+	if function != "sum" && function != "count" {
+		return aggregationSpec{}, fieldErrorf("conditions.aggregation.function", "aggregation function must be sum or count")
+	}
+	if groupBy != "customer_id" {
+		return aggregationSpec{}, fieldErrorf("conditions.aggregation.group_by", "aggregation group_by must be customer_id")
+	}
+	period := strings.TrimSpace(stringValue(raw["period"]))
+	duration, err := time.ParseDuration(period)
+	if err != nil || duration <= 0 {
+		return aggregationSpec{}, fieldErrorf("conditions.aggregation.period", "aggregation period must be a positive duration")
+	}
+	return aggregationSpec{Field: field, Function: function, GroupBy: groupBy, Period: duration}, nil
 }
 
 func stringValue(v any) string {
@@ -464,6 +766,71 @@ func thresholdParameter(name string) bool {
 }
 func (s scenario) intParam(name, tier string, fallback int64) int64 {
 	return int64(s.param(name, tier, float64(fallback)))
+}
+
+func (s scenario) windowSeconds(tier string, fallback time.Duration) int64 {
+	if s.Aggregation.Period > 0 {
+		return int64(s.Aggregation.Period / time.Second)
+	}
+	if seconds := s.param("window_seconds", tier, 0); seconds > 0 {
+		return int64(seconds)
+	}
+	return s.intParam("window_hours", tier, int64(fallback/time.Hour)) * int64(time.Hour/time.Second)
+}
+
+func (s scenario) windowLabel(tier string, fallback time.Duration) string {
+	seconds := s.windowSeconds(tier, fallback)
+	// Preserve the v1/v2.0 description contract byte-for-byte. New typed
+	// aggregation windows still use a human-readable duration, but legacy
+	// window_hours keeps its established "N hours" wording.
+	if s.Aggregation.Period == 0 && s.param("window_seconds", tier, 0) == 0 {
+		return fmt.Sprintf("%d hours", seconds/3600)
+	}
+	if seconds%3600 == 0 {
+		return fmt.Sprintf("%d hours", seconds/3600)
+	}
+	return (time.Duration(seconds) * time.Second).String()
+}
+
+func effectiveTransactionType(t domain.Transaction) string {
+	if value := strings.ToLower(strings.TrimSpace(string(t.TransactionType))); value != "" {
+		return value
+	}
+	switch t.Direction {
+	case domain.DirectionInbound:
+		return "transfer_in"
+	case domain.DirectionOutbound:
+		return "transfer_out"
+	case domain.DirectionInternal:
+		return "transfer"
+	default:
+		return ""
+	}
+}
+
+func (s scenario) filterTransactions(txns []domain.Transaction) []domain.Transaction {
+	if len(s.TransactionTypes) == 0 {
+		return txns
+	}
+	wanted := make(map[string]struct{}, len(s.TransactionTypes))
+	for _, value := range s.TransactionTypes {
+		wanted[strings.ToLower(strings.TrimSpace(value))] = struct{}{}
+	}
+	out := make([]domain.Transaction, 0, len(txns))
+	for _, txn := range txns {
+		if _, ok := wanted[effectiveTransactionType(txn)]; ok {
+			out = append(out, txn)
+		}
+	}
+	return out
+}
+
+func (s scenario) absoluteThreshold(customerType, tier, detector string) float64 {
+	defaultValue := 10000000.0
+	if detector == detectorHFSA {
+		defaultValue = 25
+	}
+	return s.paramFor("absolute_threshold", customerType, tier, defaultValue)
 }
 func (s scenario) listParam(name string) []string {
 	var out []string
@@ -715,32 +1082,29 @@ func (e *Engine) RealtimeHistoryWindow() (time.Duration, bool) {
 		if !runsUnder(s.Mode, "realtime") {
 			continue
 		}
-		var parameter string
-		var fallback int64
-		switch {
-		case strings.Contains(strings.ToLower(s.ID), "structuring"):
-			parameter, fallback = "window_hours", 24
-		case strings.Contains(strings.ToLower(s.ID), "rapid_movement"):
-			parameter, fallback = "window_hours", 48
-		case strings.Contains(strings.ToLower(s.ID), "high_frequency_small_amount"):
-			parameter, fallback = "window_hours", 1
-		case strings.Contains(strings.ToLower(s.ID), "dormant_account_reactivation"):
+		detector := s.Detector
+		if detector == "" {
+			detector, _ = legacyDetectorForID(s.ID)
+		}
+		switch detector {
+		case detectorStructuring, detectorRapid, detectorHFSA:
+			fallback := 24 * time.Hour
+			if detector == detectorRapid {
+				fallback = 48 * time.Hour
+			} else if detector == detectorHFSA {
+				fallback = time.Hour
+			}
+			for _, tier := range []string{"LOW", "MEDIUM", "HIGH"} {
+				window := time.Duration(s.windowSeconds(tier, fallback)) * time.Second
+				if window > longest {
+					longest = window
+				}
+			}
+		case detectorDormant:
 			// Dormancy detection needs the immediately preceding transaction
 			// even when it is older than dormant_days, so a finite lookback
 			// cannot preserve the scenario's semantics.
 			return 0, false
-		default:
-			continue
-		}
-		unit := time.Hour
-		if parameter == "dormant_days" {
-			unit = 24 * time.Hour
-		}
-		for _, tier := range []string{"LOW", "MEDIUM", "HIGH"} {
-			window := time.Duration(s.intParam(parameter, tier, fallback)) * unit
-			if window > longest {
-				longest = window
-			}
 		}
 	}
 	return longest, true
@@ -831,28 +1195,40 @@ func evaluateScenario(ctx context.Context, s scenario, customerType, tier string
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	id := strings.ToLower(s.ID)
-	switch {
-	case strings.Contains(id, "structuring"):
+	detector := strings.ToLower(strings.TrimSpace(s.Detector))
+	if detector == "" {
+		var ok bool
+		detector, ok = legacyDetectorForID(s.ID)
+		if !ok {
+			return nil, fmt.Errorf("scenario %q has no supported detector", s.ID)
+		}
+	}
+	if !supportedDetector(detector) {
+		return nil, fmt.Errorf("scenario %q has unsupported detector %q", s.ID, detector)
+	}
+	s.Detector = detector
+	customer = s.filterTransactions(customer)
+	switch detector {
+	case detectorStructuring:
 		return evalStructuring(ctx, s, customerType, tier, customer)
-	case strings.Contains(id, "rapid_movement"):
+	case detectorRapid:
 		return evalRapid(ctx, s, customerType, tier, customer)
-	case strings.Contains(id, "high_frequency_small_amount"):
+	case detectorHFSA:
 		return evalHFSA(ctx, s, customerType, tier, customer)
-	case strings.Contains(id, "dormant_account_reactivation"):
+	case detectorDormant:
 		return evalDormant(ctx, s, customerType, tier, customer)
-	case strings.Contains(id, "high_risk_country_transfer"):
+	case detectorHighRisk:
 		return evalHighRisk(ctx, s, customerType, tier, customer)
 	}
-	return nil, nil
+	return nil, fmt.Errorf("scenario %q has unsupported detector %q", s.ID, detector)
 }
 func seconds(t time.Time) int64 { return t.Unix() }
 func evalStructuring(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
-	window := s.intParam("window_hours", tier, 24) * 3600
+	window := s.windowSeconds(tier, 24*time.Hour)
 	threshold := s.paramFor("threshold_amount", customerType, tier, s.paramFor("threshold", customerType, tier, 1000000))
 	min := int(s.intParam("min_transactions", tier, s.intParam("min_transaction_count", tier, 3)))
 	below := s.param("individual_below", tier, 500000)
-	absoluteThreshold := s.paramFor("absolute_threshold", customerType, tier, 10000000)
+	absoluteThreshold := s.absoluteThreshold(customerType, tier, detectorStructuring)
 	var q []domain.Transaction
 	for _, t := range txns {
 		if err := ctx.Err(); err != nil {
@@ -897,10 +1273,11 @@ func evalStructuring(ctx context.Context, s scenario, customerType, tier string,
 	return nil, nil
 }
 func evalRapid(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
-	window := s.intParam("window_hours", tier, 48) * 3600
+	window := s.windowSeconds(tier, 48*time.Hour)
 	inTh := s.paramFor("inbound_threshold", customerType, tier, s.paramFor("threshold", customerType, tier, 5000000))
 	outTh := s.paramFor("outbound_threshold", customerType, tier, 5000000)
 	ratioMin := s.param("outbound_ratio_min", tier, .8)
+	absoluteThreshold := s.absoluteThreshold(customerType, tier, detectorRapid)
 	right, left := 0, 0
 	in, out := 0.0, 0.0
 	for left < len(txns) {
@@ -921,14 +1298,20 @@ func evalRapid(ctx context.Context, s scenario, customerType, tier string, txns 
 		if in > 0 {
 			ratio = out / in
 		}
-		if in >= inTh && out >= outTh && ratio >= ratioMin {
+		breachesTier := in >= inTh && out >= outTh
+		breachesAbsolute := in >= absoluteThreshold && out >= absoluteThreshold
+		if (breachesTier || breachesAbsolute) && ratio >= ratioMin {
 			sev := domain.AlertSeverityMedium
 			if ratio >= .95 {
 				sev = domain.AlertSeverityCritical
 			} else if ratio >= .9 {
 				sev = domain.AlertSeverityHigh
 			}
-			return []scenarioAlert{{sev, ratio, fmt.Sprintf("inbound %.0f, outbound %.0f (ratio %.2f) within %d hours", in, out, ratio, window/3600), idsOf(txns[left:right])}}, nil
+			description := fmt.Sprintf("inbound %.0f, outbound %.0f (ratio %.2f) within %s", in, out, ratio, s.windowLabel(tier, 48*time.Hour))
+			if breachesAbsolute && !breachesTier {
+				description += fmt.Sprintf(" (absolute_threshold safety valve, threshold=%.0f)", absoluteThreshold)
+			}
+			return []scenarioAlert{{sev, ratio, description, idsOf(txns[left:right])}}, nil
 		}
 		if txns[left].Direction == domain.DirectionInbound {
 			in -= txns[left].Amount
@@ -944,8 +1327,9 @@ func evalRapid(ctx context.Context, s scenario, customerType, tier string, txns 
 	return nil, nil
 }
 func evalHFSA(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
-	window := s.intParam("window_hours", tier, 1) * 3600
+	window := s.windowSeconds(tier, time.Hour)
 	count := int(s.paramFor("count_threshold", customerType, tier, s.paramFor("threshold", customerType, tier, 10)))
+	absoluteCount := int(s.absoluteThreshold(customerType, tier, detectorHFSA))
 	max := s.param("max_amount_per_txn", tier, 100000)
 	var q []domain.Transaction
 	for _, t := range txns {
@@ -970,13 +1354,19 @@ func evalHFSA(ctx context.Context, s scenario, customerType, tier string, txns [
 		if left > 0 {
 			total -= q[left-1].Amount
 		}
-		if right-left >= count {
-			n := right - left
+		n := right - left
+		breachesTier := n >= count
+		breachesAbsolute := n >= absoluteCount
+		if breachesTier || breachesAbsolute {
 			sev := domain.AlertSeverityMedium
-			if n >= count*2 {
+			if breachesAbsolute || n >= count*2 {
 				sev = domain.AlertSeverityHigh
 			}
-			return []scenarioAlert{{sev, float64(n) / float64(count), fmt.Sprintf("%d transactions (each <= %.0f) totaling %.0f within %d hours", n, max, total, window/3600), idsOf(q[left:right])}}, nil
+			description := fmt.Sprintf("%d transactions (each <= %.0f) totaling %.0f within %s", n, max, total, s.windowLabel(tier, time.Hour))
+			if breachesAbsolute && !breachesTier {
+				description += fmt.Sprintf(" (absolute_threshold safety valve, threshold=%d)", absoluteCount)
+			}
+			return []scenarioAlert{{sev, float64(n) / float64(maxInt(count, 1)), description, idsOf(q[left:right])}}, nil
 		}
 	}
 	return nil, nil
@@ -984,18 +1374,25 @@ func evalHFSA(ctx context.Context, s scenario, customerType, tier string, txns [
 func evalDormant(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	days := s.intParam("dormant_days", tier, 180)
 	threshold := s.paramFor("reactivation_threshold", customerType, tier, 1000000)
+	absoluteThreshold := s.absoluteThreshold(customerType, tier, detectorDormant)
 	for i := 1; i < len(txns); i++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		gap := txns[i].ExecutedAt.Sub(txns[i-1].ExecutedAt)
-		if gap >= time.Duration(days)*24*time.Hour && txns[i].Amount >= threshold {
+		breachesTier := txns[i].Amount >= threshold
+		breachesAbsolute := txns[i].Amount >= absoluteThreshold
+		if gap >= time.Duration(days)*24*time.Hour && (breachesTier || breachesAbsolute) {
 			sev := domain.AlertSeverityMedium
 			if txns[i].Amount >= threshold*2 {
 				sev = domain.AlertSeverityHigh
 			}
-			return []scenarioAlert{{severity: sev, score: txns[i].Amount / threshold,
-				description: fmt.Sprintf("dormant for %d days, reactivated with %.0f (threshold %.0f)", int64(gap/(24*time.Hour)), txns[i].Amount, threshold),
+			description := fmt.Sprintf("dormant for %d days, reactivated with %.0f (threshold %.0f)", int64(gap/(24*time.Hour)), txns[i].Amount, threshold)
+			if breachesAbsolute && !breachesTier {
+				description += fmt.Sprintf(" (absolute_threshold safety valve, threshold=%.0f)", absoluteThreshold)
+			}
+			return []scenarioAlert{{severity: sev, score: txns[i].Amount / maxFloat(threshold, 1),
+				description: description,
 				ids:         []string{txns[i].ID}}}, nil
 		}
 	}
@@ -1003,6 +1400,7 @@ func evalDormant(ctx context.Context, s scenario, customerType, tier string, txn
 }
 func evalHighRisk(ctx context.Context, s scenario, customerType, tier string, txns []domain.Transaction) ([]scenarioAlert, error) {
 	threshold := s.paramFor("threshold_amount", customerType, tier, 1000000)
+	absoluteThreshold := s.absoluteThreshold(customerType, tier, detectorHighRisk)
 	countries := s.listParam("high_risk_countries")
 	var out []scenarioAlert
 	for _, t := range txns {
@@ -1015,11 +1413,31 @@ func evalHighRisk(ctx context.Context, s scenario, customerType, tier string, tx
 				hit = true
 			}
 		}
-		if hit && t.Direction == domain.DirectionOutbound && t.Amount >= threshold {
-			out = append(out, scenarioAlert{domain.AlertSeverityHigh, t.Amount / threshold, fmt.Sprintf("outbound transfer of %.0f to high-risk country %s (threshold %.0f)", t.Amount, t.CounterpartyCountry, threshold), []string{t.ID}})
+		breachesTier := t.Amount >= threshold
+		breachesAbsolute := t.Amount >= absoluteThreshold
+		if hit && t.Direction == domain.DirectionOutbound && (breachesTier || breachesAbsolute) {
+			description := fmt.Sprintf("outbound transfer of %.0f to high-risk country %s (threshold %.0f)", t.Amount, t.CounterpartyCountry, threshold)
+			if breachesAbsolute && !breachesTier {
+				description += fmt.Sprintf(" (absolute_threshold safety valve, threshold=%.0f)", absoluteThreshold)
+			}
+			out = append(out, scenarioAlert{domain.AlertSeverityHigh, t.Amount / maxFloat(threshold, 1), description, []string{t.ID}})
 		}
 	}
 	return out, nil
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 func idsOf(txns []domain.Transaction) []string {
 	ids := make([]string, len(txns))
@@ -1046,6 +1464,7 @@ func (e *Engine) ScreenCustomer(ctx context.Context, customer *domain.Customer, 
 		queries = append(queries, kana)
 	}
 	var matches []domain.ScreenMatch
+	customerIdentifiers := screeningIdentifiersForCustomer(customer)
 	checked := 0
 	e.listsMu.RLock()
 	lists := append([]screeningList(nil), e.lists...)
@@ -1075,11 +1494,31 @@ func (e *Engine) ScreenCustomer(ctx context.Context, customer *domain.Customer, 
 				}
 			}
 			if best >= e.screeningThreshold {
-				matches = append(matches, domain.ScreenMatch{ListID: l.ID, EntryID: entry.ID, MatchedName: bestName, Similarity: best, ListType: l.Type, Source: l.Source})
+				match := domain.ScreenMatch{ListID: l.ID, EntryID: entry.ID, MatchedName: bestName, Similarity: best, ListType: l.Type, Source: l.Source}
+				if entryHasSecondaryIdentifiers(entry) {
+					secondary := compareSecondaryIdentifiers(customerIdentifiers, entry)
+					match.Confidence = clampScreeningConfidence(best + secondary.adjustment)
+					match.MatchEvidence = e.screeningMatchEvidence(secondary, entry)
+				}
+				matches = append(matches, match)
 			}
 		}
 	}
-	sort.SliceStable(matches, func(i, j int) bool { return matches[i].Similarity > matches[j].Similarity })
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Confidence != matches[j].Confidence {
+			return matches[i].Confidence > matches[j].Confidence
+		}
+		if matches[i].Similarity != matches[j].Similarity {
+			return matches[i].Similarity > matches[j].Similarity
+		}
+		if matches[i].ListID != matches[j].ListID {
+			return matches[i].ListID < matches[j].ListID
+		}
+		if matches[i].EntryID != matches[j].EntryID {
+			return matches[i].EntryID < matches[j].EntryID
+		}
+		return matches[i].MatchedName < matches[j].MatchedName
+	})
 	return &domain.ScreenResult{CustomerID: customer.ID, Hit: len(matches) > 0, Matches: matches, ListsChecked: checked, ScreenedAt: time.Now().UTC()}, nil
 }
 
@@ -1091,14 +1530,301 @@ func (e *Engine) ReplaceScreeningLists(raw []screening.RawListData) {
 	for _, item := range raw {
 		l := screeningList{ID: item.ListID, Type: item.ListType, Name: item.Name, Source: item.Source}
 		for _, entry := range item.Entries {
-			l.Entries = append(l.Entries, screeningEntry{ID: entry.EntryID, Names: append([]string(nil), entry.Names...)})
+			entityType := firstNonEmpty(entry.EntityType, entry.Type)
+			l.Entries = append(l.Entries, screeningEntry{ID: entry.EntryID, Names: append([]string(nil), entry.Names...), DatesOfBirth: append([]string(nil), entry.DatesOfBirth...), Addresses: append([]string(nil), entry.Addresses...), Country: entry.Country, EntityType: entityType, Type: entry.Type})
 		}
 		lists = append(lists, l)
 	}
 	sort.Slice(lists, func(i, j int) bool { return lists[i].ID < lists[j].ID })
 	e.listsMu.Lock()
 	e.lists = lists
+	if snapshot, err := json.Marshal(lists); err == nil {
+		e.screeningDigest = digest(snapshot)
+	}
 	e.listsMu.Unlock()
+}
+
+// SetScreeningFingerprintKey installs the purpose-derived key selected by the
+// composition root. Local engines retain their random process-local key.
+func (e *Engine) SetScreeningFingerprintKey(key []byte, keyID string) error {
+	if len(key) < sha256.Size || strings.TrimSpace(keyID) == "" {
+		return fmt.Errorf("screening fingerprint key and key ID are required")
+	}
+	e.listsMu.Lock()
+	e.screeningHMACKey = append([]byte(nil), key...)
+	e.screeningHMACKeyID = strings.TrimSpace(keyID)
+	e.listsMu.Unlock()
+	return nil
+}
+
+type screeningCustomerIdentifiers struct {
+	datesOfBirth []string
+	addresses    []string
+	country      string
+	entityType   string
+}
+
+type secondaryComparison struct {
+	statuses   map[string]string
+	adjustment float64
+	dobValues  []string
+	addresses  []string
+}
+
+func entryHasSecondaryIdentifiers(entry screeningEntry) bool {
+	return len(entry.DatesOfBirth) > 0 || len(entry.Addresses) > 0 || strings.TrimSpace(entry.Country) != "" || firstNonEmpty(entry.EntityType, entry.Type) != ""
+}
+
+func screeningIdentifiersForCustomer(customer *domain.Customer) screeningCustomerIdentifiers {
+	if customer == nil {
+		return screeningCustomerIdentifiers{}
+	}
+	return screeningCustomerIdentifiers{
+		datesOfBirth: customerAttributeValues(customer.Attributes, "date_of_birth", "dob", "birth_date"),
+		addresses:    customerAttributeValues(customer.Attributes, "address", "addresses", "address_pref"),
+		country:      firstNonEmpty(customer.CountryCode, firstStringValue(customer.Attributes, "country_code", "country")),
+		entityType:   firstNonEmpty(string(customer.CustomerType), firstStringValue(customer.Attributes, "entity_type", "customer_type")),
+	}
+}
+
+func customerAttributeValues(attributes map[string]any, keys ...string) []string {
+	var values []string
+	for _, key := range keys {
+		value, ok := attributes[key]
+		if !ok {
+			continue
+		}
+		values = appendIdentifierValue(values, value)
+	}
+	return values
+}
+
+func appendIdentifierValue(values []string, value any) []string {
+	switch typed := value.(type) {
+	case string:
+		if strings.TrimSpace(typed) != "" {
+			return appendUniqueScreening(values, typed)
+		}
+	case []string:
+		for _, item := range typed {
+			values = appendIdentifierValue(values, item)
+		}
+	case []any:
+		for _, item := range typed {
+			values = appendIdentifierValue(values, item)
+		}
+	case map[string]any:
+		// Address JSONB values are converted to a stable token string solely
+		// for comparison; the value is never copied into match evidence.
+		b, _ := json.Marshal(typed)
+		if len(b) > 0 {
+			values = appendUniqueScreening(values, string(b))
+		}
+	default:
+		if value != nil {
+			values = appendUniqueScreening(values, fmt.Sprint(value))
+		}
+	}
+	return values
+}
+
+func appendUniqueScreening(values []string, additions ...string) []string {
+	for _, addition := range additions {
+		addition = strings.TrimSpace(addition)
+		if addition == "" {
+			continue
+		}
+		found := false
+		for _, value := range values {
+			if value == addition {
+				found = true
+				break
+			}
+		}
+		if !found {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func firstStringValue(attributes map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := attributes[key].(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func compareSecondaryIdentifiers(customer screeningCustomerIdentifiers, entry screeningEntry) secondaryComparison {
+	comparison := secondaryComparison{statuses: map[string]string{}}
+	entryEntityType := firstNonEmpty(entry.EntityType, entry.Type)
+	comparison.statuses["date_of_birth"], comparison.adjustment = compareIdentifierSet(customer.datesOfBirth, entry.DatesOfBirth, comparison.adjustment, 0.10)
+	comparison.statuses["address"], comparison.adjustment = compareAddressSet(customer.addresses, entry.Addresses, comparison.adjustment)
+	comparison.statuses["country"], comparison.adjustment = compareScalarIdentifier(customer.country, entry.Country, comparison.adjustment, 0.03)
+	comparison.statuses["entity_type"], comparison.adjustment = compareScalarIdentifier(customer.entityType, entryEntityType, comparison.adjustment, 0.02)
+	comparison.dobValues = append([]string(nil), customer.datesOfBirth...)
+	comparison.addresses = append([]string(nil), customer.addresses...)
+	return comparison
+}
+
+func compareIdentifierSet(customer, listed []string, adjustment, weight float64) (string, float64) {
+	if len(customer) == 0 || len(listed) == 0 {
+		return "missing", adjustment
+	}
+	for _, left := range customer {
+		for _, right := range listed {
+			if normalizeIdentifier(left) == normalizeIdentifier(right) {
+				return "match", adjustment + weight
+			}
+		}
+	}
+	return "mismatch", adjustment - weight
+}
+
+func compareScalarIdentifier(customer, listed string, adjustment, weight float64) (string, float64) {
+	if strings.TrimSpace(customer) == "" || strings.TrimSpace(listed) == "" {
+		return "missing", adjustment
+	}
+	if normalizeIdentifier(customer) == normalizeIdentifier(listed) {
+		return "match", adjustment + weight
+	}
+	return "mismatch", adjustment - weight
+}
+
+func compareAddressSet(customer, listed []string, adjustment float64) (string, float64) {
+	if len(customer) == 0 || len(listed) == 0 {
+		return "missing", adjustment
+	}
+	best := 0.0
+	for _, left := range customer {
+		for _, right := range listed {
+			best = maxFloat(best, addressTokenSimilarity(left, right))
+		}
+	}
+	if best >= 0.80 {
+		return "match", adjustment + 0.05
+	}
+	if best < 0.50 {
+		return "mismatch", adjustment - 0.05
+	}
+	return "indeterminate", adjustment
+}
+
+func normalizeIdentifier(value string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return []rune(strings.ToLower(string(r)))[0]
+		}
+		return -1
+	}, value)
+}
+
+func addressTokenSimilarity(left, right string) float64 {
+	leftTokens := identifierTokens(left)
+	rightTokens := identifierTokens(right)
+	if len(leftTokens) == 0 || len(rightTokens) == 0 {
+		if len(leftTokens) == 0 && len(rightTokens) == 0 {
+			return 1
+		}
+		return 0
+	}
+	intersection := 0
+	for token := range leftTokens {
+		if _, ok := rightTokens[token]; ok {
+			intersection++
+		}
+	}
+	return float64(2*intersection) / float64(len(leftTokens)+len(rightTokens))
+}
+
+func identifierTokens(value string) map[string]struct{} {
+	value = strings.ToLower(value)
+	var token strings.Builder
+	result := map[string]struct{}{}
+	flush := func() {
+		if token.Len() > 0 {
+			result[token.String()] = struct{}{}
+			token.Reset()
+		}
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			token.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return result
+}
+
+func clampScreeningConfidence(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > 1 {
+		return 1
+	}
+	return value
+}
+
+func (e *Engine) screeningMatchEvidence(comparison secondaryComparison, entry screeningEntry) map[string]any {
+	statuses := comparison.statuses
+	overall := "match"
+	for _, status := range statuses {
+		if status == "mismatch" {
+			overall = "mismatch"
+			break
+		}
+		if status == "indeterminate" || status == "missing" {
+			overall = "indeterminate"
+		}
+	}
+	fingerprints := map[string]any{}
+	if len(comparison.dobValues) > 0 {
+		fingerprints["date_of_birth"] = e.screeningFingerprints(comparison.dobValues)
+	}
+	if len(comparison.addresses) > 0 {
+		fingerprints["address"] = e.screeningFingerprints(comparison.addresses)
+	}
+	e.listsMu.RLock()
+	listDigest := e.screeningDigest
+	e.listsMu.RUnlock()
+	return map[string]any{
+		"status":                      overall,
+		"policy_version":              screeningIdentifierPolicyVersion,
+		"policy_digest":               digest([]byte("screening-secondary-identifiers-v1|dob=.10|address=.05|country=.03|entity_type=.02|address_match=.80|address_mismatch=.50")),
+		"algorithm_version":           screeningIdentifierAlgorithm,
+		"list_snapshot_digest":        listDigest,
+		"secondary_identifiers":       statuses,
+		"fingerprints":                fingerprints,
+		"list_entry_identifier_count": len(entry.DatesOfBirth) + len(entry.Addresses),
+	}
+}
+
+func (e *Engine) screeningFingerprints(values []string) []map[string]string {
+	e.listsMu.RLock()
+	key := append([]byte(nil), e.screeningHMACKey...)
+	keyID := e.screeningHMACKeyID
+	e.listsMu.RUnlock()
+	out := make([]map[string]string, 0, len(values))
+	for _, value := range values {
+		mac := hmac.New(sha256.New, key)
+		_, _ = mac.Write([]byte(normalizeIdentifier(value)))
+		out = append(out, map[string]string{"key_id": keyID, "hmac_sha256": hex.EncodeToString(mac.Sum(nil))})
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 func similarity(a, b string) float64 {
 	a = normalize(a)
@@ -1146,14 +1872,24 @@ func normalize(s string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, _ string) (*domain.BacktestResult, error) {
+	result, _, err := e.RunBacktestDetailed(ctx, customers, txns, ids, "")
+	return result, err
+}
+
+func (e *Engine) RunBacktestDetailed(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, _ string) (*domain.BacktestResult, []outcome.Detection, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	started := time.Now()
 	result := &domain.BacktestResult{BacktestID: fmt.Sprintf("native-%d", started.UnixNano()), TotalCustomers: len(customers), TotalTransactions: len(txns)}
+	detections := make([]outcome.Detection, 0)
+	transactionsByID := make(map[string]domain.Transaction, len(txns))
+	for _, transaction := range txns {
+		transactionsByID[transaction.ID] = transaction
+	}
 	for _, c := range customers {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		tier := func() domain.RiskTier {
 			if c.RiskTier != nil {
@@ -1172,9 +1908,10 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 		// row (migrations 027/032); per-alert provenance would duplicate it.
 		alerts, err := e.evaluate(ctx, c.ID, customerType, tier, txns, ids, "both", provenanceContext{})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, a := range alerts {
+			detections = append(detections, replayDetection(a, transactionsByID))
 			result.TotalAlerts++
 			found := -1
 			for i := range result.ScenarioResults {
@@ -1207,12 +1944,39 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 	})
 	for i := range result.ScenarioResults {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		sort.Strings(result.ScenarioResults[i].AffectedCustomerIDs)
 	}
 	result.ExecutionTimeMs = float64(time.Since(started).Microseconds()) / 1000
-	return result, nil
+	sort.Slice(detections, func(i, j int) bool { return detections[i].ID < detections[j].ID })
+	return result, detections, nil
+}
+
+func replayDetection(alert domain.Alert, transactions map[string]domain.Transaction) outcome.Detection {
+	ids := append([]string(nil), alert.TransactionIDs...)
+	sort.Strings(ids)
+	hash := sha256.Sum256([]byte(alert.CustomerID + "\x00" + alert.ScenarioID + "\x00" + strings.Join(ids, "\x00")))
+	detection := outcome.Detection{ID: "replay:" + hex.EncodeToString(hash[:16]), CustomerID: alert.CustomerID, ScenarioID: alert.ScenarioID, TransactionIDs: ids}
+	for _, id := range ids {
+		transaction, ok := transactions[id]
+		if !ok || transaction.ExecutedAt.IsZero() {
+			continue
+		}
+		at := transaction.ExecutedAt.UTC()
+		if detection.WindowFrom == nil || at.Before(*detection.WindowFrom) {
+			copy := at
+			detection.WindowFrom = &copy
+		}
+		if detection.WindowTo == nil || at.After(*detection.WindowTo) {
+			copy := at
+			detection.WindowTo = &copy
+		}
+		if detection.DetectedAt.IsZero() || at.After(detection.DetectedAt) {
+			detection.DetectedAt = at
+		}
+	}
+	return detection
 }
 
 // RunBacktestWithRuleSet replays a candidate TM scenario against an isolated
@@ -1221,21 +1985,29 @@ func (e *Engine) RunBacktest(ctx context.Context, customers []domain.Customer, t
 // definition is replaced. This keeps candidate comparisons auditable and
 // prevents a rule-version probe from mutating the live evaluator.
 func (e *Engine) RunBacktestWithRuleSet(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, error) {
+	result, _, err := e.RunBacktestWithRuleSetDetailed(ctx, customers, txns, ids, description, ruleSetID, definition)
+	return result, err
+}
+
+func (e *Engine) RunBacktestWithRuleSetDetailed(ctx context.Context, customers []domain.Customer, txns []domain.Transaction, ids []string, description, ruleSetID string, definition []byte) (*domain.BacktestResult, []outcome.Detection, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if strings.TrimSpace(ruleSetID) == "" {
-		return nil, fmt.Errorf("rule set id must not be empty")
+		return nil, nil, fmt.Errorf("rule set id must not be empty")
 	}
 	s, err := parseScenario(definition)
 	if err != nil {
-		return nil, fmt.Errorf("parse rule set %q: %w", ruleSetID, err)
+		return nil, nil, fmt.Errorf("parse rule set %q: %w", ruleSetID, err)
 	}
-	if !knownScenarioID(s.ID) {
-		return nil, fmt.Errorf("rule set %q has unknown scenario type: %s", ruleSetID, s.ID)
+	if !scenarioHasSupportedDetector(s) {
+		return nil, nil, fmt.Errorf("rule set %q has unknown scenario type: %s", ruleSetID, s.ID)
 	}
 	e.listsMu.RLock()
 	lists := append([]screeningList(nil), e.lists...)
+	screeningDigest := e.screeningDigest
+	screeningHMACKey := append([]byte(nil), e.screeningHMACKey...)
+	screeningHMACKeyID := e.screeningHMACKeyID
 	e.listsMu.RUnlock()
 	candidate := &Engine{
 		cdd:                e.cdd,
@@ -1244,10 +2016,12 @@ func (e *Engine) RunBacktestWithRuleSet(ctx context.Context, customers []domain.
 		scenarios:          []scenario{s},
 		tmDigest:           e.tmDigest,
 		lists:              lists,
-		screeningDigest:    e.screeningDigest,
+		screeningDigest:    screeningDigest,
 		screeningThreshold: e.screeningThreshold,
+		screeningHMACKey:   screeningHMACKey,
+		screeningHMACKeyID: screeningHMACKeyID,
 	}
-	return candidate.RunBacktest(ctx, customers, txns, ids, description)
+	return candidate.RunBacktestDetailed(ctx, customers, txns, ids, description)
 }
 
 func (e *Engine) ValidateConfig(ctx context.Context, typ, content string) (*engine.ConfigValidationResult, error) {
@@ -1281,7 +2055,7 @@ func (e *Engine) ValidateConfig(ctx context.Context, typ, content string) (*engi
 		s, err := parseScenario([]byte(content))
 		if err != nil {
 			c.add("config", engine.ConfigErrorSchema, err)
-		} else if !knownScenarioID(s.ID) {
+		} else if !scenarioHasSupportedDetector(s) {
 			// The document is well formed; it names a scenario this engine does
 			// not implement. That is a different mistake from a malformed
 			// document and has a different fix.

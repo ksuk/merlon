@@ -76,20 +76,20 @@ func resolveAuth(cfg AuthConfig) (authProvider, error) {
 	case "bearer":
 		token := os.Getenv(cfg.TokenEnv)
 		if token == "" {
-			return nil, fmt.Errorf("env var %q is empty", cfg.TokenEnv)
+			return nil, fmt.Errorf("bearer authentication credential is unavailable")
 		}
 		return bearerAuth{token: token}, nil
 	case "basic":
 		user := os.Getenv(cfg.UsernameEnv)
 		pass := os.Getenv(cfg.PasswordEnv)
 		if user == "" || pass == "" {
-			return nil, fmt.Errorf("env vars %q/%q must be set", cfg.UsernameEnv, cfg.PasswordEnv)
+			return nil, fmt.Errorf("basic authentication credentials are unavailable")
 		}
 		return basicAuth{user: user, pass: pass}, nil
 	case "header":
 		val := os.Getenv(cfg.HeaderValEnv)
 		if val == "" {
-			return nil, fmt.Errorf("env var %q is empty", cfg.HeaderValEnv)
+			return nil, fmt.Errorf("header authentication credential is unavailable")
 		}
 		return headerAuth{name: cfg.HeaderName, value: val}, nil
 	default:
@@ -143,7 +143,45 @@ func (a *RESTAdapter) FetchCustomer(ctx context.Context, id string) (*CustomerDa
 	}, nil
 }
 
+func (a *RESTAdapter) FetchCustomersPage(ctx context.Context, params map[string]string) (*CustomerPage, error) {
+	ep, ok := a.config.Endpoints["fetch_customers"]
+	if !ok {
+		ep, ok = a.config.Endpoints["fetch_customer"]
+	}
+	if !ok {
+		return nil, fmt.Errorf("endpoint \"fetch_customer(s)\" is not configured")
+	}
+	raw, err := a.callEndpoint(ctx, ep, nil, params)
+	if err != nil {
+		return nil, fmt.Errorf("fetch customer page: %w", err)
+	}
+	items, err := responseItems(raw, ep.ResponseRoot)
+	if err != nil {
+		return nil, err
+	}
+	page := &CustomerPage{}
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		fields := ApplyFieldMapping(m, ep.FieldMapping)
+		page.Customers = append(page.Customers, CustomerData{ExternalID: toString(fields["external_id"]), Name: toString(fields["name"]), Country: toString(fields["country"]), CustomerType: toString(fields["customer_type"]), RawFields: fields})
+	}
+	page.NextCursor = responseString(raw, a.config.Sync.CursorResponse)
+	page.Watermark = responseString(raw, a.config.Sync.WatermarkResponse)
+	return page, nil
+}
+
 func (a *RESTAdapter) FetchTransactions(ctx context.Context, params map[string]string) ([]TransactionData, error) {
+	page, err := a.FetchTransactionsPage(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return page.Transactions, nil
+}
+
+func (a *RESTAdapter) FetchTransactionsPage(ctx context.Context, params map[string]string) (*TransactionPage, error) {
 	ep, ok := a.config.Endpoints["fetch_transactions"]
 	if !ok {
 		return nil, fmt.Errorf("endpoint \"fetch_transactions\" is not configured")
@@ -154,37 +192,68 @@ func (a *RESTAdapter) FetchTransactions(ctx context.Context, params map[string]s
 		return nil, fmt.Errorf("fetch transactions: %w", err)
 	}
 
-	var items []any
-	if ep.ResponseRoot != "" {
-		root, ok := ExtractField(raw, ep.ResponseRoot)
-		if !ok {
-			return nil, fmt.Errorf("response_root %q not found in response", ep.ResponseRoot)
-		}
-		items, ok = root.([]any)
-		if !ok {
-			return nil, fmt.Errorf("response_root %q is not an array", ep.ResponseRoot)
-		}
-	} else {
-		return nil, fmt.Errorf("response_root is required for fetch_transactions")
+	items, err := responseItems(raw, ep.ResponseRoot)
+	if err != nil {
+		return nil, err
 	}
 
-	result := make([]TransactionData, 0, len(items))
+	page := &TransactionPage{Transactions: make([]TransactionData, 0, len(items))}
 	for _, item := range items {
 		m, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
 		fields := ApplyFieldMapping(m, ep.FieldMapping)
-		result = append(result, TransactionData{
-			ExternalID: toString(fields["external_id"]),
-			Amount:     toString(fields["amount"]),
-			Currency:   toString(fields["currency"]),
-			Type:       toString(fields["type"]),
-			RawFields:  fields,
+		page.Transactions = append(page.Transactions, TransactionData{
+			ExternalID:         toString(fields["external_id"]),
+			Amount:             toString(fields["amount"]),
+			Currency:           toString(fields["currency"]),
+			Type:               toString(fields["type"]),
+			RawFields:          fields,
+			CustomerExternalID: toString(fields["customer_external_id"]),
+			AccountExternalID:  toString(fields["account_external_id"]),
+			Direction:          toString(fields["direction"]),
+			ExecutedAt:         parseTime(fields["executed_at"]),
 		})
 	}
+	page.NextCursor = responseString(raw, a.config.Sync.CursorResponse)
+	page.Watermark = responseString(raw, a.config.Sync.WatermarkResponse)
+	return page, nil
+}
 
-	return result, nil
+func responseItems(raw map[string]any, root string) ([]any, error) {
+	if root == "" {
+		return nil, fmt.Errorf("response_root is required for paginated endpoint")
+	}
+	value, ok := ExtractField(raw, root)
+	if !ok {
+		return nil, fmt.Errorf("response_root %q not found in response", root)
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("response_root %q is not an array", root)
+	}
+	return items, nil
+}
+
+func responseString(raw map[string]any, path string) string {
+	if path == "" {
+		return ""
+	}
+	value, ok := ExtractField(raw, path)
+	if !ok {
+		return ""
+	}
+	return toString(value)
+}
+
+func parseTime(value any) time.Time {
+	valueString := toString(value)
+	if valueString == "" {
+		return time.Time{}
+	}
+	parsed, _ := time.Parse(time.RFC3339, valueString)
+	return parsed
 }
 
 func (a *RESTAdapter) callEndpoint(ctx context.Context, ep EndpointConfig, pathParams, queryParams map[string]string) (map[string]any, error) {

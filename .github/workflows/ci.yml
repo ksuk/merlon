@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - run: make verify-go GO_TEST_FLAGS='-coverprofile=coverage.out -covermode=atomic'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - run: make test-integration
       # MERLON_REQUIRE_... is what stops this step from passing vacuously: with
       # only the RUN flag, a runner without Docker or a typo in the variable
@@ -113,7 +113,7 @@ jobs:
       # needs the same pinned Go toolchain as the Go verification job.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - name: Verify synchronized container pins
         run: make verify-container-pins
       # Kept beside the container pins so every "same version declared twice"
@@ -131,6 +131,20 @@ jobs:
       # told to set that nothing reads.
       - name: Verify synchronized environment variables
         run: make verify-env-vars
+      # The drift workflow that compares .github/rulesets/ against the live
+      # configuration runs weekly and never sees a pull request, so it cannot
+      # catch a degraded baseline on the way in. This offline check does: it
+      # fails if a committed baseline is missing a field the comparison depends
+      # on — bypass_actors above all — or is not in canonical export form.
+      #
+      # That combination is what turns a noisy failure into a silent one. A
+      # token without write access to the ruleset exports it with bypass_actors
+      # omitted; committing that to make the drift job green would leave a
+      # baseline structurally unable to show a bypass actor being added, and
+      # the job would report a match forever. Catching it here means the
+      # attempt has to be deliberate rather than expedient.
+      - name: Verify ruleset baseline completeness
+        run: make verify-ruleset-baseline
       # The OpenAPI document is the contract the project promises to keep
       # compatible. A route registered but never published is callable and
       # unpromised, so this ratchets coverage rather than letting it slip.

@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	adapterpkg "github.com/ksuk/merlon/api/internal/adapter"
 	"github.com/ksuk/merlon/api/internal/auth"
 	backtestworker "github.com/ksuk/merlon/api/internal/backtest"
 	"github.com/ksuk/merlon/api/internal/batch"
 	"github.com/ksuk/merlon/api/internal/casemgmt"
 	"github.com/ksuk/merlon/api/internal/config"
+	"github.com/ksuk/merlon/api/internal/coverage"
 	"github.com/ksuk/merlon/api/internal/crypto"
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine/native"
@@ -29,10 +31,12 @@ import (
 	"github.com/ksuk/merlon/api/internal/notify"
 	"github.com/ksuk/merlon/api/internal/policy"
 	"github.com/ksuk/merlon/api/internal/retention"
+	"github.com/ksuk/merlon/api/internal/review"
 	"github.com/ksuk/merlon/api/internal/screening"
 	"github.com/ksuk/merlon/api/internal/seed"
 	"github.com/ksuk/merlon/api/internal/server"
 	"github.com/ksuk/merlon/api/internal/store"
+	inboundwebhook "github.com/ksuk/merlon/api/internal/webhook"
 )
 
 const whitelistExpiryCheckInterval = time.Hour
@@ -58,6 +62,10 @@ const (
 // harmless since the job is idempotent.
 const eddEscalationCheckInterval = time.Hour
 
+const cddReviewCheckInterval = 24 * time.Hour
+
+const coverageAnalysisCheckInterval = time.Minute
+
 // retentionPurgeSchedule is deliberately separate from transaction
 // monitoring so that a retention pass is observable and operationally
 // controllable as its own daily job. Concrete purge targets are registered
@@ -68,6 +76,37 @@ const retentionPurgeSchedule = "03:00"
 // screeningListIDs are the WS-7 sanctions/PEP lists this deployment
 // imports and screens against (the screening workflow §リスト自動取り込み table).
 var screeningListIDs = []string{"ofac_sdn", "eu_sanctions", "un_sc", "mof_japan", "pep_provider"}
+
+// inboundPayloadCipher adapts the existing field-level key-ring encryptor to
+// webhook.Service's string boundary.  A nil encryptor is intentionally not
+// installed; the service then uses its memory-safe ephemeral cipher.
+type inboundPayloadCipher struct{ encryptor *crypto.Encryptor }
+
+func (c inboundPayloadCipher) Encrypt(plaintext string) (string, error) {
+	return c.encryptor.Encrypt(plaintext)
+}
+
+func (c inboundPayloadCipher) Decrypt(ciphertext string) (string, error) {
+	return c.encryptor.Decrypt(ciphertext)
+}
+
+func runAdapterSyncPeriodically(ctx context.Context, service *adapterpkg.SyncService, interval time.Duration) {
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	for {
+		if _, err := service.Run(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("adapter sync failed", "error", err)
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
 
 // startEventSubscription waits until the transport has completed its initial
 // subscription handshake. Subscribe remains blocking after that point, so
@@ -153,10 +192,30 @@ func main() {
 		slog.Error("config validation", "error", err)
 		os.Exit(1)
 	}
+	var configuredAdapter adapterpkg.Adapter
+	var configuredAdapterConfig *adapterpkg.AdapterConfig
+	if cfg.AdapterConfigPath != "" {
+		adapterConfig, adapterErr := adapterpkg.LoadAdapterConfig(cfg.AdapterConfigPath)
+		if adapterErr == nil {
+			adapterErr = adapterConfig.ValidateSync()
+		}
+		if adapterErr != nil {
+			slog.Error("adapter configuration is unusable", "path", cfg.AdapterConfigPath, "error", adapterErr)
+			os.Exit(1)
+		}
+		configuredAdapterConfig = adapterConfig
+		configuredAdapter, adapterErr = adapterpkg.NewRESTAdapter(adapterConfig, adapterpkg.SecurityConfig{BlockPrivateIPRanges: cfg.Env == "production"})
+		if adapterErr != nil {
+			slog.Error("adapter initialization", "error", adapterErr)
+			os.Exit(1)
+		}
+		slog.Info("adapter configuration loaded", "path", cfg.AdapterConfigPath, "interval", adapterConfig.Sync.Interval, "page_size", adapterConfig.Sync.PageSize)
+	}
 	runAPIJobs := cfg.Mode == "api" || cfg.Mode == "all"
 	runWorkerJobs := cfg.Mode == "worker" || cfg.Mode == "all"
 
 	deps := server.Deps{}
+	deps.Adapter = configuredAdapter
 	deps.ConfigDigests = make(map[string]string)
 	deps.EDDStage2Days = cfg.EDDStage2Days
 	deps.EDDStage3Days = cfg.EDDStage3Days
@@ -174,6 +233,7 @@ func main() {
 		KYCRequiredFields:  cfg.KYCRequiredFieldsPath,
 		EDD:                cfg.EDDPolicyPath,
 		CDDRuleSelection:   cfg.CDDRuleSelectionPath,
+		CDDReview:          cfg.CDDReviewPolicyPath,
 		TravelRule:         cfg.TravelRulePolicyPath,
 		ScreeningReadiness: cfg.ScreeningReadinessPath,
 		SLA:                cfg.SLAPolicyPath,
@@ -200,12 +260,13 @@ func main() {
 	}
 
 	for name, path := range map[string]string{
-		"application":     cfg.ConfigPath,
-		"adapter":         cfg.AdapterConfigPath,
-		"country_risk":    cfg.CountryRiskPath,
-		"tm_scenarios":    os.Getenv("MERLON_TM_SCENARIOS_PATH"),
-		"screening_lists": os.Getenv("MERLON_SCREENING_LISTS_PATH"),
-		"case_priority":   cfg.CasePriorityPath,
+		"application":       cfg.ConfigPath,
+		"adapter":           cfg.AdapterConfigPath,
+		"country_risk":      cfg.CountryRiskPath,
+		"tm_scenarios":      os.Getenv("MERLON_TM_SCENARIOS_PATH"),
+		"screening_lists":   os.Getenv("MERLON_SCREENING_LISTS_PATH"),
+		"case_priority":     cfg.CasePriorityPath,
+		"cdd_review_policy": cfg.CDDReviewPolicyPath,
 	} {
 		if path == "" {
 			continue
@@ -251,12 +312,14 @@ func main() {
 	// ring leaves customers.attributes' direct PII fields in plaintext --
 	// acceptable for local/dev use but not production.
 	var encryptor *crypto.Encryptor
+	var encryptionKeyRing *crypto.KeyRing
 	if cfg.EncryptionKeyRing != "" {
 		keyRing, err := crypto.NewKeyRingFromEnv("MERLON_ENCRYPTION_KEY_RING")
 		if err != nil {
 			slog.Error("encryption key ring", "error", err)
 			os.Exit(1)
 		}
+		encryptionKeyRing = keyRing
 		encryptor = crypto.NewEncryptor(keyRing)
 		slog.Info("customer PII field encryption enabled")
 	} else {
@@ -293,9 +356,20 @@ func main() {
 		deps.CaseAlertLifecycle = store.NewPgCaseAlertLifecycleRepo(pool)
 		deps.CaseInvestigation = store.NewPgCaseInvestigationRepo(pool)
 		deps.AlertDecisions = store.NewPgAlertDecisionRepo(pool)
-		deps.Atomic = store.NewPgAtomicMutationRepo(pool)
+		deps.Atomic = store.NewPgAtomicMutationRepoWithEncryptor(pool, encryptor)
 		deps.EventOutbox = store.NewPgEventOutboxRepo(pool)
 		deps.Webhooks = store.NewPgWebhookRepo(pool, encryptor)
+		inboundConfig := inboundwebhook.Config{
+			Repository: store.NewPgInboundWebhookRepo(pool), Secret: []byte(cfg.InboundWebhookSecret),
+		}
+		if encryptor != nil {
+			inboundConfig.Cipher = inboundPayloadCipher{encryptor: encryptor}
+		}
+		deps.InboundWebhooks = inboundwebhook.NewServiceWithConfig(inboundConfig)
+		deps.CustomerReviews = review.NewService(review.Dependencies{
+			Reviews: store.NewPgCustomerReviewRepo(pool), Customers: deps.Customers, Scoring: deps.Scoring,
+			Audit: deps.Audit, Outbox: deps.EventOutbox, Atomic: deps.Atomic, Policy: policies.CDDReview(),
+		})
 		deps.Whitelist = store.NewPostgresWhitelistRepo(pool)
 		deps.ScreeningResults = store.NewPgScreeningResultRepo(pool)
 		deps.PendingEvaluations = store.NewPgPendingEvaluationRepo(pool)
@@ -305,6 +379,7 @@ func main() {
 		deps.DB = pool
 		batchRuns = store.NewPgBatchRunRepo(pool)
 		deps.BacktestJobs = store.NewPgBacktestJobRepo(pool)
+		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{Repository: store.NewPgCoverageAnalysisRepo(pool)})
 		deps.Wave3 = store.NewPgWave3Repo(pool)
 		slog.Info("database connected", "backend", "postgresql")
 	} else {
@@ -325,14 +400,17 @@ func main() {
 		memoryPending := store.NewMemoryPendingEvaluationRepo()
 		memoryBatch := store.NewMemoryBatchRunRepo()
 		memoryBacktest := store.NewMemoryBacktestJobRepo()
+		memoryCoverage := store.NewMemoryCoverageAnalysisRepo()
+		memoryReviews := store.NewMemoryCustomerReviewRepo()
 		deps.BacktestJobs = memoryBacktest
+		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{Repository: memoryCoverage})
 		memoryAtomic, atomicErr := store.NewMemoryAtomicMutationRepo(domain.AtomicMutationRepositories{
 			Customers: deps.Customers, Transactions: deps.Transactions, Alerts: deps.Alerts,
 			Reports: deps.Reports, Audit: deps.Audit, Cases: deps.Cases,
 			CaseAlertLifecycle: deps.CaseAlertLifecycle, Investigation: deps.CaseInvestigation,
 			AlertDecisions: deps.AlertDecisions, EventOutbox: deps.EventOutbox,
 			IdentityHistory: memoryWave3, Wave3: memoryWave3,
-			PendingEvaluations: memoryPending, BatchRuns: memoryBatch, BacktestJobs: memoryBacktest,
+			PendingEvaluations: memoryPending, BatchRuns: memoryBatch, BacktestJobs: memoryBacktest, CustomerReviews: memoryReviews,
 		})
 		if atomicErr != nil {
 			slog.Error("memory atomic mutation repository initialization failed", "error", atomicErr)
@@ -340,6 +418,13 @@ func main() {
 		}
 		deps.Atomic = memoryAtomic
 		deps.Webhooks = store.NewMemoryWebhookRepo()
+		deps.InboundWebhooks = inboundwebhook.NewServiceWithConfig(inboundwebhook.Config{
+			Repository: store.NewMemoryInboundWebhookRepo(), Secret: []byte(cfg.InboundWebhookSecret),
+		})
+		deps.CustomerReviews = review.NewService(review.Dependencies{
+			Reviews: memoryReviews, Customers: deps.Customers, Scoring: deps.Scoring,
+			Audit: deps.Audit, Outbox: deps.EventOutbox, Atomic: deps.Atomic, Policy: policies.CDDReview(),
+		})
 		deps.Whitelist = store.NewMemoryWhitelistRepo()
 		deps.ScreeningResults = store.NewMemoryScreeningResultRepo()
 		deps.PendingEvaluations = memoryPending
@@ -407,14 +492,29 @@ func main() {
 	// consolidation. A deployment may intentionally run without rule roots
 	// during setup/migrations; engine-backed endpoints remain disabled then.
 	if nativeEngine, nativeErr := native.NewFromEnv(); nativeErr == nil {
+		if encryptionKeyRing != nil {
+			fingerprintKey, keyID, deriveErr := encryptionKeyRing.DeriveCurrent("merlon/screening-fingerprint/v1")
+			if deriveErr != nil {
+				slog.Error("derive screening fingerprint key", "error", deriveErr)
+				os.Exit(1)
+			}
+			if setErr := nativeEngine.SetScreeningFingerprintKey(fingerprintKey, keyID); setErr != nil {
+				slog.Error("configure screening fingerprint key", "error", setErr)
+				os.Exit(1)
+			}
+		}
 		deps.Scoring = nativeEngine
 		deps.Monitoring = nativeEngine
 		deps.Screening = nativeEngine
 		deps.Backtest = nativeEngine
 		deps.Config = nativeEngine
+		deps.TMContract = nativeEngine.TMContract()
 		slog.Info("native Go engine loaded", "tm_digest", deps.ConfigDigests["tm_scenarios"])
 	} else {
 		slog.Warn("native Go engine unavailable", "error", nativeErr)
+	}
+	if deps.CustomerReviews != nil {
+		deps.CustomerReviews.SetScoring(deps.Scoring)
 	}
 
 	if cfg.Seed {
@@ -424,6 +524,23 @@ func main() {
 			os.Exit(1)
 		}
 		deps.DemoDataEnabled = seedResult.DemoDataEnabled()
+	}
+	// Coverage jobs use the same durable worker shape as other long-running
+	// jobs. The loader reads each source repository as of the queued snapshot;
+	// no mutable current status is synthesized after the read boundary.
+	if deps.CoverageAnalyses != nil {
+		deps.CoverageAnalyses = coverage.NewService(coverage.Dependencies{
+			Repository: deps.CoverageAnalyses.Repository(),
+			Load: coverage.NewLoader(coverage.LoaderDependencies{
+				Customers:      deps.Customers,
+				Alerts:         deps.Alerts,
+				Cases:          deps.Cases,
+				Reports:        deps.Reports,
+				AlertDecisions: deps.AlertDecisions,
+				Transactions:   deps.Transactions,
+				Engine:         deps.Backtest,
+			}),
+		})
 	}
 
 	jobsCtx, cancelJobs := context.WithCancel(context.Background())
@@ -546,6 +663,31 @@ func main() {
 	if srv == nil {
 		srv = server.New(listenAddr, deps)
 	}
+	if runAPIJobs && deps.CustomerReviews != nil {
+		go deps.CustomerReviews.RunDailySweep(jobsCtx, cddReviewCheckInterval)
+		slog.Info("CDD review scheduler enabled", "check_interval", cddReviewCheckInterval, "policy_version", policies.CDDReview().Version())
+	}
+	if deps.InboundWebhooks != nil {
+		deps.InboundWebhooks.SetHandler(srv.InboundRecordHandler())
+		if len(cfg.InboundWebhookSecret) == 0 {
+			slog.Warn("MERLON_INBOUND_WEBHOOK_SECRET is not set; inbound webhook endpoints will reject events")
+		}
+	}
+	if runAPIJobs && configuredAdapter != nil && configuredAdapterConfig != nil {
+		var checkpoints adapterpkg.CheckpointRepository
+		if pool != nil {
+			checkpoints = store.NewPgAdapterCheckpointRepo(pool)
+		} else {
+			checkpoints = adapterpkg.NewMemoryCheckpointRepository()
+		}
+		var syncRuns adapterpkg.SyncRunRepository
+		if repository, ok := checkpoints.(adapterpkg.SyncRunRepository); ok {
+			syncRuns = repository
+		}
+		adapterOwner := fmt.Sprintf("merlon-api:%d:%d", os.Getpid(), time.Now().UTC().UnixNano())
+		go runAdapterSyncPeriodically(jobsCtx, &adapterpkg.SyncService{AdapterID: "core", Config: configuredAdapterConfig, Adapter: configuredAdapter, Deps: adapterpkg.SyncDependencies{Customers: deps.Customers, Transactions: deps.Transactions, Accounts: deps.Accounts, Checkpoints: checkpoints, Runs: syncRuns}, Owner: adapterOwner}, configuredAdapterConfig.Sync.Interval)
+		slog.Info("adapter sync enabled", "interval", configuredAdapterConfig.Sync.Interval)
+	}
 	if runAPIJobs {
 		go srv.ResumeManualBatchRuns(jobsCtx)
 		slog.Info("manual batch recovery check enabled")
@@ -631,6 +773,14 @@ func main() {
 		go srv.RunWebhookRetryWorker(webhookRetryCtx, webhookRetryCheckInterval)
 		slog.Info("webhook retry worker started", "interval", webhookRetryCheckInterval)
 	}
+	if runAPIJobs && deps.InboundWebhooks != nil {
+		go func() {
+			if err := deps.InboundWebhooks.RunWorker(webhookRetryCtx, inboundwebhook.DefaultRetryInterval); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("inbound webhook worker stopped", "error", err)
+			}
+		}()
+		slog.Info("inbound webhook worker started", "interval", inboundwebhook.DefaultRetryInterval)
+	}
 
 	if runWorkerJobs && deps.PendingEvaluations != nil && deps.Monitoring != nil {
 		recoveryJob := batch.NewRecoveryJob(deps.PendingEvaluations, deps.Monitoring, deps.Alerts, deps.Transactions, deps.Customers)
@@ -648,7 +798,12 @@ func main() {
 	defer cancelBacktest()
 	if runWorkerJobs && deps.BacktestJobs != nil && deps.Backtest != nil {
 		for i := 0; i < cfg.WorkerConcurrency; i++ {
-			worker := &backtestworker.Worker{Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules}
+			worker := &backtestworker.Worker{
+				Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules,
+				ReplayOutcomeBuilder: backtestworker.NewReplayOutcomeBuilder(backtestworker.ReplayOutcomeDependencies{
+					Customers: deps.Customers, Alerts: deps.Alerts, Cases: deps.Cases, Reports: deps.Reports, AlertDecisions: deps.AlertDecisions,
+				}),
+			}
 			workerID := i + 1
 			go func() {
 				if err := worker.Run(backtestCtx, time.Second); err != nil && !errors.Is(err, context.Canceled) {
@@ -657,6 +812,14 @@ func main() {
 			}()
 		}
 		slog.Info("durable backtest workers started", "concurrency", cfg.WorkerConcurrency)
+	}
+	if runWorkerJobs && deps.CoverageAnalyses != nil {
+		go func() {
+			if err := deps.CoverageAnalyses.Run(backtestCtx, coverageAnalysisCheckInterval); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("coverage analysis worker stopped", "error", err)
+			}
+		}()
+		slog.Info("durable coverage analysis worker started", "interval", coverageAnalysisCheckInterval)
 	}
 
 	tmBatchCtx, cancelTMBatch := context.WithCancel(context.Background())

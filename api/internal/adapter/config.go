@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,6 +15,17 @@ type AdapterConfig struct {
 	Auth           AuthConfig                `yaml:"auth"`
 	Endpoints      map[string]EndpointConfig `yaml:"endpoints"`
 	TimeoutSeconds int                       `yaml:"timeout_seconds"`
+	Sync           SyncConfig                `yaml:"sync"`
+}
+
+type SyncConfig struct {
+	Interval          time.Duration `yaml:"interval"`
+	PageSize          int           `yaml:"page_size"`
+	InitialLookback   time.Duration `yaml:"initial_lookback"`
+	CursorParam       string        `yaml:"cursor_param"`
+	CursorResponse    string        `yaml:"cursor_response"`
+	WatermarkParam    string        `yaml:"watermark_param"`
+	WatermarkResponse string        `yaml:"watermark_response"`
 }
 
 type AuthConfig struct {
@@ -66,6 +78,18 @@ func (c *AdapterConfig) Validate() error {
 	if len(c.Endpoints) == 0 {
 		return fmt.Errorf("at least one endpoint is required")
 	}
+	if c.Sync.Interval <= 0 {
+		c.Sync.Interval = 5 * time.Minute
+	}
+	if c.Sync.PageSize <= 0 {
+		c.Sync.PageSize = 500
+	}
+	if c.Sync.InitialLookback <= 0 {
+		c.Sync.InitialLookback = 24 * time.Hour
+	}
+	if c.Sync.PageSize > 10000 {
+		return fmt.Errorf("sync.page_size must be <= 10000")
+	}
 
 	for name, ep := range c.Endpoints {
 		if err := ep.validate(); err != nil {
@@ -77,6 +101,24 @@ func (c *AdapterConfig) Validate() error {
 		c.TimeoutSeconds = 30
 	}
 
+	return nil
+}
+
+// ValidateSync applies the stricter runtime contract. Validate remains
+// backwards-compatible for single-endpoint dry-run callers from the original
+// adapter API.
+func (c *AdapterConfig) ValidateSync() error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if _, ok := c.Endpoints["fetch_customer"]; !ok {
+		if _, ok := c.Endpoints["fetch_customers"]; !ok {
+			return fmt.Errorf("endpoint \"fetch_customer\" or \"fetch_customers\" is required")
+		}
+	}
+	if _, ok := c.Endpoints["fetch_transactions"]; !ok {
+		return fmt.Errorf("endpoint \"fetch_transactions\" is required")
+	}
 	return nil
 }
 

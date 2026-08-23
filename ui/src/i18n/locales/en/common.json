@@ -37,6 +37,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "customers": "Customers",
+    "customerReviews": "CDD reviews",
     "alerts": "Alerts",
     "cases": "Cases",
     "transactions": "Transactions",
@@ -45,6 +46,7 @@
     "pendingEvaluations": "Pending evaluations",
     "reports": "STR reports",
     "backtest": "Backtest",
+    "coverageAnalyses": "Matter coverage",
     "webhooks": "Webhooks",
     "apikeys": "API keys",
     "rules": "Rule management",
@@ -153,6 +155,13 @@
         "pending_evaluations_failed": "Failed evaluations awaiting retry",
         "pending_evaluations_exhausted": "Evaluations that will not retry on their own"
       }
+    },
+    "cddReviews": {
+      "title": "CDD reviews",
+      "open": "Open queue",
+      "due": "Due",
+      "overdue": "Overdue",
+      "coldStart": "Cold-start backlog"
     }
   },
   "customers": {
@@ -991,6 +1000,13 @@
         "approved": "Approved",
         "rejected": "Rejected"
       }
+    },
+    "reviewHistory": {
+      "title": "CDD review history",
+      "empty": "No CDD reviews have been scheduled.",
+      "next": "Next review {{date}}",
+      "cycle": "Cycle {{cycle}}",
+      "openQueue": "Open review queue"
     }
   },
   "notFound": {
@@ -1200,6 +1216,24 @@
         }
       }
     },
+    "outcomes": {
+      "title": "Historical outcome analysis",
+      "boundary": "This view uses internal case, STR, and alert decisions only. Unlabeled and unevaluable observations stay outside the rate denominator.",
+      "baseline": "Baseline",
+      "candidate": "Candidate",
+      "delta": "Delta",
+      "tp": "True positive",
+      "fp": "False positive",
+      "unlabeled": "Unlabeled",
+      "unevaluable": "Unevaluable",
+      "investigated": "Matched / investigated",
+      "rate": "TP rate (TP / denominator)",
+      "matcher": "Matcher: {{version}}",
+      "snapshot": "Snapshot: {{value}}",
+      "yes": "Yes",
+      "no": "No",
+      "detail": { "variant": "Variant", "candidate": "Alert", "scenario": "Scenario", "label": "Label", "investigated": "Investigated" }
+    },
     "columnCustomers": "Customers",
     "columnTransactions": "Transactions",
     "columnAlerts": "Alerts",
@@ -1334,6 +1368,9 @@
     "empty": "No screening results",
     "customer": "Customer",
     "match": "Match",
+    "nameSimilarity": "Name {{value}}%",
+    "confidence": "Confidence {{value}}%",
+    "evidence": "DOB evidence: {{status}}",
     "statusLabel": "Status",
     "screenedAt": "Screened at",
     "action": "Action",
@@ -1622,7 +1659,21 @@
     "error": "Failed to fetch webhook data",
     "tabs": {
       "webhooks": "Webhooks",
-      "dlq": "DLQ"
+      "dlq": "DLQ",
+      "inbound": "Inbound events"
+    },
+    "inbound": {
+      "title": "Inbound event status",
+      "eventIdLabel": "Inbound event ID",
+      "eventIdPlaceholder": "evt_...",
+      "lookup": "Look up",
+      "replay": "Replay",
+      "table": {
+        "index": "Record",
+        "entity": "External ID",
+        "status": "Status",
+        "reason": "Reason"
+      }
     },
     "dlq": {
       "table": {
@@ -1753,6 +1804,59 @@
     "documentation": "Documentation",
     "purposeLabel": "What this screen is for",
     "stateLabel": "Availability"
+  },
+  "customerReviews": {
+    "title": "CDD review queue",
+    "subtitle": "Durable periodic reviews, assignments, and evidence",
+    "loading": "Loading review queue…",
+    "error": "Could not load review queue: {{error}}",
+    "filter": "Review status",
+    "allStatuses": "All statuses",
+    "queueTitle": "Operator queue",
+    "empty": "No reviews match this filter.",
+    "cycle": "Cycle {{cycle}}",
+    "unassigned": "Unassigned",
+    "assignTo": "Assign to",
+    "assignTeam": "Team",
+    "start": "Start",
+    "resume": "Resume",
+    "assign": "Assign",
+    "complete": "Complete",
+    "cancel": "Cancel",
+    "completeTitle": "Complete review",
+    "selected": "Review {{id}}",
+    "outcome": "Outcome",
+    "rationale": "Rationale",
+    "evidence": "Evidence references",
+    "evidencePlaceholder": "doc:income-2026, case:123",
+    "stats": { "due": "Due", "overdue": "Overdue", "coldStart": "Cold-start backlog" },
+    "status": { "scheduled": "Scheduled", "due": "Due", "overdue": "Overdue", "in_progress": "In progress", "blocked": "Blocked", "completed": "Completed" },
+    "outcomes": { "rating_unchanged": "Rating unchanged", "rating_changed": "Rating changed", "escalated_to_edd": "Escalated to EDD", "unable_to_complete": "Unable to complete" },
+    "tier": { "low": "Low", "medium": "Medium", "high": "High" },
+    "table": { "customer": "Customer", "tier": "Tier", "status": "Status", "due": "Due", "assignment": "Assignment", "actions": "Actions" }
+  },
+  "coverage": {
+    "title": "Known-matter coverage",
+    "subtitle": "Durable comparison jobs against internal cases, STRs, and alert decisions",
+    "loading": "Loading coverage analyses…",
+    "error": "Could not load coverage analyses: {{error}}",
+    "queue": "Queue analysis",
+    "queueTitle": "Analysis jobs",
+    "filter": "Analysis status",
+    "allStatuses": "All statuses",
+    "empty": "No coverage analyses have been queued.",
+    "boundary": "This report covers internal known matter only. It does not estimate unobserved events; unevaluable rows remain explicit.",
+    "status": { "queued": "Queued", "running": "Running", "completed": "Completed", "failed": "Failed" },
+    "table": { "id": "Analysis ID", "status": "Status", "knownMatter": "Known matter", "rate": "Covered", "snapshot": "Snapshot", "matter": "Matter", "customer": "Customer", "source": "Source", "label": "Label", "covered": "Coverage" },
+    "detail": { "title": "Analysis {{id}}" },
+    "stats": { "knownMatter": "Known matter", "covered": "Covered", "notCovered": "Not covered", "unevaluable": "Unevaluable", "rate": "Coverage rate" },
+    "matcher": "Matcher: {{version}}",
+    "period": "Replay period: {{from}} – {{to}}",
+    "ruleSet": "Rule set: {{value}}",
+    "snapshot": "Snapshot: {{value}}",
+    "covered": "Covered",
+    "notCovered": "Not covered",
+    "unevaluable": "Unevaluable"
   },
   "ruleDetail": {
     "backToRules": "Back to rules",

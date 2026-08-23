@@ -97,8 +97,9 @@ countries:
 TM（トランザクションモニタリング）シナリオは検知ルール（例えば集計ベースのストラクチャリングチェック）と、それが生成するアラートの重大度を定義する。**新規シナリオは v2 スキーマ**である `content/schema/tm_scenario_v2.json`（[リファレンス](./api/schema/tm_scenario_v2.md)）に対して作成すること。例は `content/_sample/tm_scenarios/structuring_basic.yaml` を基にしたもの。
 
 ```yaml
-schema_version: "2.0"
+schema_version: "2.1"
 scenario_id: tm_structuring_basic
+detector: structuring
 name: "Structuring Detection (Basic)"
 description: "Detects transaction splitting intended to evade reporting thresholds"
 type: aggregation
@@ -131,7 +132,9 @@ tags:
   - structuring
 ```
 
-必須フィールド: `schema_version`、`scenario_id`、`name`、`type`（現時点では `aggregation` のみ定義済み）、`conditions`、及び `severity`。`conditions` の下で、`threshold.by_customer_type` はシナリオごとに顧客種別ごとの異なるしきい値を設定でき、各顧客種別内では `by_risk_tier.{LOW,MEDIUM,HIGH}` が顧客の CDD リスクティアごとにしきい値を設定する。これは Score-Driven Architecture 原則の具体的な仕組みであり、顧客の CDD スコアがどの TM しきい値が適用されるかを決定する。`evaluation_mode` はシナリオがバッチジョブ・インライン・両方のいずれで実行されるかを制御し、省略された場合 v2 シナリオはデフォルトで `batch` となる。
+必須フィールド: `schema_version`、`scenario_id`、`name`、`type`（現時点では `aggregation` のみ定義済み）、`conditions`、及び `severity`。v2.1 では明示的な `detector` も必須である。対応する検知器は `structuring`、`rapid_movement`、`high_frequency_small_amount`、`dormant_account_reactivation`、`high_risk_country_transfer` の5つであり、`scenario_id` から推測されない。`conditions` の下で、`threshold.by_customer_type` はシナリオごとに顧客種別ごとの異なるしきい値を設定でき、各顧客種別内では `by_risk_tier.{LOW,MEDIUM,HIGH}` が顧客の CDD リスクティアごとにしきい値を設定する。これは Score-Driven Architecture 原則の具体的な仕組みであり、顧客の CDD スコアがどの TM しきい値が適用されるかを決定する。`evaluation_mode` はシナリオがバッチジョブ・インライン・両方のいずれで実行されるかを制御し、省略された場合 v2 シナリオはデフォルトで `batch` となる。
+
+`conditions.transaction_type` はシナリオを正規化された送信元トークンに任意で限定する。明示的なトークンがない取引は、方向に応じて `inbound → transfer_in`、`outbound → transfer_out`、`internal → transfer` にフォールバックする。集計では `field: amount`、`group_by: customer_id`、`24h` のような正の期間、`function: sum` または `count` を設定し、その期間が評価に使うイベント時刻ウィンドウとなる。未知のキーや未対応の集計形状は起動時の検証で失敗する。`absolute_threshold` は検知器固有の候補を作った後に適用され、リスクティアのしきい値を下げても迂回できない安全弁である（金額メトリクスの既定値は10,000,000、高頻度カウントの既定値は25）。
 
 ### レガシーな v1 コンテンツ
 
@@ -140,11 +143,13 @@ tags:
 互換性テスト用のフィクスチャとして `content/_sample/tm_scenarios_v1_compat/` に
 保存されているのみである。新規シナリオは v2 で作成すること。
 
-Engine は、v2 のロールアウト以前に作成されたコンテンツが動作し続けるよう、
-v1 ファイルを引き続き受理する。ADR-0006（tm_scenario_v2 スキーマと v1 デュアルサポート）
-に基づき少なくとも12ヶ月間デュアルサポートし、v1 のフラットな `risk_tier_adjustments` を、
+Engine は、明示的な検知器の導入以前に作成されたコンテンツが動作し続けるよう、
+v1 と v2.0 のファイルを引き続き受理する。ADR-0006 と ADR-0026 に基づき
+**2027-08-15** までデュアルサポートし、v1 のフラットな `risk_tier_adjustments` を、
 評価結果のセマンティクスを変えることなく、読み込み時に同等の「すべての顧客種別で
-同一しきい値」という v2 形式へ内部変換する。`content/schema/tm_scenario_v1.json`
+同一しきい値」という v2 形式へ内部変換する。旧形式は既知のシナリオIDプレフィックスからのみ
+検知器を推測し、System Status は各ファイルの互換性警告を表示する。未知のIDは起動に失敗する。
+期限前に移行し、推測に依存しないこと。`content/schema/tm_scenario_v1.json`
 （[リファレンス](./api/schema/tm_scenario_v1.md)）は 2027-07-04 まで維持され、
 撤廃の判断はその時点で別途行われる。
 

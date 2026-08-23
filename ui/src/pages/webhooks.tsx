@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table"
 import { PagePurpose } from "@/components/page-purpose"
 import { useApi } from "@/hooks/use-api"
-import { api, type WebhookDLQEntry, type WebhookDelivery, type WebhookEventType } from "@/lib/api"
+import { api, type InboundWebhookEventView, type WebhookDLQEntry, type WebhookDelivery, type WebhookEventType } from "@/lib/api"
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
@@ -48,10 +48,14 @@ export function WebhooksPage() {
   const [loadingDeliveries, setLoadingDeliveries] = useState(false)
 
   // DLQ タブ（the HTTP API contract §3.1「DLQ内イベントの再処理はUI上から実行可能」）。
-  const [tab, setTab] = useState<"webhooks" | "dlq">("webhooks")
+  const [tab, setTab] = useState<"webhooks" | "dlq" | "inbound">("webhooks")
   const [dlqEntries, setDlqEntries] = useState<WebhookDLQEntry[] | null>(null)
   const [loadingDlq, setLoadingDlq] = useState(false)
   const [reprocessingId, setReprocessingId] = useState<string | null>(null)
+  const [inboundID, setInboundID] = useState("")
+  const [inboundEvent, setInboundEvent] = useState<InboundWebhookEventView | null>(null)
+  const [loadingInbound, setLoadingInbound] = useState(false)
+  const [replayingInbound, setReplayingInbound] = useState(false)
 
   async function loadDlq() {
     setLoadingDlq(true)
@@ -79,6 +83,29 @@ export function WebhooksPage() {
       await loadDlq()
     } finally {
       setReprocessingId(null)
+    }
+  }
+
+  async function loadInbound(e?: React.FormEvent) {
+    e?.preventDefault()
+    const id = inboundID.trim()
+    if (!id) return
+    setLoadingInbound(true)
+    try {
+      setInboundEvent(await api.webhooks.inbound.get(id))
+    } finally {
+      setLoadingInbound(false)
+    }
+  }
+
+  async function replayInbound() {
+    if (!inboundEvent) return
+    setReplayingInbound(true)
+    try {
+      const event = await api.webhooks.inbound.replay(inboundEvent.event.id)
+      setInboundEvent({ ...inboundEvent, event })
+    } finally {
+      setReplayingInbound(false)
     }
   }
 
@@ -182,9 +209,63 @@ export function WebhooksPage() {
         >
           {t("webhooks.tabs.dlq")}
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("inbound")}
+          className={`border-b-2 px-3 py-2 text-sm font-medium ${
+            tab === "inbound" ? "border-primary text-foreground" : "border-transparent text-muted-foreground"
+          }`}
+        >
+          {t("webhooks.tabs.inbound")}
+        </button>
       </div>
 
-      {tab === "dlq" ? (
+      {tab === "inbound" ? (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader><CardTitle className="text-base">{t("webhooks.inbound.title")}</CardTitle></CardHeader>
+            <CardContent>
+              <form onSubmit={(e) => void loadInbound(e)} className="flex gap-2">
+                <input
+                  value={inboundID}
+                  onChange={(e) => setInboundID(e.target.value)}
+                  placeholder={t("webhooks.inbound.eventIdPlaceholder")}
+                  aria-label={t("webhooks.inbound.eventIdLabel")}
+                  className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <Button type="submit" size="sm" disabled={loadingInbound}>{t("webhooks.inbound.lookup")}</Button>
+              </form>
+            </CardContent>
+          </Card>
+          {inboundEvent && (
+            <Card>
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm">
+                    <span className="font-mono">{inboundEvent.event.id}</span>
+                    <Badge className="ml-2" variant={inboundEvent.event.status === "dlq" || inboundEvent.event.status === "failed" ? "destructive" : "secondary"}>
+                      {inboundEvent.event.status}
+                    </Badge>
+                  </div>
+                  {(inboundEvent.event.status === "failed" || inboundEvent.event.status === "dlq") && (
+                    <Button size="sm" variant="outline" disabled={replayingInbound} onClick={() => void replayInbound()}>
+                      {t("webhooks.inbound.replay")}
+                    </Button>
+                  )}
+                </div>
+                <Table>
+                  <TableHeader><TableRow><TableHead>{t("webhooks.inbound.table.index")}</TableHead><TableHead>{t("webhooks.inbound.table.entity")}</TableHead><TableHead>{t("webhooks.inbound.table.status")}</TableHead><TableHead>{t("webhooks.inbound.table.reason")}</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {inboundEvent.outcomes.map((outcome) => (
+                      <TableRow key={outcome.index}><TableCell>{outcome.index + 1}</TableCell><TableCell>{outcome.external_id || outcome.entity_type}</TableCell><TableCell>{outcome.status}</TableCell><TableCell className="text-xs text-muted-foreground">{outcome.reason || "-"}</TableCell></TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      ) : tab === "dlq" ? (
         loadingDlq ? (
           <div className="h-48 animate-pulse rounded-xl border bg-muted" />
         ) : dlqEntries && dlqEntries.length > 0 ? (

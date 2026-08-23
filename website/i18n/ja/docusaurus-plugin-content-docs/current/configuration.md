@@ -20,6 +20,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_MIGRATION_DATABASE_URL` | 未設定 | `make migrate`、`make restore`、`make audit-harden` で使用する、分離されたschema/object-owner接続。このroleはtargetの`public` schemaを管理し、そこで`CREATE`を持つ必要がある。別roleがfresh restore databaseを所有する場合、そのownerは`public`をこのroleへ移譲し、このroleとapplication roleの両方へdatabaseのdirect `CONNECT`を事前付与する。serving-role URLで代用しない。 |
 | `MERLON_MIGRATIONS_DIR` | `migrations` | マイグレーションコマンド専用。バージョン付き SQL マイグレーションを格納するディレクトリ。`--migrations-dir` フラグを指定した場合はその値を優先する。 |
 | `MERLON_ENCRYPTION_KEY_RING` | 未設定 | 本番環境の PII 保護に必須。`merlon-keyrotate` が受け付ける文書化されたキーリング形式を使用する。参照されているすべての鍵を失うと、過去の暗号化された値は復元不能になる。鍵は保護された KMS またはシークレットマネージャーでバックアップする。 |
+| `MERLON_INBOUND_WEBHOOK_SECRET` | 未設定 | 顧客・取引 push webhook の durable HMAC シークレット。シークレットマネージャーで管理し、未設定時は inbound エンドポイントがリクエストを拒否する。 |
 | `MERLON_JWT_PRIVATE_KEY_FILE` / `MERLON_JWT_PUBLIC_KEY_FILE` | 未設定 | ローカルユーザー認証には RS256 鍵ペアを使用する。 |
 | `MERLON_JWT_SECRET` | 未設定 | 開発用フォールバックのみ。ローカルユーザー認証を使用する場合、本番環境では設定しないこと。 |
 | `MERLON_BOOTSTRAP_TOKEN` | 未設定 | 初回セットアップ用のワンタイムシークレット。最初の管理者・API キー作成後、直ちにローテーションまたは削除する。 |
@@ -33,6 +34,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_RATE_LIMIT` | `0` | 解決済みクライアント IP ごとの、任意のプロセス単位・1分あたりリクエスト数。補助防御としてのみ使用し、配備全体の制限は信頼済み Ingress で実施する。本番で非ゼロにする場合は `MERLON_TRUSTED_PROXY_CIDRS` が必須。 |
 | `MERLON_TRUSTED_PROXY_CIDRS` | 未設定 | `X-Forwarded-For` の供給を許可するリバースプロキシの狭い CIDR をカンマ区切りで指定する。未信頼 peer または信頼側 hop の不正値は直接 peer アドレスへフォールバックし、`/0` は拒否する。監査記録に元のクライアント IP が必要な場合は、アプリ内制限が無効でも設定する。 |
 | `MERLON_ADAPTER_CONFIG_PATH` | 未設定 | 運用担当者が管理するアダプタ設定へのパス。 |
+| `MERLON_CDD_REVIEW_POLICY_PATH` | `content/cdd_review_policy_v1.yaml` | バージョン管理された CDD 定期レビュー予定。変更管理下に置き、ダイジェストはシステム状態で公開される。 |
 | `MERLON_UI_DIR` | 未設定 | ビルド済み UI を含むディレクトリ（任意）。 |
 | `MERLON_SCREENING_IMPORT_ENABLED` | `false` | 承認済みエンドポイントの場合のみ、外部制裁リストのインポートを有効化する。 |
 | `MERLON_SCREENING_RESCREEN_ENABLED` | `false` | 定期的な顧客再スクリーニングを有効化する。 |

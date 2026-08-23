@@ -24,7 +24,7 @@ func demoDataDir() string {
 // requiredDemoFiles are the demogen output files T2 loads, in their
 // dependency order (customers -> accounts -> score_history -> transactions
 // -> alerts -> cases -> case_notes -> screening_results -> rule_definitions
-// -> audit_logs; see .release-tasks/PH7-demo-publication.md T2 and
+// -> audit_logs; see .tasks/archive/PH7-demo-publication.md T2 and
 // api/internal/demogen). All must be present for hasDemoDataset to treat dir
 // as a usable dataset; a missing file falls back to the hardcoded sample
 // rather than attempting a partial load.

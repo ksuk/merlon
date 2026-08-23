@@ -37,6 +37,16 @@ type DashboardStats struct {
 	// Exceptions summarises operational work that failed or degraded. An empty
 	// list means nothing is failing; a nil one means nothing was checked.
 	Exceptions []DashboardException `json:"exceptions"`
+
+	// CDDReviewQueue is populated when the durable review store is configured;
+	// omitting it keeps older deployments' dashboard contract unchanged.
+	CDDReviewQueue *CustomerReviewQueueStats `json:"cdd_review_queue,omitempty"`
+}
+
+type CustomerReviewQueueStats struct {
+	Due       int `json:"due"`
+	Overdue   int `json:"overdue"`
+	ColdStart int `json:"cold_start"`
 }
 
 // DashboardWorkload is the operator-facing queue summary. Every count states

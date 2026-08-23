@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/outcome"
 )
 
 type MockScoringEngine struct {
@@ -102,8 +103,14 @@ func (m *MockScreeningEngine) ScreenCustomer(
 }
 
 type MockBacktestEngine struct {
-	Result *domain.BacktestResult
-	Err    error
+	Result     *domain.BacktestResult
+	Detections []outcome.Detection
+	Err        error
+}
+
+func (m *MockBacktestEngine) RunBacktestDetailed(ctx context.Context, customers []domain.Customer, transactions []domain.Transaction, scenarios []string, description string) (*domain.BacktestResult, []outcome.Detection, error) {
+	result, err := m.RunBacktest(ctx, customers, transactions, scenarios, description)
+	return result, append([]outcome.Detection(nil), m.Detections...), err
 }
 
 func (m *MockBacktestEngine) RunBacktest(

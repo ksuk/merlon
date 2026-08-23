@@ -43,9 +43,13 @@ If you are assessing Merlon and want the answers without reading further:
   provenance attestation and a CycloneDX SBOM.** There is no `latest` tag.
 - **Audit records are append-only at the database privilege level**, and the
   application refuses to start in production if that is not enforced.
-- **One active maintainer.** The project publishes pre-release tags and states
-  plainly that production release remains gated. See the
-  [release checklist](../development/release-checklist.md).
+- **One active maintainer, disclosed on the artifact.** Independent approval
+  cannot exist in a single-maintainer repository, so releases state that they do
+  not assert it — in `release-manifest.json`, in the image labels, and above the
+  release notes. Merges require a self-review record enforced by a status check
+  rather than an approval nobody can give. See the
+  [release checklist](../development/release-checklist.md) and
+  [repository governance](../development/repository-governance.md).
 
 That last point is the one most vendor questionnaires do not have a field for,
 and it is the one most likely to matter to your assessment.

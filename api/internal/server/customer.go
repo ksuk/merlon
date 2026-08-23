@@ -762,11 +762,17 @@ func (s *Server) handleScreenCustomer(w http.ResponseWriter, r *http.Request) {
 		}
 		records := make([]domain.ScreeningResultRecord, 0, len(result.Matches))
 		for _, match := range result.Matches {
+			evidence := cloneAnyMap(match.MatchEvidence)
+			if evidence == nil {
+				evidence = map[string]any{}
+			}
+			evidence["source"] = match.Source
+			evidence["confidence"] = match.Confidence
 			records = append(records, domain.ScreeningResultRecord{
 				ID: generateID(), CustomerID: c.ID, ListID: match.ListID, ListType: match.ListType,
-				EntryID: match.EntryID, MatchedName: match.MatchedName, Similarity: match.Similarity,
+				EntryID: match.EntryID, MatchedName: match.MatchedName, Similarity: match.Similarity, Confidence: match.Confidence,
 				Status: domain.ScreeningResultStatusNew, ScreenedAt: screenedAt, CreatedAt: screenedAt,
-				MatchEvidence: map[string]any{"source": match.Source},
+				MatchEvidence: evidence,
 			})
 		}
 		if err := s.persistScreeningRunAtomic(r.Context(), r, run, records); err != nil {
