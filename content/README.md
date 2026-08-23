@@ -42,8 +42,16 @@ Sample rules and thresholds are public by design and can be used to infer detect
 ## このディレクトリが含むもの
 
 `content/` には、`_sample/`（動作確認用サンプル）、`schema/`（スキーマ定義）、
-および出荷時デフォルトのポリシーファイル（`case_priority_v1.yaml`、
-`edd_policy_v1.yaml`、`sla_policy_v1.yaml` 等）を置く。
+および次の出荷時デフォルトのポリシーファイルを置く。
+
+- `case_priority_v1.yaml`
+- `cdd_review_policy_v1.yaml`
+- `cdd_rule_selection_v1.yaml`
+- `edd_policy_v1.yaml`
+- `kyc_required_fields_v1.yaml`
+- `screening_readiness_v1.yaml`
+- `sla_policy_v1.yaml`
+- `travel_rule_v1.yaml`
 
 ## Engine configuration audit boundary
 
