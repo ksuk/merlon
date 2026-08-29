@@ -912,6 +912,29 @@ class PackagingContractTest(unittest.TestCase):
             compose,
         )
 
+    def test_standard_image_packages_only_root_policy_yaml(self):
+        dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+        runtime_base = dockerfile.split(" AS runtime-base", maxsplit=1)[1].split(
+            "FROM runtime-base AS demo", maxsplit=1
+        )[0]
+
+        self.assertIn(
+            "COPY --from=api-builder --chown=root:root /content/*.yaml ./content/",
+            runtime_base,
+        )
+        self.assertNotIn("/content/_sample", runtime_base)
+        self.assertNotIn("/build/demo-data", runtime_base)
+
+    def test_release_dry_run_executes_runtime_image_contract(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "bash scripts/check-release-image.sh merlon:release-dry-run",
+            workflow,
+        )
+
     def test_image_installs_and_executes_healthcheck_helper(self):
         dockerfile = (ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn(
