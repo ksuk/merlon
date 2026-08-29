@@ -42,7 +42,7 @@ test-integration: ## Apply migrations twice and run all Go tests against Postgre
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL:-$${MERLON_DATABASE_URL:-}}" || (echo "MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required"; exit 1)
 	@$(MAKE) migrate
 	@$(MAKE) migrate
-	@cd api && go test -count=1 ./...
+	@cd api && go test -count=1 -p=1 ./...
 
 verify-go: fmt-check lint-go test-go build-go ## Run the complete Go verification gate
 

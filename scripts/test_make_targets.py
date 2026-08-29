@@ -43,6 +43,17 @@ class MakeTargetTests(unittest.TestCase):
         self.assertIn(verifier, result.stdout)
         self.assertLess(result.stdout.index(generator), result.stdout.index(verifier))
 
+    def test_postgres_integration_serializes_packages_after_migration_replay(self) -> None:
+        result = self.run_make(
+            "--dry-run",
+            "test-integration",
+            "MERLON_DATABASE_URL=postgres://synthetic@127.0.0.1/merlon",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("./cmd/merlon-migrate"), 2)
+        self.assertIn("cd api && go test -count=1 -p=1 ./...", result.stdout)
+
     def test_restore_force_maps_only_true_to_force_flag(self) -> None:
         forced = self.run_make(
             "--dry-run",

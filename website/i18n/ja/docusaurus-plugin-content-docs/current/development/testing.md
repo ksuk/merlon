@@ -34,6 +34,19 @@ make test
 
 `make test` は Go テストと UI テストを実行する。CI でも同じターゲットを使用する。
 
+## PostgreSQL 統合テスト
+
+PostgreSQL 統合ゲートは、未使用の専用データベースに対して実行する。
+
+```bash
+MERLON_DATABASE_URL=postgres://merlon:<password>@127.0.0.1:5432/merlon \
+  make test-integration
+```
+
+このターゲットは、全migrationを2回適用した後に全Go testを実行する。統合testのpackageは専用データベースを共有するため、`go test -p=1`でpackageを直列実行し、あるpackageのcleanupやretention処理が別packageのfixtureを変更することを防ぐ。packageやtestの省略は行わない。
+
+他のprocessやtest runが使用しているデータベースへ、このターゲットを向けてはならない。実行ごとに未使用のデータベース、または新しいCompose projectとvolumeを作成する。
+
 ## テスト戦略の方針（TDD）
 
 機能実装・バグ修正は TDD（テスト駆動開発）で進める。
