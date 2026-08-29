@@ -68,6 +68,10 @@ COPY --from=rootfs /etc/group /etc/group
 WORKDIR /app
 COPY --from=api-builder --chown=root:root /build/merlon-api .
 COPY --from=ui-builder --chown=root:root /ui/dist ./ui
+# The API's production defaults resolve these policies relative to /app.
+# Copy only root-level YAML: sample presets and demo content belong exclusively
+# to the demo target below.
+COPY --from=api-builder --chown=root:root /content/*.yaml ./content/
 COPY --chmod=0555 api/healthcheck.sh /usr/local/bin/merlon-healthcheck
 ENV MERLON_UI_DIR=/app/ui
 EXPOSE 8080
