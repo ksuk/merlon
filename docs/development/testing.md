@@ -35,6 +35,24 @@ make test
 
 `make test` runs the Go and UI tests. CI uses the same target.
 
+## PostgreSQL integration tests
+
+Run the PostgreSQL integration gate against a fresh, dedicated database:
+
+```bash
+MERLON_DATABASE_URL=postgres://merlon:<password>@127.0.0.1:5432/merlon \
+  make test-integration
+```
+
+The target applies the complete migration set twice before running all Go
+tests. Integration packages share the dedicated database, so the target uses
+`go test -p=1` to serialize packages and prevent one package's cleanup or
+retention operations from changing another package's fixtures. It does not
+skip packages or tests.
+
+Do not point this target at a database used by another process or test run.
+Create a fresh database (or fresh Compose project and volume) for each run.
+
 ## Testing strategy (TDD)
 
 Feature work and bug fixes follow TDD (test-driven development).
