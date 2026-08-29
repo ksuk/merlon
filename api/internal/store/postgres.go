@@ -1711,12 +1711,27 @@ func (r *PgCaseRepo) listCases(ctx context.Context, query string, args ...any) (
 }
 
 func (r *PgCaseRepo) Create(ctx context.Context, c *domain.Case) error {
+	if err := normalizeCaseClosedAtForCreate(c); err != nil {
+		return err
+	}
 	normalizeCaseIdentifiers(c)
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, assigned_team, due_at, summary, reopen_reason, related_case_ids, investigation_disposition, str_candidate, disposition_rationale, str_report_id, str_filed_at, str_filed_by, str_filing_channel, str_destination, str_external_reference, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-		c.ID, c.CustomerID, nonNilStrings(c.AlertIDs), string(c.Status), string(c.Priority), nullableString(c.AssignedTo), nullableString(c.AssignedTeam), c.DueAt, c.Summary, c.ReopenReason, nonNilStrings(c.RelatedCaseIDs), c.InvestigationDisposition, c.STRCandidate, c.DispositionRationale, nullableString(c.STRReportID), c.STRFiledAt, nullableString(c.STRFiledBy), nullableString(c.STRFilingChannel), nullableString(c.STRDestination), nullableString(c.STRExternalReference), c.CreatedAt, c.UpdatedAt)
+		`INSERT INTO cases (id, customer_id, alert_ids, status, priority, assigned_to, assigned_team, due_at, summary, reopen_reason, related_case_ids, investigation_disposition, str_candidate, disposition_rationale, str_report_id, str_filed_at, str_filed_by, str_filing_channel, str_destination, str_external_reference, created_at, updated_at, closed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+		c.ID, c.CustomerID, nonNilStrings(c.AlertIDs), string(c.Status), string(c.Priority), nullableString(c.AssignedTo), nullableString(c.AssignedTeam), c.DueAt, c.Summary, c.ReopenReason, nonNilStrings(c.RelatedCaseIDs), c.InvestigationDisposition, c.STRCandidate, c.DispositionRationale, nullableString(c.STRReportID), c.STRFiledAt, nullableString(c.STRFiledBy), nullableString(c.STRFilingChannel), nullableString(c.STRDestination), nullableString(c.STRExternalReference), c.CreatedAt, c.UpdatedAt, c.ClosedAt)
 	return err
+}
+
+func normalizeCaseClosedAtForCreate(c *domain.Case) error {
+	if domain.IsCaseTerminal(c.Status) {
+		if c.ClosedAt == nil {
+			return fmt.Errorf("closed_at is required for terminal case status")
+		}
+		return nil
+	}
+
+	c.ClosedAt = nil
+	return nil
 }
 
 func (r *PgCaseRepo) Update(ctx context.Context, c *domain.Case) error {
