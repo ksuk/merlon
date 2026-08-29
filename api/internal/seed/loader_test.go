@@ -53,7 +53,10 @@ var demoDatasetFixture = map[string]string{
 	"cases.json": `[
 		{"id":"demo-case-01","customer_id":"demo-cust-01","alert_ids":["demo-alert-01"],"status":"open",
 		 "priority":"medium","assigned_to":"m.sato","summary":"test case",
-		 "created_at":"2026-06-28T06:00:00Z","updated_at":"2026-06-28T06:00:00Z"}
+		 "created_at":"2026-06-28T06:00:00Z","updated_at":"2026-06-28T06:00:00Z"},
+		{"id":"demo-case-02","customer_id":"demo-cust-02","alert_ids":[],"status":"closed",
+		 "priority":"low","summary":"reviewed synthetic case","created_at":"2026-06-20T06:00:00Z",
+		 "updated_at":"2026-06-21T07:00:00Z","closed_at":"2026-06-21T07:00:00Z"}
 	]`,
 	"case_notes.json": `[
 		{"case_id":"demo-case-01","id":"demo-note-01","author":"m.sato","content":"initial review",
@@ -176,6 +179,13 @@ func TestRunLoadsDemoDatasetWhenEnvPointsAtCompleteDataset(t *testing.T) {
 	}
 	if len(kase.Notes) != 1 || kase.Notes[0].ID != "demo-note-01" {
 		t.Fatalf("expected demo-case-01 to carry the replayed case note, got %+v", kase.Notes)
+	}
+	terminalCase, err := repos.Cases.Get(ctx, "demo-case-02")
+	if err != nil {
+		t.Fatalf("get demo-case-02: %v", err)
+	}
+	if terminalCase.ClosedAt == nil {
+		t.Fatal("terminal demo case is missing closed_at")
 	}
 
 	srs, err := repos.ScreeningResults.ListByCustomer(ctx, "demo-cust-02", 10, 0)
