@@ -1058,6 +1058,9 @@ func (r *PgAlertRepo) listAlerts(ctx context.Context, query string, args ...any)
 }
 
 func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
+	if err := normalizeAlertResolutionForCreate(a); err != nil {
+		return err
+	}
 	a.ID = domain.CanonicalUUID(a.ID)
 	a.CustomerID = domain.CanonicalUUID(a.CustomerID)
 	for i := range a.TransactionIDs {
@@ -1065,8 +1068,8 @@ func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 	}
 	prov := alertProvenanceInsertArgs(a.Provenance)
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, assigned_to, assigned_team, due_at, disposition, disposition_rationale, provenance_captured, provenance_config_digests, provenance_engine_version, provenance_evaluation_mode, provenance_evaluated_at, provenance_window_from, provenance_window_to, provenance_applied_threshold)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
+		`INSERT INTO alerts (id, customer_id, scenario_id, severity, status, score, description, transaction_ids, detected_at, created_at, updated_at, suppressed, suppression_reason, aggregation_window_start, batch_run_id, assigned_to, assigned_team, due_at, disposition, disposition_rationale, provenance_captured, provenance_config_digests, provenance_engine_version, provenance_evaluation_mode, provenance_evaluated_at, provenance_window_from, provenance_window_to, provenance_applied_threshold, resolved_at, resolved_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)`,
 		a.ID, a.CustomerID, a.ScenarioID,
 		string(a.Severity), string(a.Status), a.Score, a.Description,
 		a.TransactionIDs,
@@ -1075,8 +1078,22 @@ func (r *PgAlertRepo) Create(ctx context.Context, a *domain.Alert) error {
 		a.AggregationWindowStart, nullableString(a.BatchRunID),
 		nullableString(a.AssignedTo), nullableString(a.AssignedTeam), a.DueAt, nullableString(a.Disposition), a.DispositionRationale,
 		prov.captured, prov.digests, prov.engineVersion, prov.mode, prov.evaluatedAt, prov.windowFrom, prov.windowTo, prov.threshold,
+		a.ResolvedAt, nullableString(a.ResolvedBy),
 	)
 	return err
+}
+
+func normalizeAlertResolutionForCreate(a *domain.Alert) error {
+	if domain.IsAlertTerminal(a.Status) {
+		if a.ResolvedAt == nil || strings.TrimSpace(a.ResolvedBy) == "" {
+			return fmt.Errorf("resolved_at and resolved_by are required for terminal alert status")
+		}
+		return nil
+	}
+
+	a.ResolvedAt = nil
+	a.ResolvedBy = ""
+	return nil
 }
 
 // alertProvenanceArgs flattens the provenance record into insert parameters.

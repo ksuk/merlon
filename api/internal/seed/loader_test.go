@@ -44,7 +44,11 @@ var demoDatasetFixture = map[string]string{
 	"alerts.json": `[
 		{"id":"demo-alert-01","customer_id":"demo-cust-01","scenario_id":"tm_structuring_basic","severity":"medium",
 		 "status":"open","score":2.9,"description":"test structuring alert","transaction_ids":["demo-txn-01","demo-txn-02"],
-		 "detected_at":"2026-06-28T06:00:00Z","created_at":"2026-06-28T06:00:00Z","updated_at":"2026-06-28T06:00:00Z"}
+		 "detected_at":"2026-06-28T06:00:00Z","created_at":"2026-06-28T06:00:00Z","updated_at":"2026-06-28T06:00:00Z"},
+		{"id":"demo-alert-02","customer_id":"demo-cust-02","scenario_id":"tm_reviewed_activity","severity":"low",
+		 "status":"closed_false_positive","score":1.2,"description":"reviewed synthetic alert","transaction_ids":[],
+		 "detected_at":"2026-06-20T06:00:00Z","resolved_at":"2026-06-21T07:00:00Z","resolved_by":"demo-reviewer",
+		 "created_at":"2026-06-20T06:00:00Z","updated_at":"2026-06-21T07:00:00Z"}
 	]`,
 	"cases.json": `[
 		{"id":"demo-case-01","customer_id":"demo-cust-01","alert_ids":["demo-alert-01"],"status":"open",
@@ -157,6 +161,13 @@ func TestRunLoadsDemoDatasetWhenEnvPointsAtCompleteDataset(t *testing.T) {
 	}
 	if len(alert.TransactionIDs) != 2 {
 		t.Errorf("expected 2 linked transactions on demo-alert-01, got %d", len(alert.TransactionIDs))
+	}
+	terminalAlert, err := repos.Alerts.Get(ctx, "demo-alert-02")
+	if err != nil {
+		t.Fatalf("get demo-alert-02: %v", err)
+	}
+	if terminalAlert.ResolvedAt == nil || terminalAlert.ResolvedBy != "demo-reviewer" {
+		t.Fatalf("terminal demo alert resolution metadata = (%v, %q), want timestamp and actor", terminalAlert.ResolvedAt, terminalAlert.ResolvedBy)
 	}
 
 	kase, err := repos.Cases.Get(ctx, "demo-case-01")
