@@ -201,12 +201,12 @@ func pgDashboardWorkload(ctx context.Context, pool workloadQuerier, q workloadQu
 			COUNT(*) FILTER (WHERE lower(COALESCE(assigned_to, '')) = lower($1) AND $1 <> ''),
 			COUNT(*) FILTER (WHERE NULLIF(BTRIM(COALESCE(assigned_to, '')), '') IS NULL AND NULLIF(BTRIM(COALESCE(assigned_team, '')), '') IS NULL),
 			MIN(` + q.openedCol + `),
-			COUNT(*) FILTER (WHERE ` + q.openedCol + ` > $2 - INTERVAL '24 hours'),
-			COUNT(*) FILTER (WHERE ` + q.openedCol + ` <= $2 - INTERVAL '24 hours' AND ` + q.openedCol + ` > $2 - INTERVAL '72 hours'),
-			COUNT(*) FILTER (WHERE ` + q.openedCol + ` <= $2 - INTERVAL '72 hours' AND ` + q.openedCol + ` > $2 - INTERVAL '168 hours'),
-			COUNT(*) FILTER (WHERE ` + q.openedCol + ` <= $2 - INTERVAL '168 hours'),
-			COUNT(*) FILTER (WHERE due_at IS NOT NULL AND due_at < $2),
-			COUNT(*) FILTER (WHERE due_at IS NOT NULL AND due_at >= $2 AND due_at <= $3)
+			COUNT(*) FILTER (WHERE ` + q.openedCol + ` > $2::TIMESTAMPTZ - INTERVAL '24 hours'),
+			COUNT(*) FILTER (WHERE ` + q.openedCol + ` <= $2::TIMESTAMPTZ - INTERVAL '24 hours' AND ` + q.openedCol + ` > $2::TIMESTAMPTZ - INTERVAL '72 hours'),
+			COUNT(*) FILTER (WHERE ` + q.openedCol + ` <= $2::TIMESTAMPTZ - INTERVAL '72 hours' AND ` + q.openedCol + ` > $2::TIMESTAMPTZ - INTERVAL '168 hours'),
+			COUNT(*) FILTER (WHERE ` + q.openedCol + ` <= $2::TIMESTAMPTZ - INTERVAL '168 hours'),
+			COUNT(*) FILTER (WHERE due_at IS NOT NULL AND due_at < $2::TIMESTAMPTZ),
+			COUNT(*) FILTER (WHERE due_at IS NOT NULL AND due_at >= $2::TIMESTAMPTZ AND due_at <= $3::TIMESTAMPTZ)
 		FROM ` + q.table + `
 		WHERE purge_marked_at IS NULL AND ` + q.openFilter
 
