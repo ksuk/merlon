@@ -61,6 +61,8 @@ Merlon の検知の厳しさを決める担当者向け。すべてのルール�
   デプロイ内容の検証
 - [バックアップとリストア手順](operations/backup-restore.md)
 - [パーティショニング・キャパシティ運用ガイド](operations/partitioning-guide.md)
+- [性能検証証跡](operations/performance-evidence.md) — リリース候補に対する
+  localhost取引取込み測定の再現手順
 - [依存関係のライフサイクル](operations/dependency-lifecycle.md) — サポート対象の
   ランタイムバージョンと EOL 管理
 - [リリースノート](release-notes.md) — 各バージョンの変更点

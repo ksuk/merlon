@@ -36,6 +36,7 @@ title: リリースチェックリスト
 - [ ] `make lint`、`make test`、`make docs-check`、PostgreSQL マイグレーション再適用、リリースイメージ dry-run、脆弱性検査、ライセンス検査、SBOM が同じコミットで成功した。
 - [ ] 未解決の Critical／High 脆弱性と監査所見を解消した。または、期限と是正内容を伴う期限付き例外を方針に従って記録した。この例外は独立承認されていない。記録にその旨を明記する。
 - [ ] リリース日に[依存関係のライフサイクル](../operations/dependency-lifecycle.md)の公式サポート／EOL 情報を再確認した。
+- [ ] localhost限定の[性能検証harness](../operations/performance-evidence.md)を、exact release commitと合成dataで実行した。JSON出力とhost/container情報をlinkし、error rateが0で、公開中のthroughputまたはlatency表現を実測結果が裏付けている。
 
 ## 運用証跡
 
