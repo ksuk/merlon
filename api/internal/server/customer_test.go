@@ -28,6 +28,56 @@ type fakeBus struct {
 	publishErr error
 }
 
+type canonicalTimestampCustomerRepo struct {
+	*store.MemoryCustomerRepo
+	next time.Time
+}
+
+func (r *canonicalTimestampCustomerRepo) Create(ctx context.Context, customer *domain.Customer) error {
+	err := r.MemoryCustomerRepo.Create(ctx, customer)
+	customer.CreatedAt = r.next
+	customer.UpdatedAt = r.next
+	return err
+}
+
+func (r *canonicalTimestampCustomerRepo) Update(ctx context.Context, customer *domain.Customer) error {
+	err := r.MemoryCustomerRepo.Update(ctx, customer)
+	r.next = r.next.Add(time.Microsecond)
+	customer.UpdatedAt = r.next
+	return err
+}
+
+func (r *canonicalTimestampCustomerRepo) UpdateIfUnmodified(ctx context.Context, customer *domain.Customer, expected time.Time) error {
+	err := r.MemoryCustomerRepo.UpdateIfUnmodified(ctx, customer, expected)
+	r.next = r.next.Add(time.Microsecond)
+	customer.UpdatedAt = r.next
+	return err
+}
+
+type directCustomerMutationAtomic struct {
+	repos domain.AtomicMutationRepositories
+}
+
+func (r *directCustomerMutationAtomic) RunAtomic(ctx context.Context, fn func(domain.AtomicMutationRepositories) error) error {
+	return fn(r.repos)
+}
+
+func timestampTestServer() (*Server, *store.MemoryWave3Repo, *store.MemoryAuditRepo) {
+	customers := &canonicalTimestampCustomerRepo{
+		MemoryCustomerRepo: store.NewMemoryCustomerRepo(),
+		next:               time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC),
+	}
+	wave3 := store.NewMemoryWave3Repo()
+	audit := store.NewMemoryAuditRepo()
+	atomic := &directCustomerMutationAtomic{repos: domain.AtomicMutationRepositories{
+		Customers:       customers,
+		Audit:           audit,
+		IdentityHistory: wave3,
+		Wave3:           wave3,
+	}}
+	return New(":0", Deps{Customers: customers, Audit: audit, Wave3: wave3, Atomic: atomic}), wave3, audit
+}
+
 func (b *fakeBus) Publish(_ context.Context, e events.Event) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -110,6 +160,108 @@ func TestCustomerIdentityHistoryIncludesLifecycleAndCountryUpdates(t *testing.T)
 	}
 	if stored.Status != domain.CustomerStatusFrozen || stored.CountryCode != "US" {
 		t.Fatalf("stored lifecycle identity = %+v", stored)
+	}
+}
+
+func TestCreateCustomerUsesOneTimestampAcrossStateHistoryAndAudit(t *testing.T) {
+	s, wave3, audit := timestampTestServer()
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"CREATE-TIMESTAMP","customer_type":"individual","country_code":"JP","identity":{"name":"Created"}}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	history, err := wave3.ListCustomerIdentityHistory(context.Background(), created.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("identity history entries = %d, want 1", len(history))
+	}
+	if !history[0].CreatedAt.Equal(created.UpdatedAt) {
+		t.Errorf("creation history timestamp = %s, customer timestamp = %s", history[0].CreatedAt, created.UpdatedAt)
+	}
+
+	audits, err := audit.List(context.Background(), domain.AuditListFilter{ResourceType: "customers", ResourceID: created.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) != 1 {
+		t.Fatalf("customer audit entries = %d, want 1", len(audits))
+	}
+	if !audits[0].CreatedAt.Equal(created.UpdatedAt) {
+		t.Errorf("creation audit timestamp = %s, customer timestamp = %s", audits[0].CreatedAt, created.UpdatedAt)
+	}
+}
+
+func TestUpdateCustomerAdvancesTimestampAndSharesItWithHistoryAndAudit(t *testing.T) {
+	s, wave3, audit := timestampTestServer()
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"UPDATE-TIMESTAMP","customer_type":"individual","country_code":"JP","identity":{"name":"Before"}}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+
+	updateBody := fmt.Sprintf(`{"country_code":"US","identity":{"name":"After"},"rationale":"profile corrected","expected_updated_at":%q}`, created.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+created.ID, strings.NewReader(updateBody))
+	updatedResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(updatedResponse, update)
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+	var updated domain.Customer
+	if err := json.NewDecoder(updatedResponse.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if !updated.UpdatedAt.After(created.UpdatedAt) {
+		t.Errorf("updated_at = %s, want strictly after %s", updated.UpdatedAt, created.UpdatedAt)
+	}
+
+	history, err := wave3.ListCustomerIdentityHistory(context.Background(), created.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("identity history entries = %d, want 2", len(history))
+	}
+	if history[0].Rationale != "profile corrected" {
+		t.Fatalf("latest history rationale = %q, want update", history[0].Rationale)
+	}
+	if !history[0].CreatedAt.Equal(updated.UpdatedAt) {
+		t.Errorf("update history timestamp = %s, customer timestamp = %s", history[0].CreatedAt, updated.UpdatedAt)
+	}
+	if !history[0].CreatedAt.After(history[1].CreatedAt) {
+		t.Errorf("history order is not monotonic: update=%s create=%s", history[0].CreatedAt, history[1].CreatedAt)
+	}
+
+	audits, err := audit.List(context.Background(), domain.AuditListFilter{ResourceType: "customers", ResourceID: created.ID, Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updateAudit *domain.AuditEntry
+	for i := range audits {
+		if audits[i].Action == "update" {
+			updateAudit = &audits[i]
+			break
+		}
+	}
+	if updateAudit == nil {
+		t.Fatal("update audit entry not found")
+	}
+	if !updateAudit.CreatedAt.Equal(updated.UpdatedAt) {
+		t.Errorf("update audit timestamp = %s, customer timestamp = %s", updateAudit.CreatedAt, updated.UpdatedAt)
 	}
 }
 

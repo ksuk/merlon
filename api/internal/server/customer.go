@@ -158,7 +158,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	c := &domain.Customer{
 		ID:           generateID(),
 		ExternalID:   req.ExternalID,
@@ -188,14 +188,14 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 			if err := repos.IdentityHistory.AppendCustomerIdentityHistory(r.Context(), &domain.CustomerIdentityHistoryEntry{
 				ID: generateID(), CustomerID: c.ID,
 				ChangedFields: map[string]any{"after": c.Attributes, "country_code": c.CountryCode, "status": c.EffectiveStatus()},
-				Actor:         resolveAuditUserID(r), Rationale: "customer created", CreatedAt: time.Now().UTC(),
+				Actor:         resolveAuditUserID(r), Rationale: "customer created", CreatedAt: c.UpdatedAt,
 			}); err != nil {
 				return fmt.Errorf("identity history persistence failed: %w", err)
 			}
 		}
 		return appendRequiredMutationAudit(r.Context(), r, repos, "create", "customers", c.ID, map[string]string{
 			"external_id": c.ExternalID,
-		}, c.CreatedAt)
+		}, c.UpdatedAt)
 	}); err != nil {
 		writeAtomicMutationError(w, err)
 		return
@@ -288,7 +288,7 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 					"before_status": before.EffectiveStatus(), "after_status": c.EffectiveStatus(),
 					"before_product_types": before.ProductTypes, "after_product_types": c.ProductTypes,
 				},
-				Actor: resolveAuditUserID(r), Rationale: req.Rationale, CreatedAt: time.Now().UTC(),
+				Actor: resolveAuditUserID(r), Rationale: req.Rationale, CreatedAt: c.UpdatedAt,
 			}); err != nil {
 				return fmt.Errorf("identity history persistence failed: %w", err)
 			}
