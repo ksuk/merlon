@@ -124,6 +124,7 @@ PERF_WARMUP ?= 100
 performance-evidence: ## Measure localhost transaction ingestion and monitoring with synthetic data
 	@test -n "$(PERF_BASE_URL)" || (echo "PERF_BASE_URL is required"; exit 1)
 	@test -n "$(PERF_EXPECTED_COMMIT)" || (echo "PERF_EXPECTED_COMMIT is required"; exit 1)
+	@test "$(COMMIT)" = "$(PERF_EXPECTED_COMMIT)" || (echo "COMMIT must be the same exact SHA as PERF_EXPECTED_COMMIT"; exit 1)
 	@cd api && go run -ldflags "$(BUILDINFO_LDFLAGS)" ./cmd/merlon-perf \
 		--base-url "$(PERF_BASE_URL)" \
 		--expected-commit "$(PERF_EXPECTED_COMMIT)" \

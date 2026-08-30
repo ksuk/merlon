@@ -136,6 +136,9 @@ func runCLI(ctx context.Context, args []string, getenv func(string) string, out 
 	if err != nil {
 		return err
 	}
+	if err := validateHarnessCommit(buildinfo.Commit, opts.expectedCommit); err != nil {
+		return err
+	}
 	report, runErr := execute(ctx, opts, getenv(performanceTokenEnv))
 	if report.SchemaVersion != 0 {
 		encoder := json.NewEncoder(out)
@@ -145,6 +148,17 @@ func runCLI(ctx context.Context, args []string, getenv func(string) string, out 
 		}
 	}
 	return runErr
+}
+
+func validateHarnessCommit(harnessCommit, expectedCommit string) error {
+	normalized := strings.ToLower(harnessCommit)
+	if !exactCommitPattern.MatchString(normalized) {
+		return errors.New("harness commit must be an exact 40-character hexadecimal SHA")
+	}
+	if normalized != strings.ToLower(expectedCommit) {
+		return fmt.Errorf("harness commit %s does not match expected commit %s", normalized, expectedCommit)
+	}
+	return nil
 }
 
 func parseOptions(args []string) (options, error) {

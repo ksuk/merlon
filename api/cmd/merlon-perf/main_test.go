@@ -107,3 +107,30 @@ func TestSummarizeResultsHandlesNoSuccessfulRequests(t *testing.T) {
 		t.Fatalf("summary without successful requests = %+v", got)
 	}
 }
+
+func TestSummarizeResultsRequiresCreatedStatus(t *testing.T) {
+	t.Parallel()
+
+	started := time.Now().UTC()
+	got := summarizeResults(started, started.Add(time.Second), []requestResult{
+		{duration: time.Millisecond, statusCode: http.StatusOK},
+		{duration: time.Millisecond, statusCode: http.StatusNoContent},
+	})
+	if got.Succeeded != 0 || got.Failed != 2 || got.ErrorRatePercent != 100 {
+		t.Fatalf("non-created 2xx summary = %+v", got)
+	}
+}
+
+func TestValidateHarnessCommitRequiresExactMatch(t *testing.T) {
+	t.Parallel()
+
+	expected := "0123456789abcdef0123456789abcdef01234567"
+	for _, harnessCommit := range []string{"", "0123456789ab", strings.Repeat("f", 40)} {
+		if err := validateHarnessCommit(harnessCommit, expected); err == nil {
+			t.Fatalf("validateHarnessCommit(%q) succeeded", harnessCommit)
+		}
+	}
+	if err := validateHarnessCommit(strings.ToUpper(expected), expected); err != nil {
+		t.Fatalf("matching exact commit was rejected: %v", err)
+	}
+}

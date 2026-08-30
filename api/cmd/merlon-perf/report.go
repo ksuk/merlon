@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"net/http"
 	"sort"
 	"time"
 )
@@ -44,7 +45,7 @@ func summarizeResults(started, completed time.Time, results []requestResult) res
 			continue
 		}
 		summary.StatusCodes[result.statusCode]++
-		if result.statusCode >= 200 && result.statusCode < 300 {
+		if result.statusCode == http.StatusCreated {
 			summary.Succeeded++
 			successfulDurations = append(successfulDurations, result.duration)
 		} else {

@@ -41,6 +41,7 @@ docker compose up --no-build --detach --wait
 
 ```bash
 make performance-evidence \
+  COMMIT="$release_commit" \
   PERF_BASE_URL="http://127.0.0.1:18055" \
   PERF_EXPECTED_COMMIT="$release_commit" \
   PERF_REQUESTS=1000 \
