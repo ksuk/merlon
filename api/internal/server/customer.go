@@ -187,7 +187,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		if repos.IdentityHistory != nil {
 			if err := repos.IdentityHistory.AppendCustomerIdentityHistory(r.Context(), &domain.CustomerIdentityHistoryEntry{
 				ID: generateID(), CustomerID: c.ID,
-				ChangedFields: map[string]any{"after": c.Attributes, "country_code": c.CountryCode, "status": c.EffectiveStatus()},
+				ChangedFields: customerIdentityChangedFields(nil, c),
 				Actor:         resolveAuditUserID(r), Rationale: "customer created", CreatedAt: c.UpdatedAt,
 			}); err != nil {
 				return fmt.Errorf("identity history persistence failed: %w", err)
@@ -242,7 +242,6 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 	if req.ProductTypes != nil {
 		c.ProductTypes = *req.ProductTypes
 	}
-	beforeAttributes := cloneAnyMap(c.Attributes)
 	if req.Attributes != nil || req.Identity != nil {
 		merged := mergeIdentityAttributes(c.Attributes, req.Attributes)
 		merged = mergeIdentityAttributes(merged, req.Identity)
@@ -282,13 +281,8 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 				// history is requested.
 			} else if err := repos.IdentityHistory.AppendCustomerIdentityHistory(r.Context(), &domain.CustomerIdentityHistoryEntry{
 				ID: generateID(), CustomerID: c.ID,
-				ChangedFields: map[string]any{
-					"before": beforeAttributes, "after": c.Attributes,
-					"before_country_code": before.CountryCode, "after_country_code": c.CountryCode,
-					"before_status": before.EffectiveStatus(), "after_status": c.EffectiveStatus(),
-					"before_product_types": before.ProductTypes, "after_product_types": c.ProductTypes,
-				},
-				Actor: resolveAuditUserID(r), Rationale: req.Rationale, CreatedAt: c.UpdatedAt,
+				ChangedFields: customerIdentityChangedFields(&before, c),
+				Actor:         resolveAuditUserID(r), Rationale: req.Rationale, CreatedAt: c.UpdatedAt,
 			}); err != nil {
 				return fmt.Errorf("identity history persistence failed: %w", err)
 			}

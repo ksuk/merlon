@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,6 +98,47 @@ func TestCreateCustomerReportsMissingIdentityForEveryCustomerType(t *testing.T) 
 				t.Error("a complete record carried a warning")
 			}
 		})
+	}
+}
+
+func TestCreateCustomerIdentityRoundTripUsesCanonicalAttributes(t *testing.T) {
+	s, _ := kycServer(t, nil)
+	identity := map[string]any{
+		"name":          "Synthetic Person",
+		"date_of_birth": "1988-04-05",
+		"address":       "Synthetic Address",
+		"name_kana":     "Synthetic Kana",
+		"occupation":    "Tester",
+		"nationality":   "JP",
+		"name_ja":       "Synthetic Japanese Name",
+	}
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdRecorder := postCustomer(t, s, fmt.Sprintf(`{"external_id":"KYC-IDENTITY-ROUNDTRIP","customer_type":"individual","country_code":"JP","identity":%s,"attributes":{}}`, encoded))
+	if createdRecorder.Code != http.StatusCreated {
+		t.Fatalf("create = %d, body=%s", createdRecorder.Code, createdRecorder.Body.String())
+	}
+	created := decodeKYC(t, createdRecorder)
+	if len(created.KYCMissingFields) != 0 {
+		t.Fatalf("create missing fields = %v", created.KYCMissingFields)
+	}
+	if !reflect.DeepEqual(created.Attributes, identity) {
+		t.Fatalf("create attributes = %#v, want %#v", created.Attributes, identity)
+	}
+
+	getRecorder := httptest.NewRecorder()
+	s.Handler().ServeHTTP(getRecorder, httptest.NewRequest(http.MethodGet, "/api/v1/customers/"+created.ID, nil))
+	if getRecorder.Code != http.StatusOK {
+		t.Fatalf("get = %d, body=%s", getRecorder.Code, getRecorder.Body.String())
+	}
+	reloaded := decodeKYC(t, getRecorder)
+	if len(reloaded.KYCMissingFields) != 0 {
+		t.Fatalf("read-back missing fields = %v", reloaded.KYCMissingFields)
+	}
+	if !reflect.DeepEqual(reloaded.Attributes, identity) {
+		t.Fatalf("read-back attributes = %#v, want %#v", reloaded.Attributes, identity)
 	}
 }
 
