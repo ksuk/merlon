@@ -321,9 +321,9 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 	if productTypes == nil {
 		productTypes = []string{}
 	}
-	c.UpdatedAt = time.Now()
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$17, edd_closed_at=$18, edd_close_reason=NULLIF($19,''), edd_case_id=NULLIF($20,'')::uuid, anonymized_at=$16, source_updated_at=$21, next_review_at=$22, last_review_at=$23, review_tier=NULLIF($24,'')::risk_tier, review_policy_version=$25, review_policy_digest=$26 WHERE id=$1`,
+	c.UpdatedAt = nextCustomerMutationTime(c.UpdatedAt, time.Now())
+	err = r.pool.QueryRow(ctx,
+		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=GREATEST($11::timestamptz, updated_at + interval '1 microsecond'), edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$17, edd_closed_at=$18, edd_close_reason=NULLIF($19,''), edd_case_id=NULLIF($20,'')::uuid, anonymized_at=$16, source_updated_at=$21, next_review_at=$22, last_review_at=$23, review_tier=NULLIF($24,'')::risk_tier, review_policy_version=$25, review_policy_digest=$26 WHERE id=$1 RETURNING updated_at`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
 		productTypes, attrs,
 		c.RiskScore, riskTierToNullable(c.RiskTier), c.LastScoredAt,
@@ -332,14 +332,11 @@ func (r *PgCustomerRepo) Update(ctx context.Context, c *domain.Customer) error {
 		c.AnonymizedAt,
 		c.EddCompletedAt, c.EddClosedAt, c.EddCloseReason, c.EddCaseID, c.SourceUpdatedAt,
 		c.NextReviewAt, c.LastReviewAt, riskTierValue(c.ReviewTier), c.ReviewPolicyVersion, c.ReviewPolicyDigest,
-	)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
+	).Scan(&c.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
 	}
-	return nil
+	return err
 }
 
 func (r *PgCustomerRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Customer, expectedUpdatedAt time.Time) error {
@@ -353,7 +350,7 @@ func (r *PgCustomerRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Custo
 	if productTypes == nil {
 		productTypes = []string{}
 	}
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = nextCustomerMutationTime(expectedUpdatedAt, time.Now())
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE customers SET external_id=$2, customer_type=$3, country_code=$4, status=$5, product_types=$6, attributes=$7, risk_score=$8, risk_tier=$9, last_scored_at=$10, updated_at=$11, edd_requested_at=$12, edd_stage1_last_sent_at=$13, edd_stage2_notified_at=$14, edd_stage3_notified_at=$15, edd_completed_at=$18, edd_closed_at=$19, edd_close_reason=NULLIF($20,''), edd_case_id=NULLIF($21,'')::uuid, anonymized_at=$16, source_updated_at=$22, next_review_at=$23, last_review_at=$24, review_tier=NULLIF($25,'')::risk_tier, review_policy_version=$26, review_policy_digest=$27 WHERE id=$1 AND updated_at=$17`,
 		c.ID, c.ExternalID, c.CustomerType, c.CountryCode, c.Status,
@@ -385,7 +382,10 @@ func (r *PgCustomerRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Custo
 func (r *PgCustomerRepo) UpdateStatus(ctx context.Context, id string, status domain.CustomerStatus, _ string) (*domain.Customer, error) {
 	id = domain.CanonicalUUID(id)
 	tag, err := r.pool.Exec(ctx,
-		`UPDATE customers SET status=$2, updated_at=now() WHERE id=$1`,
+		`UPDATE customers
+		 SET status=$2,
+		     updated_at=GREATEST(date_trunc('microseconds', now()), updated_at + interval '1 microsecond')
+		 WHERE id=$1`,
 		id, status,
 	)
 	if err != nil {

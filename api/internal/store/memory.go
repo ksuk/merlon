@@ -277,10 +277,11 @@ func (r *MemoryCustomerRepo) Update(_ context.Context, c *domain.Customer) error
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c.ID = domain.CanonicalUUID(c.ID)
-	if _, ok := r.data[c.ID]; !ok {
+	current, ok := r.data[c.ID]
+	if !ok {
 		return &domain.ErrNotFound{Entity: "customer", ID: c.ID}
 	}
-	c.UpdatedAt = time.Now()
+	c.UpdatedAt = nextCustomerMutationTime(current.UpdatedAt, time.Now())
 	r.data[c.ID] = c
 	return nil
 }
@@ -296,7 +297,7 @@ func (r *MemoryCustomerRepo) UpdateIfUnmodified(_ context.Context, c *domain.Cus
 	if !current.UpdatedAt.Equal(expectedUpdatedAt) {
 		return &domain.ErrConflict{Entity: "customer", ID: c.ID, Reason: "updated_at does not match the version read by the client"}
 	}
-	c.UpdatedAt = time.Now().UTC()
+	c.UpdatedAt = nextCustomerMutationTime(current.UpdatedAt, time.Now())
 	r.data[c.ID] = c
 	return nil
 }
@@ -310,7 +311,7 @@ func (r *MemoryCustomerRepo) UpdateStatus(_ context.Context, id string, status d
 		return nil, &domain.ErrNotFound{Entity: "customer", ID: id}
 	}
 	c.Status = status
-	c.UpdatedAt = time.Now()
+	c.UpdatedAt = nextCustomerMutationTime(c.UpdatedAt, time.Now())
 	cp := *c
 	return &cp, nil
 }
