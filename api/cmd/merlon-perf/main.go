@@ -29,6 +29,9 @@ const (
 	syntheticCustomerName = "Synthetic Performance Customer"
 	performanceTokenEnv   = "MERLON_PERF_BEARER_TOKEN"
 	dataSourceDescription = "built-in synthetic performance fixtures"
+	targetStateReady      = "ready"
+	targetStateUnknown    = "unknown"
+	targetReasonNoProbe   = "no_probe_available"
 )
 
 var exactCommitPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
@@ -293,7 +296,13 @@ func fetchTargetStatus(ctx context.Context, client *http.Client, baseURL *url.UR
 		if !ok {
 			return targetStatus{}, fmt.Errorf("target status does not report required component %s", required)
 		}
-		if !component.Configured || component.OperationalState != "ready" {
+		if !component.Configured {
+			return targetStatus{}, fmt.Errorf("target component %s is not configured", component.Name)
+		}
+		if required == "engine" && component.OperationalState == targetStateUnknown && component.ReasonCode == targetReasonNoProbe {
+			continue
+		}
+		if component.OperationalState != targetStateReady {
 			return targetStatus{}, fmt.Errorf(
 				"target component %s is not ready (configured=%t, operational_state=%s, reason_code=%s)",
 				component.Name, component.Configured, component.OperationalState, component.ReasonCode,

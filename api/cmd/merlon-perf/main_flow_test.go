@@ -56,7 +56,7 @@ func TestFetchTargetStatusRejectsUnavailableEngine(t *testing.T) {
 			Components: []targetComponentStatus{
 				{Name: "api", Configured: true, OperationalState: "ready"},
 				{Name: "database", Configured: true, OperationalState: "ready"},
-				{Name: "engine", Configured: false, OperationalState: "unknown"},
+				{Name: "engine", Configured: true, OperationalState: "unavailable", ReasonCode: "check_failed"},
 			},
 		})
 	}))
@@ -68,6 +68,30 @@ func TestFetchTargetStatusRejectsUnavailableEngine(t *testing.T) {
 	}
 	if _, err := fetchTargetStatus(context.Background(), newLoopbackHTTPClient(time.Second), baseURL, "", testCommit); err == nil || !strings.Contains(err.Error(), "engine") {
 		t.Fatalf("engine readiness error = %v", err)
+	}
+}
+
+func TestFetchTargetStatusAcceptsConfiguredNativeEngineWithoutProbe(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(targetStatus{
+			Version: "test", Commit: testCommit, AuthMode: "session", BaseCurrency: "JPY",
+			Components: []targetComponentStatus{
+				{Name: "api", Configured: true, OperationalState: "ready"},
+				{Name: "database", Configured: true, OperationalState: "ready"},
+				{Name: "engine", Configured: true, OperationalState: "unknown", ReasonCode: "no_probe_available"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	baseURL, err := validateLoopbackBaseURL(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetchTargetStatus(context.Background(), newLoopbackHTTPClient(time.Second), baseURL, "", testCommit); err != nil {
+		t.Fatalf("configured native engine should be measurable: %v", err)
 	}
 }
 

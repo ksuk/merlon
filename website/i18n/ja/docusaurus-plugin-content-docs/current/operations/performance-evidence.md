@@ -18,7 +18,7 @@ harnessは固定の合成fixtureから専用のcustomerとtransactionを作成�
 
 1. exact release-candidate commitをcheckoutし、full SHAを記録する。
 2. fresh databaseを使うstandard topologyをloopback portで開始する。image build時に同じSHAを`REVISION`として渡す。harnessはlive `/api/v1/system/status`のcommitが一致しないtargetを拒否する。
-3. repository付属の合成policy fixtureでtransaction-monitoring engineを構成し、live system statusで`api`、`database`、`engine`がconfiguredかつ`ready`であることを確認する。いずれかが存在しない、またはreadyでないtargetはharnessが拒否する。
+3. repository付属の合成policy fixtureでtransaction-monitoring engineを構成する。harnessは`api`と`database`がconfiguredかつ`ready`であり、`engine`がconfiguredであることを要求する。engineは`ready`、またはin-process native engineが明示する`unknown`かつ`no_probe_available`の場合に測定可能とする。必須componentが存在しない、未設定、degraded、unavailableの場合は拒否する。
 4. 初回setupを完了し、一時的なAnalyst API keyを作成する。値は`MERLON_PERF_BEARER_TOKEN`だけに保持し、reportには含めない。localの認証無効demo topologyで測定する場合だけ未設定にする。
 5. JSON出力と一緒にhost CPU、memory、OS、Docker version、image digest、PostgreSQL version、container resource limitを記録する。harnessは自身のGo runtime環境を記録するが、host limitは推測できない。
 

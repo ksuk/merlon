@@ -32,10 +32,12 @@ delete those records afterwards. Never point it at a production database.
    the image with that SHA as `REVISION`; the harness refuses a target whose
    live `/api/v1/system/status` commit differs.
 3. Configure the transaction-monitoring engine with repository-provided
-   synthetic policy fixtures and confirm that the live system status reports
-   `api`, `database`, and `engine` as configured and `ready`. The harness
-   refuses to measure a target when any of those components is missing or not
-   ready.
+   synthetic policy fixtures. The harness requires `api` and `database` to be
+   configured and `ready`, and requires `engine` to be configured. It accepts
+   an engine as measurable when it reports `ready`, or when the in-process
+   native engine explicitly reports `unknown` with `no_probe_available`.
+   Missing, unconfigured, degraded, or unavailable required components are
+   rejected.
 4. Complete setup and create a temporary Analyst API key. Keep the value only
    in `MERLON_PERF_BEARER_TOKEN`; the report never contains it. Leave the
    variable unset only when testing the local auth-disabled demo topology.
