@@ -25,7 +25,7 @@ func TestFetchTargetStatusRequiresMatchingExactCommit(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(targetStatus{
 			Version: "v0.0.1-test", Commit: testCommit, BuiltAt: "2026-08-30T00:00:00Z",
-			AuthMode: "enabled", BaseCurrency: "JPY",
+			AuthMode: "session", BaseCurrency: "JPY", Components: readyTargetComponents(),
 		})
 	}))
 	defer server.Close()
@@ -47,6 +47,30 @@ func TestFetchTargetStatusRequiresMatchingExactCommit(t *testing.T) {
 	}
 }
 
+func TestFetchTargetStatusRejectsUnavailableEngine(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(targetStatus{
+			Version: "test", Commit: testCommit, AuthMode: "session", BaseCurrency: "JPY",
+			Components: []targetComponentStatus{
+				{Name: "api", Configured: true, OperationalState: "ready"},
+				{Name: "database", Configured: true, OperationalState: "ready"},
+				{Name: "engine", Configured: false, OperationalState: "unknown"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	baseURL, err := validateLoopbackBaseURL(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fetchTargetStatus(context.Background(), newLoopbackHTTPClient(time.Second), baseURL, "", testCommit); err == nil || !strings.Contains(err.Error(), "engine") {
+		t.Fatalf("engine readiness error = %v", err)
+	}
+}
+
 func TestExecuteCreatesSyntheticCustomersAndMeasuresTransactions(t *testing.T) {
 	t.Parallel()
 
@@ -57,7 +81,7 @@ func TestExecuteCreatesSyntheticCustomersAndMeasuresTransactions(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/system/status":
-			_ = json.NewEncoder(w).Encode(targetStatus{Version: "test", Commit: testCommit, AuthMode: "disabled", BaseCurrency: "JPY"})
+			_ = json.NewEncoder(w).Encode(targetStatus{Version: "test", Commit: testCommit, AuthMode: "disabled", BaseCurrency: "JPY", Components: readyTargetComponents()})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/customers":
 			var payload syntheticCustomerRequest
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -110,8 +134,19 @@ func TestExecuteCreatesSyntheticCustomersAndMeasuresTransactions(t *testing.T) {
 	if report.Target.Commit != testCommit || report.Results.Attempted != 8 || report.Results.Failed != 0 {
 		t.Fatalf("report = %+v", report)
 	}
+	if len(report.Target.Components) != 3 || report.Target.Components[2].Name != "engine" {
+		t.Fatalf("target components = %+v", report.Target.Components)
+	}
 	if report.Measurement.DataSource != "built-in synthetic performance fixtures" {
 		t.Fatalf("data source = %q", report.Measurement.DataSource)
+	}
+}
+
+func readyTargetComponents() []targetComponentStatus {
+	return []targetComponentStatus{
+		{Name: "api", Configured: true, OperationalState: "ready"},
+		{Name: "database", Configured: true, OperationalState: "ready"},
+		{Name: "engine", Configured: true, OperationalState: "ready"},
 	}
 }
 

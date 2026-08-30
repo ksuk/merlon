@@ -45,11 +45,19 @@ type options struct {
 }
 
 type targetStatus struct {
-	Version      string `json:"version"`
-	Commit       string `json:"commit"`
-	BuiltAt      string `json:"built_at"`
-	AuthMode     string `json:"auth_mode"`
-	BaseCurrency string `json:"base_currency"`
+	Version      string                  `json:"version"`
+	Commit       string                  `json:"commit"`
+	BuiltAt      string                  `json:"built_at"`
+	AuthMode     string                  `json:"auth_mode"`
+	BaseCurrency string                  `json:"base_currency"`
+	Components   []targetComponentStatus `json:"components"`
+}
+
+type targetComponentStatus struct {
+	Name             string `json:"name"`
+	Configured       bool   `json:"configured"`
+	OperationalState string `json:"operational_state"`
+	ReasonCode       string `json:"reason_code,omitempty"`
 }
 
 type syntheticCustomerRequest struct {
@@ -72,12 +80,13 @@ type syntheticTransactionRequest struct {
 }
 
 type targetReport struct {
-	BaseURL      string `json:"base_url"`
-	Version      string `json:"version"`
-	Commit       string `json:"commit"`
-	BuiltAt      string `json:"built_at,omitempty"`
-	AuthMode     string `json:"auth_mode"`
-	BaseCurrency string `json:"base_currency"`
+	BaseURL      string                  `json:"base_url"`
+	Version      string                  `json:"version"`
+	Commit       string                  `json:"commit"`
+	BuiltAt      string                  `json:"built_at,omitempty"`
+	AuthMode     string                  `json:"auth_mode"`
+	BaseCurrency string                  `json:"base_currency"`
+	Components   []targetComponentStatus `json:"components"`
 }
 
 type harnessReport struct {
@@ -225,6 +234,7 @@ func execute(ctx context.Context, opts options, bearerToken string) (performance
 		Target: targetReport{
 			BaseURL: baseURL.String(), Version: status.Version, Commit: status.Commit,
 			BuiltAt: status.BuiltAt, AuthMode: status.AuthMode, BaseCurrency: status.BaseCurrency,
+			Components: status.Components,
 		},
 		Harness: harnessReport{
 			Version: buildinfo.Version, Commit: buildinfo.Commit, BuiltAt: buildinfo.BuiltAt,
@@ -273,6 +283,22 @@ func fetchTargetStatus(ctx context.Context, client *http.Client, baseURL *url.UR
 	}
 	if status.Commit != expectedCommit {
 		return targetStatus{}, fmt.Errorf("target commit %s does not match expected commit %s", status.Commit, expectedCommit)
+	}
+	components := make(map[string]targetComponentStatus, len(status.Components))
+	for _, component := range status.Components {
+		components[component.Name] = component
+	}
+	for _, required := range []string{"api", "database", "engine"} {
+		component, ok := components[required]
+		if !ok {
+			return targetStatus{}, fmt.Errorf("target status does not report required component %s", required)
+		}
+		if !component.Configured || component.OperationalState != "ready" {
+			return targetStatus{}, fmt.Errorf(
+				"target component %s is not ready (configured=%t, operational_state=%s, reason_code=%s)",
+				component.Name, component.Configured, component.OperationalState, component.ReasonCode,
+			)
+		}
 	}
 	return status, nil
 }

@@ -73,8 +73,9 @@ CREATE INDEX idx_transactions_counterparty_country
 ## 3. Capacity planning
 
 As a sustained throughput target, use **100 transaction ingestions and
-evaluations per second on a standard configuration** as the baseline. Reproduce
-that result for each release candidate with the localhost-only
+evaluations per second on a standard configuration whose monitoring engine is
+configured and ready** as the baseline. Reproduce that result for each release
+candidate with the localhost-only
 [performance evidence harness](./performance-evidence.md), and size the
 deployment from evidence captured on equivalent resources. If you expect load
 beyond the measured capacity, plan a migration to a horizontally scalable

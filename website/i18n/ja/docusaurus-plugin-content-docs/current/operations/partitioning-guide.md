@@ -42,7 +42,7 @@ CREATE INDEX idx_transactions_counterparty_country
 
 ## 3. キャパシティプランニング
 
-持続的なスループット目標として、**標準構成で秒間100件の取引取込み・評価**を基準値とする。リリース候補ごとにlocalhost限定の[性能検証harness](./performance-evidence.md)で再現し、同等のresourceで取得した証跡をもとに構成を決めること。実測した容量を超える負荷が見込まれる場合は、Kubernetes等の水平スケール可能な構成への移行を検討する。
+持続的なスループット目標として、**monitoring engineがconfiguredかつreadyである標準構成で秒間100件の取引取込み・評価**を基準値とする。リリース候補ごとにlocalhost限定の[性能検証harness](./performance-evidence.md)で再現し、同等のresourceで取得した証跡をもとに構成を決めること。実測した容量を超える負荷が見込まれる場合は、Kubernetes等の水平スケール可能な構成への移行を検討する。
 
 ## 4. リードレプリカのルーティング方針
 

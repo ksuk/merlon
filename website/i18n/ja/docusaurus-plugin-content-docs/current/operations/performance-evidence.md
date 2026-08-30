@@ -18,8 +18,9 @@ harnessは固定の合成fixtureから専用のcustomerとtransactionを作成�
 
 1. exact release-candidate commitをcheckoutし、full SHAを記録する。
 2. fresh databaseを使うstandard topologyをloopback portで開始する。image build時に同じSHAを`REVISION`として渡す。harnessはlive `/api/v1/system/status`のcommitが一致しないtargetを拒否する。
-3. 初回setupを完了し、一時的なAnalyst API keyを作成する。値は`MERLON_PERF_BEARER_TOKEN`だけに保持し、reportには含めない。localの認証無効demo topologyで測定する場合だけ未設定にする。
-4. JSON出力と一緒にhost CPU、memory、OS、Docker version、image digest、PostgreSQL version、container resource limitを記録する。harnessは自身のGo runtime環境を記録するが、host limitは推測できない。
+3. repository付属の合成policy fixtureでtransaction-monitoring engineを構成し、live system statusで`api`、`database`、`engine`がconfiguredかつ`ready`であることを確認する。いずれかが存在しない、またはreadyでないtargetはharnessが拒否する。
+4. 初回setupを完了し、一時的なAnalyst API keyを作成する。値は`MERLON_PERF_BEARER_TOKEN`だけに保持し、reportには含めない。localの認証無効demo topologyで測定する場合だけ未設定にする。
+5. JSON出力と一緒にhost CPU、memory、OS、Docker version、image digest、PostgreSQL version、container resource limitを記録する。harnessは自身のGo runtime環境を記録するが、host limitは推測できない。
 
 再現可能なbuild手順の一例を示す。
 
@@ -53,11 +54,10 @@ setup用customer requestとwarmup transactionは測定区間から除外する�
 
 JSON reportは次を記録する。
 
-- targetのversion、exact commit、取得可能な場合のbuild timestamp、認証mode、base currency
+- targetのversion、exact commit、取得可能な場合のbuild timestamp、認証mode、base currency、必須componentのreadiness
 - harnessのbuild情報とGo runtime環境
 - customer、warmup、request、concurrencyの件数
 - 開始・終了timestampと測定時間
 - response status別件数、transport error、error rate、成功throughput、成功requestのP50/P95/P99 latency
 
 測定またはwarmupに失敗が1件でもあればcommandは非0で終了する。JSONと外部のhost/container説明は一緒に保持すること。結果が他文書の表現を裏付けない場合は、表現を変更するか実装を改善する。存在しないpercentileやthroughput値を推測で補ってはならない。
-
