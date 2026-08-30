@@ -190,6 +190,8 @@ API にはグローバルなレートリミッタ（`api/internal/server/ratelim
 - それでも現実的な時間に収まらない場合は、移行中に限りレート上限を引き上げ、
   終了後に戻す。この変更は必ず記録すること。一時的なレート上限の緩和は統制の変更である。
 
+一般的なcapacity planningの目標値から移行完了時間を推測してはならない。初期移行にはclient側checkpointと別の後続処理が含まれる。リリース候補に対してlocalhost限定の[性能検証harness](./performance-evidence.md)を実行したうえで、staging環境で代表的な件数の合成recordを使ってimport自体をrehearsalすること。
+
 ## 失敗時の扱い
 
 **全体を包むトランザクションは存在しない。** 各レコードはそれぞれのリクエストで

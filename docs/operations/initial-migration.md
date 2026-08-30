@@ -206,6 +206,13 @@ Plan for this rather than fighting it:
   of the migration and restore it afterwards. Record the change — a
   temporarily widened rate limit is a control change.
 
+Do not infer a migration completion time from the general capacity-planning
+target. The initial migration includes client checkpointing and different
+follow-up work. Use the localhost-only
+[performance evidence harness](./performance-evidence.md) for the release
+candidate, then rehearse the import itself with a representative synthetic
+record count in staging.
+
 ## Failure handling
 
 **There is no global transaction.** Each record is committed by its own

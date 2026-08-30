@@ -61,6 +61,7 @@ const sidebars: SidebarsConfig = {
         'operations/upgrade',
         'operations/backup-restore',
         'operations/partitioning-guide',
+        'operations/performance-evidence',
         'operations/dependency-lifecycle',
         'release-notes',
         {

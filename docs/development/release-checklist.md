@@ -68,6 +68,10 @@ against the internal quality standard.
 - [ ] Official runtime support and EOL sources in
   [Dependency Lifecycle](../operations/dependency-lifecycle.md) were reviewed
   again on the release date.
+- [ ] The localhost-only [performance evidence harness](../operations/performance-evidence.md)
+  ran against the exact release commit with synthetic data. Its JSON output and
+  host/container description are linked, the error rate is zero, and published
+  throughput or latency wording is supported by the recorded result.
 
 ## Operational Evidence
 

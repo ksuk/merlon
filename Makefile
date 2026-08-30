@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -115,6 +115,23 @@ screenshots: ## Capture docs/img demo UI screenshots (needs the demo stack runni
 
 demogen: ## Generate synthetic demo data (deploy/seed/demo/*.json; not committed)
 	@cd api && go run ./cmd/merlon-demogen -out ../deploy/seed/demo
+
+PERF_REQUESTS ?= 1000
+PERF_CONCURRENCY ?= 16
+PERF_CUSTOMERS ?= $(PERF_CONCURRENCY)
+PERF_WARMUP ?= 100
+
+performance-evidence: ## Measure localhost transaction ingestion and monitoring with synthetic data
+	@test -n "$(PERF_BASE_URL)" || (echo "PERF_BASE_URL is required"; exit 1)
+	@test -n "$(PERF_EXPECTED_COMMIT)" || (echo "PERF_EXPECTED_COMMIT is required"; exit 1)
+	@test "$(COMMIT)" = "$(PERF_EXPECTED_COMMIT)" || (echo "COMMIT must be the same exact SHA as PERF_EXPECTED_COMMIT"; exit 1)
+	@cd api && go run -ldflags "$(BUILDINFO_LDFLAGS)" ./cmd/merlon-perf \
+		--base-url "$(PERF_BASE_URL)" \
+		--expected-commit "$(PERF_EXPECTED_COMMIT)" \
+		--requests "$(PERF_REQUESTS)" \
+		--concurrency "$(PERF_CONCURRENCY)" \
+		--customers "$(PERF_CUSTOMERS)" \
+		--warmup "$(PERF_WARMUP)"
 
 generate-openapi: ## Export the OpenAPI spec to docs/api/openapi.json
 	@cd api && go run -ldflags "$(BUILDINFO_LDFLAGS)" ./cmd/openapi-export -o ../docs/api/openapi.json

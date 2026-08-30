@@ -69,6 +69,8 @@ For whoever runs Merlon in production.
   verifying what you deployed
 - [Backup and Restore Runbook](operations/backup-restore.md)
 - [Partitioning and Capacity Operations Guide](operations/partitioning-guide.md)
+- [Performance Evidence](operations/performance-evidence.md) — reproducing
+  localhost transaction-ingestion measurements for a release candidate
 - [Dependency Lifecycle](operations/dependency-lifecycle.md) — supported
   runtime versions and EOL tracking
 - [Release Notes](release-notes.md) — what changed in each version
