@@ -151,15 +151,91 @@ func TestCustomerIdentityHistoryIncludesLifecycleAndCountryUpdates(t *testing.T)
 		t.Fatalf("identity history entries = %d, want creation and update", len(entries))
 	}
 	latest := entries[0]
-	if latest.ChangedFields["after_status"] != domain.CustomerStatusFrozen || latest.ChangedFields["after_country_code"] != "US" {
-		t.Fatalf("latest identity history = %+v", latest.ChangedFields)
-	}
+	assertChangedFieldMarkers(t, latest.ChangedFields, []string{"country_code", "name", "status"})
 	stored, err := customers.Get(context.Background(), customer.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if stored.Status != domain.CustomerStatusFrozen || stored.CountryCode != "US" {
 		t.Fatalf("stored lifecycle identity = %+v", stored)
+	}
+}
+
+func TestCustomerIdentityHistoryRecordsChangedFieldNamesWithoutValues(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	wave3 := store.NewMemoryWave3Repo()
+	s := New(":0", Deps{
+		Customers: customers,
+		Audit:     store.NewMemoryAuditRepo(),
+		Wave3:     wave3,
+	})
+
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/customers", strings.NewReader(`{"external_id":"IDENTITY-HISTORY-VALUES","customer_type":"individual","country_code":"JP","product_types":["synthetic-product"],"identity":{"name":"Synthetic Person","date_of_birth":"1988-04-05","address":"Synthetic Address","occupation":"Tester"}}`))
+	createdResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(createdResponse, create)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body=%s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var customer domain.Customer
+	if err := json.NewDecoder(createdResponse.Body).Decode(&customer); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := wave3.ListCustomerIdentityHistory(context.Background(), customer.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("identity history entries = %d, want 1", len(entries))
+	}
+	assertChangedFieldMarkers(t, entries[0].ChangedFields, []string{
+		"address", "country_code", "date_of_birth", "name", "occupation", "product_types", "status",
+	})
+	assertNoHistoryValues(t, entries[0].ChangedFields, []string{
+		"Synthetic Person", "1988-04-05", "Synthetic Address", "Tester", "synthetic-product", "JP", "active",
+	})
+
+	updateBody := fmt.Sprintf(`{"country_code":"US","product_types":["updated-product"],"identity":{"name":"Updated Person","address":null},"expected_updated_at":%q}`, customer.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	update := httptest.NewRequest(http.MethodPut, "/api/v1/customers/"+customer.ID, strings.NewReader(updateBody))
+	updatedResponse := httptest.NewRecorder()
+	s.Handler().ServeHTTP(updatedResponse, update)
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+
+	entries, err = wave3.ListCustomerIdentityHistory(context.Background(), customer.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("identity history entries = %d, want 2", len(entries))
+	}
+	assertChangedFieldMarkers(t, entries[0].ChangedFields, []string{"address", "country_code", "name", "product_types"})
+	assertNoHistoryValues(t, entries[0].ChangedFields, []string{"Synthetic Address", "Updated Person", "updated-product", "US"})
+}
+
+func assertChangedFieldMarkers(t *testing.T, got map[string]any, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("changed fields = %v, want only %v", got, want)
+	}
+	for _, field := range want {
+		if marker, ok := got[field]; !ok || marker != true {
+			t.Errorf("changed field %q marker = %v, want true", field, marker)
+		}
+	}
+}
+
+func assertNoHistoryValues(t *testing.T, changed map[string]any, values []string) {
+	t.Helper()
+	encoded, err := json.Marshal(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range values {
+		if strings.Contains(string(encoded), value) {
+			t.Errorf("identity history copied field value %q: %s", value, encoded)
+		}
 	}
 }
 

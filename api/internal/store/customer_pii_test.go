@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/base64"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -182,5 +183,39 @@ func TestPgCustomerEncryptionRoundTrip(t *testing.T) {
 	}
 	if got.Attributes["full_name"] != "暗号化太郎" {
 		t.Errorf("decrypted full_name = %v, want %q", got.Attributes["full_name"], "暗号化太郎")
+	}
+}
+
+func TestPgCustomerIdentityAttributesRoundTrip(t *testing.T) {
+	pool := newTestPgPool(t)
+	ctx := context.Background()
+	repo := NewPgCustomerRepo(pool, testEncryptor(t))
+	identity := map[string]any{
+		"name":          "Synthetic Person",
+		"date_of_birth": "1988-04-05",
+		"address":       "Synthetic Address",
+		"name_kana":     "Synthetic Kana",
+		"occupation":    "Tester",
+		"nationality":   "JP",
+		"name_ja":       "Synthetic Japanese Name",
+	}
+	customer := &domain.Customer{
+		ID: newTestUUID(), ExternalID: "identity-roundtrip-" + newTestUUID(),
+		CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP",
+		Status: domain.CustomerStatusActive, Attributes: identity,
+	}
+	if err := repo.Create(ctx, customer); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM customers WHERE id = $1`, customer.ID)
+	})
+
+	reloaded, err := repo.Get(ctx, customer.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !reflect.DeepEqual(reloaded.Attributes, identity) {
+		t.Fatalf("read-back attributes = %#v, want %#v", reloaded.Attributes, identity)
 	}
 }

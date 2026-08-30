@@ -77,8 +77,9 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 
 	existing, err := s.customers.GetByExternalID(ctx, req.ExternalID)
 	if err == nil && existing != nil {
-		beforeAttributes := cloneAnyMap(existing.Attributes)
-		beforeCountry, beforeStatus, beforeProducts := existing.CountryCode, existing.EffectiveStatus(), append([]string(nil), existing.ProductTypes...)
+		before := *existing
+		before.Attributes = cloneAnyMap(existing.Attributes)
+		before.ProductTypes = append([]string(nil), existing.ProductTypes...)
 		outcome.EntityID = existing.ID
 		if req.SourceUpdatedAt != nil && existing.SourceUpdatedAt != nil && !req.SourceUpdatedAt.After(*existing.SourceUpdatedAt) {
 			outcome.Status, outcome.Reason = inboundwebhook.RecordSkipped, "stale_source_updated_at"
@@ -104,7 +105,7 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 				return err
 			}
 			if repos.IdentityHistory != nil {
-				if err := repos.IdentityHistory.AppendCustomerIdentityHistory(ctx, &domain.CustomerIdentityHistoryEntry{ID: generateID(), CustomerID: existing.ID, ChangedFields: map[string]any{"before": beforeAttributes, "after": existing.Attributes, "before_country_code": beforeCountry, "after_country_code": existing.CountryCode, "before_status": beforeStatus, "after_status": existing.EffectiveStatus(), "before_product_types": beforeProducts, "after_product_types": existing.ProductTypes}, Actor: "system:inbound-webhook", Rationale: "inbound customer update", CreatedAt: time.Now().UTC()}); err != nil {
+				if err := repos.IdentityHistory.AppendCustomerIdentityHistory(ctx, &domain.CustomerIdentityHistoryEntry{ID: generateID(), CustomerID: existing.ID, ChangedFields: customerIdentityChangedFields(&before, existing), Actor: "system:inbound-webhook", Rationale: "inbound customer update", CreatedAt: time.Now().UTC()}); err != nil {
 					return err
 				}
 			}
@@ -137,7 +138,7 @@ func (s *Server) ingestInboundCustomer(ctx context.Context, index int, raw json.
 			return err
 		}
 		if repos.IdentityHistory != nil {
-			if err := repos.IdentityHistory.AppendCustomerIdentityHistory(ctx, &domain.CustomerIdentityHistoryEntry{ID: generateID(), CustomerID: customer.ID, ChangedFields: map[string]any{"after": customer.Attributes, "country_code": customer.CountryCode, "status": customer.EffectiveStatus()}, Actor: "system:inbound-webhook", Rationale: "inbound customer created", CreatedAt: now}); err != nil {
+			if err := repos.IdentityHistory.AppendCustomerIdentityHistory(ctx, &domain.CustomerIdentityHistoryEntry{ID: generateID(), CustomerID: customer.ID, ChangedFields: customerIdentityChangedFields(nil, customer), Actor: "system:inbound-webhook", Rationale: "inbound customer created", CreatedAt: now}); err != nil {
 				return err
 			}
 		}
