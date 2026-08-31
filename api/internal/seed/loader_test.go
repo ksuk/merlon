@@ -219,6 +219,40 @@ func TestRunLoadsDemoDatasetWhenEnvPointsAtCompleteDataset(t *testing.T) {
 	}
 }
 
+func TestRunLoadsGeneratedUUIDCaseNoteRelationship(t *testing.T) {
+	const caseID = "7e6079fc-1c7b-5ff7-9f9f-7f0ef27d6d8e"
+	const noteID = "3062228c-8d61-53fb-b8d2-88dbdc3dcd5a"
+	fixture := copyDemoDatasetFixture()
+	fixture["cases.json"] = `[
+		{"id":"` + caseID + `","customer_id":"demo-cust-01","alert_ids":["demo-alert-01"],"status":"open",
+		 "priority":"medium","assigned_to":"m.sato","summary":"generated UUID case",
+		 "created_at":"2026-06-28T06:00:00Z","updated_at":"2026-06-28T06:00:00Z"},
+		{"id":"demo-case-02","customer_id":"demo-cust-02","alert_ids":[],"status":"closed",
+		 "priority":"low","summary":"reviewed synthetic case","created_at":"2026-06-20T06:00:00Z",
+		 "updated_at":"2026-06-21T07:00:00Z","closed_at":"2026-06-21T07:00:00Z"}
+	]`
+	fixture["case_notes.json"] = `[
+		{"case_id":"` + caseID + `","id":"` + noteID + `","author":"m.sato","content":"generated UUID case note",
+		 "created_at":"2026-06-29T00:00:00Z"}
+	]`
+	dir := writeDemoDatasetFixture(t, fixture)
+	t.Setenv(demoDataDirEnv, dir)
+
+	repos, _ := newFullMemoryRepos()
+	ctx := context.Background()
+	if _, err := Run(ctx, repos); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	kase, err := repos.Cases.Get(ctx, caseID)
+	if err != nil {
+		t.Fatalf("Get generated UUID case: %v", err)
+	}
+	if len(kase.Notes) != 1 || kase.Notes[0].ID != noteID {
+		t.Fatalf("generated UUID case notes = %+v, want note %q", kase.Notes, noteID)
+	}
+}
+
 func TestRunRejectsContradictoryDemoLifecycleBeforeWriting(t *testing.T) {
 	fixture := copyDemoDatasetFixture()
 	fixture["cases.json"] = `[

@@ -1792,6 +1792,7 @@ func (r *PgCaseRepo) UpdateIfUnmodified(ctx context.Context, c *domain.Case, exp
 }
 
 func (r *PgCaseRepo) AddNote(ctx context.Context, caseID string, note *domain.CaseNote) error {
+	caseID = domain.CanonicalIdentifier(caseID)
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO case_notes (id, case_id, author, content, created_at) VALUES ($1, $2, $3, $4, $5)`,
 		note.ID, caseID, note.Author, note.Content, note.CreatedAt)
