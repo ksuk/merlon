@@ -172,12 +172,23 @@ func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, cont
 	}
 
 	if s.denylist != nil {
-		revoked, err := s.denylist.IsRevoked(r.Context(), claims.UserID)
-		if err != nil {
-			return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
+		if claims.JTI != "" {
+			revoked, err := s.denylist.IsTokenRevoked(r.Context(), claims.JTI)
+			if err != nil {
+				return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
+			}
+			if revoked {
+				return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "access token has been revoked"}
+			}
 		}
-		if revoked {
-			return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session has been revoked"}
+		if claims.SessionID != "" {
+			revoked, err := s.denylist.IsSessionRevoked(r.Context(), claims.SessionID)
+			if err != nil {
+				return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
+			}
+			if revoked {
+				return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session has been revoked"}
+			}
 		}
 	}
 

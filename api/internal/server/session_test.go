@@ -218,6 +218,327 @@ func TestLogout_RevokesSession(t *testing.T) {
 	}
 }
 
+type revokeFailingDenylist struct {
+	delegate auth.Denylist
+}
+
+func (d revokeFailingDenylist) RevokeToken(context.Context, string, time.Duration) error {
+	return fmt.Errorf("denylist unavailable")
+}
+
+func (d revokeFailingDenylist) RevokeSession(context.Context, string, time.Duration) error {
+	return fmt.Errorf("denylist unavailable")
+}
+
+func (d revokeFailingDenylist) IsTokenRevoked(ctx context.Context, tokenID string) (bool, error) {
+	return d.delegate.IsTokenRevoked(ctx, tokenID)
+}
+
+func (d revokeFailingDenylist) IsSessionRevoked(ctx context.Context, sessionID string) (bool, error) {
+	return d.delegate.IsSessionRevoked(ctx, sessionID)
+}
+
+func TestLogout_DoesNotReportSuccessWhenRevocationCannotBeConfirmed(t *testing.T) {
+	s, users, auditRepo := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+
+	loginRec := doLogin(t, s, "alice@example.com", testUserPassword)
+	s.denylist = revokeFailingDenylist{delegate: s.denylist}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	attachCookies(req, loginRec.Result().Cookies())
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("logout status = %d, want %d, body: %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+	assertErrorCode(t, rec, "internal_error")
+	for _, name := range []string{accessTokenCookie, refreshTokenCookie, csrfCookieName} {
+		cookie := findCookie(rec.Result().Cookies(), name)
+		if cookie == nil || cookie.MaxAge >= 0 {
+			t.Errorf("%s cookie was not cleared after failed logout", name)
+		}
+	}
+
+	entries, err := auditRepo.List(context.Background(), domain.AuditListFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("List audit entries: %v", err)
+	}
+	if !hasAction(entries, "logout_failed") {
+		t.Fatal("no logout_failed audit entry recorded")
+	}
+	if hasAction(entries, "logout") {
+		t.Fatal("failed logout was recorded as successful logout")
+	}
+}
+
+func TestLogout_SucceedsWhenAccessCookieIsInvalidButRefreshFamilyIsRevoked(t *testing.T) {
+	s, users, _ := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+
+	loginRec := doLogin(t, s, "alice@example.com", testUserPassword)
+	refreshCookie := findCookie(loginRec.Result().Cookies(), refreshTokenCookie)
+	if refreshCookie == nil {
+		t.Fatal("refresh_token cookie missing after login")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: accessTokenCookie, Value: "invalid-access-token"})
+	req.AddCookie(refreshCookie)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	req.AddCookie(refreshCookie)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refresh after logout status = %d, want %d, body: %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
+func TestLogout_AllowsImmediateRelogin(t *testing.T) {
+	s, users, _ := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+
+	firstLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+	firstCookies := firstLogin.Result().Cookies()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	attachCookies(req, firstCookies)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	secondLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	attachCookies(req, secondLogin.Result().Cookies())
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("access after immediate re-login = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestLogout_DoesNotRevokeAConcurrentSession(t *testing.T) {
+	s, users, _ := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+
+	firstLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+	secondLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	attachCookies(req, firstLogin.Result().Cookies())
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	attachCookies(req, firstLogin.Result().Cookies())
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("logged-out session status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	attachCookies(req, secondLogin.Result().Cookies())
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("concurrent session status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestLogin_EvictsTheOldestAccessAndRefreshSessionAtTheConcurrentLimit(t *testing.T) {
+	s, users, _ := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+
+	logins := make([]*httptest.ResponseRecorder, 0, auth.MaxConcurrentSessions+1)
+	for range auth.MaxConcurrentSessions + 1 {
+		logins = append(logins, doLogin(t, s, "alice@example.com", testUserPassword))
+	}
+
+	oldestCookies := logins[0].Result().Cookies()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	attachCookies(req, oldestCookies)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("oldest access session status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	oldestRefresh := findCookie(oldestCookies, refreshTokenCookie)
+	if oldestRefresh == nil {
+		t.Fatal("oldest session refresh_token cookie missing")
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	req.AddCookie(oldestRefresh)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("oldest refresh session status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	newestCookies := logins[len(logins)-1].Result().Cookies()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	attachCookies(req, newestCookies)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("newest session status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestRevokeUserSessions_RevokesExistingSessionsButNotFutureLogin(t *testing.T) {
+	s, users, auditRepo := testServerWithSessions(t)
+	admin := createTestUser(t, users, "admin@example.com", testUserPassword, domain.RoleAdmin)
+	user := createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAnalyst)
+	firstLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+	secondLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+	adminLogin := doLogin(t, s, "admin@example.com", testUserPassword)
+	adminCookies := adminLogin.Result().Cookies()
+	csrfCookie := findCookie(adminCookies, csrfCookieName)
+	if csrfCookie == nil {
+		t.Fatal("csrf_token cookie missing after admin login")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/"+user.ID+"/revoke-sessions", nil)
+	attachCookies(req, adminCookies)
+	req.Header.Set(csrfHeaderName, csrfCookie.Value)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("revoke sessions status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	for index, cookies := range [][]*http.Cookie{firstLogin.Result().Cookies(), secondLogin.Result().Cookies()} {
+		req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+		attachCookies(req, cookies)
+		rec = httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("revoked session %d status = %d, want %d", index+1, rec.Code, http.StatusUnauthorized)
+		}
+
+		refreshCookie := findCookie(cookies, refreshTokenCookie)
+		if refreshCookie == nil {
+			t.Fatalf("revoked session %d has no refresh token", index+1)
+		}
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+		req.AddCookie(refreshCookie)
+		rec = httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("revoked refresh session %d status = %d, want %d", index+1, rec.Code, http.StatusUnauthorized)
+		}
+	}
+
+	futureLogin := doLogin(t, s, "alice@example.com", testUserPassword)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	attachCookies(req, futureLogin.Result().Cookies())
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("future session status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	entries, err := auditRepo.List(context.Background(), domain.AuditListFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("List audit entries: %v", err)
+	}
+	if !hasAction(entries, "user_wide_session_revocation") {
+		t.Fatal("no user_wide_session_revocation audit entry recorded")
+	}
+	for _, entry := range entries {
+		if entry.Action == "user_wide_session_revocation" {
+			if entry.UserID != admin.ID || entry.ResourceID != user.ID {
+				t.Fatalf("revocation audit actor/resource = %q/%q, want %q/%q", entry.UserID, entry.ResourceID, admin.ID, user.ID)
+			}
+		}
+	}
+}
+
+func TestRevokeUserSessions_RequiresAdminAndKnownUser(t *testing.T) {
+	s, users, _ := testServerWithSessions(t)
+	createTestUser(t, users, "admin@example.com", testUserPassword, domain.RoleAdmin)
+	createTestUser(t, users, "viewer@example.com", testUserPassword, domain.RoleViewer)
+
+	viewerLogin := doLogin(t, s, "viewer@example.com", testUserPassword)
+	viewerCookies := viewerLogin.Result().Cookies()
+	viewerCSRF := findCookie(viewerCookies, csrfCookieName)
+	if viewerCSRF == nil {
+		t.Fatal("viewer csrf_token cookie missing")
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/missing/revoke-sessions", nil)
+	attachCookies(req, viewerCookies)
+	req.Header.Set(csrfHeaderName, viewerCSRF.Value)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer revoke status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	adminLogin := doLogin(t, s, "admin@example.com", testUserPassword)
+	adminCookies := adminLogin.Result().Cookies()
+	adminCSRF := findCookie(adminCookies, csrfCookieName)
+	if adminCSRF == nil {
+		t.Fatal("admin csrf_token cookie missing")
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/users/missing/revoke-sessions", nil)
+	attachCookies(req, adminCookies)
+	req.Header.Set(csrfHeaderName, adminCSRF.Value)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing-user revoke status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestSessionLifecycle_RecordsDistinctAuditEvents(t *testing.T) {
+	s, users, auditRepo := testServerWithSessions(t)
+	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
+
+	loginRec := doLogin(t, s, "alice@example.com", testUserPassword)
+	refreshCookie := findCookie(loginRec.Result().Cookies(), refreshTokenCookie)
+	if refreshCookie == nil {
+		t.Fatal("refresh_token cookie missing after login")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	req.AddCookie(refreshCookie)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	attachCookies(req, rec.Result().Cookies())
+	logoutRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(logoutRec, req)
+	if logoutRec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d, body: %s", logoutRec.Code, http.StatusOK, logoutRec.Body.String())
+	}
+
+	entries, err := auditRepo.List(context.Background(), domain.AuditListFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("List audit entries: %v", err)
+	}
+	for _, action := range []string{"login_success", "refresh", "session_revocation", "logout"} {
+		if !hasAction(entries, action) {
+			t.Errorf("no %s audit entry recorded", action)
+		}
+	}
+}
+
 func TestRefresh_RotatesToken(t *testing.T) {
 	s, users, _ := testServerWithSessions(t)
 	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
@@ -247,7 +568,7 @@ func TestRefresh_RotatesToken(t *testing.T) {
 }
 
 func TestRefresh_ReuseDetection_RevokesAllSessions(t *testing.T) {
-	s, users, _ := testServerWithSessions(t)
+	s, users, auditRepo := testServerWithSessions(t)
 	createTestUser(t, users, "alice@example.com", testUserPassword, domain.RoleAdmin)
 
 	loginRec := doLogin(t, s, "alice@example.com", testUserPassword)
@@ -264,8 +585,17 @@ func TestRefresh_ReuseDetection_RevokesAllSessions(t *testing.T) {
 		t.Fatalf("first refresh status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	rotatedRefresh := findCookie(rec.Result().Cookies(), refreshTokenCookie)
-	if rotatedRefresh == nil {
-		t.Fatal("no rotated refresh_token cookie")
+	rotatedAccess := findCookie(rec.Result().Cookies(), accessTokenCookie)
+	if rotatedRefresh == nil || rotatedAccess == nil {
+		t.Fatal("refresh did not return rotated access and refresh cookies")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	req.AddCookie(rotatedAccess)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotated access status before reuse = %d, want %d", rec.Code, http.StatusOK)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
@@ -282,6 +612,22 @@ func TestRefresh_ReuseDetection_RevokesAllSessions(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code == http.StatusOK {
 		t.Fatal("refresh succeeded using a token from a family that should have been fully revoked")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+	req.AddCookie(rotatedAccess)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("access token from reused family status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+
+	entries, err := auditRepo.List(context.Background(), domain.AuditListFilter{Limit: 50})
+	if err != nil {
+		t.Fatalf("List audit entries: %v", err)
+	}
+	if !hasAction(entries, "session_revocation") {
+		t.Fatal("refresh-token reuse did not record session_revocation")
 	}
 }
 

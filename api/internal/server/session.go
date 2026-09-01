@@ -2,11 +2,12 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/ksuk/merlon/api/internal/apierr"
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
@@ -71,14 +72,26 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := s.tokenIssuer.IssueAccessToken(user.ID, string(user.Role), generateID())
+	rawRefresh, family, evictedFamily, err := auth.IssueRefreshTokenWithEviction(r.Context(), s.refreshTokens, user.ID)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
+	if evictedFamily != "" && s.denylist != nil {
+		if err := s.denylist.RevokeSession(r.Context(), evictedFamily, auth.AccessTokenTTL); err != nil {
+			if revokeErr := auth.RevokeRefreshTokenFamily(r.Context(), s.refreshTokens, rawRefresh); revokeErr != nil {
+				log.Printf("revoke new refresh family after eviction denylist failure: %v", revokeErr)
+			}
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+	}
 
-	rawRefresh, _, err := auth.IssueRefreshToken(r.Context(), s.refreshTokens, user.ID)
+	accessToken, err := s.tokenIssuer.IssueAccessTokenForSession(user.ID, string(user.Role), generateID(), family)
 	if err != nil {
+		if revokeErr := auth.RevokeRefreshTokenFamily(r.Context(), s.refreshTokens, rawRefresh); revokeErr != nil {
+			log.Printf("revoke refresh token family after access-token failure: %v", revokeErr)
+		}
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
@@ -94,6 +107,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	userID := ""
+	sessionRevoked := false
+	revocationFailed := false
 
 	if s.tokenIssuer != nil {
 		if cookie, err := r.Cookie(accessTokenCookie); err == nil {
@@ -104,9 +119,24 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 					if ttl <= 0 {
 						ttl = time.Minute
 					}
-					if err := s.denylist.Revoke(r.Context(), userID, ttl); err != nil {
-						log.Printf("denylist revoke error: %v", err)
+					if claims.JTI != "" {
+						if err := s.denylist.RevokeToken(r.Context(), claims.JTI, ttl); err != nil {
+							log.Printf("denylist access-token revoke error: %v", err)
+							revocationFailed = true
+						} else {
+							sessionRevoked = true
+						}
 					}
+					if claims.SessionID != "" {
+						if err := s.denylist.RevokeSession(r.Context(), claims.SessionID, ttl); err != nil {
+							log.Printf("denylist session revoke error: %v", err)
+							revocationFailed = true
+						} else {
+							sessionRevoked = true
+						}
+					}
+				} else {
+					revocationFailed = true
 				}
 			}
 		}
@@ -114,13 +144,46 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	if s.refreshTokens != nil {
 		if cookie, err := r.Cookie(refreshTokenCookie); err == nil {
-			if err := auth.RevokeRefreshTokenFamily(r.Context(), s.refreshTokens, cookie.Value); err != nil {
-				log.Printf("revoke refresh token family error: %v", err)
+			tok, lookupErr := s.refreshTokens.GetByHash(r.Context(), auth.HashRefreshToken(cookie.Value))
+			if lookupErr != nil {
+				log.Printf("lookup refresh token for logout error: %v", lookupErr)
+				var notFound *domain.ErrNotFound
+				if !errors.As(lookupErr, &notFound) {
+					revocationFailed = true
+				}
+			} else {
+				if userID == "" {
+					userID = tok.UserID
+				}
+				if s.denylist != nil {
+					if err := s.denylist.RevokeSession(r.Context(), tok.TokenFamily, auth.AccessTokenTTL); err != nil {
+						log.Printf("denylist refresh-family revoke error: %v", err)
+						revocationFailed = true
+					} else {
+						sessionRevoked = true
+					}
+				} else {
+					revocationFailed = true
+				}
+				if err := s.refreshTokens.RevokeFamily(r.Context(), tok.TokenFamily); err != nil {
+					log.Printf("revoke refresh token family error: %v", err)
+					revocationFailed = true
+				} else {
+					sessionRevoked = true
+				}
 			}
 		}
 	}
 
 	clearSessionCookies(w)
+	if sessionRevoked {
+		s.recordAuthAudit(r, userID, "session_revocation")
+	}
+	if revocationFailed {
+		s.recordAuthAudit(r, userID, "logout_failed")
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "session revocation could not be confirmed")
+		return
+	}
 	s.recordAuthAudit(r, userID, "logout")
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
@@ -138,8 +201,17 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newRaw, _, err := auth.RotateRefreshToken(r.Context(), s.refreshTokens, cookie.Value)
+	newRaw, family, err := auth.RotateRefreshToken(r.Context(), s.refreshTokens, cookie.Value)
 	if err != nil {
+		if errors.Is(err, auth.ErrTokenReuseDetected) && family != "" && s.denylist != nil {
+			if revokeErr := s.denylist.RevokeSession(r.Context(), family, auth.AccessTokenTTL); revokeErr != nil {
+				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, revokeErr.Error())
+				return
+			}
+			if reused, lookupErr := s.refreshTokens.GetByHash(r.Context(), auth.HashRefreshToken(cookie.Value)); lookupErr == nil {
+				s.recordAuthAudit(r, reused.UserID, "session_revocation")
+			}
+		}
 		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid or reused refresh token")
 		return
 	}
@@ -156,7 +228,7 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, err := s.tokenIssuer.IssueAccessToken(user.ID, string(user.Role), generateID())
+	accessToken, err := s.tokenIssuer.IssueAccessTokenForSession(user.ID, string(user.Role), generateID(), family)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
@@ -164,8 +236,53 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	setAccessCookie(w, accessToken)
 	setRefreshCookie(w, newRaw)
+	s.recordAuthAudit(r, user.ID, "refresh")
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
+}
+
+func (s *Server) handleRevokeUserSessions(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil || s.refreshTokens == nil || s.denylist == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "session revocation not configured")
+		return
+	}
+
+	userID := r.PathValue("id")
+	if _, err := s.users.Get(r.Context(), userID); err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "user not found")
+			return
+		}
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+
+	active, err := s.refreshTokens.ListActiveByUser(r.Context(), userID)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+
+	families := make(map[string]struct{}, len(active))
+	for _, token := range active {
+		families[token.TokenFamily] = struct{}{}
+	}
+	for family := range families {
+		// Deny access before revoking refresh state. If the repository write
+		// fails, a retry cannot mint a usable token for this family.
+		if err := s.denylist.RevokeSession(r.Context(), family, auth.AccessTokenTTL); err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+		if err := s.refreshTokens.RevokeFamily(r.Context(), family); err != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			return
+		}
+	}
+
+	s.recordAuthAuditForResource(r, resolveAuditUserID(r), userID, "user_wide_session_revocation")
+	writeJSON(w, http.StatusOK, map[string]any{"status": "revoked", "revoked_sessions": len(families)})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -211,11 +328,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) recordAuthAudit(r *http.Request, userID, action string) {
+	s.recordAuthAuditForResource(r, userID, userID, action)
+}
+
+func (s *Server) recordAuthAuditForResource(r *http.Request, actorID, resourceID, action string) {
 	if s.audit == nil {
 		return
 	}
 
-	auditUserID := userID
+	auditUserID := actorID
 	if auditUserID == "" {
 		auditUserID = "anonymous"
 	}
@@ -224,7 +345,7 @@ func (s *Server) recordAuthAudit(r *http.Request, userID, action string) {
 		UserID:       auditUserID,
 		Action:       action,
 		ResourceType: "auth",
-		ResourceID:   userID,
+		ResourceID:   resourceID,
 		IPAddress:    extractIP(r),
 		UserAgent:    r.UserAgent(),
 		CreatedAt:    time.Now(),

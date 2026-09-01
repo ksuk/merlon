@@ -57,28 +57,38 @@ func randomHex(numBytes int) (string, error) {
 // the user already has MaxConcurrentSessions active sessions, the oldest one
 // is evicted first (the authentication model §2 "同時セッション制限").
 func IssueRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository, userID string) (rawToken, family string, err error) {
+	rawToken, family, _, err = IssueRefreshTokenWithEviction(ctx, repo, userID)
+	return rawToken, family, err
+}
+
+// IssueRefreshTokenWithEviction starts a session and reports the family that
+// was evicted to enforce MaxConcurrentSessions. The session API uses that
+// family identifier to deny its still-unexpired access tokens as well as its
+// persisted refresh tokens.
+func IssueRefreshTokenWithEviction(ctx context.Context, repo domain.RefreshTokenRepository, userID string) (rawToken, family, evictedFamily string, err error) {
 	active, err := repo.ListActiveByUser(ctx, userID)
 	if err != nil {
-		return "", "", fmt.Errorf("list active sessions: %w", err)
+		return "", "", "", fmt.Errorf("list active sessions: %w", err)
 	}
 	if len(active) >= MaxConcurrentSessions {
 		sort.Slice(active, func(i, j int) bool { return active[i].CreatedAt.Before(active[j].CreatedAt) })
-		if err := repo.Revoke(ctx, active[0].ID); err != nil {
-			return "", "", fmt.Errorf("evict oldest session: %w", err)
+		evictedFamily = active[0].TokenFamily
+		if err := repo.RevokeFamily(ctx, evictedFamily); err != nil {
+			return "", "", "", fmt.Errorf("evict oldest session: %w", err)
 		}
 	}
 
 	raw, err := randomHex(32)
 	if err != nil {
-		return "", "", fmt.Errorf("generate refresh token: %w", err)
+		return "", "", "", fmt.Errorf("generate refresh token: %w", err)
 	}
 	family, err = randomHex(16)
 	if err != nil {
-		return "", "", fmt.Errorf("generate token family: %w", err)
+		return "", "", "", fmt.Errorf("generate token family: %w", err)
 	}
 	id, err := randomHex(16)
 	if err != nil {
-		return "", "", fmt.Errorf("generate token id: %w", err)
+		return "", "", "", fmt.Errorf("generate token id: %w", err)
 	}
 
 	now := time.Now()
@@ -91,10 +101,10 @@ func IssueRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository, 
 		CreatedAt:   now,
 	}
 	if err := repo.Create(ctx, tok); err != nil {
-		return "", "", fmt.Errorf("create refresh token: %w", err)
+		return "", "", "", fmt.Errorf("create refresh token: %w", err)
 	}
 
-	return raw, family, nil
+	return raw, family, evictedFamily, nil
 }
 
 // RotateRefreshToken consumes rawToken and issues a new token in the same
@@ -111,7 +121,7 @@ func RotateRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository,
 		if err := repo.RevokeFamily(ctx, tok.TokenFamily); err != nil {
 			return "", "", fmt.Errorf("revoke family after reuse: %w", err)
 		}
-		return "", "", ErrTokenReuseDetected
+		return "", tok.TokenFamily, ErrTokenReuseDetected
 	}
 
 	if time.Now().After(tok.ExpiresAt) {

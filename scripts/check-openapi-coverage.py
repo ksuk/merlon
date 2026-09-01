@@ -36,19 +36,19 @@ SPEC_FILE = REPO_ROOT / "docs" / "api" / "openapi.json"
 
 # The number of registered API operations currently present in the OpenAPI
 # document. This may only be raised. See the module docstring.
-BASELINE_DOCUMENTED = 144
+BASELINE_DOCUMENTED = 145
 
 # The total number of registered API operations. Pinning this separately from
 # documented coverage makes an undocumented addition visible: without it,
 # covered would remain at BASELINE_DOCUMENTED while the missing list silently
 # grew. Any intentional surface change must update this value in review.
-BASELINE_REGISTERED = 144
+BASELINE_REGISTERED = 145
 
 # SHA-256 of the normalized, sorted route sets at the baseline above. Counts
 # catch simple additions/removals; these digests also catch a same-count
 # replacement, which would otherwise let a new undocumented route trade places
 # with an old one without failing CI.
-BASELINE_REGISTERED_SHA256 = "02ffe794d16bd4f8e565a09947190b9a8bec3d9e2b9bcc4c9ff8f017c0773414"
+BASELINE_REGISTERED_SHA256 = "498c2ec7550f3d05bc655f9db888d9e174d9bee73b569b77541beb563bdf57cb"
 BASELINE_UNDOCUMENTED = 0
 BASELINE_UNDOCUMENTED_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 

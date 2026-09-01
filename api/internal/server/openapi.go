@@ -157,6 +157,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/admin/retention-policies":                            pathRetentionPolicies(),
 			"/api/v1/admin/retention-policies/{category}":                 pathRetentionPolicy(),
 			"/api/v1/admin/users":                                         pathUsers(),
+			"/api/v1/admin/users/{id}/revoke-sessions":                    pathRevokeUserSessions(),
 			"/api/v1/auth/login":                                          pathLogin(),
 			"/api/v1/auth/logout":                                         pathLogout(),
 			"/api/v1/auth/refresh":                                        pathRefresh(),
@@ -1389,6 +1390,14 @@ func pathRetentionPolicy() map[string]any {
 
 func pathUsers() map[string]any {
 	return map[string]any{"get": documentedJSONOperation("List users", nil, nil, "200", "Users", arraySchema(schemaRef("UserProfile")), "401", "403", "500", "503")}
+}
+
+func pathRevokeUserSessions() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Revoke all active sessions for a user", []map[string]any{pathIDParameter("id", "User ID")}, nil,
+		"200", "Sessions revoked", objectSchema(map[string]any{
+			"status":           map[string]any{"type": "string"},
+			"revoked_sessions": map[string]any{"type": "integer", "minimum": 0},
+		}, "status", "revoked_sessions"), "401", "403", "404", "500", "503")}
 }
 
 func pathLogin() map[string]any {
