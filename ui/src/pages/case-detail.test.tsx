@@ -47,7 +47,8 @@ test("renders case detail with notes and transitions", async () => {
   await renderWithRoute("case1")
 
   expect(await screen.findByText("ケース詳細")).toBeDefined()
-  expect(screen.getByText("不審な取引パターン")).toBeDefined()
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "概要" })).toHaveValue("不審な取引パターン"))
+  expect(screen.getByText("不審な取引パターン", { selector: "p" })).toBeDefined()
   expect(screen.getByText("調査を開始しました")).toBeDefined()
   expect(screen.getAllByText("tanaka").length).toBeGreaterThan(0)
   expect(screen.getByText("エスカレーション")).toBeDefined()
