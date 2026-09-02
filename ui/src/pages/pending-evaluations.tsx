@@ -9,12 +9,14 @@ import { api, type PendingEvaluation } from "@/lib/api"
 import { RefreshCw, RotateCcw } from "lucide-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
-import { Link } from "react-router"
+import { Link, useSearchParams } from "react-router"
 
 const statusOptions = ["", "PENDING_REVIEW", "PROCESSING", "FAILED", "RESOLVED"] as const
 
 export function PendingEvaluationsPage() {
   const { t, i18n } = useTranslation()
+  const [searchParams] = useSearchParams()
+  const pendingEvaluationID = searchParams.get("pending_evaluation_id") ?? ""
   // The queue's stop conditions. A page of rows cannot answer "how much is
   // outstanding" or "how long has the oldest gap been open"; approximating
   // them from loaded rows reads as a small backlog exactly when it is large.
@@ -26,7 +28,7 @@ export function PendingEvaluationsPage() {
   const [createdTo, setCreatedTo] = useState("")
   const [minAgeDays, setMinAgeDays] = useState("")
   const [maxAgeDays, setMaxAgeDays] = useState("")
-  const [selected, setSelected] = useState<PendingEvaluation | null>(null)
+  const [selectedOverride, setSelected] = useState<PendingEvaluation | null | undefined>(undefined)
   const [reason, setReason] = useState("")
   const [refreshKey, setRefreshKey] = useState(0)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -46,6 +48,11 @@ export function PendingEvaluationsPage() {
     limit: 50,
     cursor: pager.cursor || undefined,
   }), pager.requestKey)
+  const { data: deepLinkedEvaluation, error: deepLinkError } = useApi(
+    () => pendingEvaluationID ? api.pending.get(pendingEvaluationID) : Promise.resolve(null),
+    `${pendingEvaluationID}:${refreshKey}`,
+  )
+  const selected = selectedOverride === undefined ? deepLinkedEvaluation : selectedOverride
   const { data: history } = useApi(() => selected ? api.pending.history(selected.id) : Promise.resolve([]), `${selected?.id ?? ""}:${selected?.version ?? 0}`)
 
   async function transition(action: "retry" | "resolve" | "escalate") {
@@ -74,6 +81,7 @@ export function PendingEvaluationsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between"><div><h1 className="text-2xl font-bold tracking-tight">{t("pendingEvaluations.title")}</h1><p className="text-sm text-muted-foreground">{t("pendingEvaluations.description")}</p></div><Button size="sm" variant="outline" onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw className="h-4 w-4" />{t("pendingEvaluations.refresh")}</Button></div>
+      {deepLinkError && <p role="alert" className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">{t("pendingEvaluations.deepLinkError")}: {deepLinkError}</p>}
       {actionError && <p role="alert" className="rounded-md border border-destructive/50 bg-destructive/5 p-3 text-sm text-destructive">{actionError}</p>}
       {stats && (
         <Card data-testid="pending-stats">

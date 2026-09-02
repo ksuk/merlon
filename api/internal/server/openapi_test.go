@@ -226,6 +226,28 @@ func TestOpenAPISpecDocumentsTMContractAndTransactionType(t *testing.T) {
 	}
 }
 
+func TestOpenAPISpecDocumentsTransactionMonitoringEvaluation(t *testing.T) {
+	spec := fetchOpenAPISpec(t)
+	schemas := spec["components"].(map[string]any)["schemas"].(map[string]any)
+	transaction := schemas["Transaction"].(map[string]any)
+	properties := transaction["properties"].(map[string]any)
+	monitoring, ok := properties["monitoring_evaluation"].(map[string]any)
+	if !ok {
+		t.Fatal("Transaction.properties.monitoring_evaluation missing")
+	}
+	if monitoring["$ref"] != "#/components/schemas/TransactionMonitoringEvaluation" {
+		t.Fatalf("monitoring_evaluation schema = %#v", monitoring)
+	}
+
+	evaluation := schemas["TransactionMonitoringEvaluation"].(map[string]any)
+	evaluationProperties := evaluation["properties"].(map[string]any)
+	for _, field := range []string{"pending_evaluation_id", "status", "reason"} {
+		if _, ok := evaluationProperties[field]; !ok {
+			t.Errorf("TransactionMonitoringEvaluation.properties.%s missing", field)
+		}
+	}
+}
+
 func TestOpenAPI_PaginationFieldsPresent(t *testing.T) {
 	spec := fetchOpenAPISpec(t)
 

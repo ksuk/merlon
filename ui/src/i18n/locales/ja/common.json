@@ -742,6 +742,13 @@
       "executedAt": "実行日時",
       "createdAt": "登録日時"
     },
+    "monitoring": {
+      "titleQueued": "モニタリング評価を保留しています",
+      "titleResolved": "モニタリング評価は復旧済みです",
+      "dependencyNotConfigured": "この取引の受付時にモニタリングを実行できませんでした。評価が完了するまで復旧キューに保持されます。",
+      "dependencyRecovered": "復旧処理による評価が完了しました。履歴は復旧記録から確認できます。",
+      "openQueue": "該当する復旧記録を開く"
+    },
     "travelRule": {
       "title": "トラベルルール",
       "applicable": "適用対象",
@@ -1427,6 +1434,7 @@
     "title": "保留評価の復旧",
     "description": "再試行・解決・エスカレーションが記録されるまで失敗を表示します。",
     "error": "保留評価の取得に失敗しました",
+    "deepLinkError": "指定された保留評価を開けませんでした",
     "retry": "再試行",
     "refresh": "更新",
     "queue": "復旧キュー",
