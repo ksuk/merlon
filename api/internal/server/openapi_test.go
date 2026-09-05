@@ -520,6 +520,7 @@ func TestOpenAPI_RegisteredCompatibilityRoutesHaveTypedContracts(t *testing.T) {
 		{"/api/v1/admin/retention-policies", "get", []string{"200", "500", "503"}, false},
 		{"/api/v1/admin/retention-policies/{category}", "put", []string{"200", "400", "404", "500", "503"}, true},
 		{"/api/v1/admin/users", "get", []string{"200", "500", "503"}, false},
+		{"/api/v1/admin/users/{id}/revoke-sessions", "post", []string{"200", "404", "500", "503"}, false},
 		{"/api/v1/auth/login", "post", []string{"200", "400", "401", "500", "503"}, true},
 		{"/api/v1/auth/logout", "post", []string{"200"}, false},
 		{"/api/v1/auth/refresh", "post", []string{"200", "401", "500", "503"}, false},

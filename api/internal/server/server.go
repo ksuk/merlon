@@ -537,6 +537,7 @@ func (s *Server) routes() {
 
 	// Users (admin only)
 	s.route("GET /api/v1/admin/users", s.handleListUsers)
+	s.route("POST /api/v1/admin/users/{id}/revoke-sessions", s.handleRevokeUserSessions)
 
 	// Operator assignment directory. This is intentionally separate from the
 	// admin user-management endpoint: analysts may use active principals and

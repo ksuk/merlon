@@ -168,8 +168,12 @@ func TestConcurrentSessionLimit(t *testing.T) {
 	}
 
 	// One more session beyond the limit must evict the oldest.
-	if _, _, err := IssueRefreshToken(ctx, repo, "user-1"); err != nil {
+	_, _, evictedFamily, err := IssueRefreshTokenWithEviction(ctx, repo, "user-1")
+	if err != nil {
 		t.Fatalf("IssueRefreshToken (6th): %v", err)
+	}
+	if evictedFamily == "" {
+		t.Fatal("IssueRefreshTokenWithEviction did not report the evicted family")
 	}
 
 	count, err = repo.CountActiveByUser(ctx, "user-1")
@@ -186,5 +190,8 @@ func TestConcurrentSessionLimit(t *testing.T) {
 	}
 	if oldestTok.RevokedAt == nil {
 		t.Fatal("oldest session was not revoked after exceeding MaxConcurrentSessions")
+	}
+	if evictedFamily != oldestTok.TokenFamily {
+		t.Fatalf("evicted family = %s, want %s", evictedFamily, oldestTok.TokenFamily)
 	}
 }

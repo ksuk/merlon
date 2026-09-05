@@ -38,6 +38,29 @@ before completing setup.
 demo topology and for local development. It must never be set in production;
 see [Configuration Reference](configuration.md).
 
+## Session lifecycle
+
+Each successful login starts an independent refresh-token family and issues an
+access token with both a token identifier and that family identifier. Refresh
+rotates the refresh token within the same family. Reuse of a rotated token
+revokes the family as a compromise signal.
+
+Logout revokes the current access token and refresh-token family. Other
+concurrent sessions for the same user remain active, and an immediate new login
+starts a different family that is not affected by the logout. A user can have
+up to five active families; starting another session evicts the oldest one.
+If server-side revocation cannot be confirmed, the response is an error rather
+than a successful logout; browser cookies are still cleared and the failed
+attempt is audited.
+
+An Admin can call
+`POST /api/v1/admin/users/{id}/revoke-sessions` to invalidate all currently
+active families for one user. This is the user-wide path for an intentional
+forced logout. It does not deny a later successful login. Login success,
+refresh, logout, current-session revocation, and user-wide revocation are
+recorded as distinct audit actions; token values and refresh-family identifiers
+are not written to the audit log.
+
 ## Roles
 
 | Permission | Admin | Analyst | Viewer |
