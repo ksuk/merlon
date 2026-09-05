@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react"
+import { fireEvent, screen, waitFor } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
@@ -72,6 +72,50 @@ test("shows error for missing customer", async () => {
   await renderWithRoute("nonexistent")
 
   expect(await screen.findByText("顧客データの取得に失敗しました")).toBeDefined()
+})
+
+test("renders an unscored customer without requesting a score explanation", async () => {
+  const requested: string[] = []
+  vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    const url = String(input)
+    requested.push(url)
+    if (url.includes("/system/capabilities")) {
+      return Promise.resolve(new Response(JSON.stringify(capabilitiesFor({ role: "admin" }))))
+    }
+    if (url.includes("/auth/me")) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ id: "u1", email: "a@example.com", role: "admin" })),
+      )
+    }
+    if (url.endsWith("/customers/c1")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: "c1",
+            external_id: "EXT-UNSCORED",
+            customer_type: "individual",
+            country_code: "JP",
+            product_types: [],
+            attributes: {},
+            created_at: "2025-01-01T00:00:00Z",
+            updated_at: "2025-01-01T00:00:00Z",
+          }),
+        ),
+      )
+    }
+    if (url.includes("/score-explanation")) {
+      return Promise.resolve(new Response(JSON.stringify({ error: "score record not found" }), { status: 404 }))
+    }
+    return Promise.resolve(new Response(JSON.stringify([])))
+  })
+
+  await renderWithRoute("c1")
+
+  expect(await screen.findByText("EXT-UNSCORED")).toBeDefined()
+  expect(screen.getByText("未スコア")).toBeDefined()
+  await waitFor(() => {
+    expect(requested.filter((url) => url.includes("/score-explanation"))).toHaveLength(0)
+  })
 })
 
 function mockCustomerDetailFetch() {
