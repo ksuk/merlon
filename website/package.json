@@ -25,9 +25,9 @@
     "@docusaurus/core": "3.10.2",
     "@docusaurus/faster": "3.10.2",
     "@docusaurus/preset-classic": "3.10.2",
-    "@easyops-cn/docusaurus-search-local": "^0.55.2",
-    "@fontsource-variable/inter": "^5.2.5",
-    "@fontsource/jetbrains-mono": "^5.2.5",
+    "@easyops-cn/docusaurus-search-local": "^0.55.3",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
     "prism-react-renderer": "^2.3.0",
@@ -38,10 +38,10 @@
     "@docusaurus/module-type-aliases": "3.10.2",
     "@docusaurus/tsconfig": "3.10.2",
     "@docusaurus/types": "3.10.2",
-    "@types/react": "^19.0.0",
+    "@types/react": "^19.2.18",
     "license-checker-rseidelsohn": "^5.0.1",
     "typescript": "~6.0.2",
-    "wrangler": "4.120.0"
+    "wrangler": "4.124.0"
   },
   "overrides": {
     "serialize-javascript": "^7.0.7",
