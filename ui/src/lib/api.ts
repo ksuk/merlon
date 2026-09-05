@@ -507,6 +507,11 @@ export interface Transaction {
   // existed: that is neither "not applicable" nor "unknown", it means the
   // system never assessed this transaction at all.
   travel_rule_assessment?: TravelRuleAssessment | null
+  monitoring_evaluation?: {
+    pending_evaluation_id: string
+    status: "PENDING_REVIEW" | "PROCESSING" | "RESOLVED" | "FAILED"
+    reason: string
+  }
   executed_at: string
   created_at: string
 }

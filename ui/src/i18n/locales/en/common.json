@@ -742,6 +742,13 @@
       "executedAt": "Executed at",
       "createdAt": "Registered at"
     },
+    "monitoring": {
+      "titleQueued": "Monitoring evaluation is queued",
+      "titleResolved": "Monitoring evaluation recovered",
+      "dependencyNotConfigured": "Monitoring could not run when this transaction was accepted. The transaction is retained in the recovery queue until evaluation completes.",
+      "dependencyRecovered": "Evaluation completed through recovery. Its history remains available from the recovery record.",
+      "openQueue": "Open this recovery record"
+    },
     "travelRule": {
       "title": "Travel Rule",
       "applicable": "Applicable",
@@ -1427,6 +1434,7 @@
     "title": "Pending evaluation recovery",
     "description": "Failures remain visible until an operator records retry, resolution, or escalation.",
     "error": "Failed to load pending evaluations",
+    "deepLinkError": "Failed to open the requested pending evaluation",
     "retry": "Retry",
     "refresh": "Refresh",
     "queue": "Recovery queue",
