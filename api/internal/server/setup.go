@@ -75,7 +75,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.recordAuthAudit(r, user.ID, "initial_setup")
+	_ = s.recordAuthAudit(r, user.ID, "initial_setup")
 
 	writeJSON(w, http.StatusCreated, meResponse{ID: user.ID, Email: user.Email, Role: user.Role})
 }

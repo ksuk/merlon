@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -95,19 +96,67 @@ func TestRotateRefreshToken_ReuseDetected_RevokesFamily(t *testing.T) {
 	}
 }
 
+func TestRotateRefreshToken_ConcurrentReuseRevokesFamily(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryRefreshTokenRepo()
+	rawToken, family, err := IssueRefreshToken(ctx, repo, "user-1")
+	if err != nil {
+		t.Fatalf("IssueRefreshToken: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _, err := RotateRefreshToken(ctx, repo, rawToken)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	successes := 0
+	reuses := 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrTokenReuseDetected):
+			reuses++
+		default:
+			t.Fatalf("RotateRefreshToken concurrent error = %v", err)
+		}
+	}
+	if successes != 1 || reuses != 1 {
+		t.Fatalf("concurrent rotation outcomes: successes=%d reuses=%d, want 1/1", successes, reuses)
+	}
+	active, err := repo.IsFamilyActive(ctx, family)
+	if err != nil {
+		t.Fatalf("IsFamilyActive: %v", err)
+	}
+	if active {
+		t.Fatal("family remains active after concurrent refresh-token reuse")
+	}
+}
+
 func TestRotateRefreshToken_Expired(t *testing.T) {
 	ctx := context.Background()
 	repo := store.NewMemoryRefreshTokenRepo()
 
 	rawToken := "expired-raw-token"
-	err := repo.Create(ctx, &domain.RefreshToken{
+	_, err := repo.CreateSession(ctx, &domain.RefreshToken{
 		ID:          "tok-1",
 		UserID:      "user-1",
 		TokenHash:   hashRefreshToken(rawToken),
 		TokenFamily: "family-1",
 		ExpiresAt:   time.Now().Add(-time.Hour),
 		CreatedAt:   time.Now().Add(-8 * 24 * time.Hour),
-	})
+	}, MaxConcurrentSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -168,8 +217,12 @@ func TestConcurrentSessionLimit(t *testing.T) {
 	}
 
 	// One more session beyond the limit must evict the oldest.
-	if _, _, err := IssueRefreshToken(ctx, repo, "user-1"); err != nil {
+	_, _, evictedFamily, err := IssueRefreshTokenWithEviction(ctx, repo, "user-1")
+	if err != nil {
 		t.Fatalf("IssueRefreshToken (6th): %v", err)
+	}
+	if evictedFamily == "" {
+		t.Fatal("IssueRefreshTokenWithEviction did not report the evicted family")
 	}
 
 	count, err = repo.CountActiveByUser(ctx, "user-1")
@@ -186,5 +239,79 @@ func TestConcurrentSessionLimit(t *testing.T) {
 	}
 	if oldestTok.RevokedAt == nil {
 		t.Fatal("oldest session was not revoked after exceeding MaxConcurrentSessions")
+	}
+	if evictedFamily != oldestTok.TokenFamily {
+		t.Fatalf("evicted family = %s, want %s", evictedFamily, oldestTok.TokenFamily)
+	}
+}
+
+func TestConcurrentSessionLimit_IsAtomic(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryRefreshTokenRepo()
+	for i := 0; i < MaxConcurrentSessions-1; i++ {
+		if _, _, err := IssueRefreshToken(ctx, repo, "user-1"); err != nil {
+			t.Fatalf("seed session %d: %v", i, err)
+		}
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 8)
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _, _, err := IssueRefreshTokenWithEviction(ctx, repo, "user-1")
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent IssueRefreshTokenWithEviction: %v", err)
+		}
+	}
+
+	count, err := repo.CountActiveByUser(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("CountActiveByUser: %v", err)
+	}
+	if count != MaxConcurrentSessions {
+		t.Fatalf("active sessions = %d, want %d", count, MaxConcurrentSessions)
+	}
+}
+
+func TestConcurrentSessionLimit_EvictsByFamilyStartNotLastRefresh(t *testing.T) {
+	ctx := context.Background()
+	repo := store.NewMemoryRefreshTokenRepo()
+
+	oldestRaw, oldestFamily, err := IssueRefreshToken(ctx, repo, "user-1")
+	if err != nil {
+		t.Fatalf("issue oldest session: %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	if _, _, err := IssueRefreshToken(ctx, repo, "user-1"); err != nil {
+		t.Fatalf("issue second session: %v", err)
+	}
+	for i := 0; i < MaxConcurrentSessions-2; i++ {
+		time.Sleep(time.Millisecond)
+		if _, _, err := IssueRefreshToken(ctx, repo, "user-1"); err != nil {
+			t.Fatalf("issue session %d: %v", i+3, err)
+		}
+	}
+	time.Sleep(time.Millisecond)
+	if _, _, err := RotateRefreshToken(ctx, repo, oldestRaw); err != nil {
+		t.Fatalf("refresh oldest session: %v", err)
+	}
+
+	_, _, evictedFamily, err := IssueRefreshTokenWithEviction(ctx, repo, "user-1")
+	if err != nil {
+		t.Fatalf("issue session past limit: %v", err)
+	}
+	if evictedFamily != oldestFamily {
+		t.Fatalf("evicted family = %s, want original oldest %s", evictedFamily, oldestFamily)
 	}
 }

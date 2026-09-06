@@ -2,11 +2,12 @@ package server
 
 import (
 	"encoding/json"
-	"github.com/ksuk/merlon/api/internal/apierr"
+	"errors"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/domain"
 )
@@ -59,53 +60,89 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.users.GetByEmail(r.Context(), req.Email)
 	if err != nil || !user.Active {
-		s.recordAuthAudit(r, "", "login_failed")
+		if auditErr := s.recordAuthAudit(r, "", "login_failed"); auditErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "authentication audit could not be recorded")
+			return
+		}
 		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid email or password")
 		return
 	}
 
 	ok, err := auth.VerifyPassword(user.PasswordHash, req.Password)
 	if err != nil || !ok {
-		s.recordAuthAudit(r, user.ID, "login_failed")
+		if auditErr := s.recordAuthAudit(r, user.ID, "login_failed"); auditErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "authentication audit could not be recorded")
+			return
+		}
 		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid email or password")
 		return
 	}
 
-	accessToken, err := s.tokenIssuer.IssueAccessToken(user.ID, string(user.Role), generateID())
+	rawRefresh, refreshToken, err := auth.PrepareRefreshToken(user.ID, user.Role)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
 
-	rawRefresh, _, err := auth.IssueRefreshToken(r.Context(), s.refreshTokens, user.ID)
+	accessToken, err := s.tokenIssuer.IssueAccessTokenForSession(user.ID, string(user.Role), generateID(), refreshToken.TokenFamily)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
+	}
+	auditEntry := s.newAuthAuditEntry(r, user.ID, user.ID, "login_success")
+	evictedFamilies, err := s.refreshTokens.CreateSessionWithAudit(r.Context(), refreshToken, auth.MaxConcurrentSessions, auditEntry)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "authentication audit could not be recorded")
+		return
+	}
+	s.markAuthAuditHandled(r)
+	if s.denylist != nil {
+		for _, evictedFamily := range evictedFamilies {
+			if err := s.denylist.RevokeSession(r.Context(), evictedFamily, auth.AccessTokenTTL); err != nil {
+				log.Printf("cache evicted session revocation error: %v", err)
+			}
+		}
 	}
 
 	setAccessCookie(w, accessToken)
 	setRefreshCookie(w, rawRefresh)
 	setCSRFCookie(w, generateID()+generateID())
 
-	s.recordAuthAudit(r, user.ID, "login_success")
-
 	writeJSON(w, http.StatusOK, s.newMeResponse(user))
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !csrfTokenMatches(r) {
+		writeAuthError(w, http.StatusForbidden, apierr.CodeForbidden, "missing or invalid CSRF token")
+		return
+	}
+
 	userID := ""
+	sessionRevoked := false
+	revocationFailed := false
+	families := make(map[string]struct{})
 
 	if s.tokenIssuer != nil {
 		if cookie, err := r.Cookie(accessTokenCookie); err == nil {
 			if claims, err := s.tokenIssuer.VerifyAccessToken(cookie.Value); err == nil {
 				userID = claims.UserID
+				if claims.SessionID != "" {
+					families[claims.SessionID] = struct{}{}
+				}
 				if s.denylist != nil {
 					ttl := time.Until(claims.ExpiresAt.Time)
 					if ttl <= 0 {
 						ttl = time.Minute
 					}
-					if err := s.denylist.Revoke(r.Context(), userID, ttl); err != nil {
-						log.Printf("denylist revoke error: %v", err)
+					if claims.JTI != "" {
+						if err := s.denylist.RevokeToken(r.Context(), claims.JTI, ttl); err != nil {
+							log.Printf("denylist access-token revoke error: %v", err)
+						}
+					}
+					if claims.SessionID != "" {
+						if err := s.denylist.RevokeSession(r.Context(), claims.SessionID, auth.AccessTokenTTL); err != nil {
+							log.Printf("denylist session revoke error: %v", err)
+						}
 					}
 				}
 			}
@@ -114,14 +151,56 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	if s.refreshTokens != nil {
 		if cookie, err := r.Cookie(refreshTokenCookie); err == nil {
-			if err := auth.RevokeRefreshTokenFamily(r.Context(), s.refreshTokens, cookie.Value); err != nil {
-				log.Printf("revoke refresh token family error: %v", err)
+			tok, lookupErr := s.refreshTokens.GetByHash(r.Context(), auth.HashRefreshToken(cookie.Value))
+			if lookupErr != nil {
+				log.Printf("lookup refresh token for logout error: %v", lookupErr)
+				var notFound *domain.ErrNotFound
+				if !errors.As(lookupErr, &notFound) {
+					revocationFailed = true
+				}
+			} else {
+				if userID == "" {
+					userID = tok.UserID
+				}
+				families[tok.TokenFamily] = struct{}{}
+				if s.denylist != nil {
+					if err := s.denylist.RevokeSession(r.Context(), tok.TokenFamily, auth.AccessTokenTTL); err != nil {
+						log.Printf("denylist refresh-family revoke error: %v", err)
+					}
+				}
+			}
+		}
+	}
+	if len(families) > 0 {
+		if s.refreshTokens == nil {
+			revocationFailed = true
+		} else {
+			for family := range families {
+				if err := s.refreshTokens.RevokeFamily(r.Context(), family); err != nil {
+					log.Printf("revoke refresh token family error: %v", err)
+					revocationFailed = true
+				} else {
+					sessionRevoked = true
+				}
 			}
 		}
 	}
 
 	clearSessionCookies(w)
-	s.recordAuthAudit(r, userID, "logout")
+	if sessionRevoked {
+		if err := s.recordAuthAudit(r, userID, "session_revocation"); err != nil {
+			revocationFailed = true
+		}
+	}
+	if revocationFailed {
+		_ = s.recordAuthAudit(r, userID, "logout_failed")
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "session revocation could not be confirmed")
+		return
+	}
+	if err := s.recordAuthAudit(r, userID, "logout"); err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "logout audit could not be recorded")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
@@ -131,6 +210,10 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "authentication not configured")
 		return
 	}
+	if !csrfTokenMatches(r) {
+		writeAuthError(w, http.StatusForbidden, apierr.CodeForbidden, "missing or invalid CSRF token")
+		return
+	}
 
 	cookie, err := r.Cookie(refreshTokenCookie)
 	if err != nil {
@@ -138,8 +221,19 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newRaw, _, err := auth.RotateRefreshToken(r.Context(), s.refreshTokens, cookie.Value)
+	newRaw, family, err := auth.RotateRefreshToken(r.Context(), s.refreshTokens, cookie.Value)
 	if err != nil {
+		if errors.Is(err, auth.ErrTokenReuseDetected) && family != "" && s.denylist != nil {
+			if revokeErr := s.denylist.RevokeSession(r.Context(), family, auth.AccessTokenTTL); revokeErr != nil {
+				log.Printf("cache reused refresh family revocation error: %v", revokeErr)
+			}
+			if reused, lookupErr := s.refreshTokens.GetByHash(r.Context(), auth.HashRefreshToken(cookie.Value)); lookupErr == nil {
+				if auditErr := s.recordAuthAudit(r, reused.UserID, "session_revocation"); auditErr != nil {
+					writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "session revocation audit could not be recorded")
+					return
+				}
+			}
+		}
 		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid or reused refresh token")
 		return
 	}
@@ -155,10 +249,35 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
+	if !user.Active || tok.SessionRole == "" || tok.SessionRole != user.Role {
+		if revokeErr := s.refreshTokens.RevokeFamily(r.Context(), tok.TokenFamily); revokeErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "session authority revocation could not be persisted")
+			return
+		}
+		if s.denylist != nil {
+			if revokeErr := s.denylist.RevokeSession(r.Context(), tok.TokenFamily, auth.AccessTokenTTL); revokeErr != nil {
+				log.Printf("cache authority-change session revocation error: %v", revokeErr)
+			}
+		}
+		clearSessionCookies(w)
+		if auditErr := s.recordAuthAudit(r, user.ID, "session_revocation"); auditErr != nil {
+			writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "session revocation audit could not be recorded")
+			return
+		}
+		writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "session authority has changed")
+		return
+	}
 
-	accessToken, err := s.tokenIssuer.IssueAccessToken(user.ID, string(user.Role), generateID())
+	accessToken, err := s.tokenIssuer.IssueAccessTokenForSession(user.ID, string(user.Role), generateID(), family)
 	if err != nil {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+	if err := s.recordAuthAudit(r, user.ID, "refresh"); err != nil {
+		if revokeErr := auth.RevokeRefreshTokenFamily(r.Context(), s.refreshTokens, newRaw); revokeErr != nil {
+			log.Printf("revoke refresh family after refresh audit failure: %v", revokeErr)
+		}
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "refresh audit could not be recorded")
 		return
 	}
 
@@ -166,6 +285,42 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	setRefreshCookie(w, newRaw)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "refreshed"})
+}
+
+func (s *Server) handleRevokeUserSessions(w http.ResponseWriter, r *http.Request) {
+	if s.users == nil || s.refreshTokens == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "session revocation not configured")
+		return
+	}
+
+	userID := r.PathValue("id")
+	if _, err := s.users.Get(r.Context(), userID); err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, "user not found")
+			return
+		}
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+
+	auditEntry := s.newAuthAuditEntry(r, resolveAuditUserID(r), userID, "user_wide_session_revocation")
+	families, err := s.refreshTokens.RevokeUserSessionsWithAudit(r.Context(), userID, auditEntry)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+	s.markAuthAuditHandled(r)
+
+	for _, family := range families {
+		if s.denylist != nil {
+			if err := s.denylist.RevokeSession(r.Context(), family, auth.AccessTokenTTL); err != nil {
+				log.Printf("cache user-wide session revocation error: %v", err)
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "revoked", "revoked_sessions": len(families)})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -210,27 +365,43 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, users)
 }
 
-func (s *Server) recordAuthAudit(r *http.Request, userID, action string) {
-	if s.audit == nil {
-		return
-	}
+func (s *Server) recordAuthAudit(r *http.Request, userID, action string) error {
+	return s.recordAuthAuditForResource(r, userID, userID, action)
+}
 
-	auditUserID := userID
+func (s *Server) recordAuthAuditForResource(r *http.Request, actorID, resourceID, action string) error {
+	if s.audit == nil {
+		return nil
+	}
+	entry := s.newAuthAuditEntry(r, actorID, resourceID, action)
+	if err := s.audit.Create(r.Context(), entry); err != nil {
+		log.Printf("audit write error: %v", err)
+		return err
+	}
+	s.markAuthAuditHandled(r)
+	return nil
+}
+
+func (s *Server) newAuthAuditEntry(r *http.Request, actorID, resourceID, action string) *domain.AuditEntry {
+	auditUserID := actorID
 	if auditUserID == "" {
 		auditUserID = "anonymous"
 	}
 
-	entry := &domain.AuditEntry{
+	return &domain.AuditEntry{
 		UserID:       auditUserID,
 		Action:       action,
 		ResourceType: "auth",
-		ResourceID:   userID,
+		ResourceID:   resourceID,
 		IPAddress:    extractIP(r),
 		UserAgent:    r.UserAgent(),
 		CreatedAt:    time.Now(),
 	}
-	if err := s.audit.Create(r.Context(), entry); err != nil {
-		log.Printf("audit write error: %v", err)
+}
+
+func (s *Server) markAuthAuditHandled(r *http.Request) {
+	if sink, ok := r.Context().Value(auditDetailsKey{}).(*auditDetailsSink); ok {
+		sink.markHandledByRoute()
 	}
 }
 
