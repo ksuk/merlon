@@ -30,6 +30,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_VERSION: "8.24.3"
+      - name: Verify complete reachable history
+        run: gitleaks detect --source=. --redact=100 --exit-code=1 --no-banner --no-color
 
   govulncheck:
     name: Go Vulnerability Check
