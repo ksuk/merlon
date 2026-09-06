@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -66,29 +65,45 @@ func IssueRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository, 
 // family identifier to deny its still-unexpired access tokens as well as its
 // persisted refresh tokens.
 func IssueRefreshTokenWithEviction(ctx context.Context, repo domain.RefreshTokenRepository, userID string) (rawToken, family, evictedFamily string, err error) {
-	active, err := repo.ListActiveByUser(ctx, userID)
+	return IssueRefreshTokenWithRoleAndEviction(ctx, repo, userID, "")
+}
+
+// IssueRefreshTokenWithRoleAndEviction records the authority snapshot that
+// owns a new session. Refresh rejects a family when the user's current role no
+// longer matches this snapshot, requiring an explicit re-login after an
+// authority change.
+func IssueRefreshTokenWithRoleAndEviction(ctx context.Context, repo domain.RefreshTokenRepository, userID string, sessionRole domain.Role) (rawToken, family, evictedFamily string, err error) {
+	raw, tok, err := PrepareRefreshToken(userID, sessionRole)
 	if err != nil {
-		return "", "", "", fmt.Errorf("list active sessions: %w", err)
+		return "", "", "", err
 	}
-	if len(active) >= MaxConcurrentSessions {
-		sort.Slice(active, func(i, j int) bool { return active[i].CreatedAt.Before(active[j].CreatedAt) })
-		evictedFamily = active[0].TokenFamily
-		if err := repo.RevokeFamily(ctx, evictedFamily); err != nil {
-			return "", "", "", fmt.Errorf("evict oldest session: %w", err)
-		}
+	evictedFamilies, err := repo.CreateSession(ctx, tok, MaxConcurrentSessions)
+	if err != nil {
+		return "", "", "", fmt.Errorf("create refresh token: %w", err)
+	}
+	if len(evictedFamilies) > 0 {
+		evictedFamily = evictedFamilies[0]
 	}
 
+	return raw, tok.TokenFamily, evictedFamily, nil
+}
+
+// PrepareRefreshToken creates an unpersisted refresh token. Callers that must
+// perform fallible work before changing the session set (for example access
+// token signing) can complete that work and then commit the token through the
+// repository's atomic CreateSessionWithAudit operation.
+func PrepareRefreshToken(userID string, sessionRole domain.Role) (rawToken string, token *domain.RefreshToken, err error) {
 	raw, err := randomHex(32)
 	if err != nil {
-		return "", "", "", fmt.Errorf("generate refresh token: %w", err)
+		return "", nil, fmt.Errorf("generate refresh token: %w", err)
 	}
-	family, err = randomHex(16)
+	family, err := randomHex(16)
 	if err != nil {
-		return "", "", "", fmt.Errorf("generate token family: %w", err)
+		return "", nil, fmt.Errorf("generate token family: %w", err)
 	}
 	id, err := randomHex(16)
 	if err != nil {
-		return "", "", "", fmt.Errorf("generate token id: %w", err)
+		return "", nil, fmt.Errorf("generate token id: %w", err)
 	}
 
 	now := time.Now()
@@ -97,14 +112,11 @@ func IssueRefreshTokenWithEviction(ctx context.Context, repo domain.RefreshToken
 		UserID:      userID,
 		TokenHash:   hashRefreshToken(raw),
 		TokenFamily: family,
+		SessionRole: sessionRole,
 		ExpiresAt:   now.Add(RefreshTokenTTL),
 		CreatedAt:   now,
 	}
-	if err := repo.Create(ctx, tok); err != nil {
-		return "", "", "", fmt.Errorf("create refresh token: %w", err)
-	}
-
-	return raw, family, evictedFamily, nil
+	return raw, tok, nil
 }
 
 // RotateRefreshToken consumes rawToken and issues a new token in the same
@@ -112,26 +124,6 @@ func IssueRefreshTokenWithEviction(ctx context.Context, repo domain.RefreshToken
 // (reuse of a rotated-away token), the entire family is revoked and
 // ErrTokenReuseDetected is returned.
 func RotateRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository, rawToken string) (newRawToken string, family string, err error) {
-	tok, err := repo.GetByHash(ctx, hashRefreshToken(rawToken))
-	if err != nil {
-		return "", "", fmt.Errorf("lookup refresh token: %w", err)
-	}
-
-	if tok.RevokedAt != nil {
-		if err := repo.RevokeFamily(ctx, tok.TokenFamily); err != nil {
-			return "", "", fmt.Errorf("revoke family after reuse: %w", err)
-		}
-		return "", tok.TokenFamily, ErrTokenReuseDetected
-	}
-
-	if time.Now().After(tok.ExpiresAt) {
-		return "", "", errors.New("refresh token expired")
-	}
-
-	if err := repo.Revoke(ctx, tok.ID); err != nil {
-		return "", "", fmt.Errorf("revoke consumed token: %w", err)
-	}
-
 	raw, err := randomHex(32)
 	if err != nil {
 		return "", "", fmt.Errorf("generate refresh token: %w", err)
@@ -143,15 +135,23 @@ func RotateRefreshToken(ctx context.Context, repo domain.RefreshTokenRepository,
 
 	now := time.Now()
 	newTok := &domain.RefreshToken{
-		ID:          id,
-		UserID:      tok.UserID,
-		TokenHash:   hashRefreshToken(raw),
-		TokenFamily: tok.TokenFamily,
-		ExpiresAt:   now.Add(RefreshTokenTTL),
-		CreatedAt:   now,
+		ID:        id,
+		TokenHash: hashRefreshToken(raw),
+		ExpiresAt: now.Add(RefreshTokenTTL),
+		CreatedAt: now,
 	}
-	if err := repo.Create(ctx, newTok); err != nil {
-		return "", "", fmt.Errorf("create rotated token: %w", err)
+	tok, err := repo.Rotate(ctx, hashRefreshToken(rawToken), newTok)
+	if errors.Is(err, domain.ErrRefreshTokenReuse) {
+		if tok == nil {
+			return "", "", fmt.Errorf("rotate refresh token: %w", err)
+		}
+		return "", tok.TokenFamily, ErrTokenReuseDetected
+	}
+	if errors.Is(err, domain.ErrRefreshTokenExpired) {
+		return "", "", errors.New("refresh token expired")
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("rotate refresh token: %w", err)
 	}
 
 	return raw, tok.TokenFamily, nil

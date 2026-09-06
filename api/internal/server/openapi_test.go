@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -522,8 +523,8 @@ func TestOpenAPI_RegisteredCompatibilityRoutesHaveTypedContracts(t *testing.T) {
 		{"/api/v1/admin/users", "get", []string{"200", "500", "503"}, false},
 		{"/api/v1/admin/users/{id}/revoke-sessions", "post", []string{"200", "404", "500", "503"}, false},
 		{"/api/v1/auth/login", "post", []string{"200", "400", "401", "500", "503"}, true},
-		{"/api/v1/auth/logout", "post", []string{"200"}, false},
-		{"/api/v1/auth/refresh", "post", []string{"200", "401", "500", "503"}, false},
+		{"/api/v1/auth/logout", "post", []string{"200", "403", "500"}, false},
+		{"/api/v1/auth/refresh", "post", []string{"200", "401", "403", "500", "503"}, false},
 		{"/api/v1/auth/me", "get", []string{"200", "401", "500", "503"}, false},
 		{"/api/v1/config/validate", "post", []string{"200", "400", "500", "503"}, true},
 		{"/api/v1/openapi.json", "get", []string{"200"}, false},
@@ -582,6 +583,28 @@ func TestOpenAPI_RegisteredCompatibilityRoutesHaveTypedContracts(t *testing.T) {
 	exportContent := ruleExport["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)
 	if exportContent["application/json"] == nil || exportContent["application/x-yaml"] == nil {
 		t.Fatalf("rule export content types = %#v, want JSON and YAML", exportContent)
+	}
+}
+
+func TestOpenAPI_RevokeUserSessionsResponseRequiresStatusAndNonNegativeCount(t *testing.T) {
+	spec := fetchOpenAPISpec(t)
+	paths := spec["paths"].(map[string]any)
+	operation := paths["/api/v1/admin/users/{id}/revoke-sessions"].(map[string]any)["post"].(map[string]any)
+	response := operation["responses"].(map[string]any)["200"].(map[string]any)
+	content := response["content"].(map[string]any)["application/json"].(map[string]any)
+	schema := content["schema"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	status := properties["status"].(map[string]any)
+	count := properties["revoked_sessions"].(map[string]any)
+	if status["type"] != "string" {
+		t.Fatalf("status schema = %#v, want string", status)
+	}
+	if count["type"] != "integer" || count["minimum"] != float64(0) {
+		t.Fatalf("revoked_sessions schema = %#v, want non-negative integer", count)
+	}
+	required := schema["required"].([]any)
+	if !slices.Contains(required, any("status")) || !slices.Contains(required, any("revoked_sessions")) {
+		t.Fatalf("required = %#v, want status and revoked_sessions", required)
 	}
 }
 

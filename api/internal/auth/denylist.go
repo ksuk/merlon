@@ -10,10 +10,9 @@ import (
 // still-unexpired JWT can be rejected immediately. Token revocation ends one
 // access token; session revocation ends every access token issued for one
 // refresh-token family without preventing a later independent login.
-// The standard (Redis-backed) configuration should implement this against
-// Redis so revocation is visible across horizontally scaled API instances;
-// NewInMemoryDenylist below only approximates this for a single process
-// (minimal / no-Redis configuration).
+// Refresh-token family state in RefreshTokenRepository is the authoritative
+// cross-process revocation check. This denylist is an additional short-lived
+// cache for individual access-token identifiers and session identifiers.
 type Denylist interface {
 	RevokeToken(ctx context.Context, tokenID string, ttl time.Duration) error
 	RevokeSession(ctx context.Context, sessionID string, ttl time.Duration) error
@@ -21,11 +20,10 @@ type Denylist interface {
 	IsSessionRevoked(ctx context.Context, sessionID string) (bool, error)
 }
 
-// InMemoryDenylist is a process-local Denylist for the minimal configuration
-// (no Redis). Combined with the 15-minute access token TTL, this approximates
-// immediate revocation without a shared cache. It does NOT work correctly
-// across multiple horizontally-scaled API instances: a standard/Redis
-// configuration must use a shared Denylist implementation instead.
+// InMemoryDenylist is a process-local Denylist. Session authorization does not
+// rely on it alone: authenticated requests also verify the persisted refresh
+// family through RefreshTokenRepository, which remains shared across API
+// replicas in PostgreSQL deployments.
 type InMemoryDenylist struct {
 	mu      sync.Mutex
 	revoked map[string]time.Time // namespaced identifier -> expiry
@@ -47,7 +45,10 @@ func (d *InMemoryDenylist) RevokeSession(_ context.Context, sessionID string, tt
 func (d *InMemoryDenylist) revoke(identifier string, ttl time.Duration) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.revoked[identifier] = time.Now().Add(ttl)
+	expiresAt := time.Now().Add(ttl)
+	if current, ok := d.revoked[identifier]; !ok || expiresAt.After(current) {
+		d.revoked[identifier] = expiresAt
+	}
 	return nil
 }
 

@@ -446,7 +446,7 @@ func main() {
 		} else {
 			deps.APIKeys = store.NewMemoryAPIKeyRepo()
 			deps.Users = store.NewMemoryUserRepo()
-			deps.RefreshTokens = store.NewMemoryRefreshTokenRepo()
+			deps.RefreshTokens = store.NewMemoryRefreshTokenRepoWithAudit(deps.Audit)
 		}
 		deps.BootstrapToken = cfg.BootstrapToken
 		deps.Denylist = auth.NewInMemoryDenylist()

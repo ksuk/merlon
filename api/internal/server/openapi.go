@@ -1407,11 +1407,11 @@ func pathLogin() map[string]any {
 }
 
 func pathLogout() map[string]any {
-	return map[string]any{"post": publicOperation(documentedJSONOperation("End the current session", nil, nil, "200", "Logged out", objectSchema(map[string]any{"status": map[string]any{"type": "string"}}, "status")))}
+	return map[string]any{"post": publicOperation(documentedJSONOperation("End the current session", nil, nil, "200", "Logged out", objectSchema(map[string]any{"status": map[string]any{"type": "string"}}, "status"), "403", "500"))}
 }
 
 func pathRefresh() map[string]any {
-	return map[string]any{"post": publicOperation(documentedJSONOperation("Rotate the refresh token", nil, nil, "200", "Session refreshed", objectSchema(map[string]any{"status": map[string]any{"type": "string"}}, "status"), "401", "500", "503"))}
+	return map[string]any{"post": publicOperation(documentedJSONOperation("Rotate the refresh token", nil, nil, "200", "Session refreshed", objectSchema(map[string]any{"status": map[string]any{"type": "string"}}, "status"), "401", "403", "500", "503"))}
 }
 
 func pathMe() map[string]any {

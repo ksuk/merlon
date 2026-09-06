@@ -95,3 +95,24 @@ func TestInMemoryDenylist_TokenAndSessionRevocationAreIndependent(t *testing.T) 
 		})
 	}
 }
+
+func TestInMemoryDenylist_RevokeNeverShortensExistingExpiry(t *testing.T) {
+	ctx := context.Background()
+	dl := NewInMemoryDenylist()
+
+	if err := dl.RevokeSession(ctx, "session-1", time.Minute); err != nil {
+		t.Fatalf("RevokeSession(long): %v", err)
+	}
+	if err := dl.RevokeSession(ctx, "session-1", time.Millisecond); err != nil {
+		t.Fatalf("RevokeSession(short): %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+
+	revoked, err := dl.IsSessionRevoked(ctx, "session-1")
+	if err != nil {
+		t.Fatalf("IsSessionRevoked: %v", err)
+	}
+	if !revoked {
+		t.Fatal("shorter repeated revocation replaced the longer expiry")
+	}
+}
