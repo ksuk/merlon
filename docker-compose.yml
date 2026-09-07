@@ -40,7 +40,24 @@ services:
       MERLON_JWT_SECRET: ${MERLON_JWT_SECRET:?set MERLON_JWT_SECRET}
       MERLON_UI_DIR: /app/ui
       MERLON_SEED: ${MERLON_SEED:-false}
+      # Standard deployments must not silently run without the native engine.
+      # Put reviewed operator content under ./operator-content before relying
+      # on monitoring; until then /healthz/ready reports engine=error.
+      MERLON_ENGINE_REQUIRED: "true"
+      MERLON_CDD_WEIGHTS_PATH: /app/operator-content/cdd_weights.yaml
+      MERLON_TM_SCENARIOS_PATH: /app/operator-content/tm_scenarios
+      MERLON_SCREENING_LISTS_PATH: /app/operator-content/screening_lists
       MERLON_LOG_LEVEL: info
+    volumes:
+      - ${MERLON_OPERATOR_CONTENT_PATH:-./operator-content}:/app/operator-content:ro
+    healthcheck:
+      # Orchestration must not call a policy-less API healthy. The process
+      # remains reachable through /healthz/live for setup and diagnostics.
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
 volumes:
   pgdata:

@@ -81,17 +81,24 @@ them before this runs anywhere but your own machine.
 
 This is expected on a new deployment and is not a fault.
 
-The image healthcheck probes `GET /healthz/live`, so `docker ps` shows the
-container as `healthy` as soon as the process responds — before setup, and
-without a database.
+The standard Compose healthcheck probes `GET /healthz/ready`, so `docker ps`
+keeps the container `unhealthy` until setup, PostgreSQL, and the native engine
+are ready. The process itself remains reachable through `GET /healthz/live`
+before setup and while dependencies are unavailable.
 
 Readiness is a different question. `GET /healthz/ready` includes "an
-administrator account exists", so until you complete
+administrator account exists" and, in the standard Compose topology, a loaded
+native engine. Until you complete
 [initial setup](#there-is-no-account-to-log-in-with) it returns `503` with:
 
 ```json
-{"checks":{"setup":"error: initial setup not completed"},"status":"unhealthy"}
+{"checks":{"setup":"error: initial setup not completed","engine":"error"},"status":"unhealthy"}
 ```
+
+If setup is complete but `engine` remains `error`, inspect the read-only
+`operator-content/` mount. The standard topology expects
+`cdd_weights.yaml`, `tm_scenarios/`, and `screening_lists/` there. Correct the
+files and restart the API; liveness can remain `200` while readiness is gated.
 
 That matters wherever readiness is deliberately gated on:
 

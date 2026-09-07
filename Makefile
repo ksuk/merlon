@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts standard-engine-smoke test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -38,6 +38,9 @@ test-website: ## Run documentation generator script tests
 test-scripts: ## Run tests for the reference scripts (standard library only)
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
 	@node --test scripts/*.test.mjs
+
+standard-engine-smoke: ## Exercise standard Compose with missing, invalid, and valid engine roots
+	@python3 scripts/smoke_standard_engine_readiness.py
 
 test-integration: ## Apply migrations twice and run all Go tests against PostgreSQL
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL:-$${MERLON_DATABASE_URL:-}}" || (echo "MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required"; exit 1)

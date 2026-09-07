@@ -64,6 +64,7 @@ type Server struct {
 	reviews                  *review.Service
 	configEngine             engine.ConfigEngine
 	engineHealth             engine.HealthChecker
+	engineRequired           bool
 	limiter                  *rateLimiter
 	clientIPs                clientIPResolver
 	bootstrapToken           string
@@ -149,6 +150,7 @@ type Deps struct {
 	CustomerReviews    *review.Service
 	Config             engine.ConfigEngine
 	EngineHealth       engine.HealthChecker
+	EngineRequired     bool
 	RateLimit          int
 	TrustedProxyCIDRs  []netip.Prefix
 	BootstrapToken     string
@@ -233,6 +235,7 @@ func New(addr string, deps Deps) *Server {
 		reviews:                  deps.CustomerReviews,
 		configEngine:             deps.Config,
 		engineHealth:             deps.EngineHealth,
+		engineRequired:           deps.EngineRequired,
 		clientIPs:                newClientIPResolver(deps.TrustedProxyCIDRs),
 		bootstrapToken:           deps.BootstrapToken,
 		tokenIssuer:              deps.TokenIssuer,

@@ -185,6 +185,28 @@ class ComposeIsolationTests(unittest.TestCase):
             [{"mode": "ingress", "target": 8080, "published": "8080", "protocol": "tcp"}],
         )
 
+    def test_standard_engine_is_required_and_operator_content_is_mounted(self):
+        config = self.compose_config("merlon-p00-a", ("docker-compose.yml",))
+        api = config["services"]["api"]
+        self.assertEqual(api["environment"]["MERLON_ENGINE_REQUIRED"], "true")
+        self.assertEqual(api["environment"]["MERLON_CDD_WEIGHTS_PATH"], "/app/operator-content/cdd_weights.yaml")
+        self.assertEqual(api["environment"]["MERLON_TM_SCENARIOS_PATH"], "/app/operator-content/tm_scenarios")
+        self.assertEqual(api["environment"]["MERLON_SCREENING_LISTS_PATH"], "/app/operator-content/screening_lists")
+        self.assertEqual(
+            api["healthcheck"]["test"],
+            ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz/ready"],
+        )
+        self.assertIn(
+            {
+                "type": "bind",
+                "source": str((ROOT / "operator-content").resolve()),
+                "target": "/app/operator-content",
+                "read_only": True,
+                "bind": {},
+            },
+            api["volumes"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
