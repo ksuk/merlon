@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/auth"
 	"github.com/ksuk/merlon/api/internal/domain"
@@ -50,6 +52,8 @@ func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
 	cases := store.NewMemoryCaseRepo()
 	caseInvestigation := store.NewMemoryCaseInvestigationRepo()
 	alertDecisions := store.NewMemoryAlertDecisionRepo()
+	users := store.NewMemoryUserRepo()
+	refreshTokens := store.NewMemoryRefreshTokenRepo()
 	s := New(":0", Deps{
 		Customers:          store.NewMemoryCustomerRepo(),
 		Transactions:       store.NewMemoryTransactionRepo(),
@@ -67,8 +71,27 @@ func testServerWithJWT(t *testing.T) (*Server, *auth.TokenIssuer) {
 		APIKeys:            store.NewMemoryAPIKeyRepo(),
 		BootstrapToken:     testBootstrapToken,
 		TokenIssuer:        issuer,
+		Users:              users,
+		RefreshTokens:      refreshTokens,
 	})
 	return s, issuer
+}
+
+func seedJWTSession(t *testing.T, s *Server, userID string, role domain.Role, family string) {
+	t.Helper()
+	now := time.Now()
+	if err := s.users.Create(context.Background(), &domain.User{
+		ID: userID, Email: userID + "@example.com", Role: role, Active: true,
+		CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("create JWT test user: %v", err)
+	}
+	if _, err := s.refreshTokens.CreateSession(context.Background(), &domain.RefreshToken{
+		ID: family + "-token", UserID: userID, TokenHash: family + "-hash",
+		TokenFamily: family, ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+	}, auth.MaxConcurrentSessions); err != nil {
+		t.Fatalf("create JWT test session: %v", err)
+	}
 }
 
 func createAPIKey(t *testing.T, s *Server, name string, role domain.Role) string {
@@ -345,6 +368,7 @@ func TestAuthMiddleware_AcceptsAPIKeyAndJWT(t *testing.T) {
 		t.Fatalf("API key path: status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
+	seedJWTSession(t, s, "user-1", domain.RoleAdmin, "jti-1")
 	token, err := issuer.IssueAccessToken("user-1", string(domain.RoleAdmin), "jti-1")
 	if err != nil {
 		t.Fatalf("IssueAccessToken: %v", err)
@@ -356,6 +380,33 @@ func TestAuthMiddleware_AcceptsAPIKeyAndJWT(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("JWT cookie path: status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestAuthenticateJWT_FailsClosedWhenAuthoritativeRepositoriesAreMissing(t *testing.T) {
+	issuer, err := auth.NewHS256Issuer("test-only-secret-not-for-production")
+	if err != nil {
+		t.Fatalf("NewHS256Issuer: %v", err)
+	}
+	token, err := issuer.IssueAccessTokenForSession("user-1", string(domain.RoleAdmin), "jti-1", "family-1")
+	if err != nil {
+		t.Fatalf("IssueAccessTokenForSession: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		s    *Server
+	}{
+		{name: "users missing", s: &Server{tokenIssuer: issuer, refreshTokens: store.NewMemoryRefreshTokenRepo()}},
+		{name: "refresh tokens missing", s: &Server{tokenIssuer: issuer, users: store.NewMemoryUserRepo()}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/customers", nil)
+			_, _, authErr := tc.s.authenticateJWT(req, token)
+			if authErr == nil || authErr.status != http.StatusServiceUnavailable {
+				t.Fatalf("auth error = %#v, want status %d", authErr, http.StatusServiceUnavailable)
+			}
+		})
 	}
 }
 

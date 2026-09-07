@@ -275,6 +275,9 @@ func (s *Service) List(ctx context.Context, filter domain.CustomerReviewFilter) 
 	if err := s.configured(); err != nil {
 		return nil, err
 	}
+	if filter.AsOf.IsZero() {
+		filter.AsOf = s.clock().UTC()
+	}
 	return s.reviews.List(ctx, filter)
 }
 

@@ -26,9 +26,10 @@ const KeyRotationGracePeriod = 15 * time.Minute
 
 // Claims is the JWT access token payload (the authentication model §2).
 type Claims struct {
-	UserID string `json:"sub"`
-	Role   string `json:"role"`
-	JTI    string `json:"jti"`
+	UserID    string `json:"sub"`
+	Role      string `json:"role"`
+	JTI       string `json:"jti"`
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -160,6 +161,14 @@ func (t *TokenIssuer) now() time.Time {
 // IssueAccessToken signs a new access token for userID/role/jti, valid for
 // AccessTokenTTL.
 func (t *TokenIssuer) IssueAccessToken(userID, role, jti string) (string, error) {
+	return t.IssueAccessTokenForSession(userID, role, jti, jti)
+}
+
+// IssueAccessTokenForSession signs an access token whose JTI identifies this
+// token and whose SessionID identifies the refresh-token family that owns it.
+// Keeping the two identifiers separate lets logout revoke one session without
+// denying a later login for the same user.
+func (t *TokenIssuer) IssueAccessTokenForSession(userID, role, jti, sessionID string) (string, error) {
 	t.mu.RLock()
 	method := t.method
 	kid := t.currentKid
@@ -168,9 +177,10 @@ func (t *TokenIssuer) IssueAccessToken(userID, role, jti string) (string, error)
 
 	now := t.now()
 	claims := Claims{
-		UserID: userID,
-		Role:   role,
-		JTI:    jti,
+		UserID:    userID,
+		Role:      role,
+		JTI:       jti,
+		SessionID: sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),

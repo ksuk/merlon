@@ -51,7 +51,7 @@ func (s *Server) handleListCustomerReviews(w http.ResponseWriter, r *http.Reques
 func parseCustomerReviewFilter(r *http.Request, cursor *Cursor) (domain.CustomerReviewFilter, error) {
 	f := domain.CustomerReviewFilter{CustomerID: domain.CanonicalIdentifier(r.URL.Query().Get("customer_id")),
 		AssignedTo: r.URL.Query().Get("assigned_to"), AssignedTeam: r.URL.Query().Get("team"),
-		AsOf: time.Now().UTC(), Cursor: toDomainCursor(cursor)}
+		Cursor: toDomainCursor(cursor)}
 	if tier := domain.RiskTier(r.URL.Query().Get("tier")); tier != "" {
 		if tier != domain.RiskTierLow && tier != domain.RiskTierMedium && tier != domain.RiskTierHigh {
 			return f, errors.New("unsupported review tier")

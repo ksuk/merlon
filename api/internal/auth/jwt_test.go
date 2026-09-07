@@ -64,6 +64,27 @@ func TestIssueAndVerifyAccessToken_RS256(t *testing.T) {
 	}
 }
 
+func TestIssueAndVerifyAccessTokenForSession_IncludesIndependentSessionID(t *testing.T) {
+	privPath, pubPath := writeTestRSAKeyPair(t)
+	issuer, err := NewRS256Issuer(privPath, pubPath)
+	if err != nil {
+		t.Fatalf("NewRS256Issuer: %v", err)
+	}
+
+	token, err := issuer.IssueAccessTokenForSession("user-1", "admin", "jti-1", "session-1")
+	if err != nil {
+		t.Fatalf("IssueAccessTokenForSession: %v", err)
+	}
+
+	claims, err := issuer.VerifyAccessToken(token)
+	if err != nil {
+		t.Fatalf("VerifyAccessToken: %v", err)
+	}
+	if claims.JTI != "jti-1" || claims.SessionID != "session-1" {
+		t.Fatalf("token/session identifiers = %q/%q, want jti-1/session-1", claims.JTI, claims.SessionID)
+	}
+}
+
 func TestVerifyAccessToken_Expired(t *testing.T) {
 	privPath, pubPath := writeTestRSAKeyPair(t)
 	issuer, err := NewRS256Issuer(privPath, pubPath)

@@ -124,8 +124,13 @@ export function CustomerDetailPage() {
     requestKey,
   )
   const { data: scoreExplanation } = useApi(
-    useCallback(() => api.customers.scoreExplanation(id!), [id]),
-    requestKey,
+    useCallback(
+      () => customer?.risk_score != null
+        ? api.customers.scoreExplanation(id!)
+        : Promise.resolve(null),
+      [customer?.risk_score, id],
+    ),
+    `${requestKey}:${customer?.risk_score ?? "unscored"}`,
   )
   // cdd:score decides whether the scoring and approval controls are offered
   // at all. A deployment with authentication disabled grants it, which leaves
