@@ -25,6 +25,7 @@ class ComposeIsolationTests(unittest.TestCase):
         )
         environment.pop("MERLON_API_HOST_PORT", None)
         environment.pop("MERLON_DB_HOST_PORT", None)
+        environment.pop("MERLON_OPERATOR_CONTENT_PATH", None)
         environment.update({key: str(value) for key, value in overrides.items()})
 
         command = ["docker", "compose", "-p", project]
@@ -184,6 +185,29 @@ class ComposeIsolationTests(unittest.TestCase):
             self.published_ports(config, "api"),
             [{"mode": "ingress", "target": 8080, "published": "8080", "protocol": "tcp"}],
         )
+
+    def test_standard_engine_is_required_and_operator_content_is_mounted(self):
+        config = self.compose_config("merlon-p00-a", ("docker-compose.yml",))
+        api = config["services"]["api"]
+        self.assertEqual(api["environment"]["MERLON_ENGINE_REQUIRED"], "true")
+        self.assertEqual(api["environment"]["MERLON_CDD_WEIGHTS_PATH"], "/app/operator-content/cdd_weights.yaml")
+        self.assertEqual(api["environment"]["MERLON_TM_SCENARIOS_PATH"], "/app/operator-content/tm_scenarios")
+        self.assertEqual(api["environment"]["MERLON_SCREENING_LISTS_PATH"], "/app/operator-content/screening_lists")
+        self.assertEqual(
+            api["healthcheck"]["test"],
+            ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz/ready"],
+        )
+        operator_content = next(
+            volume
+            for volume in api["volumes"]
+            if volume["target"] == "/app/operator-content"
+        )
+        self.assertEqual(operator_content["type"], "bind")
+        self.assertEqual(
+            operator_content["source"],
+            str((ROOT / "operator-content").resolve()),
+        )
+        self.assertTrue(operator_content["read_only"])
 
 
 if __name__ == "__main__":

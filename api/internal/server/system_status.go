@@ -124,6 +124,10 @@ func (s *Server) probeDatabase(ctx context.Context) (OperationalState, string) {
 
 func (s *Server) probeEngine(ctx context.Context) (OperationalState, string) {
 	if s.engineHealth == nil {
+		if s.engineRequired {
+			logReadinessFailure(ctx, "engine", requiredEngineUnavailable)
+			return OperationalUnavailable, reasonCheckFailed
+		}
 		if s.scoring == nil && s.monitoring == nil {
 			return OperationalUnknown, reasonNotConfigured
 		}
@@ -174,7 +178,7 @@ func (s *Server) componentProbes() []struct {
 	}{
 		{"api", true, s.probeAPI},
 		{"database", s.db != nil, s.probeDatabase},
-		{"engine", s.scoring != nil || s.monitoring != nil || s.engineHealth != nil, s.probeEngine},
+		{"engine", s.engineRequired || s.scoring != nil || s.monitoring != nil || s.engineHealth != nil, s.probeEngine},
 		{"screening_sources", s.screeningListStore != nil && len(s.screeningListIDs) > 0, s.probeScreeningSources},
 	}
 }

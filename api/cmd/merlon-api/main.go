@@ -216,6 +216,7 @@ func main() {
 
 	deps := server.Deps{}
 	deps.Adapter = configuredAdapter
+	deps.EngineRequired = cfg.EngineRequired
 	deps.ConfigDigests = make(map[string]string)
 	deps.EDDStage2Days = cfg.EDDStage2Days
 	deps.EDDStage3Days = cfg.EDDStage3Days
@@ -508,6 +509,7 @@ func main() {
 		deps.Screening = nativeEngine
 		deps.Backtest = nativeEngine
 		deps.Config = nativeEngine
+		deps.EngineHealth = nativeEngine
 		deps.TMContract = nativeEngine.TMContract()
 		slog.Info("native Go engine loaded", "tm_digest", deps.ConfigDigests["tm_scenarios"])
 	} else {

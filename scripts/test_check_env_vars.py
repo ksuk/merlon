@@ -14,7 +14,11 @@ SCRIPT = pathlib.Path(__file__).with_name("check-env-vars.sh")
 
 
 class EnvVarGuardTests(unittest.TestCase):
-    def run_guard(self, documented_vars: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    def run_guard(
+        self,
+        documented_vars: tuple[str, ...],
+        extra_example_lines: tuple[str, ...] = (),
+    ) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             (root / "scripts").mkdir()
@@ -47,6 +51,7 @@ class EnvVarGuardTests(unittest.TestCase):
                         "MERLON_DATABASE_URL=postgres://example",
                         "# MERLON_BACKUP_DATABASE_URL=postgres://backup",
                         "MERLON_POSTGRES_PASSWORD=example",
+                        *extra_example_lines,
                     )
                 ),
                 encoding="utf-8",
@@ -58,6 +63,8 @@ class EnvVarGuardTests(unittest.TestCase):
                 check=False,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
             )
 
     def test_lowercase_getenv_variable_must_be_documented(self) -> None:
@@ -73,6 +80,18 @@ class EnvVarGuardTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("2 read, 2 documented", result.stdout)
+
+    def test_documented_compose_operator_content_path_is_allowed(self) -> None:
+        result = self.run_guard(
+            (
+                "MERLON_DATABASE_URL",
+                "MERLON_MIGRATIONS_DIR",
+                "MERLON_OPERATOR_CONTENT_PATH",
+            ),
+            ("# MERLON_OPERATOR_CONTENT_PATH=./operator-content",),
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

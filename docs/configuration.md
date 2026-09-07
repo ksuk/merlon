@@ -30,7 +30,9 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_POSTGRES_PASSWORD` | unset | Compose-only development password. Use a secret manager in production. |
 | `MERLON_API_HOST_PORT` | `8080` | Compose-only host port for the API. The standard topology binds it on the host; the demo topology limits it to `127.0.0.1`. The container always listens on `8080`. |
 | `MERLON_DB_HOST_PORT` | `5432` | Compose test overlay only. Publishes PostgreSQL on `127.0.0.1`; the standard and demo topologies do not publish a database host port. |
+| `MERLON_OPERATOR_CONTENT_PATH` | `./operator-content` | Compose-only host directory mounted read-only by the standard topology. Store reviewed CDD, transaction-monitoring, and screening content under this root. |
 | `MERLON_AUTH_ENABLED` | `false` | Must be `true` in production. |
+| `MERLON_ENGINE_REQUIRED` | `false` | Set `true` when monitoring must not run without a loaded native engine. The standard Compose topology sets this automatically. |
 | `MERLON_SEED` | `false` | Development/demo data only; must be `false` in production. |
 | `MERLON_DEMO_DATA_DIR` | unset | Directory holding a full generated demo dataset, loaded when `MERLON_SEED` is enabled. Falls back to the built-in sample if the directory is incomplete. Development/demo only. |
 | `MERLON_CONFIG_PATH` | `config.yaml` | Path to application configuration. |
@@ -79,6 +81,13 @@ The native Go engine also loads CDD weights and screening content from operator-
 paths. Those files are outside the database audit trail. Control them through
 source control, change approval, access control, backup, and deployment
 procedures. See ADR-0012.
+
+The standard Compose topology mounts the local `operator-content/` directory at
+`/app/operator-content` and sets `MERLON_ENGINE_REQUIRED=true`. It points the
+three native roots at `cdd_weights.yaml`, `tm_scenarios/`, and
+`screening_lists/` below that mount. A missing or invalid root does not make the
+process disappear: liveness remains available, while readiness and the system
+status page report the engine unavailable.
 
 ## Encryption key rotation
 

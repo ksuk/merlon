@@ -27,19 +27,23 @@ type Config struct {
 	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed. The seed package reads the
 	// same environment value; final synthetic-data provenance comes from the
 	// seed completion state rather than this configuration hint.
-	DemoDataDir            string
-	JWTSecret              string
-	JWTPrivateKeyFile      string
-	JWTPublicKeyFile       string
-	ConfigPath             string
-	CacheBackend           string
-	EventBus               string
-	LogLevel               string
-	AdapterConfigPath      string
-	UIDir                  string
-	RateLimit              int
-	TrustedProxyCIDRs      []netip.Prefix
-	AuthEnabled            bool
+	DemoDataDir       string
+	JWTSecret         string
+	JWTPrivateKeyFile string
+	JWTPublicKeyFile  string
+	ConfigPath        string
+	CacheBackend      string
+	EventBus          string
+	LogLevel          string
+	AdapterConfigPath string
+	UIDir             string
+	RateLimit         int
+	TrustedProxyCIDRs []netip.Prefix
+	AuthEnabled       bool
+	// EngineRequired makes an engine load failure a readiness failure. It is
+	// enabled by the standard Compose topology and remains disabled for the
+	// database-free development composition.
+	EngineRequired         bool
 	BootstrapToken         string
 	CountryRiskPath        string
 	TMBaseCurrency         string
@@ -247,6 +251,7 @@ func Load() *Config {
 		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 0),
 		TrustedProxyCIDRs:      trustedProxyCIDRs,
 		AuthEnabled:            getEnv("MERLON_AUTH_ENABLED", "") == "true",
+		EngineRequired:         getEnv("MERLON_ENGINE_REQUIRED", "") == "true",
 		BootstrapToken:         getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
 		CountryRiskPath:        getEnv("MERLON_COUNTRY_RISK_PATH", ""),
 		TMBaseCurrency:         strings.ToUpper(getEnv("MERLON_TM_BASE_CURRENCY", "JPY")),

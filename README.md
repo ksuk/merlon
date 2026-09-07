@@ -51,12 +51,19 @@ Prerequisites: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose
 git clone https://github.com/ksuk/merlon.git
 cd merlon
 cp .env.example .env
+mkdir -p operator-content/tm_scenarios operator-content/screening_lists
+cp content/_sample/cdd_weights/funds_transfer.yaml operator-content/cdd_weights.yaml
+cp content/_sample/tm_scenarios/*.yaml operator-content/tm_scenarios/
+cp deploy/seed/demo/screening_lists/*.yaml operator-content/screening_lists/
 docker compose up --build
 ```
 
-Then open **[http://localhost:8080](http://localhost:8080)**. Authentication is
-on, and no account exists yet, so follow **Create the administrator account**
-on the login screen to create the first one, then log in with it.
+The standard topology requires reviewed operator policy content. The copied
+files are synthetic examples for local evaluation; replace them before using
+real data. Then open **[http://localhost:8080](http://localhost:8080)**.
+Authentication is on, and no account exists yet, so follow **Create the
+administrator account** on the login screen to create the first one, then log
+in with it.
 
 The `.env` you copied contains development-only credentials. Replace them
 before this reaches anything but your own machine — see

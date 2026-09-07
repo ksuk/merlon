@@ -20,6 +20,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Mode != "all" || cfg.WorkerConcurrency != 4 || cfg.TMBaseCurrency != "JPY" {
 		t.Errorf("PH9 defaults: mode=%q concurrency=%d currency=%q", cfg.Mode, cfg.WorkerConcurrency, cfg.TMBaseCurrency)
 	}
+	if cfg.EngineRequired {
+		t.Error("EngineRequired = true, want false by default for in-memory development")
+	}
 	if cfg.RealtimeMonitorTimeout != 30*time.Second {
 		t.Errorf("RealtimeMonitorTimeout = %s, want 30s", cfg.RealtimeMonitorTimeout)
 	}
@@ -78,6 +81,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("MERLON_JWT_SECRET", "secret-value")
 	t.Setenv("MERLON_LOG_LEVEL", "debug")
 	t.Setenv("MERLON_REALTIME_MONITOR_TIMEOUT", "45s")
+	t.Setenv("MERLON_ENGINE_REQUIRED", "true")
 
 	cfg := Load()
 
@@ -95,6 +99,9 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if cfg.RealtimeMonitorTimeout != 45*time.Second {
 		t.Errorf("RealtimeMonitorTimeout = %s, want 45s", cfg.RealtimeMonitorTimeout)
+	}
+	if !cfg.EngineRequired {
+		t.Error("EngineRequired = false, want true")
 	}
 }
 

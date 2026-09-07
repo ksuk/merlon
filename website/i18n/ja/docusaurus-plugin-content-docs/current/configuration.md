@@ -25,7 +25,9 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_JWT_SECRET` | 未設定 | 開発用フォールバックのみ。ローカルユーザー認証を使用する場合、本番環境では設定しないこと。 |
 | `MERLON_BOOTSTRAP_TOKEN` | 未設定 | 初回セットアップ用のワンタイムシークレット。最初の管理者・API キー作成後、直ちにローテーションまたは削除する。 |
 | `MERLON_POSTGRES_PASSWORD` | 未設定 | Compose 専用の開発用パスワード。本番環境ではシークレットマネージャーを使用する。 |
+| `MERLON_OPERATOR_CONTENT_PATH` | `./operator-content` | 標準トポロジーがread-onlyでマウントするCompose専用のホストディレクトリ。このroot配下にレビュー済みのCDD、取引モニタリング、スクリーニングコンテンツを配置する。 |
 | `MERLON_AUTH_ENABLED` | `false` | 本番環境では `true` が必須。 |
+| `MERLON_ENGINE_REQUIRED` | `false` | 読み込み済みのネイティブEngineなしでモニタリングを実行してはならない場合は`true`にする。標準Composeトポロジーでは自動的に設定される。 |
 | `MERLON_SEED` | `false` | 開発・デモデータ専用。本番環境では必ず `false` にする。 |
 | `MERLON_DEMO_DATA_DIR` | 未設定 | 生成済みデモデータセットを含むディレクトリ。`MERLON_SEED` 有効時に読み込む。内容が不完全な場合は内蔵サンプルにフォールバックする。開発・デモ専用。 |
 | `MERLON_CONFIG_PATH` | `config.yaml` | アプリケーション設定へのパス。 |
@@ -65,6 +67,8 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_LOG_LEVEL` | `info` | `info` 以上を維持する。機密性の高いワークロードに debug ログを使用しないこと。 |
 
 ネイティブ Go エンジンは、運用担当者が指定したパスから CDD ウェイトとスクリーニングコンテンツも読み込む。これらのファイルはデータベースの監査証跡の対象外である。ソース管理、変更承認、アクセス制御、バックアップ、デプロイメント手順によって管理すること。ADR-0012 を参照。
+
+標準Composeトポロジーは、ローカルの`operator-content/`ディレクトリを`/app/operator-content`へマウントし、`MERLON_ENGINE_REQUIRED=true`を設定する。CDD、TM、スクリーニングの3つのrootには、その配下の`cdd_weights.yaml`、`tm_scenarios/`、`screening_lists/`を指定する。rootが存在しない、または不正な場合でもプロセス自体は停止せず、livenessには応答する一方、readinessとシステム状態画面はEngineを利用不能として表示する。
 
 ## 暗号鍵のローテーション
 

@@ -19,6 +19,10 @@ The repository Docker Compose files are development/demo topologies. They are no
   records and any application-level limiter use the observed client address.
 - Store database passwords, bootstrap tokens, JWT material, and encryption keys in a secret manager; do not commit them or place production values in `.env` files.
 - Keep `MERLON_SEED=false` outside local development.
+- Set `MERLON_ENGINE_REQUIRED=true` and mount reviewed CDD, TM, and screening
+  roots. Verify `GET /healthz/ready` reports `"engine":"ok"` before routing
+  monitoring traffic; `GET /healthz/live` only proves that the process is
+  responding.
 - Restrict PostgreSQL and API `/metrics` to private networks or authenticated monitoring infrastructure.
 - Back up `MERLON_ENCRYPTION_KEY_RING` and verify that recovery procedures can restore both database data and required key material.
 - Run `make migrate`, then `make audit-harden`, with

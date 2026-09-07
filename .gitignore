@@ -32,6 +32,7 @@ website/i18n/*/docusaurus-plugin-content-docs/current/release-notes.md
 
 # Docker
 docker-compose.override.yml
+/operator-content/
 
 # Test artifacts
 .playwright-mcp/

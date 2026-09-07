@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -22,6 +23,8 @@ const healthzReadyDBPingTimeout = 2 * time.Second
 // which dependency is down, which is all the probe needs to convey; the detail
 // goes to the server log, where reaching it requires access to the host.
 const checkFailed = "error"
+
+var requiredEngineUnavailable = errors.New("required engine is unavailable")
 
 // logReadinessFailure records the detail that the response deliberately omits.
 func logReadinessFailure(ctx context.Context, check string, err error) {
@@ -45,6 +48,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+	} else if s.engineRequired {
+		logReadinessFailure(r.Context(), "engine", requiredEngineUnavailable)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"status": "unhealthy",
+			"engine": checkFailed,
+		})
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
@@ -110,6 +120,10 @@ func (s *Server) handleHealthReady(w http.ResponseWriter, r *http.Request) {
 		} else {
 			checks["engine"] = "ok"
 		}
+	} else if s.engineRequired {
+		logReadinessFailure(r.Context(), "engine", requiredEngineUnavailable)
+		checks["engine"] = checkFailed
+		healthy = false
 	}
 
 	status := http.StatusOK
