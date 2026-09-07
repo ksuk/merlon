@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react"
 import { expect, test, vi, beforeEach } from "vitest"
 import { MemoryRouter, Route, Routes } from "react-router"
 import { renderWithI18n } from "@/test/i18n-test-utils"
+import type { Transaction } from "@/lib/api"
 import { TransactionDetailPage } from "./transaction-detail"
 
 // The rewritten transaction detail page had no test at all. These cover the
@@ -10,7 +11,7 @@ import { TransactionDetailPage } from "./transaction-detail"
 // reduced to bare identifiers, and a related-record list derived by filtering
 // one page of an unrelated payload.
 
-const txn = {
+const txn: Transaction = {
   id: "txn-1",
   customer_id: "c1",
   external_id: "TXN-EXT-1",
@@ -61,13 +62,13 @@ const cases = {
 
 const requestedURLs: string[] = []
 
-function mockAPI() {
+function mockAPI(transaction: Transaction = txn) {
   requestedURLs.length = 0
   vi.spyOn(globalThis, "fetch").mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
     requestedURLs.push(url)
     if (url.includes("/transactions/txn-1")) {
-      return Promise.resolve(new Response(JSON.stringify(txn)))
+      return Promise.resolve(new Response(JSON.stringify(transaction)))
     }
     if (url.includes("/alerts")) {
       return Promise.resolve(new Response(JSON.stringify(alerts)))
@@ -131,4 +132,38 @@ test("related records carry severity, status and priority", async () => {
   expect(within(related).getAllByText("重大").length).toBeGreaterThan(0)
   expect(within(related).getByText("調査中")).toBeDefined()
   expect(within(related).getByText("エスカレーション")).toBeDefined()
+})
+
+test("a queued monitoring evaluation is visible and links to the exact queue record", async () => {
+  mockAPI({
+    ...txn,
+    monitoring_evaluation: {
+      pending_evaluation_id: "pending-1",
+      status: "PENDING_REVIEW",
+      reason: "monitoring_unavailable: dependency_not_configured",
+    },
+  })
+  await renderDetail()
+
+  const monitoring = await screen.findByTestId("transaction-monitoring-evaluation")
+  expect(within(monitoring).getByText("PENDING_REVIEW")).toBeDefined()
+  const queueLink = within(monitoring).getByRole("link")
+  expect(queueLink.getAttribute("href")).toBe("/pending-evaluations?pending_evaluation_id=pending-1")
+})
+
+test("a resolved monitoring evaluation no longer claims that recovery is queued", async () => {
+  mockAPI({
+    ...txn,
+    monitoring_evaluation: {
+      pending_evaluation_id: "pending-1",
+      status: "RESOLVED",
+      reason: "monitoring_unavailable: dependency_not_configured",
+    },
+  })
+  await renderDetail()
+
+  const monitoring = await screen.findByTestId("transaction-monitoring-evaluation")
+  expect(within(monitoring).getByText("モニタリング評価は復旧済みです")).toBeDefined()
+  expect(within(monitoring).queryByText("モニタリング評価を保留しています")).toBeNull()
+  expect(within(monitoring).getByText("復旧処理による評価が完了しました。履歴は復旧記録から確認できます。")).toBeDefined()
 })

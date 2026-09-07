@@ -233,8 +233,13 @@ func (s *Server) handleBatchScore(w http.ResponseWriter, r *http.Request) {
 // a hard failure) if no PendingEvaluationRepository is configured or the
 // queue write itself fails.
 func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txns []domain.Transaction, cause error) bool {
+	_, err := s.ensurePendingReview(ctx, c, txns, cause)
+	return err == nil
+}
+
+func (s *Server) ensurePendingReview(ctx context.Context, c *domain.Customer, txns []domain.Transaction, cause error) (*domain.PendingEvaluation, error) {
 	if s.pendingEvals == nil {
-		return false
+		return nil, errAtomicMutationUnavailable
 	}
 
 	txIDs := make([]string, len(txns))
@@ -244,13 +249,17 @@ func (s *Server) queuePendingReview(ctx context.Context, c *domain.Customer, txn
 	if finder, ok := s.pendingEvals.(interface {
 		ListPendingByCustomer(context.Context, string, domain.PendingEvaluationStatus) ([]domain.PendingEvaluation, error)
 	}); ok {
-		if existing, err := finder.ListPendingByCustomer(ctx, c.ID, domain.PendingEvaluationStatusPendingReview); err == nil {
-			if pendingTransactionsOverlap(existing, txIDs) {
-				return true // already queued; concurrent/replayed pass
+		existing, err := finder.ListPendingByCustomer(ctx, c.ID, domain.PendingEvaluationStatusPendingReview)
+		if err != nil {
+			return nil, err
+		}
+		for i := range existing {
+			if pendingTransactionsOverlap(existing[i:i+1], txIDs) {
+				return &existing[i], nil // already queued; concurrent/replayed pass
 			}
 		}
 	}
-	return s.createPendingReview(ctx, c.ID, txIDs, cause)
+	return s.createPendingReviewRecord(ctx, c.ID, txIDs, cause)
 }
 
 func pendingTransactionsOverlap(existing []domain.PendingEvaluation, transactionIDs []string) bool {
@@ -269,18 +278,23 @@ func pendingTransactionsOverlap(existing []domain.PendingEvaluation, transaction
 }
 
 func (s *Server) createPendingReview(ctx context.Context, customerID string, txIDs []string, cause error) bool {
+	_, err := s.createPendingReviewRecord(ctx, customerID, txIDs, cause)
+	return err == nil
+}
+
+func (s *Server) createPendingReviewRecord(ctx context.Context, customerID string, txIDs []string, cause error) (*domain.PendingEvaluation, error) {
 	pe := &domain.PendingEvaluation{
 		ID:             generateID(),
 		CustomerID:     customerID,
 		TransactionIDs: txIDs,
 		Status:         domain.PendingEvaluationStatusPendingReview,
-		Reason:         "engine unavailable: " + cause.Error(),
+		Reason:         pendingEvaluationReason(cause),
 	}
 
 	if err := s.pendingEvals.Create(ctx, pe); err != nil {
-		return false
+		return nil, err
 	}
-	return true
+	return pe, nil
 }
 
 func loadPendingReviewIndex(ctx context.Context, repo domain.PendingEvaluationRepository, customers []domain.Customer) (map[string][]domain.PendingEvaluation, bool, error) {

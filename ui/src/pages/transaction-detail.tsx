@@ -115,6 +115,34 @@ export function TransactionDetailPage() {
         </Badge>
       </div>
 
+      {txn.monitoring_evaluation && (
+        <div
+          data-testid="transaction-monitoring-evaluation"
+          role={txn.monitoring_evaluation.status === "RESOLVED" ? "status" : "alert"}
+          className={`rounded-md border p-4 text-sm ${txn.monitoring_evaluation.status === "RESOLVED" ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold">
+              {t(txn.monitoring_evaluation.status === "RESOLVED" ? "transactionDetail.monitoring.titleResolved" : "transactionDetail.monitoring.titleQueued")}
+            </span>
+            <Badge variant={txn.monitoring_evaluation.status === "FAILED" ? "critical" : txn.monitoring_evaluation.status === "RESOLVED" ? "secondary" : "outline"}>
+              {txn.monitoring_evaluation.status}
+            </Badge>
+          </div>
+          <p className="mt-1">
+            {txn.monitoring_evaluation.reason === "monitoring_unavailable: dependency_not_configured"
+              ? t(txn.monitoring_evaluation.status === "RESOLVED" ? "transactionDetail.monitoring.dependencyRecovered" : "transactionDetail.monitoring.dependencyNotConfigured")
+              : txn.monitoring_evaluation.reason}
+          </p>
+          <Link
+            className="mt-2 inline-block text-primary underline-offset-4 hover:underline"
+            to={`/pending-evaluations?pending_evaluation_id=${encodeURIComponent(txn.monitoring_evaluation.pending_evaluation_id)}`}
+          >
+            {t("transactionDetail.monitoring.openQueue")}
+          </Link>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>

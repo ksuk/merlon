@@ -56,3 +56,11 @@ type PendingEvaluationRepository interface {
 type PendingEvaluationBulkLookup interface {
 	ListPendingByCustomers(ctx context.Context, customerIDs []string, status PendingEvaluationStatus) ([]PendingEvaluation, error)
 }
+
+// PendingEvaluationTransactionLookup exposes the latest durable monitoring
+// outcome for one transaction. Transaction responses use this additive
+// capability to link the source record to the same recovery state operators
+// see in the pending-evaluation queue.
+type PendingEvaluationTransactionLookup interface {
+	GetLatestByTransaction(ctx context.Context, transactionID string) (*PendingEvaluation, error)
+}
