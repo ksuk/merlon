@@ -23,8 +23,14 @@ Merlon を最短で起動し、空の状態からオペレーターダッシュ�
 git clone https://github.com/ksuk/merlon.git
 cd merlon
 cp .env.example .env
+mkdir -p operator-content/tm_scenarios operator-content/screening_lists
+cp content/_sample/cdd_weights/funds_transfer.yaml operator-content/cdd_weights.yaml
+cp content/_sample/tm_scenarios/*.yaml operator-content/tm_scenarios/
+cp deploy/seed/demo/screening_lists/*.yaml operator-content/screening_lists/
 docker compose up --build
 ```
+
+標準トポロジーは`operator-content`をread-onlyでマウントし、ネイティブEngineを必須とする。ここでコピーするファイルはローカル評価用の合成サンプルであり、実データを使用する前に、レビュー済みで導入組織が承認したポリシーコンテンツへ置き換えること。ディレクトリまたはいずれかの必須rootが存在しない、または不正な場合、プロセスはセットアップと診断のためliveのままになるが、`GET /healthz/ready`は`"engine":"error"`を含む`503`を返し、システム状態画面はEngineを利用不能として表示する。
 
 初回ビルドには数分かかる。Compose はデータベースパスワード、ブートストラップトークン、開発用 JWT 署名シークレットを `.env` から読み込むため、2行目のコピーは省略できない。省略すると、ログインフローを提供できる状態になる前に起動が停止する。
 
@@ -44,7 +50,7 @@ docker compose up --build
 
 :::note `healthy` はセットアップ完了を意味しない
 
-コンテナのヘルスチェックは `GET /healthz/live` を参照するため、`docker ps` はこの手順の前でも、プロセスが応答した時点で API コンテナを `healthy` と表示する。readiness はこれとは別であり、最初の管理者が作成されるまで `GET /healthz/ready` は `503` を返す。誰もログインできないインスタンスはリクエストを処理できる状態ではないためである。[トラブルシューティング](troubleshooting/index.md)を参照。
+標準Composeのヘルスチェックは`GET /healthz/ready`を参照するため、Engineが読み込まれ、最初の管理者が作成されるまで`docker ps`はコンテナを`unhealthy`と表示する。プロセス自体はセットアップと診断のため`GET /healthz/live`へ応答する。[トラブルシューティング](troubleshooting/index.md)を参照。
 
 :::
 

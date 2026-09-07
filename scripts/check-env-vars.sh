@@ -35,6 +35,9 @@ env_example=.env.example
 #   MERLON_DB_HOST_PORT -- consumed by the test-only Docker Compose overlay for
 #   its loopback PostgreSQL binding; the standard/demo topologies do not expose
 #   PostgreSQL to the host.
+#   MERLON_OPERATOR_CONTENT_PATH -- consumed by the standard Docker Compose
+#   topology for the host-side operator-content bind mount. The application
+#   reads only the container-side CDD, TM, and screening paths.
 allowlist=(
   MERLON_BACKUP_DATABASE_URL
   MERLON_POSTGRES_PASSWORD
@@ -51,6 +54,10 @@ fi
 if grep -qE '`MERLON_DB_HOST_PORT`' "$config_doc" &&
   grep -qE '^[[:space:]]*#?[[:space:]]*MERLON_DB_HOST_PORT[[:space:]]*=' "$env_example"; then
   allowlist+=(MERLON_DB_HOST_PORT)
+fi
+if grep -qE '`MERLON_OPERATOR_CONTENT_PATH`' "$config_doc" &&
+  grep -qE '^[[:space:]]*#?[[:space:]]*MERLON_OPERATOR_CONTENT_PATH[[:space:]]*=' "$env_example"; then
+  allowlist+=(MERLON_OPERATOR_CONTENT_PATH)
 fi
 
 # code_vars -- every MERLON_* name the Go code actually reads. Restricted to

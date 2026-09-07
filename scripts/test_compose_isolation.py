@@ -25,6 +25,7 @@ class ComposeIsolationTests(unittest.TestCase):
         )
         environment.pop("MERLON_API_HOST_PORT", None)
         environment.pop("MERLON_DB_HOST_PORT", None)
+        environment.pop("MERLON_OPERATOR_CONTENT_PATH", None)
         environment.update({key: str(value) for key, value in overrides.items()})
 
         command = ["docker", "compose", "-p", project]
@@ -196,16 +197,17 @@ class ComposeIsolationTests(unittest.TestCase):
             api["healthcheck"]["test"],
             ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz/ready"],
         )
-        self.assertIn(
-            {
-                "type": "bind",
-                "source": str((ROOT / "operator-content").resolve()),
-                "target": "/app/operator-content",
-                "read_only": True,
-                "bind": {},
-            },
-            api["volumes"],
+        operator_content = next(
+            volume
+            for volume in api["volumes"]
+            if volume["target"] == "/app/operator-content"
         )
+        self.assertEqual(operator_content["type"], "bind")
+        self.assertEqual(
+            operator_content["source"],
+            str((ROOT / "operator-content").resolve()),
+        )
+        self.assertTrue(operator_content["read_only"])
 
 
 if __name__ == "__main__":
