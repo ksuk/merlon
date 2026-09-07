@@ -19,6 +19,7 @@ lint-ui: ## Run UI lint
 	@cd ui && npm run lint
 
 audit-npm: ## Check npm advisories against the recorded exceptions (same gate as CI)
+	@node scripts/check-doc-image-assets.mjs
 	@node scripts/check-npm-audit.mjs ui website
 
 test: test-go test-ui test-website test-scripts ## Run all tests
