@@ -13,9 +13,9 @@
       "package": "image-size",
       "dependents": ["@docusaurus/mdx-loader"],
       "severity": "high",
-      "reason": "Docusaurus uses image-size only during the static documentation build to read repository-local image dimensions. The deployed site does not run the Node build service, and this repository has no ICNS, JXL, or HEIF assets. npm reports no forward fix for image-size@2.0.2. Reassessment is tracked in issue #92.",
-      "expires": "2026-09-08",
-      "review": "Before expiry, check Docusaurus, @docusaurus/mdx-loader, and image-size for a compatible patched release, rerun the website audit, and remove this exception when a fix exists; otherwise obtain an explicit new expiry decision in issue #92."
+      "reason": "Docusaurus uses image-size only during the static documentation build to read repository-local image dimensions. The deployed site does not run the Node build service, and the documentation image guard rejects ICNS, JXL, HEIF, HEIC, and AVIF inputs by extension and file signature. npm reports no forward fix for image-size@2.0.2. Reassessment is tracked in issue #127, successor to #92.",
+      "expires": "2026-10-08",
+      "review": "Before expiry, check Docusaurus, @docusaurus/mdx-loader, and image-size for a compatible patched release, rerun make audit-npm, and remove this exception when a fix exists; otherwise obtain an explicit new expiry decision in issue #127."
     },
     {
       "workspace": "website",
@@ -23,9 +23,9 @@
       "package": "image-size",
       "dependents": ["@docusaurus/mdx-loader"],
       "severity": "high",
-      "reason": "Docusaurus uses image-size only during the static documentation build to read repository-local image dimensions. The deployed site does not run the Node build service, and this repository has no ICNS, JXL, or HEIF assets. npm reports no forward fix for image-size@2.0.2. Reassessment is tracked in issue #92.",
-      "expires": "2026-09-08",
-      "review": "Before expiry, check Docusaurus, @docusaurus/mdx-loader, and image-size for a compatible patched release, rerun the website audit, and remove this exception when a fix exists; otherwise obtain an explicit new expiry decision in issue #92."
+      "reason": "Docusaurus uses image-size only during the static documentation build to read repository-local image dimensions. The deployed site does not run the Node build service, and the documentation image guard rejects ICNS, JXL, HEIF, HEIC, and AVIF inputs by extension and file signature. npm reports no forward fix for image-size@2.0.2. Reassessment is tracked in issue #127, successor to #92.",
+      "expires": "2026-10-08",
+      "review": "Before expiry, check Docusaurus, @docusaurus/mdx-loader, and image-size for a compatible patched release, rerun make audit-npm, and remove this exception when a fix exists; otherwise obtain an explicit new expiry decision in issue #127."
     }
   ]
 }

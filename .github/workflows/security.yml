@@ -115,7 +115,7 @@ jobs:
       # Wraps `npm audit` so an advisory with no forward fix can be accepted with
       # a recorded rationale and an expiry instead of leaving the gate red or
       # dropping it. See scripts/npm-audit-exceptions.json.
-      - run: node scripts/check-npm-audit.mjs ui website
+      - run: make audit-npm
 
   sbom:
     name: CycloneDX SBOM

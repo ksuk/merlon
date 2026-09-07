@@ -26,6 +26,7 @@ Merlon の依存関係、ビルド入力、公開成果物をどう統制し、�
 | `scripts/check-toolchain-pins.sh` | Go と Node.js のバージョンが Dockerfile・全ワークフロー・`go.mod`・開発コンテナで一致すること |
 | `scripts/check-wrangler-pin.sh` | `package.json` の Wrangler バージョンとデプロイワークフローが実行するバージョンが一致すること |
 | `scripts/check-env-vars.sh` | コードが読むすべての環境変数が文書化され、文書化されたすべての変数が読まれていること |
+| `scripts/check-doc-image-assets.mjs` | `docs/` と `website/` のドキュメント入力に ICNS、JPEG XL、HEIF/HEIC、AVIF が含まれないこと（名前を変えたファイルもシグネチャで検出） |
 | `scripts/ruleset-baseline.sh` | コミット済みの Ruleset ベースラインが、ドリフト検査の比較対象フィールド（とりわけ `bypass_actors`）をすべて保持し、正規のエクスポート形式であること |
 
 各ガードは不一致だけでなく、対象を **1件も検出できなかった場合にも**失敗する。手順の改名などで検査対象が黙って空になったとき、成功を報告してしまう統制は、統制が無いより悪い。
@@ -49,6 +50,7 @@ Dependabot は月次で3つのレビューレーン（アプリケーション�
 | `gitleaks` | コミットされたシークレット |
 | `govulncheck` | Go の依存関係（到達可能性を考慮） |
 | `npm audit`（`scripts/check-npm-audit.mjs` 経由） | `ui/` と `website/` の依存関係 |
+| `scripts/check-doc-image-assets.mjs`（`make audit-npm` 経由） | ドキュメントビルドで脆弱な `image-size` パーサーに到達しうる画像形式 |
 | `go-licenses` / `license-checker` | Go・npm 依存関係のライセンス許可リスト |
 | `anchore/sbom-action` | API・UI・website の CycloneDX SBOM |
 
@@ -57,6 +59,8 @@ Dependabot は月次で3つのレビューレーン（アプリケーション�
 直ちに解消できないアドバイザリは `scripts/npm-audit-exceptions.json` に記録する。エントリは抑止ではない。到達可能性の根拠、評価対象とした依存元、そして**失効日**を伴わなければならない。
 
 例外が失効したとき、アドバイザリのスコープが評価時から変化したとき、そしてアドバイザリ自体が存在しなくなったときにゲートは失敗する。最後のケースが重要なのは、それが「陳腐化した例外が実質何も覆っていない」状態を意味するためである。
+
+現在の `image-size` 例外には、フェイルクローズする入力ガードを組み合わせている。`docs/` と `website/` 配下の追跡済みまたは無視されていない全ファイルを走査し、パーサーが認識するシグネチャも確認して、危険な形式を拡張子変更も含めて拒否する。いずれかのルートやファイル一覧が消えた場合も失敗するため、ビルド入力の改名や壊れた走査によって受容リスクが黙って素通りすることはない。ガードは `make audit-npm` と Security ワークフローで `npm audit` より先に実行される。
 
 ## ビルドとリリース
 

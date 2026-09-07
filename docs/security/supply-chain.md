@@ -30,6 +30,7 @@ example — and guard scripts fail the build when the copies disagree:
 | `scripts/check-toolchain-pins.sh` | Go and Node.js versions match across the Dockerfile, all workflows, `go.mod`, and the dev container |
 | `scripts/check-wrangler-pin.sh` | The Wrangler version in `package.json` matches the one the deploy workflow runs |
 | `scripts/check-env-vars.sh` | Every environment variable the code reads is documented, and every documented variable is read |
+| `scripts/check-doc-image-assets.mjs` | Documentation inputs under `docs/` and `website/` contain no ICNS, JPEG XL, HEIF/HEIC, or AVIF files, including renamed files detected by their signatures |
 | `scripts/ruleset-baseline.sh` | The committed ruleset baselines carry every field the drift check compares, `bypass_actors` above all, and are in canonical export form |
 
 Each guard fails if it finds **zero** occurrences of what it is checking, not
@@ -64,6 +65,7 @@ Runs on every pull request and weekly on a schedule:
 | `gitleaks` | Committed secrets |
 | `govulncheck` | Go dependencies, reachability-aware |
 | `npm audit` (via `scripts/check-npm-audit.mjs`) | `ui/` and `website/` dependencies |
+| `scripts/check-doc-image-assets.mjs` (via `make audit-npm`) | Image formats that would reach the vulnerable `image-size` parser in the documentation build |
 | `go-licenses` / `license-checker` | Licence allowlist for Go and npm dependencies |
 | `anchore/sbom-action` | CycloneDX SBOM for the API, UI, and website |
 
@@ -77,6 +79,14 @@ carry a reachability rationale, the dependents it was assessed against, and an
 The gate fails when an exception expires, when the advisory's scope has changed
 from what was assessed, or when the advisory no longer exists — that last case
 matters because it means a stale exception is silently covering nothing.
+
+The two current `image-size` exceptions are paired with a fail-closed input
+guard. It scans every tracked or non-ignored file under `docs/` and `website/`
+and rejects the risky formats by extension and by the signatures recognized by
+the parser. It also fails if either root or the file list disappears, so a
+renamed build input or a broken scan cannot turn the accepted risk into a
+vacuous pass. The guard runs before `npm audit` in `make audit-npm` and in the
+Security workflow.
 
 ## Build and release
 
