@@ -2,14 +2,14 @@
 # never runs a toolchain under emulation: the UI bundle is architecture-neutral,
 # and Go cross-compiles to TARGETARCH natively (see api-builder below). Only the
 # runtime stage varies per target architecture.
-FROM --platform=$BUILDPLATFORM node:26.5.0-alpine3.24@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS ui-builder
+FROM --platform=$BUILDPLATFORM node:26.8.1-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS ui-builder
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm ci
 COPY ui/ .
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24@sha256:af8d6740070b8906d12eae1c3e3ea0957fb63f492051ea05e354c38ef9fe88df AS api-builder
+FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS api-builder
 WORKDIR /build
 COPY api/go.mod api/go.sum* ./
 # Not suppressed: a checksum mismatch, a proxy outage, or a GOSUMDB failure has
