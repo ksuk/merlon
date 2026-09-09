@@ -80,6 +80,11 @@ var (
 		Help: "Pending evaluation recovery failures, by operation.",
 	}, []string{"operation"})
 
+	BacktestJobTransitionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "merlon_backtest_job_transitions_total",
+		Help: "Total number of durable backtest lifecycle events, by transition.",
+	}, []string{"transition"})
+
 	CDDEventChainTruncatedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "merlon_cdd_event_chain_truncated_total",
 		Help: "Total number of CDD event chains truncated after exceeding the hop limit (the CDD scoring design safety valve 4).",
@@ -143,5 +148,8 @@ func init() {
 	}
 	for _, operation := range []string{"increment_retry", "mark_failed", "reevaluate"} {
 		PendingEvaluationFailuresTotal.WithLabelValues(operation).Add(0)
+	}
+	for _, transition := range []string{"accepted", "started", "failed", "retry_requested", "completed", "queue_expired"} {
+		BacktestJobTransitionsTotal.WithLabelValues(transition).Add(0)
 	}
 }

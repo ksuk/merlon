@@ -147,6 +147,9 @@ func resolveAction(method, path string) string {
 		}
 		return method
 	case http.MethodPost:
+		if strings.Contains(path, "/backtests/") && strings.HasSuffix(path, "/retry") {
+			return "retry_backtest"
+		}
 		if strings.Contains(path, "/score") {
 			return "score_customer"
 		}

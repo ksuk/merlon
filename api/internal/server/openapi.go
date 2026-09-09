@@ -92,6 +92,7 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/backtests/{id}":                                      pathBacktestJob(),
 			"/api/v1/backtests/{id}/outcomes":                             pathBacktestOutcomes(),
 			"/api/v1/backtests/{id}/cancel":                               pathPOST("Cancel durable backtest job"),
+			"/api/v1/backtests/{id}/retry":                                pathBacktestRetry(),
 			"/api/v1/backtests/{id}/affected-customers":                   pathBacktestAffectedCustomers(),
 			"/api/v1/backtests/preview":                                   pathPOST("Preview the customer and transaction cohort a backtest would run over"),
 			"/api/v1/pending-evaluations/stats":                           pathGET("Pending evaluation backlog, oldest age, and failed/exhausted counts"),
@@ -860,8 +861,8 @@ func wave3Schemas() map[string]any {
 		}, "scenario_id", "alerts_generated", "high_severity_count", "medium_severity_count", "low_severity_count", "affected_customer_ids"),
 		"BacktestResult": objectSchema(map[string]any{"backtest_id": map[string]any{"type": "string"}, "total_transactions": map[string]any{"type": "integer"}, "total_customers": map[string]any{"type": "integer"}, "total_alerts": map[string]any{"type": "integer"}, "scenario_results": arraySchema(schemaRef("BacktestScenarioResult")), "execution_time_ms": map[string]any{"type": "number"}}, "backtest_id", "total_transactions", "total_customers", "total_alerts", "scenario_results", "execution_time_ms"),
 		"BacktestJob": objectSchema(map[string]any{
-			"id": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"queued", "running", "completed", "failed", "cancelled"}}, "from": map[string]any{"type": "string", "format": "date-time"}, "to": map[string]any{"type": "string", "format": "date-time"}, "customer_ids": arraySchema(map[string]any{"type": "string"}), "customer_filter": map[string]any{"type": "object", "additionalProperties": true}, "scenario_ids": arraySchema(map[string]any{"type": "string"}), "baseline_rule_set_id": map[string]any{"type": "string"}, "candidate_rule_set_id": map[string]any{"type": "string"}, "baseline_rule_version": map[string]any{"type": "integer"}, "candidate_rule_version": map[string]any{"type": "integer"}, "config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "snapshot_at": map[string]any{"type": "string", "format": "date-time"}, "total_customers": map[string]any{"type": "integer"}, "processed_customers": map[string]any{"type": "integer"}, "progress": map[string]any{"type": "number"}, "baseline": schemaRef("BacktestResult"), "candidate": schemaRef("BacktestResult"), "delta": schemaRef("BacktestResult"), "outcome_analysis": schemaRef("BacktestOutcomeAnalysis"), "error": map[string]any{"type": "string"}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "started_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "updated_at": map[string]any{"type": "string", "format": "date-time"}, "metadata": schemaRef("BacktestMetadata"),
-		}, "id", "status", "from", "to", "baseline_rule_set_id", "candidate_rule_set_id", "snapshot_at", "progress", "created_at", "updated_at"),
+			"id": map[string]any{"type": "string"}, "status": map[string]any{"type": "string", "enum": []string{"queued", "running", "completed", "failed", "cancelled"}}, "from": map[string]any{"type": "string", "format": "date-time"}, "to": map[string]any{"type": "string", "format": "date-time"}, "customer_ids": arraySchema(map[string]any{"type": "string"}), "customer_filter": map[string]any{"type": "object", "additionalProperties": true}, "scenario_ids": arraySchema(map[string]any{"type": "string"}), "baseline_rule_set_id": map[string]any{"type": "string"}, "candidate_rule_set_id": map[string]any{"type": "string"}, "baseline_rule_version": map[string]any{"type": "integer"}, "candidate_rule_version": map[string]any{"type": "integer"}, "config_digests": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}, "snapshot_at": map[string]any{"type": "string", "format": "date-time"}, "total_customers": map[string]any{"type": "integer"}, "processed_customers": map[string]any{"type": "integer"}, "progress": map[string]any{"type": "number"}, "baseline": schemaRef("BacktestResult"), "candidate": schemaRef("BacktestResult"), "delta": schemaRef("BacktestResult"), "outcome_analysis": schemaRef("BacktestOutcomeAnalysis"), "error": map[string]any{"type": "string"}, "retry_count": map[string]any{"type": "integer", "minimum": 0}, "created_at": map[string]any{"type": "string", "format": "date-time"}, "started_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "completed_at": map[string]any{"type": "string", "format": "date-time", "nullable": true}, "updated_at": map[string]any{"type": "string", "format": "date-time"}, "metadata": schemaRef("BacktestMetadata"),
+		}, "id", "status", "from", "to", "baseline_rule_set_id", "candidate_rule_set_id", "snapshot_at", "progress", "retry_count", "created_at", "updated_at"),
 		"PaginatedBacktestJobs": objectSchema(map[string]any{"data": arraySchema(schemaRef("BacktestJob")), "pagination": schemaRef("PaginationMeta")}, "data", "pagination"),
 		"BacktestAffectedCustomer": objectSchema(map[string]any{
 			"job_id": map[string]any{"type": "string"}, "scenario_id": map[string]any{"type": "string"},
@@ -2040,6 +2041,15 @@ func pathBacktests() map[string]any {
 
 func pathBacktestJob() map[string]any {
 	return map[string]any{"get": documentedJSONOperation("Get durable backtest job", []map[string]any{pathIDParameter("id", "Backtest job identifier")}, nil, "200", "Backtest job", schemaRef("BacktestJob"), "401", "404", "500", "503")}
+}
+
+func pathBacktestRetry() map[string]any {
+	return map[string]any{"post": documentedJSONOperation(
+		"Retry a failed durable backtest job without changing its identifier",
+		[]map[string]any{pathIDParameter("id", "Backtest job identifier")}, nil,
+		"202", "Queued or already-active backtest job", schemaRef("BacktestJob"),
+		"401", "404", "409", "429", "500", "503",
+	)}
 }
 
 func pathCustomerCDDRuleSets() map[string]any {

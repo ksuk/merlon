@@ -1197,13 +1197,16 @@
       "error": "Failed to retrieve job status",
       "startError": "Failed to start the backtest job",
       "timeout": "The job did not complete within 10 minutes",
-      "failed": "The backtest job failed",
+      "failed": "The backtest job failed. You can retry it",
       "cancelled": "The backtest job was cancelled",
       "missingResult": "The completed job did not return a result",
       "candidateRequired": "A candidate rule set is required",
       "cancelError": "Failed to cancel the backtest job",
+      "retryError": "Failed to retry the backtest job",
       "cancel": "Cancel job",
-      "resume": "Resume polling"
+      "resume": "Resume polling",
+      "retry": "Retry job",
+      "retrying": "Retrying"
     },
     "result": {
       "title": "Result",

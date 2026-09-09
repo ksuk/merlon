@@ -26,6 +26,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RealtimeMonitorTimeout != 30*time.Second {
 		t.Errorf("RealtimeMonitorTimeout = %s, want 30s", cfg.RealtimeMonitorTimeout)
 	}
+	if cfg.BacktestQueueTimeout != 10*time.Minute {
+		t.Errorf("BacktestQueueTimeout = %s, want 10m", cfg.BacktestQueueTimeout)
+	}
 	if cfg.CacheBackend != "memory" {
 		t.Errorf("CacheBackend = %q, want %q", cfg.CacheBackend, "memory")
 	}
@@ -81,6 +84,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("MERLON_JWT_SECRET", "secret-value")
 	t.Setenv("MERLON_LOG_LEVEL", "debug")
 	t.Setenv("MERLON_REALTIME_MONITOR_TIMEOUT", "45s")
+	t.Setenv("MERLON_BACKTEST_QUEUE_TIMEOUT", "20m")
 	t.Setenv("MERLON_ENGINE_REQUIRED", "true")
 
 	cfg := Load()
@@ -100,6 +104,9 @@ func TestLoadFromEnv(t *testing.T) {
 	if cfg.RealtimeMonitorTimeout != 45*time.Second {
 		t.Errorf("RealtimeMonitorTimeout = %s, want 45s", cfg.RealtimeMonitorTimeout)
 	}
+	if cfg.BacktestQueueTimeout != 20*time.Minute {
+		t.Errorf("BacktestQueueTimeout = %s, want 20m", cfg.BacktestQueueTimeout)
+	}
 	if !cfg.EngineRequired {
 		t.Error("EngineRequired = false, want true")
 	}
@@ -109,6 +116,13 @@ func TestValidateRejectsNegativeRealtimeMonitorTimeout(t *testing.T) {
 	cfg := &Config{RealtimeMonitorTimeout: -time.Second}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected negative realtime monitor timeout to be rejected")
+	}
+}
+
+func TestValidateRejectsNegativeBacktestQueueTimeout(t *testing.T) {
+	cfg := &Config{BacktestQueueTimeout: -time.Second}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected negative backtest queue timeout to be rejected")
 	}
 }
 

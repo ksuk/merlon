@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ksuk/merlon/api/internal/apierr"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ksuk/merlon/api/internal/apierr"
 	"github.com/ksuk/merlon/api/internal/domain"
+	merlonmetrics "github.com/ksuk/merlon/api/internal/metrics"
 )
 
 type createBacktestJobRequest struct {
@@ -40,6 +41,10 @@ func parseBacktestUTC(value string) (time.Time, error) {
 func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request) {
 	if s.backtestJobs == nil {
 		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "durable backtest jobs not configured")
+		return
+	}
+	if s.backtest == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "backtest execution is unavailable")
 		return
 	}
 	var req createBacktestJobRequest
@@ -179,6 +184,7 @@ func (s *Server) handleCreateBacktestJob(w http.ResponseWriter, r *http.Request)
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, persistErr.Error())
 		return
 	}
+	merlonmetrics.BacktestJobTransitionsTotal.WithLabelValues("accepted").Inc()
 	w.Header().Set("Location", "/api/v1/backtests/"+job.ID)
 	writeJSON(w, http.StatusAccepted, job)
 }
@@ -242,6 +248,24 @@ func (s *Server) handleCancelBacktestJob(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, job)
+}
+
+func (s *Server) handleRetryBacktestJob(w http.ResponseWriter, r *http.Request) {
+	if s.backtestJobs == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "durable backtest jobs not configured")
+		return
+	}
+	if s.backtest == nil {
+		writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "backtest execution is unavailable")
+		return
+	}
+	job, err := s.backtestJobs.Retry(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeBacktestRepositoryError(w, err)
+		return
+	}
+	merlonmetrics.BacktestJobTransitionsTotal.WithLabelValues("retry_requested").Inc()
+	writeJSON(w, http.StatusAccepted, job)
 }
 func (s *Server) handleBacktestAffectedCustomers(w http.ResponseWriter, r *http.Request) {
 	if s.backtestJobs == nil {

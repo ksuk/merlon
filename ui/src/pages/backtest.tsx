@@ -12,6 +12,10 @@ import { Link } from "react-router"
 const pollingBackoffMs = [1000, 2000, 4000, 8000, 15000] as const
 const maxPollingDurationMs = 10 * 60 * 1000
 
+function pollingClockMs() {
+  return Date.now()
+}
+
 interface PollMessage {
   key: string
   detail?: string
@@ -37,6 +41,7 @@ export function BacktestPage() {
   const [previewing, setPreviewing] = useState(false)
   const [running, setRunning] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
   const [job, setJob] = useState<BacktestJob | null>(null)
   const [affectedScenario, setAffectedScenario] = useState("")
@@ -109,13 +114,13 @@ export function BacktestPage() {
   async function pollUntilTerminal(initial: BacktestJob, controller: AbortController) {
     let current = initial
     let attempt = 0
-    const startedAt = Date.now()
+    const startedAt = pollingClockMs()
     while (current.status === "queued" || current.status === "running") {
-      const remaining = maxPollingDurationMs - (Date.now() - startedAt)
+      const remaining = maxPollingDurationMs - (pollingClockMs() - startedAt)
       if (remaining <= 0) throw new Error("POLLING_TIMEOUT")
       const delay = Math.min(pollingBackoffMs[Math.min(attempt, pollingBackoffMs.length - 1)], remaining)
       await waitForNextPoll(delay, controller.signal)
-      if (Date.now() - startedAt >= maxPollingDurationMs) throw new Error("POLLING_TIMEOUT")
+      if (pollingClockMs() - startedAt >= maxPollingDurationMs) throw new Error("POLLING_TIMEOUT")
       current = await api.backtest.get(current.id, controller.signal)
       if (mountedRef.current && pollAbortRef.current === controller) setJob(current)
       attempt++
@@ -240,6 +245,62 @@ export function BacktestPage() {
     }
   }
 
+  async function handleRetry() {
+    if (!job || job.status !== "failed") return
+    setRetrying(true)
+    setResult(null)
+    try {
+      const retried = await api.backtest.retry(job.id)
+      if (!mountedRef.current) return
+      setJob(retried)
+      setHistoryKey((key) => key + 1)
+      await runPolling(retried, beginPollingSession())
+    } catch (error) {
+      if (!mountedRef.current) return
+      setPollMessage({
+        key: "backtest.polling.retryError",
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      if (mountedRef.current) setRetrying(false)
+    }
+  }
+
+  async function handleOpenJob(id: string) {
+    pollAbortRef.current?.abort()
+    pollAbortRef.current = null
+    if (pollTimerRef.current !== null) clearTimeout(pollTimerRef.current)
+    pollTimerRef.current = null
+    setRunning(false)
+    setResult(null)
+    setPollMessage(null)
+    try {
+      const selected = await api.backtest.get(id)
+      if (!mountedRef.current) return
+      setJob(selected)
+      if (selected.status === "completed" && selected.candidate) {
+        setResult(selected.candidate)
+      } else if (selected.status === "completed") {
+        setPollMessage({ key: "backtest.polling.missingResult" })
+      } else if (selected.status === "failed") {
+        setPollMessage({
+          key: "backtest.polling.failed",
+          detail: selected.error,
+        })
+      } else if (selected.status === "cancelled") {
+        setPollMessage({ key: "backtest.polling.cancelled" })
+      } else {
+        await runPolling(selected, beginPollingSession())
+      }
+    } catch (error) {
+      if (!mountedRef.current) return
+      setPollMessage({
+        key: "backtest.polling.error",
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   const hasActiveJob = job?.status === "queued" || job?.status === "running"
   const scenarioResults = result?.scenario_results ?? []
   const scenarioOptions = Array.from(new Set([
@@ -359,6 +420,12 @@ export function BacktestPage() {
                 {t("backtest.polling.resume")}
               </Button>
             )}
+            {job?.status === "failed" && (
+              <Button size="sm" variant="outline" disabled={retrying} onClick={() => void handleRetry()}>
+                <RotateCcw className="h-4 w-4" />
+                {retrying ? t("backtest.polling.retrying") : t("backtest.polling.retry")}
+              </Button>
+            )}
           </div>
           {cohortPreview && (
             <div data-testid="backtest-cohort-preview" className="rounded-md border p-3 text-sm">
@@ -437,7 +504,7 @@ export function BacktestPage() {
         <OutcomeAnalysisCard analysis={outcomeAnalysis} details={outcomePage?.data ?? []} />
       )}
 
-      <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.history")}</CardTitle></CardHeader><CardContent>{jobHistory?.data.length ? <Table><TableHeader><TableRow><TableHead>{t("backtest.job.historyId")}</TableHead><TableHead>{t("backtest.job.historyStatus")}</TableHead><TableHead>{t("backtest.job.historyComparison")}</TableHead></TableRow></TableHeader><TableBody>{jobHistory.data.map((item) => <TableRow key={item.id}><TableCell className="font-mono text-xs">{item.id}</TableCell><TableCell><Badge variant={item.status === "failed" ? "critical" : "outline"}>{t(`backtest.job.status.${item.status}`)}</Badge></TableCell><TableCell className="text-xs">{item.baseline_rule_set_id} → {item.candidate_rule_set_id}{item.metadata?.rerun_of ? ` (${item.metadata.rerun_of})` : ""}</TableCell></TableRow>)}</TableBody></Table> : <p className="text-sm text-muted-foreground">{t("backtest.job.historyEmpty")}</p>}</CardContent></Card>
+      <Card><CardHeader><CardTitle className="text-base">{t("backtest.job.history")}</CardTitle></CardHeader><CardContent>{jobHistory?.data.length ? <Table><TableHeader><TableRow><TableHead>{t("backtest.job.historyId")}</TableHead><TableHead>{t("backtest.job.historyStatus")}</TableHead><TableHead>{t("backtest.job.historyComparison")}</TableHead></TableRow></TableHeader><TableBody>{jobHistory.data.map((item) => <TableRow key={item.id}><TableCell className="font-mono text-xs"><button type="button" className="text-primary hover:underline" onClick={() => void handleOpenJob(item.id)}>{item.id}</button></TableCell><TableCell><Badge variant={item.status === "failed" ? "critical" : "outline"}>{t(`backtest.job.status.${item.status}`)}</Badge></TableCell><TableCell className="text-xs">{item.baseline_rule_set_id} → {item.candidate_rule_set_id}{item.metadata?.rerun_of ? ` (${item.metadata.rerun_of})` : ""}</TableCell></TableRow>)}</TableBody></Table> : <p className="text-sm text-muted-foreground">{t("backtest.job.historyEmpty")}</p>}</CardContent></Card>
 
       {result && (
         <Card>

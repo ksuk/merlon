@@ -247,8 +247,65 @@ func (r *MemoryBacktestJobRepo) Fail(_ context.Context, id, reason string) error
 	}
 	j.Status = domain.BacktestJobFailed
 	j.Error = reason
-	j.UpdatedAt = time.Now().UTC()
+	now := time.Now().UTC()
+	j.CompletedAt = &now
+	j.UpdatedAt = now
 	return nil
+}
+
+func (r *MemoryBacktestJobRepo) Retry(_ context.Context, id string) (*domain.BacktestJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	j, ok := r.data[id]
+	if !ok {
+		return nil, &domain.ErrNotFound{Entity: "backtest_job", ID: id}
+	}
+	switch j.Status {
+	case domain.BacktestJobQueued, domain.BacktestJobRunning:
+		return cloneBacktestJob(j), nil
+	case domain.BacktestJobCompleted, domain.BacktestJobCancelled:
+		return nil, &domain.ErrConflict{Entity: "backtest_job", ID: id, Reason: "only failed jobs can be retried"}
+	case domain.BacktestJobFailed:
+	default:
+		return nil, &domain.ErrConflict{Entity: "backtest_job", ID: id, Reason: "job is not retryable"}
+	}
+	now := time.Now().UTC()
+	j.Status = domain.BacktestJobQueued
+	j.ProcessedCustomers = 0
+	j.TotalCustomers = 0
+	j.Progress = 0
+	j.ETASeconds = nil
+	j.Baseline = nil
+	j.Candidate = nil
+	j.Delta = nil
+	j.OutcomeAnalysis = nil
+	j.Error = ""
+	j.StartedAt = nil
+	j.CompletedAt = nil
+	j.RetryCount++
+	j.UpdatedAt = now
+	delete(r.affected, id)
+	delete(r.outcomeDetails, id)
+	return cloneBacktestJob(j), nil
+}
+
+func (r *MemoryBacktestJobRepo) ExpireQueued(_ context.Context, before time.Time, reason string) ([]string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now().UTC()
+	expired := make([]string, 0)
+	for id, job := range r.data {
+		if job.Status != domain.BacktestJobQueued || !job.UpdatedAt.Before(before) {
+			continue
+		}
+		job.Status = domain.BacktestJobFailed
+		job.Error = reason
+		job.CompletedAt = &now
+		job.UpdatedAt = now
+		expired = append(expired, id)
+	}
+	sort.Strings(expired)
+	return expired, nil
 }
 
 func (r *MemoryBacktestJobRepo) SaveCustomerSnapshot(_ context.Context, jobID string, customerIDs []string) error {
