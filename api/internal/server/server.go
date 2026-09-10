@@ -460,6 +460,7 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/outcomes", s.handleBacktestOutcomes)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
+	s.route("POST /api/v1/backtests/{id}/retry", s.handleRetryBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
 	s.route("POST /api/v1/coverage-analyses", s.handleCreateCoverageAnalysis)
 	s.route("GET /api/v1/coverage-analyses", s.handleListCoverageAnalyses)

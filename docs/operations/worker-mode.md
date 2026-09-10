@@ -50,11 +50,30 @@ transaction never appears to have been evaluated merely because it was stored.
 If the API cannot persist the pending evaluation and audit in the same database
 transaction, transaction creation fails and no transaction is committed.
 
-Backtest requests are durable rows. An API-only deployment accepts and
-persists jobs; a worker (or `all`) deployment claims queued rows with a
-database lease and resumes them after restart. Jobs snapshot `[from,to)` and
-config digests at creation, report progress/ETA, and never create alerts or
-cases. Non-`active` baseline/candidate rule references are resolved and their
-versioned definitions are pinned on job creation, so a queued job cannot drift
-when an operator publishes a new rule version; an unresolved reference fails
-closed.
+Backtest requests are durable rows. The API rejects a new job before
+persistence when its native execution engine is unavailable. An API-only
+deployment with a loaded engine can persist jobs for a separate worker; a
+worker (or `all`) deployment claims queued rows with a database lease and
+reclaims an expired running lease after restart.
+
+An accepted job cannot remain queued indefinitely. Every API and worker
+process runs a database-backed lifecycle monitor. If no worker claims a row
+within `MERLON_BACKTEST_QUEUE_TIMEOUT` (default `10m`), the row becomes
+`failed` with a stable retryable reason. `POST /api/v1/backtests/{id}/retry`
+returns the same job identifier to `queued`; repeated requests while it is
+already queued or running are idempotent. Retry clears partial result rows in
+the same transaction before another worker can claim the job, so a rerun does
+not accumulate duplicate results.
+
+Worker failures store a stable public error rather than an internal engine or
+dependency error. Diagnose the underlying cause from protected process logs,
+restore the dependency, and retry the failed job. Audit entries record job
+start, failure, completion, retry requests, and queue expiry. The
+`merlon_backtest_job_transitions_total{transition=...}` counter exposes the
+same lifecycle categories without job identifiers.
+
+Jobs snapshot `[from,to)` and config digests at creation, report progress/ETA,
+and never create alerts or cases. Non-`active` baseline/candidate rule
+references are resolved and their versioned definitions are pinned on job
+creation, so a queued job cannot drift when an operator publishes a new rule
+version; an unresolved reference fails closed.

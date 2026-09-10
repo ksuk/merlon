@@ -29,6 +29,7 @@ func TestMetricsAllRegistered(t *testing.T) {
 		{"merlon_batch_evaluation_duration_seconds", BatchEvaluationDuration},
 		{"merlon_alert_persistence_failures_total", AlertPersistenceFailuresTotal},
 		{"merlon_pending_evaluation_failures_total", PendingEvaluationFailuresTotal},
+		{"merlon_backtest_job_transitions_total", BacktestJobTransitionsTotal},
 		{"merlon_cdd_event_chain_truncated_total", CDDEventChainTruncatedTotal},
 	}
 

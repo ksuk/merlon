@@ -14,6 +14,7 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | 変数 | デフォルト | 本番運用ガイダンス |
 |---|---|---|
 | `MERLON_ENV` | `development` | `production` に設定する。 |
+| `MERLON_BACKTEST_QUEUE_TIMEOUT` | `10m` | 受理したバックテストがキューで待機できる最大時間。期限を超えると、運用者が再試行できる理由を伴う失敗状態になる。 |
 | `MERLON_HTTP_ADDR` | `:8080` | TLS 終端を行うリバースプロキシの背後でバインドする。 |
 | `MERLON_DATABASE_URL` | 未設定 | TLS（`sslmode=require` 以上）と最小権限のアプリケーションロールを使用する。 |
 | `MERLON_BACKUP_DATABASE_URL` | 未設定 | `make backup` だけで使用する専用の read-only backup 接続。文書化された既存・将来の table／sequence 読取権限を付与し、serving-role URL や schema-owner URL で代用しない。 |

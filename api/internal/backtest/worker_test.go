@@ -3,6 +3,8 @@ package backtest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +40,18 @@ func (e *cancellationTestEngine) RunBacktest(ctx context.Context, _ []domain.Cus
 type versionedTestEngine struct {
 	baseCalls      int
 	candidateCalls int
+}
+
+type cancelBeforeCompleteRepository struct {
+	domain.BacktestJobRepository
+	inner *store.MemoryBacktestJobRepo
+}
+
+func (r *cancelBeforeCompleteRepository) Complete(ctx context.Context, id string, baseline, candidate, delta *domain.BacktestResult) error {
+	if err := r.inner.Cancel(ctx, id); err != nil {
+		return err
+	}
+	return r.inner.Complete(ctx, id, baseline, candidate, delta)
 }
 
 func (e *versionedTestEngine) RunBacktest(context.Context, []domain.Customer, []domain.Transaction, []string, string) (*domain.BacktestResult, error) {
@@ -101,7 +115,8 @@ func TestWorkerFailsClosedWhenCandidateRuleIsMissing(t *testing.T) {
 	if err := jobs.Create(ctx, job); err != nil {
 		t.Fatal(err)
 	}
-	worker := &Worker{Jobs: jobs, Customers: customers, Transactions: store.NewMemoryTransactionRepo(), Engine: &versionedTestEngine{}, Rules: store.NewMemoryRuleRepo()}
+	audit := store.NewMemoryAuditRepo()
+	worker := &Worker{Jobs: jobs, Customers: customers, Transactions: store.NewMemoryTransactionRepo(), Engine: &versionedTestEngine{}, Rules: store.NewMemoryRuleRepo(), Audit: audit}
 	if err := worker.RunOnce(ctx); err == nil {
 		t.Fatal("expected missing candidate rule error")
 	}
@@ -109,8 +124,74 @@ func TestWorkerFailsClosedWhenCandidateRuleIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != domain.BacktestJobFailed || got.Error == "" {
+	if got.Status != domain.BacktestJobFailed || got.Error != ExecutionFailureMessage || strings.Contains(got.Error, "missing") {
 		t.Fatalf("job=%+v", got)
+	}
+	entries, err := audit.List(ctx, domain.AuditListFilter{ResourceType: "backtests", ResourceID: job.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].Action != "backtest_failed" || entries[1].Action != "backtest_started" {
+		t.Fatalf("audit entries=%+v, want failed then started", entries)
+	}
+}
+
+func TestWorkerStoresStableFailureMessageWithoutEngineDetails(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	jobs := store.NewMemoryBacktestJobRepo()
+	job := &domain.BacktestJob{ID: "secret-error-job", From: now.Add(-time.Hour), To: now, BaselineRuleSetID: "active", CandidateRuleSetID: "candidate", SnapshotAt: now}
+	if err := jobs.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	worker := &Worker{Jobs: jobs, Customers: store.NewMemoryCustomerRepo(), Transactions: store.NewMemoryTransactionRepo(), Engine: &engine.MockBacktestEngine{Err: errors.New("internal endpoint secret-token")}}
+	if err := worker.RunOnce(ctx); err == nil {
+		t.Fatal("RunOnce returned nil error")
+	}
+	got, err := jobs.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Error != ExecutionFailureMessage || strings.Contains(got.Error, "secret-token") {
+		t.Fatalf("public error=%q", got.Error)
+	}
+	if got.CompletedAt == nil {
+		t.Fatal("failed job has no completion timestamp")
+	}
+}
+
+func TestWorkerDoesNotRecordCompletionAfterConcurrentCancellation(t *testing.T) {
+	ctx := context.Background()
+	jobs := store.NewMemoryBacktestJobRepo()
+	now := time.Now().UTC()
+	job := &domain.BacktestJob{ID: "cancel-race-job", From: now.Add(-time.Hour), To: now, BaselineRuleSetID: "active", CandidateRuleSetID: "candidate", SnapshotAt: now}
+	if err := jobs.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	repository := &cancelBeforeCompleteRepository{BacktestJobRepository: jobs, inner: jobs}
+	audit := store.NewMemoryAuditRepo()
+	worker := &Worker{
+		Jobs: repository, Customers: store.NewMemoryCustomerRepo(), Transactions: store.NewMemoryTransactionRepo(),
+		Engine: &engine.MockBacktestEngine{Result: &domain.BacktestResult{}}, Audit: audit,
+	}
+	if err := worker.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := jobs.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != domain.BacktestJobCancelled {
+		t.Fatalf("status=%s, want cancelled", got.Status)
+	}
+	entries, err := audit.List(ctx, domain.AuditListFilter{ResourceType: "backtests", ResourceID: job.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Action == "backtest_completed" {
+			t.Fatalf("unexpected completion audit after cancellation: %+v", entries)
+		}
 	}
 }
 

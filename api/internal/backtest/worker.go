@@ -9,6 +9,7 @@ import (
 
 	"github.com/ksuk/merlon/api/internal/domain"
 	"github.com/ksuk/merlon/api/internal/engine"
+	merlonmetrics "github.com/ksuk/merlon/api/internal/metrics"
 	"github.com/ksuk/merlon/api/internal/outcome"
 	"github.com/ksuk/merlon/api/internal/transactionhistory"
 )
@@ -19,6 +20,7 @@ type Worker struct {
 	Transactions domain.TransactionRepository
 	Engine       engine.BacktestEngine
 	Rules        domain.RuleRepository
+	Audit        domain.AuditRepository
 	// OutcomeBuilder is optional because the current engine result contract is
 	// aggregate-only. Engines that expose alert-shaped detections can inject a
 	// matcher-backed builder without changing the durable job runner.
@@ -52,6 +54,8 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	if err != nil || job == nil {
 		return err
 	}
+	w.recordLifecycle(ctx, job.ID, "backtest_started", domain.BacktestJobRunning)
+	merlonmetrics.BacktestJobTransitionsTotal.WithLabelValues("started").Inc()
 	jobCtx, cancel := context.WithCancel(ctx)
 	monitorDone := make(chan struct{})
 	go func() {
@@ -63,13 +67,41 @@ func (w *Worker) RunOnce(ctx context.Context) error {
 	<-monitorDone
 	if err != nil {
 		if ctx.Err() == nil {
-			if failErr := w.Jobs.Fail(ctx, job.ID, err.Error()); failErr != nil {
+			if failErr := w.Jobs.Fail(ctx, job.ID, ExecutionFailureMessage); failErr != nil {
 				slog.Error("mark backtest job failed", "job_id", job.ID, "error", failErr)
+			} else if failed, getErr := w.Jobs.Get(ctx, job.ID); getErr == nil && failed.Status == domain.BacktestJobFailed {
+				w.recordLifecycle(ctx, job.ID, "backtest_failed", domain.BacktestJobFailed)
+				merlonmetrics.BacktestJobTransitionsTotal.WithLabelValues("failed").Inc()
 			}
 		}
 		return err
 	}
+	completed, getErr := w.Jobs.Get(ctx, job.ID)
+	if getErr != nil {
+		return fmt.Errorf("read backtest job after execution: %w", getErr)
+	}
+	if completed.Status == domain.BacktestJobCompleted {
+		w.recordLifecycle(ctx, job.ID, "backtest_completed", domain.BacktestJobCompleted)
+		merlonmetrics.BacktestJobTransitionsTotal.WithLabelValues("completed").Inc()
+	}
 	return nil
+}
+
+func (w *Worker) recordLifecycle(ctx context.Context, jobID, action string, status domain.BacktestJobStatus) {
+	if w.Audit == nil {
+		return
+	}
+	entry := &domain.AuditEntry{
+		UserID:       "system:backtest-worker",
+		Action:       action,
+		ResourceType: "backtests",
+		ResourceID:   jobID,
+		Details:      map[string]string{"status": string(status)},
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := w.Audit.Create(ctx, entry); err != nil {
+		slog.ErrorContext(ctx, "record backtest lifecycle audit", "job_id", jobID, "action", action, "error", err)
+	}
 }
 
 func (w *Worker) monitorCancellation(ctx context.Context, jobID string, cancel context.CancelFunc) {

@@ -49,6 +49,8 @@ const webhookRetryCheckInterval = 30 * time.Second
 
 const eventOutboxCheckInterval = time.Second
 
+const backtestLifecycleCheckInterval = 5 * time.Second
+
 const (
 	httpReadHeaderTimeout = 10 * time.Second
 	httpReadTimeout       = 30 * time.Second
@@ -798,10 +800,19 @@ func main() {
 
 	backtestCtx, cancelBacktest := context.WithCancel(context.Background())
 	defer cancelBacktest()
+	if deps.BacktestJobs != nil {
+		lifecycle := &backtestworker.Lifecycle{Jobs: deps.BacktestJobs, Audit: deps.Audit, QueueTimeout: cfg.BacktestQueueTimeout}
+		go func() {
+			if err := lifecycle.Run(backtestCtx, backtestLifecycleCheckInterval); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("backtest lifecycle monitor stopped", "error", err)
+			}
+		}()
+		slog.Info("backtest lifecycle monitor started", "queue_timeout", cfg.BacktestQueueTimeout, "interval", backtestLifecycleCheckInterval)
+	}
 	if runWorkerJobs && deps.BacktestJobs != nil && deps.Backtest != nil {
 		for i := 0; i < cfg.WorkerConcurrency; i++ {
 			worker := &backtestworker.Worker{
-				Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules,
+				Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules, Audit: deps.Audit,
 				ReplayOutcomeBuilder: backtestworker.NewReplayOutcomeBuilder(backtestworker.ReplayOutcomeDependencies{
 					Customers: deps.Customers, Alerts: deps.Alerts, Cases: deps.Cases, Reports: deps.Reports, AlertDecisions: deps.AlertDecisions,
 				}),
