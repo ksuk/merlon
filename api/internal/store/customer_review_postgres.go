@@ -205,7 +205,7 @@ func (r *PgCustomerReviewRepo) Create(ctx context.Context, review *domain.Custom
 	evidence, _ := json.Marshal(review.EvidenceRefs)
 	_, err := r.pool.Exec(ctx, `INSERT INTO customer_reviews
 		(id,customer_id,cycle,status,outcome,tier,previous_tier,resulting_tier,assigned_to,assigned_team,priority,due_at,grace_until,overdue_at,policy_version,policy_digest,scope,rationale,evidence_refs,previous_score_id,resulting_score_id,actor,scheduled_at,started_at,completed_at,created_at,updated_at,version)
-		VALUES($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
+		VALUES($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,'')::risk_tier,NULLIF($8,'')::risk_tier,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
 		review.ID, domain.CanonicalIdentifier(review.CustomerID), review.Cycle, review.Status, review.Outcome,
 		review.Tier, review.PreviousTier, review.ResultingTier, review.AssignedTo, review.AssignedTeam,
 		review.Priority, review.DueAt, review.GraceUntil, review.OverdueAt, review.PolicyVersion, review.PolicyDigest,
@@ -235,7 +235,7 @@ func (r *PgCustomerReviewRepo) UpdateIfUnmodified(ctx context.Context, review *d
 func (r *PgCustomerReviewRepo) update(ctx context.Context, review *domain.CustomerReview, expectedVersion int64) error {
 	scope, _ := json.Marshal(review.Scope)
 	evidence, _ := json.Marshal(review.EvidenceRefs)
-	query := `UPDATE customer_reviews SET status=$2,outcome=NULLIF($3,''),tier=$4,previous_tier=NULLIF($5,''),resulting_tier=NULLIF($6,''),assigned_to=$7,assigned_team=$8,priority=$9,due_at=$10,grace_until=$11,overdue_at=$12,policy_version=$13,policy_digest=$14,scope=$15,rationale=$16,evidence_refs=$17,previous_score_id=$18,resulting_score_id=$19,actor=$20,scheduled_at=$21,started_at=$22,completed_at=$23,updated_at=now(),version=version+1 WHERE id=$1 AND status <> 'completed'`
+	query := `UPDATE customer_reviews SET status=$2,outcome=NULLIF($3,''),tier=$4,previous_tier=NULLIF($5,'')::risk_tier,resulting_tier=NULLIF($6,'')::risk_tier,assigned_to=$7,assigned_team=$8,priority=$9,due_at=$10,grace_until=$11,overdue_at=$12,policy_version=$13,policy_digest=$14,scope=$15,rationale=$16,evidence_refs=$17,previous_score_id=$18,resulting_score_id=$19,actor=$20,scheduled_at=$21,started_at=$22,completed_at=$23,updated_at=now(),version=version+1 WHERE id=$1 AND status <> 'completed'`
 	args := []any{review.ID, review.Status, review.Outcome, review.Tier, review.PreviousTier, review.ResultingTier, review.AssignedTo, review.AssignedTeam, review.Priority, review.DueAt, review.GraceUntil, review.OverdueAt, review.PolicyVersion, review.PolicyDigest, scope, review.Rationale, evidence, review.PreviousScoreID, review.ResultingScoreID, review.Actor, review.ScheduledAt, review.StartedAt, review.CompletedAt}
 	if expectedVersion > 0 {
 		query += " AND version=$24"
@@ -263,7 +263,7 @@ func (r *PgCustomerReviewRepo) update(ctx context.Context, review *domain.Custom
 }
 
 func (r *PgCustomerReviewRepo) UpdateReviewProjection(ctx context.Context, customerID string, next, last *time.Time, tier domain.RiskTier, policyVersion, policyDigest string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE customers SET next_review_at=$2,last_review_at=$3,review_tier=NULLIF($4,''),review_policy_version=$5,review_policy_digest=$6,updated_at=now() WHERE id=$1`, domain.CanonicalIdentifier(customerID), next, last, tier, policyVersion, policyDigest)
+	tag, err := r.pool.Exec(ctx, `UPDATE customers SET next_review_at=$2,last_review_at=$3,review_tier=NULLIF($4,'')::risk_tier,review_policy_version=$5,review_policy_digest=$6,updated_at=now() WHERE id=$1`, domain.CanonicalIdentifier(customerID), next, last, tier, policyVersion, policyDigest)
 	if err != nil {
 		return err
 	}
