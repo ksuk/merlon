@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts standard-engine-smoke test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage verify-demo-tour test test-go test-ui test-website test-scripts standard-engine-smoke test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -116,6 +116,9 @@ down: ## Stop the standard topology
 
 screenshots: ## Capture docs/img demo UI screenshots (needs the demo stack running)
 	@bash scripts/capture-screenshots.sh
+
+verify-demo-tour: ## Exercise both documented tours against a fresh healthy demo stack
+	@bash scripts/verify-demo-tour.sh
 
 demogen: ## Generate synthetic demo data (deploy/seed/demo/*.json; not committed)
 	@cd api && go run ./cmd/merlon-demogen -out ../deploy/seed/demo

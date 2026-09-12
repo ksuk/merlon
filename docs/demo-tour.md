@@ -25,7 +25,7 @@ docker compose -p merlon-demo -f docker-compose.demo.yml up --build
 
 No environment variables are required. This starts `db` and `api` bound to
 `127.0.0.1:8080` with authentication disabled and around 1,015 synthetic
-customers and 98 alerts already loaded.
+customers and 96 alerts already loaded.
 
 If port `8080` is already in use, choose an explicit project and host port:
 
@@ -62,7 +62,7 @@ deterministic synthetic dataset from scratch.
 2. **Alerts** ([`/alerts`](http://127.0.0.1:8080/alerts)) — find the one
    alert badged **Critical**. It belongs to `demo-story-04` (Meridian Cross
    Trading Pte. Ltd.), or jump to it directly:
-   [`/alerts/38d7a6ce-c160-5cf3-b748-ce2650893ff3`](http://127.0.0.1:8080/alerts/38d7a6ce-c160-5cf3-b748-ce2650893ff3).
+   [`/alerts/419d1314-654e-5375-bfb7-9fcea10fcd53`](http://127.0.0.1:8080/alerts/419d1314-654e-5375-bfb7-9fcea10fcd53).
 3. **Alert detail** — note the `scenario_id` (`tm_rapid_movement`, linked to
    the Rules view) and the description, then open one of the three related
    transaction badges — for example the inbound leg that starts the
@@ -83,7 +83,8 @@ deterministic synthetic dataset from scratch.
    write-experience step — the note and status change are yours, not
    pre-seeded.
 6. **Reports** ([`/reports`](http://127.0.0.1:8080/reports)) — pick the
-   `demo-story-04` alert from the list (its critical severity qualifies it)
+   `demo-story-04` alert from the list (its linked active case is marked as
+   an STR candidate)
    and generate an STR draft, then download the CSV or JSON export. The draft
    is generated for this workflow; the write request itself is what is
    recorded in the audit trail.
@@ -153,7 +154,7 @@ go run ./cmd/merlon-api
 ```
 
 Open [http://localhost:8080](http://localhost:8080) — the same UI, the same
-1,015 customers and 98 alerts, and the same native engine (rule content is
+1,015 customers and 96 alerts, and the same native engine (rule content is
 the four `MERLON_*_PATH` variables above), backed by the in-memory store
 instead of PostgreSQL. Without all four rule-content variables, scoring and
 monitoring fall back to a disabled engine, so Path A step 4 and all of Path

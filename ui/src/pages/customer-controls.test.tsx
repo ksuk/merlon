@@ -166,6 +166,27 @@ test("the rule-set selector offers the policy's candidates and marks the recomme
   expect(labels.some((label) => label.includes("cdd_strict"))).toBe(true)
 })
 
+test("scoring submits the stable rule name when the row ID differs", async () => {
+  mockAPI({
+    "/cdd-rule-sets": {
+      ...ruleSets,
+      data: [{ ...ruleSets.data[0], id: "rule-row-uuid", name: "cdd_basic" }],
+    },
+    "/customers/c1/score": { score: explanation.score },
+  })
+  await renderDetail()
+
+  fireEvent.change(await screen.findByLabelText("再評価理由"), { target: { value: "scheduled review" } })
+  fireEvent.click(screen.getByRole("button", { name: "スコアリング" }))
+  fireEvent.click(screen.getByRole("button", { name: "スコアリングを確定" }))
+
+  await vi.waitFor(() => {
+    const call = posted.find((entry) => entry.url.endsWith("/customers/c1/score"))
+    expect(call).toBeDefined()
+    expect((call!.body as { rule_set_id: string }).rule_set_id).toBe("cdd_basic")
+  })
+})
+
 test("a pending tier override can be approved and sends its expected version", async () => {
   mockAPI()
   await renderDetail()
