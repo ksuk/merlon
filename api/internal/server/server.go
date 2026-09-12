@@ -71,6 +71,7 @@ type Server struct {
 	tokenIssuer              *auth.TokenIssuer
 	denylist                 auth.Denylist
 	users                    domain.UserRepository
+	userLifecycle            domain.UserLifecycleRepository
 	refreshTokens            domain.RefreshTokenRepository
 	rules                    domain.RuleRepository
 	whitelist                domain.WhitelistRepository
@@ -157,6 +158,7 @@ type Deps struct {
 	TokenIssuer        *auth.TokenIssuer
 	Denylist           auth.Denylist
 	Users              domain.UserRepository
+	UserLifecycle      domain.UserLifecycleRepository
 	RefreshTokens      domain.RefreshTokenRepository
 	Rules              domain.RuleRepository
 	Whitelist          domain.WhitelistRepository
@@ -241,6 +243,7 @@ func New(addr string, deps Deps) *Server {
 		tokenIssuer:              deps.TokenIssuer,
 		denylist:                 deps.Denylist,
 		users:                    deps.Users,
+		userLifecycle:            deps.UserLifecycle,
 		refreshTokens:            deps.RefreshTokens,
 		rules:                    deps.Rules,
 		whitelist:                deps.Whitelist,
@@ -541,6 +544,9 @@ func (s *Server) routes() {
 
 	// Users (admin only)
 	s.route("GET /api/v1/admin/users", s.handleListUsers)
+	s.route("POST /api/v1/admin/users", s.handleCreateUser)
+	s.route("PATCH /api/v1/admin/users/{id}", s.handleUpdateUserAuthority)
+	s.route("POST /api/v1/admin/users/{id}/reset-password", s.handleResetUserPassword)
 	s.route("POST /api/v1/admin/users/{id}/revoke-sessions", s.handleRevokeUserSessions)
 
 	// Operator assignment directory. This is intentionally separate from the

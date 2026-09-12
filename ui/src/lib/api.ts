@@ -2190,5 +2190,11 @@ export const api = {
     }),
   users: {
     list: () => request<User[]>("/admin/users"),
+    create: (data: { email: string; password: string; role: Role }) =>
+      request<User>("/admin/users", { method: "POST", body: JSON.stringify(data) }),
+    updateAuthority: (id: string, data: { role: Role; active: boolean }) =>
+      request<User>(`/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(data) }),
+    resetPassword: (id: string, password: string) =>
+      request<User>(`/admin/users/${encodeURIComponent(id)}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
   },
 }

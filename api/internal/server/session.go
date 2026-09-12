@@ -83,6 +83,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
+	refreshToken.AuthorityUpdatedAt = user.UpdatedAt
 
 	accessToken, err := s.tokenIssuer.IssueAccessTokenForSession(user.ID, string(user.Role), generateID(), refreshToken.TokenFamily)
 	if err != nil {
@@ -92,6 +93,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	auditEntry := s.newAuthAuditEntry(r, user.ID, user.ID, "login_success")
 	evictedFamilies, err := s.refreshTokens.CreateSessionWithAudit(r.Context(), refreshToken, auth.MaxConcurrentSessions, auditEntry)
 	if err != nil {
+		if errors.Is(err, domain.ErrSessionAuthorityChanged) {
+			if auditErr := s.recordAuthAudit(r, user.ID, "login_failed"); auditErr != nil {
+				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "authentication audit could not be recorded")
+				return
+			}
+			writeAuthError(w, http.StatusUnauthorized, apierr.CodeUnauthorized, "account authority changed during login")
+			return
+		}
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, "authentication audit could not be recorded")
 		return
 	}

@@ -1072,6 +1072,8 @@
   "users": {
     "title": "ユーザ管理",
     "error": "ユーザ一覧の取得に失敗しました",
+    "mutationError": "ユーザの変更を完了できませんでした。",
+    "createButton": "ユーザを作成",
     "roles": {
       "admin": "管理者",
       "analyst": "アナリスト",
@@ -1083,7 +1085,23 @@
       "pending": "承認待ち"
     },
     "entry": {
-      "created": "作成: {{date}}"
+      "created": "作成: {{date}}",
+      "roleLabel": "{{email}} のロール",
+      "statusLabel": "{{email}} の状態",
+      "passwordLabel": "{{email}} の新しいパスワード",
+      "saveLabel": "{{email}} の変更を保存",
+      "resetLabel": "{{email}} のパスワードをリセット",
+      "save": "変更を保存",
+      "reset": "パスワードをリセット"
+    },
+    "form": {
+      "title": "ローカルユーザを作成",
+      "emailLabel": "メールアドレス",
+      "passwordLabel": "初期パスワード",
+      "newPasswordLabel": "新しいパスワード（12文字以上）",
+      "roleLabel": "ロール",
+      "statusLabel": "状態",
+      "submit": "アカウントを作成"
     },
     "empty": "ユーザが登録されていません"
   },

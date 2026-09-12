@@ -16,6 +16,7 @@ const (
 	PermWhitelistRequest Permission = "whitelist:request"
 	PermWhitelistApprove Permission = "whitelist:approve"
 	PermAuditRead        Permission = "audit:read"
+	PermUserManage       Permission = "user:manage"
 	// PermRuleWrite gates rule definition create/update/activate/deactivate/
 	// import (the HTTP API contract §1.4). Unlike the coarse method-based check in
 	// server.hasPermission (which lets Analyst write most resources), rule
@@ -43,7 +44,7 @@ const (
 // Viewer holds none: a role that may only read must not be able to move a
 // customer's risk tier (ADR-0019).
 var RolePermissions = map[domain.Role][]Permission{
-	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermRuleWrite, PermBatchExecuteLarge, PermCDDScore, PermCDDOverrideApprove},
+	domain.RoleAdmin:   {PermWhitelistRequest, PermWhitelistApprove, PermAuditRead, PermUserManage, PermRuleWrite, PermBatchExecuteLarge, PermCDDScore, PermCDDOverrideApprove},
 	domain.RoleAnalyst: {PermWhitelistRequest, PermCDDScore},
 	domain.RoleViewer:  {},
 }
