@@ -3,9 +3,38 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
 )
+
+func TestPostgresBatchRunRepo_RecordOutcomeRoundTrip(t *testing.T) {
+	pool := newTestPgPool(t)
+	repo := NewPgBatchRunRepo(pool)
+	ctx := context.Background()
+
+	run := &domain.BatchRun{ID: newTestUUID(), JobType: "batch_score", Status: domain.BatchRunStatusRunning}
+	if err := repo.Create(ctx, run); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	cleanupBatchRun(t, repo, run.ID)
+
+	customerID := newTestUUID()
+	outcome := domain.BatchRunCustomerOutcome{
+		CustomerID: customerID, Status: domain.BatchRunCustomerSucceeded,
+		Attempt: 1, UpdatedAt: time.Now().UTC(),
+	}
+	if err := repo.RecordBatchRunOutcome(ctx, run.ID, outcome); err != nil {
+		t.Fatalf("RecordBatchRunOutcome: %v", err)
+	}
+	stored, err := repo.Get(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got := stored.CustomerOutcomes[domain.CanonicalIdentifier(customerID)]; got.Status != domain.BatchRunCustomerSucceeded {
+		t.Fatalf("outcome = %+v, want succeeded", got)
+	}
+}
 
 func cleanupBatchRun(t *testing.T, repo *PgBatchRunRepo, id string) {
 	t.Helper()

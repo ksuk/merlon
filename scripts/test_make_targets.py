@@ -43,6 +43,12 @@ class MakeTargetTests(unittest.TestCase):
         self.assertIn(verifier, result.stdout)
         self.assertLess(result.stdout.index(generator), result.stdout.index(verifier))
 
+    def test_demo_tour_verification_delegates_to_the_pinned_wrapper(self) -> None:
+        result = self.run_make("--dry-run", "verify-demo-tour")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("bash scripts/verify-demo-tour.sh", result.stdout)
+
     def test_postgres_integration_serializes_packages_after_migration_replay(self) -> None:
         result = self.run_make(
             "--dry-run",
