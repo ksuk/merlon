@@ -21,6 +21,7 @@ const permissionsByRole: Record<Role, string[]> = {
     "rule:write",
     "whitelist:approve",
     "whitelist:request",
+    "user:manage",
   ],
   analyst: ["cdd:score", "whitelist:request"],
   viewer: [],
@@ -31,7 +32,7 @@ const permissionsByRole: Record<Role, string[]> = {
 // stated once here and reused.
 const capabilityPermissions: Record<string, string | undefined> = {
   "api_keys.manage": undefined,
-  "users.manage": undefined,
+  "users.manage": "user:manage",
   "webhooks.manage": undefined,
   "retention.manage": undefined,
   "accounts.manage": undefined,

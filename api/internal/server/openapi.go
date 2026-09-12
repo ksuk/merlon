@@ -158,6 +158,8 @@ func BuildOpenAPISpec() map[string]any {
 			"/api/v1/admin/retention-policies":                            pathRetentionPolicies(),
 			"/api/v1/admin/retention-policies/{category}":                 pathRetentionPolicy(),
 			"/api/v1/admin/users":                                         pathUsers(),
+			"/api/v1/admin/users/{id}":                                    pathUserAuthority(),
+			"/api/v1/admin/users/{id}/reset-password":                     pathResetUserPassword(),
 			"/api/v1/admin/users/{id}/revoke-sessions":                    pathRevokeUserSessions(),
 			"/api/v1/auth/login":                                          pathLogin(),
 			"/api/v1/auth/logout":                                         pathLogout(),
@@ -747,7 +749,12 @@ func compatibilitySchemas() map[string]any {
 			"decision": map[string]any{"type": "string", "enum": []string{"renewed", "revoked"}}, "review_notes": map[string]any{"type": "string"},
 			"next_review_date": map[string]any{"type": "string", "format": "date", "nullable": true}, "created_at": map[string]any{"type": "string", "format": "date-time"},
 		}),
-		"UserProfile":            objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "email": map[string]any{"type": "string", "format": "email"}, "role": map[string]any{"type": "string"}}, "id", "email", "role"),
+		"UserProfile": objectSchema(map[string]any{"id": map[string]any{"type": "string"}, "email": map[string]any{"type": "string", "format": "email"}, "role": map[string]any{"type": "string", "enum": []string{"admin", "analyst", "viewer"}}}, "id", "email", "role"),
+		"ManagedUser": objectSchema(map[string]any{
+			"id": map[string]any{"type": "string"}, "email": map[string]any{"type": "string", "format": "email"},
+			"role": map[string]any{"type": "string", "enum": []string{"admin", "analyst", "viewer"}}, "active": map[string]any{"type": "boolean"},
+			"created_at": map[string]any{"type": "string", "format": "date-time"}, "updated_at": map[string]any{"type": "string", "format": "date-time"},
+		}, "id", "email", "role", "active", "created_at", "updated_at"),
 		"ConfigValidationResult": objectSchema(map[string]any{"valid": map[string]any{"type": "boolean"}, "errors": arraySchema(schemaRef("ConfigValidationError")), "warnings": arraySchema(schemaRef("ConfigValidationError"))}, "valid", "errors"),
 		"SystemInfo":             objectSchema(map[string]any{"version": map[string]any{"type": "string"}, "components": arraySchema(map[string]any{"type": "string"}), "endpoints": map[string]any{"type": "integer"}, "features": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "boolean"}}}),
 		"Webhook": objectSchema(map[string]any{
@@ -1395,7 +1402,25 @@ func pathRetentionPolicy() map[string]any {
 }
 
 func pathUsers() map[string]any {
-	return map[string]any{"get": documentedJSONOperation("List users", nil, nil, "200", "Users", arraySchema(schemaRef("UserProfile")), "401", "403", "500", "503")}
+	return map[string]any{
+		"get": documentedJSONOperation("List users", nil, nil, "200", "Users", arraySchema(schemaRef("ManagedUser")), "401", "403", "500", "503"),
+		"post": documentedJSONOperation("Create a local user", nil, objectSchema(map[string]any{
+			"email": map[string]any{"type": "string", "format": "email"}, "password": map[string]any{"type": "string", "format": "password", "minLength": 12, "writeOnly": true},
+			"role": map[string]any{"type": "string", "enum": []string{"admin", "analyst", "viewer"}},
+		}, "email", "password", "role"), "201", "User created", schemaRef("ManagedUser"), "400", "401", "403", "409", "500", "503"),
+	}
+}
+
+func pathUserAuthority() map[string]any {
+	return map[string]any{"patch": documentedJSONOperation("Update a local user's role or active state", []map[string]any{pathIDParameter("id", "User ID")},
+		objectSchema(map[string]any{"role": map[string]any{"type": "string", "enum": []string{"admin", "analyst", "viewer"}}, "active": map[string]any{"type": "boolean"}}, "role", "active"),
+		"200", "User authority updated", schemaRef("ManagedUser"), "400", "401", "403", "404", "409", "500", "503")}
+}
+
+func pathResetUserPassword() map[string]any {
+	return map[string]any{"post": documentedJSONOperation("Set a replacement password and revoke existing sessions", []map[string]any{pathIDParameter("id", "User ID")},
+		objectSchema(map[string]any{"password": map[string]any{"type": "string", "format": "password", "minLength": 12, "writeOnly": true}}, "password"),
+		"200", "Password reset", schemaRef("ManagedUser"), "400", "401", "403", "404", "500", "503")}
 }
 
 func pathRevokeUserSessions() map[string]any {

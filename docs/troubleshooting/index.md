@@ -129,8 +129,9 @@ authenticated path to create one. Use initial setup:
 - Over the API: `POST /api/v1/setup` with `{"email": "...", "password": "..."}`.
 
 The password must be at least 12 characters. The account created is an Admin.
-The current release has no supported flow for creating later accounts:
-**User management** and `GET /api/v1/admin/users` only list existing users.
+After that Admin signs in, **User management** creates later accounts and
+manages their role, active state, and replacement password. The corresponding
+API starts at `POST /api/v1/admin/users`.
 
 ### `/setup` returns 409
 
@@ -142,9 +143,10 @@ Initial setup succeeds exactly once, by design — otherwise it would be a
 standing route for minting administrators on a live system. An account already
 exists.
 
-If nobody knows its credentials, this is a password reset against the database,
-not a setup problem. There is no supported flow for creating a second first
-administrator.
+If another Admin can sign in, use **User management** to set a replacement
+password. The change revokes the affected account's existing sessions. If no
+Admin can sign in, recover access through your deployment's database backup and
+incident process; `/setup` cannot create a second first administrator.
 
 ### Production refuses to start
 

@@ -446,10 +446,14 @@ func main() {
 			deps.APIKeys = store.NewPgAPIKeyRepo(pool)
 			deps.Users = store.NewPgUserRepo(pool)
 			deps.RefreshTokens = store.NewPgRefreshTokenRepo(pool)
+			deps.UserLifecycle = store.NewPgUserLifecycleRepo(pool)
 		} else {
 			deps.APIKeys = store.NewMemoryAPIKeyRepo()
-			deps.Users = store.NewMemoryUserRepo()
-			deps.RefreshTokens = store.NewMemoryRefreshTokenRepoWithAudit(deps.Audit)
+			memoryUsers := store.NewMemoryUserRepo()
+			memoryTokens := store.NewMemoryRefreshTokenRepoWithAuditAndUsers(deps.Audit, memoryUsers)
+			deps.Users = memoryUsers
+			deps.RefreshTokens = memoryTokens
+			deps.UserLifecycle = store.NewMemoryUserLifecycleRepo(memoryUsers, memoryTokens, deps.Audit.(*store.MemoryAuditRepo))
 		}
 		deps.BootstrapToken = cfg.BootstrapToken
 		deps.Denylist = auth.NewInMemoryDenylist()

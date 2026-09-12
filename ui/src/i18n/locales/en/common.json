@@ -1072,6 +1072,8 @@
   "users": {
     "title": "User management",
     "error": "Failed to fetch user list",
+    "mutationError": "The user change could not be completed.",
+    "createButton": "Create user",
     "roles": {
       "admin": "Admin",
       "analyst": "Analyst",
@@ -1083,7 +1085,23 @@
       "pending": "Pending approval"
     },
     "entry": {
-      "created": "Created: {{date}}"
+      "created": "Created: {{date}}",
+      "roleLabel": "Role for {{email}}",
+      "statusLabel": "Status for {{email}}",
+      "passwordLabel": "New password for {{email}}",
+      "saveLabel": "Save changes for {{email}}",
+      "resetLabel": "Reset password for {{email}}",
+      "save": "Save changes",
+      "reset": "Reset password"
+    },
+    "form": {
+      "title": "Create a local user",
+      "emailLabel": "Email address",
+      "passwordLabel": "Initial password",
+      "newPasswordLabel": "New password (12+ characters)",
+      "roleLabel": "Role",
+      "statusLabel": "Status",
+      "submit": "Create account"
     },
     "empty": "No users registered"
   },

@@ -76,9 +76,10 @@ administrator account** below the login form, or go straight to
 
 Enter an email address and a password of at least 12 characters. This route
 only works while no account exists — once the first administrator is created it
-rejects further requests. This release does not provide a supported API or UI
-for creating additional accounts; **User management** is a read-only list of
-accounts that already exist.
+rejects further requests. After signing in, use **User management** to create
+the Analyst and Viewer accounts required by your operating model. The same
+screen changes roles or active state and sets a replacement password. Each of
+those changes invalidates that account's existing sessions.
 
 :::note `healthy` does not mean set up
 
@@ -94,6 +95,10 @@ diagnostics. See [Troubleshooting](troubleshooting/index.md).
 Log in with the account you just created. You should land on the dashboard,
 with an empty customer list and no alerts. That is expected: nothing has been
 loaded yet.
+
+Open **User management**, create separate Analyst and Viewer accounts, and
+confirm that each can sign in. Keep at least one active Admin account: the API
+rejects an attempt to disable or demote the last one.
 
 ## What next
 

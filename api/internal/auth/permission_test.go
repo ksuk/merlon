@@ -17,6 +17,9 @@ func TestHasPermission(t *testing.T) {
 		want bool
 	}{
 		{"admin can read audit", domain.RoleAdmin, PermAuditRead, true},
+		{"admin can manage users", domain.RoleAdmin, PermUserManage, true},
+		{"analyst cannot manage users", domain.RoleAnalyst, PermUserManage, false},
+		{"viewer cannot manage users", domain.RoleViewer, PermUserManage, false},
 		{"analyst cannot read audit", domain.RoleAnalyst, PermAuditRead, false},
 		{"analyst can request whitelist", domain.RoleAnalyst, PermWhitelistRequest, true},
 		{"analyst cannot approve whitelist", domain.RoleAnalyst, PermWhitelistApprove, false},
