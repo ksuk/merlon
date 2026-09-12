@@ -76,7 +76,7 @@ does not come up.
 ## Demo
 
 Want to try Merlon without your own data? A local demo stack ships with a
-synthetic dataset (about 1,015 customers, 98 alerts) and authentication
+synthetic dataset (about 1,015 customers, 96 alerts) and authentication
 disabled, so you can click through scoring, alerts, cases, and reports
 immediately.
 
