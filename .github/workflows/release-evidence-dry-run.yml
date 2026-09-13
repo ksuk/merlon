@@ -1,0 +1,133 @@
+name: Release Evidence Dry Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact main commit to rehearse
+        required: true
+        type: string
+      tag:
+        description: Strict SemVer identity to encode in the evidence
+        required: true
+        default: v0.0.1
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  rehearse:
+    name: Generate Linked Release Evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - name: Verify exact main commit
+        id: candidate
+        env:
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "commit must be a lowercase 40-character SHA" >&2
+            exit 1
+          fi
+          candidate=$(git rev-parse HEAD)
+          if [[ "$candidate" != "$REQUESTED_COMMIT" ]]; then
+            echo "checkout resolved to $candidate, not $REQUESTED_COMMIT" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$candidate" origin/main
+          {
+            echo "commit=$candidate"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY,,}"
+            echo "local-tag=merlon:release-evidence-dry-run-${GITHUB_RUN_ID}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build rehearsal image without publishing
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: api/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ steps.candidate.outputs.local-tag }}
+          build-args: |
+            VERSION=${{ inputs.tag }}
+            REVISION=${{ steps.candidate.outputs.commit }}
+
+      - name: Check rehearsal image runtime contract
+        shell: bash
+        run: bash scripts/check-release-image.sh "${{ steps.candidate.outputs.local-tag }}"
+
+      - name: Attest rehearsal image without registry publication
+        id: attestation
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ${{ steps.candidate.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: false
+
+      - name: Generate rehearsal image SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ steps.candidate.outputs.local-tag }}
+          format: cyclonedx-json
+          output-file: sbom-image.cdx.json
+          upload-artifact: false
+
+      - name: Create and validate release evidence
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.attestation.outputs.bundle-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$PROVENANCE_BUNDLE" provenance.bundle.json
+          python3 scripts/release_evidence.py \
+            --tag "${{ inputs.tag }}" \
+            --commit "${{ steps.candidate.outputs.commit }}" \
+            --image "${{ steps.candidate.outputs.image }}" \
+            --image-digest "${{ steps.build.outputs.digest }}" \
+            --sbom sbom-image.cdx.json \
+            --provenance-bundle provenance.bundle.json \
+            --provenance-url "${{ steps.attestation.outputs.attestation-url }}" \
+            --output-dir .
+
+      - name: Record rehearsal environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "commit=${{ steps.candidate.outputs.commit }}"
+            echo "tag=${{ inputs.tag }}"
+            echo "runner_os=$RUNNER_OS"
+            python3 --version
+            docker --version
+            docker buildx version
+          } > release-evidence-environment.txt
+
+      - name: Retain rehearsal evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence-${{ steps.candidate.outputs.commit }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release-manifest.json
+            sbom-image.cdx.json
+            provenance.bundle.json
+            SHA256SUMS
+            release-evidence-environment.txt

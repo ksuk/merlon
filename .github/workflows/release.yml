@@ -211,23 +211,21 @@ jobs:
         env:
           IMAGE: ${{ steps.release.outputs.image }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          PROVENANCE_BUNDLE: ${{ steps.attestation.outputs.bundle-path }}
           PROVENANCE_URL: ${{ steps.attestation.outputs.attestation-url }}
           RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
         shell: bash
         run: |
           set -euo pipefail
-          sbom_sha256=$(sha256sum sbom-image.cdx.json | cut -d ' ' -f 1)
-          jq -n \
-            --arg tag "$GITHUB_REF_NAME" \
-            --arg commit "$RELEASE_COMMIT" \
-            --arg image "$IMAGE" \
-            --arg digest "$IMAGE_DIGEST" \
-            --arg provenance_url "$PROVENANCE_URL" \
-            --arg sbom "sbom-image.cdx.json" \
-            --arg sbom_sha256 "$sbom_sha256" \
-            '{schema_version: 2, tag: $tag, commit: $commit, image: $image, image_digest: $digest, sbom: {file: $sbom, sha256: $sbom_sha256}, provenance: {provider: "GitHub artifact attestation", url: $provenance_url}, governance: {mode: "single-maintainer", independent_approval: false, separation_of_duties: false, adr: "ADR-0016"}}' \
-            > release-manifest.json
-          sha256sum release-manifest.json sbom-image.cdx.json > SHA256SUMS
+          python3 scripts/release_evidence.py \
+            --tag "$GITHUB_REF_NAME" \
+            --commit "$RELEASE_COMMIT" \
+            --image "$IMAGE" \
+            --image-digest "$IMAGE_DIGEST" \
+            --sbom sbom-image.cdx.json \
+            --provenance-bundle "$PROVENANCE_BUNDLE" \
+            --provenance-url "$PROVENANCE_URL" \
+            --output-dir .
 
       - name: Publish GitHub release
         env:
