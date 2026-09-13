@@ -14,7 +14,7 @@ sidebar_position: 12
 - `docs/decisions/**`（アーキテクチャ決定記録）は構築済みサイトから完全に除外され、日本語で記述されている。翻訳対象ではなく、ドキュメントチェックもこれをスキップする。
 - `docs/standards/**`（社内監査・レビュー標準）も同様に構築済みサイトから除外され、日本語で記述されている。翻訳対象ではなく、ドキュメントチェックもこれをスキップする。
 - `docs/api/**` は生成されたリファレンス出力（OpenAPI、JSON Schema のリファレンスページ）であり、gitignore されている。直接編集してはならない。`make generate-openapi` とウェブサイトのスキーマドキュメントジェネレータによって上書きされる。
-- `docs/release-notes.md` は、リポジトリルートの `CHANGELOG.md` から `website/scripts/generate-changelog-page.mjs` により生成され、同様に gitignore されている。編集するのは `CHANGELOG.md` の方であり、同ファイルは各 GitHub リリースのノートの生成元でもある。
+- `docs/release-notes.md` は、リポジトリルートの `CHANGELOG.md` から `website/scripts/generate-changelog-page.mjs` により生成され、`make docs-check` で差分を検出できるようコミットされている。生成ページを直接編集せず、`CHANGELOG.md` を編集して再生成する。同ファイルは各 GitHub リリースのノートの生成元でもある。
 
 ## サイドバーへのページ追加
 
@@ -35,9 +35,13 @@ sidebar_position: 12
 
 これにより、翻訳が英語原文の背後で気づかれないまま陳腐化することを防ぐ。
 
-## 5つのチェック
+## 生成リリースノートのチェック
 
-`node website/scripts/checks/run-all.mjs` は以下の5つのチェックすべてを実行し、合否表を出力する。いずれかのチェックが失敗すると非ゼロで終了する。`make docs-check` で実行できる。
+`make docs-check` は最初にリリースノートジェネレーターを `--check` モードで実行する。ファイルを書き換えず、コミットされた英語版と日本語版を `CHANGELOG.md` の新しいレンダリングと比較する。内容の差分は失敗となるが、CRLF/LF 変換だけでは失敗しない。両ページは `cd website && npm run gen:changelog` で再生成する。
+
+## コンテンツチェック
+
+`node website/scripts/checks/run-all.mjs` は以下のコンテンツチェックを実行し、合否表を出力する。いずれかのチェックが失敗すると非ゼロで終了する。`make docs-check` で実行できる。
 
 ### 1. `check-en-language`
 
@@ -87,4 +91,4 @@ Docusaurus の UI 文字列翻訳ファイルが存在し、有効な JSON で�
 make docs-check
 ```
 
-これは `node website/scripts/checks/run-all.mjs` と等価であり、npm install は不要である。各チェックは依存関係のない Node ESM スクリプトである。CI は `docs-deploy.yml` の「Docs checks」ステップで、サイトビルドの前に、フレッシュネスチェックがコミットタイムスタンプを比較できるようフル git 履歴（`fetch-depth: 0`）を用いて同じコマンドを実行する。
+これは生成リリースノートのチェック後に `node website/scripts/checks/run-all.mjs` を実行し、npm install は不要である。各チェックは依存関係のない Node ESM スクリプトである。CI は `docs-deploy.yml` の「Docs checks」ステップで、サイトビルドの前に、フレッシュネスチェックがコミットタイムスタンプを比較できるようフル git 履歴（`fetch-depth: 0`）を用いて同じコマンドを実行する。

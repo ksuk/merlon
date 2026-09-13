@@ -25,9 +25,10 @@ source.
   overwritten by `make generate-openapi` and the website's schema-doc
   generator.
 - `docs/release-notes.md` is generated from the repository-root `CHANGELOG.md`
-  by `website/scripts/generate-changelog-page.mjs` and is likewise gitignored.
-  Edit `CHANGELOG.md` instead; it is also the source of every GitHub release's
-  notes.
+  by `website/scripts/generate-changelog-page.mjs` and is committed so
+  `make docs-check` can detect drift. Edit `CHANGELOG.md` and regenerate the
+  page instead of editing the page directly; the changelog is also the source
+  of every GitHub release's notes.
 
 ## Adding a page to the sidebar
 
@@ -68,9 +69,16 @@ not `docs/api/**` or `docs/decisions/**`) must do one of:
 
 This keeps translations from silently rotting behind the English source.
 
-## The five checks
+## Generated release notes check
 
-`node website/scripts/checks/run-all.mjs` runs all five checks below and
+`make docs-check` first runs the release-notes generator in `--check` mode.
+It compares the committed en and ja pages with a fresh rendering of
+`CHANGELOG.md` without writing files. Content drift fails; CRLF/LF conversion
+alone does not. Regenerate both pages with `cd website && npm run gen:changelog`.
+
+## The content checks
+
+`node website/scripts/checks/run-all.mjs` runs the content checks below and
 prints a pass/fail table; it exits non-zero if any check fails. Run it with
 `make docs-check`.
 
@@ -158,8 +166,8 @@ message).
 make docs-check
 ```
 
-This is equivalent to `node website/scripts/checks/run-all.mjs` and requires
-no npm install — the checks are dependency-free Node ESM scripts. CI runs
-the same command in the "Docs checks" step of `docs-deploy.yml`, before the
-site build, using full git history (`fetch-depth: 0`) so the freshness check
-can compare commit timestamps.
+This runs the generated release-notes check followed by
+`node website/scripts/checks/run-all.mjs` and requires no npm install — the
+checks are dependency-free Node ESM scripts. CI runs the same command in the
+"Docs checks" step of `docs-deploy.yml`, before the site build, using full git
+history (`fetch-depth: 0`) so the freshness check can compare commit timestamps.

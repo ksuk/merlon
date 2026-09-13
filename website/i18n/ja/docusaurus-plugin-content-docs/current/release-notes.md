@@ -1,20 +1,12 @@
-# Changelog
+---
+title: リリースノート
+---
 
-All notable changes to this project will be documented in this file.
+# リリースノート
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Merlonは単一のリリースチャネル `vX.Y.Z` を公開します。タグには厳密なSemVerを使用し、プレリリース識別子は拒否されます。各バージョンの主な変更点は、リポジトリの `CHANGELOG.md` から自動生成されています。同じファイルから GitHub リリースのノートも生成されるため、このページと公開されたリリースの内容は常に一致します。アップグレード前に[アップグレード手順](operations/upgrade.md)を参照してください。
 
-Release notes for each tagged version are generated from the corresponding
-section below, so every release must have one. There is no fallback: a tag
-without its own section is rejected, and pre-release tags are not published at
-all.
-
-## [Unreleased]
-
-No unreleased changes.
-
-## [0.0.1]
+## 0.0.1
 
 ### Breaking
 

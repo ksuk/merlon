@@ -150,5 +150,6 @@ generate-openapi: ## Export the OpenAPI spec to docs/api/openapi.json
 docs-build: generate-openapi ## Build the documentation site
 	@cd website && (npm ci --no-audit --no-fund || npm install) && npm run build
 
-docs-check: ## Run reproducible documentation check gates (language, titles, i18n parity/freshness, UI translations)
+docs-check: ## Run reproducible documentation check gates (generated pages, language, titles, i18n, UI translations)
+	@node website/scripts/generate-changelog-page.mjs --check
 	@node website/scripts/checks/run-all.mjs
