@@ -253,5 +253,6 @@ Two further changes are 2xx-compatible but worth noting:
   transaction history runs through the REST API; see
   `docs/operations/initial-migration.md` for the supported procedure and its
   constraints, and ADR-0015 for the bulk loader design.
-- Production release is gated on the governance controls in
-  `docs/development/release-checklist.md`, which are not yet evidenced.
+- Release governance uses single-maintainer self-review rather than independent
+  approval or separation of duties. Every release discloses this posture in its
+  notes, image labels, and release manifest.
