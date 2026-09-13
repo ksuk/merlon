@@ -12,13 +12,14 @@
 // generators follow for source-derived content.
 //
 // Wired into the website `prebuild` script (package.json). The output is
-// gitignored, like docs/api/**, and the documentation checks skip it.
+// committed and `--check` compares it with a fresh rendering. General
+// documentation checks skip it because the generator validates both locales.
 //
 // Run: node scripts/generate-changelog-page.mjs   (from website/)
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { LOCALES } from "./lib/locales.mjs";
 import { readChangelog, parseChangelog } from "../../scripts/changelog.mjs";
 
@@ -64,16 +65,74 @@ function renderPage(sections, L) {
   return out.join("\n");
 }
 
-function main() {
-  const sections = parseChangelog(readChangelog());
+export function renderPages(changelogText) {
+  const sections = parseChangelog(changelogText).filter((section) =>
+    /^\d+\.\d+\.\d+$/.test(section.version)
+  );
+
+  return Object.fromEntries(
+    Object.entries(LOCALES).map(([locale, strings]) => [
+      locale,
+      renderPage(sections, strings),
+    ])
+  );
+}
+
+function normalizeLineEndings(text) {
+  return text.replace(/\r\n?/g, "\n");
+}
+
+export function findPageDrift(expectedPages, actualPages) {
+  return Object.keys(expectedPages).filter(
+    (locale) =>
+      typeof actualPages[locale] !== "string" ||
+      normalizeLineEndings(actualPages[locale]) !==
+        normalizeLineEndings(expectedPages[locale])
+  );
+}
+
+function main(args) {
+  const pages = renderPages(readChangelog());
+
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--check")) {
+    console.error("usage: node scripts/generate-changelog-page.mjs [--check]");
+    return 2;
+  }
+
+  if (args[0] === "--check") {
+    const actualPages = Object.fromEntries(
+      Object.entries(OUT_DIRS).map(([locale, outDir]) => {
+        const outPath = path.join(outDir, OUT_FILE);
+        try {
+          return [locale, readFileSync(outPath, "utf8")];
+        } catch (error) {
+          if (error.code === "ENOENT") return [locale, null];
+          throw error;
+        }
+      })
+    );
+    const drift = findPageDrift(pages, actualPages);
+    if (drift.length > 0) {
+      console.error(
+        `Generated release notes are stale for: ${drift.join(", ")}. ` +
+          "Run `cd website && npm run gen:changelog`."
+      );
+      return 1;
+    }
+    console.log("Generated release notes are current");
+    return 0;
+  }
 
   for (const [locale, outDir] of Object.entries(OUT_DIRS)) {
     mkdirSync(outDir, { recursive: true });
     const outPath = path.join(outDir, OUT_FILE);
-    writeFileSync(outPath, renderPage(sections, LOCALES[locale]), "utf8");
+    writeFileSync(outPath, pages[locale], "utf8");
     console.log(`Wrote ${path.relative(REPO_ROOT, outPath)}`);
   }
-  console.log(`Generated release notes from ${sections.length} changelog section(s)`);
+  console.log(`Generated release notes for ${Object.keys(pages).length} locale(s)`);
+  return 0;
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exitCode = main(process.argv.slice(2));
+}

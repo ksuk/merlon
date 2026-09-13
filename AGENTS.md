@@ -63,4 +63,4 @@ TDD workflow: write test → implement → refactor. Follow existing frameworks 
 
 - Killing a Docusaurus build in `website/` with `kill -9` leaves a poisoned cache that hangs every later build. Remove `website/node_modules/.cache` to recover.
 - `.gitattributes` pins YAML, shell scripts, and Dockerfiles to LF. Do not write them back with CRLF — `docker-compose.yml` has drifted into mixed line endings before.
-- Generated files are not committed: `docs/api/`, `docs/release-notes.md`, and `deploy/seed/demo/*.json`. Regenerate them (`make generate-openapi`, `make demogen`) rather than editing them.
+- Generated API and demo files are not committed: `docs/api/` and `deploy/seed/demo/*.json`. Release notes are generated from `CHANGELOG.md`, committed, and checked by `make docs-check`; regenerate them rather than editing them.
