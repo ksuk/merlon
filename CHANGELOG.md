@@ -14,6 +14,26 @@ all.
 
 No unreleased changes.
 
+## [0.0.2] - 2026-09-20
+
+### Fixed
+
+- Treat the expected two-decimal persistence rounding in CDD score
+  explanations as reconciled while continuing to report the measured delta.
+- Return a stable error code when a case cannot close because a linked alert
+  remains unresolved, allowing the operator UI to distinguish that condition
+  from an optimistic-concurrency conflict.
+- Retry the initial PostgreSQL connection for a bounded, configurable period
+  and restart the API after an explicit Compose database restart.
+
+### Verification
+
+- Add deterministic Standard-topology browser acceptance for authentication,
+  role enforcement, last-administrator protection, authenticated OpenAPI,
+  build identity, and restart persistence.
+- Strengthen the Docker Demo tours to validate exported STR and rule content,
+  score reconciliation, OpenAPI, and exact build identity.
+
 ## [0.0.1]
 
 ### Breaking
