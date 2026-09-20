@@ -292,7 +292,7 @@ func TestScoreExplanationAllowsStoredScoreRounding(t *testing.T) {
 	}
 	if err := customers.SaveScoreRecord(ctx, &domain.ScoreRecord{
 		ID: "score-rounded", CustomerID: id, Score: 4.12, Tier: domain.RiskTierMedium,
-		Factors: []domain.Factor{{Name: "customer_type", Contribution: 4.1241}},
+		Factors:  []domain.Factor{{Name: "customer_type", Contribution: 4.1241}},
 		ScoredAt: time.Now().UTC(),
 	}); err != nil {
 		t.Fatal(err)
