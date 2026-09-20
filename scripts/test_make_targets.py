@@ -49,6 +49,16 @@ class MakeTargetTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("bash scripts/verify-demo-tour.sh", result.stdout)
 
+    def test_demo_up_passes_release_identity(self) -> None:
+        result = self.run_make("--dry-run", "demo-up", "VERSION=v0.0.2")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('MERLON_BUILD_VERSION="v0.0.2"', result.stdout)
+        self.assertIn("MERLON_BUILD_REVISION=", result.stdout)
+        self.assertIn("git rev-parse HEAD", result.stdout)
+        self.assertIn("MERLON_BUILD_BUILT_AT=", result.stdout)
+        self.assertIn("docker compose -f docker-compose.demo.yml up --build", result.stdout)
+
     def test_postgres_integration_serializes_packages_after_migration_replay(self) -> None:
         result = self.run_make(
             "--dry-run",

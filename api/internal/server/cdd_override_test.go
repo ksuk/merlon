@@ -283,6 +283,56 @@ func TestScoreExplanationDetectsAMismatch(t *testing.T) {
 	}
 }
 
+func TestScoreExplanationAllowsStoredScoreRounding(t *testing.T) {
+	customers := store.NewMemoryCustomerRepo()
+	ctx := context.Background()
+	id := "00000000000000000000000000000d04"
+	if err := customers.Create(ctx, &domain.Customer{ID: id, ExternalID: "rounded", CustomerType: domain.CustomerTypeIndividual, CountryCode: "JP"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := customers.SaveScoreRecord(ctx, &domain.ScoreRecord{
+		ID: "score-rounded", CustomerID: id, Score: 4.12, Tier: domain.RiskTierMedium,
+		Factors: []domain.Factor{{Name: "customer_type", Contribution: 4.1241}},
+		ScoredAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(":0", Deps{Customers: customers, Audit: store.NewMemoryAuditRepo()})
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/customers/"+id+"/score-explanation", nil))
+	var body struct {
+		Reconciled          bool    `json:"reconciled"`
+		ReconciliationDelta float64 `json:"reconciliation_delta"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Reconciled {
+		t.Fatalf("reconciled = false for persisted-score rounding delta %v", body.ReconciliationDelta)
+	}
+}
+
+func TestScoreReconciliationTolerance(t *testing.T) {
+	tests := []struct {
+		name  string
+		delta float64
+		want  bool
+	}{
+		{name: "exact", delta: 0, want: true},
+		{name: "inside persisted precision", delta: 0.0049, want: true},
+		{name: "rounding boundary", delta: 0.005, want: true},
+		{name: "outside persisted precision", delta: 0.0051, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := scoreReconciles(tt.delta); got != tt.want {
+				t.Fatalf("scoreReconciles(%v) = %v, want %v", tt.delta, got, tt.want)
+			}
+		})
+	}
+}
+
 // The UI used to take whichever active rule set the API listed first.
 func TestListCDDRuleSetsNamesTheRecommendation(t *testing.T) {
 	s, _, id := cddServer(t, false)

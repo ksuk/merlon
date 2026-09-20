@@ -1034,6 +1034,7 @@
     "unauthorized": "You are not authenticated. Please log in again.",
     "forbidden": "You do not have permission to perform this action.",
     "conflict": "This action conflicts with the current state of the resource.",
+    "case_unresolved_alerts": "Resolve all linked alerts before closing this case.",
     "rate_limited": "Too many requests. Please try again later.",
     "payload_too_large": "The request payload is too large.",
     "internal_error": "An internal error occurred. Please try again later.",

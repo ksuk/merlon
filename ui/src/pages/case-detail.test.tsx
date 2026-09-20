@@ -165,6 +165,37 @@ test("shows a reload path when a case update conflicts", async () => {
   expect(JSON.parse((patchCall?.[1] as RequestInit).body as string).expected_updated_at).toBe("2025-01-15T10:00:00Z")
 })
 
+test("explains when unresolved alerts block case closure", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input)
+    if (init?.method === "PATCH") {
+      return new Response(JSON.stringify({ error: "blocked", error_code: "case_unresolved_alerts" }), { status: 409 })
+    }
+    if (url.includes("/related")) return new Response(JSON.stringify([]))
+    if (url.includes("/customers/")) return new Response(JSON.stringify({ id: "c1", external_id: "EXT1" }))
+    return new Response(JSON.stringify({
+      id: "case-unresolved-alerts",
+      customer_id: "c1",
+      alert_ids: ["alert-open"],
+      status: "investigating",
+      priority: "high",
+      summary: "未解決アラートケース",
+      notes: [],
+      created_at: "2025-01-15T10:00:00Z",
+      updated_at: "2025-01-15T10:00:00Z",
+    }))
+  })
+
+  await renderWithRoute("case-unresolved-alerts")
+  await screen.findByText("未解決アラートケース")
+  fireEvent.click(screen.getByText("クローズ"))
+  fireEvent.change(screen.getByLabelText("クローズ理由"), { target: { value: "reviewed" } })
+  fireEvent.click(screen.getByRole("button", { name: "確定" }))
+
+  expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("リンクされたアラートをすべて解決")
+  expect(screen.queryByText(/別のセッションでケースが更新されました/)).toBeNull()
+})
+
 test("requires a case closure rationale and allows cancel without mutating", async () => {
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({
       id: "case-close",
