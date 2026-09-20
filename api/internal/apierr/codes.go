@@ -13,6 +13,7 @@ const (
 	CodeUnauthorized           Code = "unauthorized"
 	CodeForbidden              Code = "forbidden"
 	CodeConflict               Code = "conflict"
+	CodeCaseUnresolvedAlerts   Code = "case_unresolved_alerts"
 	CodeRateLimited            Code = "rate_limited"
 	CodePayloadTooLarge        Code = "payload_too_large"
 	CodeInternal               Code = "internal_error"

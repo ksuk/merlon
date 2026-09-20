@@ -428,9 +428,7 @@ func (s *Server) handleScoreExplanation(w http.ResponseWriter, r *http.Request) 
 	if delta < 0 {
 		delta = -delta
 	}
-	// Float arithmetic over a handful of weighted factors: anything above this
-	// is a real disagreement between the factors and the total, not rounding.
-	reconciled := delta < 1e-9
+	reconciled := scoreReconciles(delta)
 
 	// The engine that produced the score is the only authority on the bands
 	// that decided its tier; an adapter that cannot report them simply omits
@@ -454,6 +452,14 @@ func (s *Server) handleScoreExplanation(w http.ResponseWriter, r *http.Request) 
 		"priority":             priorityForTier(selected.Tier),
 		"deterministic":        true,
 	})
+}
+
+func scoreReconciles(delta float64) bool {
+	// Scores are persisted as DECIMAL(5,2), while factor contributions retain
+	// their full precision. Half a centipoint is therefore normal storage
+	// rounding rather than a disagreement. The epsilon only absorbs binary
+	// floating-point representation at the exact decimal boundary.
+	return delta <= 0.005+1e-12
 }
 
 // tierReason says why this score produced this tier. The explanation

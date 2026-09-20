@@ -529,6 +529,11 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 				writeErrorCode(w, http.StatusNotFound, apierr.CodeNotFound, err.Error())
 				return
 			}
+			var unresolved *caseUnresolvedAlertsError
+			if errors.As(err, &unresolved) {
+				writeErrorCode(w, http.StatusConflict, apierr.CodeCaseUnresolvedAlerts, unresolved.Error())
+				return
+			}
 			var conflict *domain.ErrConflict
 			if errors.As(err, &conflict) {
 				writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, conflict.Error())
@@ -742,6 +747,15 @@ func caseExpectedUpdatedAt(expected *time.Time, observed time.Time) time.Time {
 	return observed
 }
 
+type caseUnresolvedAlertsError struct {
+	caseID  string
+	alertID string
+}
+
+func (e *caseUnresolvedAlertsError) Error() string {
+	return "cannot close case " + e.caseID + " while linked alert " + e.alertID + " is unresolved"
+}
+
 // prepareCaseAlertTransitions checks the compatibility between a target case
 // status and all linked alerts. A case may not become terminal while any
 // linked alert is still unresolved. Moving a case into investigation or
@@ -764,7 +778,7 @@ func (s *Server) prepareCaseAlertTransitions(ctx context.Context, c *domain.Case
 
 		if domain.IsCaseTerminal(target) && target != domain.CaseStatusStrFiled {
 			if !domain.IsAlertTerminal(a.Status) {
-				return nil, &domain.ErrConflict{Entity: "case", ID: c.ID, Reason: "cannot close case while linked alert " + a.ID + " is unresolved"}
+				return nil, &caseUnresolvedAlertsError{caseID: c.ID, alertID: a.ID}
 			}
 			transitions = append(transitions, domain.AlertStatusTransition{ID: a.ID, From: a.Status, To: a.Status, ExpectedUpdatedAt: a.UpdatedAt})
 			continue

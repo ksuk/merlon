@@ -29,6 +29,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.BacktestQueueTimeout != 10*time.Minute {
 		t.Errorf("BacktestQueueTimeout = %s, want 10m", cfg.BacktestQueueTimeout)
 	}
+	if cfg.DatabaseStartupTimeout != 30*time.Second {
+		t.Errorf("DatabaseStartupTimeout = %s, want 30s", cfg.DatabaseStartupTimeout)
+	}
 	if cfg.CacheBackend != "memory" {
 		t.Errorf("CacheBackend = %q, want %q", cfg.CacheBackend, "memory")
 	}
@@ -85,6 +88,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("MERLON_LOG_LEVEL", "debug")
 	t.Setenv("MERLON_REALTIME_MONITOR_TIMEOUT", "45s")
 	t.Setenv("MERLON_BACKTEST_QUEUE_TIMEOUT", "20m")
+	t.Setenv("MERLON_DATABASE_STARTUP_TIMEOUT", "45s")
 	t.Setenv("MERLON_ENGINE_REQUIRED", "true")
 
 	cfg := Load()
@@ -107,6 +111,9 @@ func TestLoadFromEnv(t *testing.T) {
 	if cfg.BacktestQueueTimeout != 20*time.Minute {
 		t.Errorf("BacktestQueueTimeout = %s, want 20m", cfg.BacktestQueueTimeout)
 	}
+	if cfg.DatabaseStartupTimeout != 45*time.Second {
+		t.Errorf("DatabaseStartupTimeout = %s, want 45s", cfg.DatabaseStartupTimeout)
+	}
 	if !cfg.EngineRequired {
 		t.Error("EngineRequired = false, want true")
 	}
@@ -123,6 +130,13 @@ func TestValidateRejectsNegativeBacktestQueueTimeout(t *testing.T) {
 	cfg := &Config{BacktestQueueTimeout: -time.Second}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected negative backtest queue timeout to be rejected")
+	}
+}
+
+func TestValidateRejectsNegativeDatabaseStartupTimeout(t *testing.T) {
+	cfg := &Config{DatabaseStartupTimeout: -time.Second}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected negative database startup timeout to be rejected")
 	}
 }
 

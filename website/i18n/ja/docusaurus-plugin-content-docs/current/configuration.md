@@ -17,6 +17,10 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_BACKTEST_QUEUE_TIMEOUT` | `10m` | 受理したバックテストがキューで待機できる最大時間。期限を超えると、運用者が再試行できる理由を伴う失敗状態になる。 |
 | `MERLON_HTTP_ADDR` | `:8080` | TLS 終端を行うリバースプロキシの背後でバインドする。 |
 | `MERLON_DATABASE_URL` | 未設定 | TLS（`sslmode=require` 以上）と最小権限のアプリケーションロールを使用する。 |
+| `MERLON_DATABASE_STARTUP_TIMEOUT` | `30s` | 起動時に設定済みdatabaseが接続を受け付けるまでAPIが待機する最大時間。 |
+| `MERLON_BUILD_VERSION` | `dev` | System statusとimage metadataに埋め込むCompose build version。 |
+| `MERLON_BUILD_REVISION` | 未設定 | Compose imageに埋め込む完全なsource commit。release acceptanceでは正確な40文字SHAを指定する。 |
+| `MERLON_BUILD_BUILT_AT` | 未設定 | Compose imageに埋め込むUTC build timestamp。 |
 | `MERLON_BACKUP_DATABASE_URL` | 未設定 | `make backup` だけで使用する専用の read-only backup 接続。文書化された既存・将来の table／sequence 読取権限を付与し、serving-role URL や schema-owner URL で代用しない。 |
 | `MERLON_MIGRATION_DATABASE_URL` | 未設定 | `make migrate`、`make restore`、`make audit-harden` で使用する、分離されたschema/object-owner接続。このroleはtargetの`public` schemaを管理し、そこで`CREATE`を持つ必要がある。別roleがfresh restore databaseを所有する場合、そのownerは`public`をこのroleへ移譲し、このroleとapplication roleの両方へdatabaseのdirect `CONNECT`を事前付与する。serving-role URLで代用しない。 |
 | `MERLON_MIGRATIONS_DIR` | `migrations` | マイグレーションコマンド専用。バージョン付き SQL マイグレーションを格納するディレクトリ。`--migrations-dir` フラグを指定した場合はその値を優先する。 |

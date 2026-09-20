@@ -10,6 +10,7 @@ func TestCodesAreStableStrings(t *testing.T) {
 		CodeUnauthorized:              "unauthorized",
 		CodeForbidden:                 "forbidden",
 		CodeConflict:                  "conflict",
+		CodeCaseUnresolvedAlerts:      "case_unresolved_alerts",
 		CodeRateLimited:               "rate_limited",
 		CodePayloadTooLarge:           "payload_too_large",
 		CodeInternal:                  "internal_error",
