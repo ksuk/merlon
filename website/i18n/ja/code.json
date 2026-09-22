@@ -9,7 +9,7 @@
     "message": "自分に合った入り口を見つける"
   },
   "homepage.meta.description": {
-    "message": "ノンバンク金融機関向けのセルフホスト型 AML/CFT プラットフォーム",
+    "message": "顧客リスクが取引モニタリングを動かす、セルフホスト型 AML/CFT プラットフォーム",
     "description": "The homepage meta description (site tagline)"
   },
   "homepage.cards.deploy.title": {
