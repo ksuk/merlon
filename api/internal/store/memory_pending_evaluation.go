@@ -263,6 +263,27 @@ func (r *MemoryPendingEvaluationRepo) ListPendingByCustomers(_ context.Context, 
 	return out, nil
 }
 
+func (r *MemoryPendingEvaluationRepo) GetLatestByTransaction(_ context.Context, transactionID string) (*domain.PendingEvaluation, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var latest *domain.PendingEvaluation
+	for _, pe := range r.data {
+		for _, id := range pe.TransactionIDs {
+			if !domain.SameIdentifier(id, transactionID) {
+				continue
+			}
+			if latest == nil || pe.CreatedAt.After(latest.CreatedAt) || (pe.CreatedAt.Equal(latest.CreatedAt) && pe.ID > latest.ID) {
+				latest = pe
+			}
+			break
+		}
+	}
+	if latest == nil {
+		return nil, &domain.ErrNotFound{Entity: "pending_evaluation", ID: transactionID}
+	}
+	return clonePending(latest), nil
+}
+
 func (r *MemoryPendingEvaluationRepo) UpdateStatus(_ context.Context, id string, status domain.PendingEvaluationStatus) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

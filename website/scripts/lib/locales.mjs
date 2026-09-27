@@ -73,7 +73,9 @@ export const LOCALES = {
 
     releaseNotesTitle: "Release Notes",
     releaseNotesIntro:
-      "Notable changes in each version, generated from `CHANGELOG.md` in the " +
+      "Merlon publishes a single release channel, `vX.Y.Z`. Tags use strict " +
+      "SemVer; pre-release identifiers are rejected. Notable changes in each " +
+      "version are generated from `CHANGELOG.md` in the " +
       "repository. The same file produces the notes attached to each GitHub " +
       "release, so this page and the published releases always match. Before " +
       "upgrading, read the [Upgrade Runbook](operations/upgrade.md).",
@@ -202,7 +204,9 @@ export const LOCALES = {
 
     releaseNotesTitle: "リリースノート",
     releaseNotesIntro:
-      "各バージョンの主な変更点です。リポジトリの `CHANGELOG.md` から自動生成" +
+      "Merlonは単一のリリースチャネル `vX.Y.Z` を公開します。タグには厳密な" +
+      "SemVerを使用し、プレリリース識別子は拒否されます。各バージョンの主な" +
+      "変更点は、リポジトリの `CHANGELOG.md` から自動生成" +
       "されています。同じファイルから GitHub リリースのノートも生成されるため、" +
       "このページと公開されたリリースの内容は常に一致します。" +
       "アップグレード前に[アップグレード手順](operations/upgrade.md)を参照してください。",

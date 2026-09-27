@@ -165,14 +165,47 @@ func (s *Server) authenticateJWT(r *http.Request, token string) (Principal, cont
 	if s.tokenIssuer == nil {
 		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "JWT authentication not configured"}
 	}
+	if s.refreshTokens == nil || s.users == nil {
+		return Principal{}, nil, &authError{http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, "authoritative session validation not configured"}
+	}
 
 	claims, err := s.tokenIssuer.VerifyAccessToken(token)
 	if err != nil {
 		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid or expired session"}
 	}
+	if claims.SessionID == "" {
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session identifier missing"}
+	}
+	active, err := s.refreshTokens.IsFamilyActive(r.Context(), claims.SessionID)
+	if err != nil {
+		return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
+	}
+	if !active {
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session has been revoked"}
+	}
+	currentUser, err := s.users.Get(r.Context(), claims.UserID)
+	if err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session user no longer exists"}
+		}
+		return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
+	}
+	if !currentUser.Active || string(currentUser.Role) != claims.Role {
+		return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "session authority has changed"}
+	}
 
 	if s.denylist != nil {
-		revoked, err := s.denylist.IsRevoked(r.Context(), claims.UserID)
+		if claims.JTI != "" {
+			revoked, err := s.denylist.IsTokenRevoked(r.Context(), claims.JTI)
+			if err != nil {
+				return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
+			}
+			if revoked {
+				return Principal{}, nil, &authError{http.StatusUnauthorized, apierr.CodeUnauthorized, "access token has been revoked"}
+			}
+		}
+		revoked, err := s.denylist.IsSessionRevoked(r.Context(), claims.SessionID)
 		if err != nil {
 			return Principal{}, nil, &authError{http.StatusInternalServerError, apierr.CodeInternal, err.Error()}
 		}

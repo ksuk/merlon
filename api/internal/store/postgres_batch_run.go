@@ -132,7 +132,7 @@ func (r *PgBatchRunRepo) RecordBatchRunOutcome(ctx context.Context, runID string
 		outcome.UpdatedAt = time.Now().UTC()
 	}
 	payload := wave3JSON(outcome)
-	_, err := r.pool.Exec(ctx, `UPDATE batch_runs SET customer_outcomes=customer_outcomes || jsonb_build_object($2,$3::jsonb),updated_at=$4 WHERE id=$1`, runID, domain.CanonicalIdentifier(outcome.CustomerID), payload, outcome.UpdatedAt)
+	_, err := r.pool.Exec(ctx, `UPDATE batch_runs SET customer_outcomes=(CASE WHEN jsonb_typeof(customer_outcomes)='object' THEN customer_outcomes ELSE '{}'::jsonb END) || jsonb_build_object($2::text,$3::jsonb),updated_at=$4 WHERE id=$1`, runID, domain.CanonicalIdentifier(outcome.CustomerID), payload, outcome.UpdatedAt)
 	return err
 }
 func (r *PgBatchRunRepo) FindBatchRunByIdempotency(ctx context.Context, operation, key string) (*domain.BatchRun, error) {

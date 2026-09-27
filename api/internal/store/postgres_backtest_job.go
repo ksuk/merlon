@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -17,7 +18,7 @@ func NewPgBacktestJobRepo(pool DBTX) *PgBacktestJobRepo {
 	return &PgBacktestJobRepo{pool: pool}
 }
 
-const backtestJobColumns = `id,status,from_at,to_at,customer_ids,customer_filter,scenario_ids,baseline_rule_set_id,candidate_rule_set_id,baseline_rule_version,candidate_rule_version,baseline_rule_definition,candidate_rule_definition,config_digests,snapshot_at,total_customers,processed_customers,progress,eta_seconds,baseline,candidate,delta,outcome_analysis,error,created_at,started_at,completed_at,updated_at`
+const backtestJobColumns = `id,status,from_at,to_at,customer_ids,customer_filter,scenario_ids,baseline_rule_set_id,candidate_rule_set_id,baseline_rule_version,candidate_rule_version,baseline_rule_definition,candidate_rule_definition,config_digests,snapshot_at,total_customers,processed_customers,progress,eta_seconds,baseline,candidate,delta,outcome_analysis,error,retry_count,created_at,started_at,completed_at,updated_at`
 
 func scanBacktestJob(row pgx.Row) (*domain.BacktestJob, error) {
 	var j domain.BacktestJob
@@ -25,7 +26,7 @@ func scanBacktestJob(row pgx.Row) (*domain.BacktestJob, error) {
 	var jobError *string
 	var baselineVersion, candidateVersion *int
 	var ids, filter, scenarios, baselineDefinition, candidateDefinition, digests, baseline, candidate, delta, outcomeAnalysis []byte
-	if err := row.Scan(&j.ID, &status, &j.From, &j.To, &ids, &filter, &scenarios, &j.BaselineRuleSetID, &j.CandidateRuleSetID, &baselineVersion, &candidateVersion, &baselineDefinition, &candidateDefinition, &digests, &j.SnapshotAt, &j.TotalCustomers, &j.ProcessedCustomers, &j.Progress, &j.ETASeconds, &baseline, &candidate, &delta, &outcomeAnalysis, &jobError, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.UpdatedAt); err != nil {
+	if err := row.Scan(&j.ID, &status, &j.From, &j.To, &ids, &filter, &scenarios, &j.BaselineRuleSetID, &j.CandidateRuleSetID, &baselineVersion, &candidateVersion, &baselineDefinition, &candidateDefinition, &digests, &j.SnapshotAt, &j.TotalCustomers, &j.ProcessedCustomers, &j.Progress, &j.ETASeconds, &baseline, &candidate, &delta, &outcomeAnalysis, &jobError, &j.RetryCount, &j.CreatedAt, &j.StartedAt, &j.CompletedAt, &j.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if jobError != nil {
@@ -227,8 +228,69 @@ func (r *PgBacktestJobRepo) CountBacktestAffectedCustomers(ctx context.Context, 
 	return count, err
 }
 func (r *PgBacktestJobRepo) Fail(ctx context.Context, id, reason string) error {
-	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='failed',error=$2,updated_at=now() WHERE id=$1 AND status='running'`, id, reason)
+	tag, err := r.pool.Exec(ctx, `UPDATE backtest_jobs SET status='failed',error=$2,completed_at=now(),updated_at=now() WHERE id=$1 AND status='running'`, id, reason)
 	return r.backtestMutationResult(ctx, id, tag.RowsAffected(), err)
+}
+
+func (r *PgBacktestJobRepo) Retry(ctx context.Context, id string) (*domain.BacktestJob, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var status domain.BacktestJobStatus
+	if err := tx.QueryRow(ctx, `SELECT status FROM backtest_jobs WHERE id=$1 FOR UPDATE`, id).Scan(&status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, &domain.ErrNotFound{Entity: "backtest_job", ID: id}
+		}
+		return nil, err
+	}
+	switch status {
+	case domain.BacktestJobQueued, domain.BacktestJobRunning:
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return r.Get(ctx, id)
+	case domain.BacktestJobCompleted, domain.BacktestJobCancelled:
+		return nil, &domain.ErrConflict{Entity: "backtest_job", ID: id, Reason: "only failed jobs can be retried"}
+	case domain.BacktestJobFailed:
+	default:
+		return nil, &domain.ErrConflict{Entity: "backtest_job", ID: id, Reason: "job is not retryable"}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE backtest_jobs SET status='queued',processed_customers=0,total_customers=0,progress=0,eta_seconds=NULL,baseline=NULL,candidate=NULL,delta=NULL,outcome_analysis=NULL,error=NULL,started_at=NULL,completed_at=NULL,lease_expires_at=NULL,retry_count=retry_count+1,updated_at=now() WHERE id=$1`, id); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM backtest_job_affected_customers WHERE job_id=$1`, id); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM backtest_outcome_details WHERE job_id=$1`, id); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, id)
+}
+
+func (r *PgBacktestJobRepo) ExpireQueued(ctx context.Context, before time.Time, reason string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `UPDATE backtest_jobs SET status='failed',error=$2,completed_at=now(),updated_at=now() WHERE status='queued' AND updated_at < $1 RETURNING id::text`, before, reason)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	expired := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		expired = append(expired, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Strings(expired)
+	return expired, nil
 }
 
 // backtestMutationResult preserves terminal jobs as no-ops while retaining

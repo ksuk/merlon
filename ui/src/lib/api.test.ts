@@ -187,7 +187,7 @@ test("customers.screen normalizes legacy null matches", async () => {
   expect(result.matches).toEqual([])
 })
 
-test("backtest.get normalizes legacy null scenario results", async () => {
+test("backtest.get normalizes legacy null scenario results and missing retry count", async () => {
   vi.spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(
       JSON.stringify({
@@ -209,4 +209,5 @@ test("backtest.get normalizes legacy null scenario results", async () => {
   const job = await api.backtest.get("job-1")
 
   expect(job.candidate?.scenario_results).toEqual([])
+  expect(job.retry_count).toBe(0)
 })

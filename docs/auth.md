@@ -25,9 +25,26 @@ initial Admin account and nothing else.
   any account exists would disclose that to anyone who can reach the login
   page.
 
-The current release has no supported API or UI flow for creating subsequent
-accounts. **User management** and `GET /api/v1/admin/users` provide a read-only
-list of existing users; they do not create users.
+After setup, an Admin manages local accounts through **User management** or the
+`/api/v1/admin/users` API:
+
+| Action | Endpoint |
+|---|---|
+| List accounts | `GET /api/v1/admin/users` |
+| Create an account | `POST /api/v1/admin/users` |
+| Change role or active state | `PATCH /api/v1/admin/users/{id}` |
+| Set a replacement password | `POST /api/v1/admin/users/{id}/reset-password` |
+| Force all sessions to end | `POST /api/v1/admin/users/{id}/revoke-sessions` |
+
+Passwords must contain at least 12 characters. Role and active-state changes,
+password resets, and explicit session revocation end every session that was
+active for the affected account. A later login starts a new session under the
+current role. An inactive account cannot log in. The last active Admin cannot
+be disabled or demoted.
+
+Account mutations and their audit entry commit together. Audit details include
+authority changes but never passwords, password hashes, tokens, or refresh-
+session family identifiers.
 
 The consequence for deployment is that the window between first start and first
 administrator is the one moment where an unauthenticated caller can create a
@@ -38,6 +55,41 @@ before completing setup.
 demo topology and for local development. It must never be set in production;
 see [Configuration Reference](configuration.md).
 
+## Session lifecycle
+
+Each successful login starts an independent refresh-token family and issues an
+access token with both a token identifier and that family identifier. Refresh
+rotates the refresh token within the same family. Reuse of a rotated token
+revokes the family as a compromise signal.
+
+Logout revokes the current access token and refresh-token family. Other
+concurrent sessions for the same user remain active, and an immediate new login
+starts a different family that is not affected by the logout. A user can have
+up to five active families; starting another session evicts the oldest one.
+In PostgreSQL deployments, each authenticated request verifies that the
+persisted refresh-token family remains active. Logout and forced revocation are
+therefore visible across API replicas and survive an API process restart.
+Access tokens issued by an older build without a session-family identifier are
+rejected after the upgrade; affected users must log in again.
+Each refresh-token family also records the role that started the session. If an
+administrator changes or disables that user, existing access tokens and refresh
+tokens are rejected; the user must log in again under the new authority.
+Refresh and logout are state-changing cookie-authenticated requests. Clients
+must echo the `csrf_token` cookie in the `X-CSRF-Token` header. A missing or
+mismatched token is rejected with `403` before session state changes.
+If persistent server-side revocation cannot be confirmed, the response is an
+error rather than a successful logout; browser cookies are still cleared and
+the failed attempt is audited. A failure in the process-local revocation cache
+does not override a revocation already committed to PostgreSQL.
+
+An Admin can call
+`POST /api/v1/admin/users/{id}/revoke-sessions` to invalidate all currently
+active families for one user. This is the user-wide path for an intentional
+forced logout. It does not deny a later successful login. Login success,
+refresh, logout, current-session revocation, and user-wide revocation are
+recorded as distinct audit actions; token values and refresh-family identifiers
+are not written to the audit log.
+
 ## Roles
 
 | Permission | Admin | Analyst | Viewer |
@@ -45,6 +97,7 @@ see [Configuration Reference](configuration.md).
 | Request a whitelist entry (`whitelist:request`) | Yes | Yes | No |
 | Approve a whitelist entry (`whitelist:approve`) | Yes | No | No |
 | Read audit records (`audit:read`) | Yes | No | No |
+| Manage local users (`user:manage`) | Yes | No | No |
 | Create, update, import, activate, or deactivate rules (`rule:write`) | Yes | No | No |
 | Confirm a bulk run covering a large target population (`batch:execute:large`) | Yes | No | No |
 | Re-score a customer (`cdd:score`) | Yes | Yes | No |

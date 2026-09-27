@@ -23,8 +23,14 @@ Merlon を最短で起動し、空の状態からオペレーターダッシュ�
 git clone https://github.com/ksuk/merlon.git
 cd merlon
 cp .env.example .env
+mkdir -p operator-content/tm_scenarios operator-content/screening_lists
+cp content/_sample/cdd_weights/funds_transfer.yaml operator-content/cdd_weights.yaml
+cp content/_sample/tm_scenarios/*.yaml operator-content/tm_scenarios/
+cp deploy/seed/demo/screening_lists/*.yaml operator-content/screening_lists/
 docker compose up --build
 ```
+
+標準トポロジーは`operator-content`をread-onlyでマウントし、ネイティブEngineを必須とする。ここでコピーするファイルはローカル評価用の合成サンプルであり、実データを使用する前に、レビュー済みで導入組織が承認したポリシーコンテンツへ置き換えること。ディレクトリまたはいずれかの必須rootが存在しない、または不正な場合、プロセスはセットアップと診断のためliveのままになるが、`GET /healthz/ready`は`"engine":"error"`を含む`503`を返し、システム状態画面はEngineを利用不能として表示する。
 
 初回ビルドには数分かかる。Compose はデータベースパスワード、ブートストラップトークン、開発用 JWT 署名シークレットを `.env` から読み込むため、2行目のコピーは省略できない。省略すると、ログインフローを提供できる状態になる前に起動が停止する。
 
@@ -40,17 +46,19 @@ docker compose up --build
 
 このトポロジーでは認証が有効であり、まだアカウントが1つも存在しないため、ログイン画面のままでは先に進めない。ログインフォームの下にある「管理者アカウントを作成する」から作成するか、[http://localhost:8080/setup](http://localhost:8080/setup) を直接開く。
 
-メールアドレスと12文字以上のパスワードを入力する。このルートはアカウントが存在しない間だけ有効であり、最初の管理者が作成された後はリクエストを拒否する。現リリースには追加アカウントを作成するためのサポート済み API / UI はなく、「ユーザ管理」は既存アカウントの読み取り専用一覧である。
+メールアドレスと12文字以上のパスワードを入力する。このルートはアカウントが存在しない間だけ有効であり、最初の管理者が作成された後はリクエストを拒否する。ログイン後、「ユーザ管理」で運用モデルに必要な Analyst と Viewer のアカウントを作成する。同じ画面でロール、有効状態、代替パスワードを変更でき、いずれの変更も対象アカウントの既存セッションを無効化する。
 
 :::note `healthy` はセットアップ完了を意味しない
 
-コンテナのヘルスチェックは `GET /healthz/live` を参照するため、`docker ps` はこの手順の前でも、プロセスが応答した時点で API コンテナを `healthy` と表示する。readiness はこれとは別であり、最初の管理者が作成されるまで `GET /healthz/ready` は `503` を返す。誰もログインできないインスタンスはリクエストを処理できる状態ではないためである。[トラブルシューティング](troubleshooting/index.md)を参照。
+標準Composeのヘルスチェックは`GET /healthz/ready`を参照するため、Engineが読み込まれ、最初の管理者が作成されるまで`docker ps`はコンテナを`unhealthy`と表示する。プロセス自体はセットアップと診断のため`GET /healthz/live`へ応答する。[トラブルシューティング](troubleshooting/index.md)を参照。
 
 :::
 
 ## 3. ログインする
 
 作成したアカウントでログインする。顧客一覧が空でアラートも無いダッシュボードが表示されれば正常である。まだ何も投入していないため、これは期待どおりの状態である。
+
+「ユーザ管理」を開き、Analyst と Viewer のアカウントを個別に作成して、それぞれログインできることを確認する。有効な Admin は最低1つ維持する。最後の有効Adminを無効化または降格する操作はAPIが拒否する。
 
 ## 次のステップ
 

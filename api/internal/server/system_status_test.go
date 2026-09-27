@@ -147,6 +147,21 @@ func TestSystemStatus_HealthyEngineIsReady(t *testing.T) {
 	}
 }
 
+func TestSystemStatus_RequiredEngineWithoutProbeIsUnavailable(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:      store.NewMemoryCustomerRepo(),
+		Transactions:   store.NewMemoryTransactionRepo(),
+		Alerts:         store.NewMemoryAlertRepo(),
+		Cases:          store.NewMemoryCaseRepo(),
+		EngineRequired: true,
+	})
+
+	status := componentByName(t, fetchStatus(t, s, ""), "engine")
+	if !status.Configured || status.OperationalState != OperationalUnavailable || status.ReasonCode != reasonCheckFailed {
+		t.Fatalf("required engine status = %+v, want configured unavailable/check_failed", status)
+	}
+}
+
 // TestSystemStatus_CarriesActiveConfigurationProvenance: the digests existed on
 // the server since Wave 1 and no screen ever showed them.
 func TestSystemStatus_CarriesActiveConfigurationProvenance(t *testing.T) {

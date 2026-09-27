@@ -30,6 +30,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_VERSION: "8.24.3"
+      - name: Verify complete reachable history
+        run: gitleaks detect --source=. --redact=100 --exit-code=1 --no-banner --no-color
 
   govulncheck:
     name: Go Vulnerability Check
@@ -112,7 +115,7 @@ jobs:
       # Wraps `npm audit` so an advisory with no forward fix can be accepted with
       # a recorded rationale and an expiry instead of leaving the gate red or
       # dropping it. See scripts/npm-audit-exceptions.json.
-      - run: node scripts/check-npm-audit.mjs ui website
+      - run: make audit-npm
 
   sbom:
     name: CycloneDX SBOM

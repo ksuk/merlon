@@ -276,7 +276,7 @@ export function CaseDetailPage() {
       window.location.reload()
     } catch (err) {
       setConflictError(
-        err instanceof ApiError && err.status === 409
+        err instanceof ApiError && err.status === 409 && err.code === "conflict"
           ? t("caseDetail.conflict")
           : translateApiError(err, t),
       )

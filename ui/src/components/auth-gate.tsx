@@ -11,6 +11,10 @@ function isUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;
 }
 
+function isRefreshRejected(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
 export function AuthGate() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -44,7 +48,7 @@ export function AuthGate() {
         await api.auth.refresh();
       } catch (error) {
         if (!cancelled) {
-          setState(isUnauthorized(error) ? "unauthenticated" : "error");
+          setState(isRefreshRejected(error) ? "unauthenticated" : "error");
         }
         return;
       }

@@ -26,9 +26,10 @@ func testServerWithAccounts() (*Server, *store.MemoryCustomerRepo) {
 func testServerWithAccountsAndTransactions() (*Server, *store.MemoryCustomerRepo) {
 	customers := store.NewMemoryCustomerRepo()
 	s := New(":0", Deps{
-		Customers:    customers,
-		Transactions: store.NewMemoryTransactionRepo(),
-		Accounts:     store.NewMemoryAccountRepo(customers),
+		Customers:          customers,
+		Transactions:       store.NewMemoryTransactionRepo(),
+		Accounts:           store.NewMemoryAccountRepo(customers),
+		PendingEvaluations: store.NewMemoryPendingEvaluationRepo(),
 	})
 	return s, customers
 }

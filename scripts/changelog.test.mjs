@@ -76,6 +76,17 @@ test("the CLI resolves a section that exists in the repository CHANGELOG", () =>
   assert.ok(stdout.trim().length > 0, "release notes must not be empty");
 });
 
+test("the repository v0.0.1 section is extractable without Unreleased fallback", () => {
+  const changelog = readChangelog();
+  const section = findSection(changelog, "v0.0.1");
+  const { code, stdout } = runCLI("v0.0.1");
+
+  assert.ok(section, "CHANGELOG.md must contain a v0.0.1 section");
+  assert.notEqual(section.version.toLowerCase(), "unreleased");
+  assert.equal(code, 0);
+  assert.equal(stdout, `${section.body}\n`);
+});
+
 test("the CLI rejects a tag with no section", () => {
   assert.equal(runCLI("v99.99.99").code, 1);
 });

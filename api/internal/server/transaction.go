@@ -44,6 +44,35 @@ type CreateTransactionRequest struct {
 	ExecutedAt time.Time `json:"executed_at"`
 }
 
+var errMonitoringDependencyNotConfigured = errors.New("monitoring dependency is not configured")
+
+const monitoringDependencyNotConfiguredReason = "monitoring_unavailable: dependency_not_configured"
+
+type transactionMonitoringEvaluation struct {
+	PendingEvaluationID string                         `json:"pending_evaluation_id"`
+	Status              domain.PendingEvaluationStatus `json:"status"`
+	Reason              string                         `json:"reason"`
+}
+
+type transactionResponse struct {
+	*domain.Transaction
+	MonitoringEvaluation *transactionMonitoringEvaluation `json:"monitoring_evaluation,omitempty"`
+}
+
+func pendingEvaluationReason(cause error) string {
+	if errors.Is(cause, errMonitoringDependencyNotConfigured) {
+		return monitoringDependencyNotConfiguredReason
+	}
+	return "engine unavailable: " + cause.Error()
+}
+
+func monitoringEvaluationFromPending(pe *domain.PendingEvaluation) *transactionMonitoringEvaluation {
+	if pe == nil {
+		return nil
+	}
+	return &transactionMonitoringEvaluation{PendingEvaluationID: pe.ID, Status: pe.Status, Reason: pe.Reason}
+}
+
 func isValidCounterpartyType(t domain.CounterpartyType) bool {
 	switch t {
 	case domain.CounterpartyTypeVASP, domain.CounterpartyTypeUnhostedWallet, domain.CounterpartyTypeUnknown:
@@ -139,7 +168,35 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	monitoring, err := s.lookupTransactionMonitoringEvaluation(r.Context(), t.ID)
+	if err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, transactionResponse{Transaction: t, MonitoringEvaluation: monitoringEvaluationFromPending(monitoring)})
+}
+
+func (s *Server) lookupTransactionMonitoringEvaluation(ctx context.Context, transactionID string) (*domain.PendingEvaluation, error) {
+	if s.pendingEvals == nil {
+		return nil, nil
+	}
+	lookup, ok := s.pendingEvals.(domain.PendingEvaluationTransactionLookup)
+	if !ok {
+		return nil, nil
+	}
+	pe, err := lookup.GetLatestByTransaction(ctx, transactionID)
+	if err != nil {
+		var notFound *domain.ErrNotFound
+		if errors.As(err, &notFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return pe, nil
+}
+
+func (s *Server) writeTransactionResponse(w http.ResponseWriter, status int, t *domain.Transaction, pending *domain.PendingEvaluation) {
+	writeJSON(w, status, transactionResponse{Transaction: t, MonitoringEvaluation: monitoringEvaluationFromPending(pending)})
 }
 
 func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +304,12 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		if idem, ok := s.transactions.(domain.TransactionIdempotencyRepository); ok {
 			if existing, lookupErr := idem.GetByIdempotencyKey(r.Context(), key); lookupErr == nil && existing != nil {
 				if transactionEquivalent(existing, t) {
-					writeJSON(w, http.StatusOK, existing)
+					pending, err := s.lookupTransactionMonitoringEvaluation(r.Context(), existing.ID)
+					if err != nil {
+						writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+						return
+					}
+					s.writeTransactionResponse(w, http.StatusOK, existing, pending)
 				} else {
 					writeErrorCode(w, http.StatusConflict, apierr.CodeConflict, "idempotency key already used with different transaction")
 				}
@@ -259,6 +321,16 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 					return
 				}
 			}
+		}
+	}
+
+	monitoringUnavailable := (s.monitoring == nil || s.alerts == nil) && customer.EffectiveStatus() != domain.CustomerStatusClosed
+	var pendingMonitoring *domain.PendingEvaluation
+	if monitoringUnavailable {
+		pendingMonitoring = &domain.PendingEvaluation{
+			ID: generateID(), CustomerID: t.CustomerID, TransactionIDs: []string{t.ID},
+			Status: domain.PendingEvaluationStatusPendingReview,
+			Reason: monitoringDependencyNotConfiguredReason,
 		}
 	}
 
@@ -275,6 +347,19 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 			"transaction_type": string(t.TransactionType),
 		}, t.CreatedAt); err != nil {
 			return err
+		}
+		if pendingMonitoring != nil {
+			if repos.PendingEvaluations == nil {
+				return errAtomicMutationUnavailable
+			}
+			if err := repos.PendingEvaluations.Create(r.Context(), pendingMonitoring); err != nil {
+				return err
+			}
+			if err := appendRequiredMutationAudit(r.Context(), r, repos, "pending_evaluation_queued", "pending_evaluations", pendingMonitoring.ID, map[string]string{
+				"customer_id": t.CustomerID, "transaction_id": t.ID, "reason": pendingMonitoring.Reason,
+			}, t.CreatedAt); err != nil {
+				return err
+			}
 		}
 		if s.eventOutbox != nil {
 			if repos.EventOutbox == nil {
@@ -300,8 +385,18 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 	// Transaction creation is accepted independently of engine availability,
 	// but the realtime monitoring pass must run before the request is complete.
 	// Any engine/history failure is fail-alerted into PENDING_REVIEW rather than
-	// silently dropping the transaction.
-	s.monitorCreatedTransaction(r.Context(), customer, t)
+	// silently dropping the transaction. A dependency that was already known
+	// to be absent was queued in the same atomic mutation above.
+	if pendingMonitoring == nil {
+		if err := s.monitorCreatedTransaction(r.Context(), customer, t); err != nil {
+			if errors.Is(err, errAtomicMutationUnavailable) {
+				writeErrorCode(w, http.StatusServiceUnavailable, apierr.CodeServiceUnavailable, err.Error())
+			} else {
+				writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+			}
+			return
+		}
+	}
 
 	// A transaction the Travel Rule covers but whose required evidence has not
 	// arrived is a compliance gap, not a rejection: the transaction happened.
@@ -320,7 +415,14 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	writeJSON(w, http.StatusCreated, t)
+	responsePending := pendingMonitoring
+	if latest, err := s.lookupTransactionMonitoringEvaluation(r.Context(), t.ID); err != nil {
+		writeErrorCode(w, http.StatusInternalServerError, apierr.CodeInternal, err.Error())
+		return
+	} else if latest != nil {
+		responsePending = latest
+	}
+	s.writeTransactionResponse(w, http.StatusCreated, t, responsePending)
 }
 
 func transactionEquivalent(existing, requested *domain.Transaction) bool {
@@ -359,30 +461,27 @@ func sameBoolPointer(a, b *bool) bool {
 	return *a == *b
 }
 
-func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain.Customer, created *domain.Transaction) {
+func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain.Customer, created *domain.Transaction) error {
 	if s.monitoring == nil || s.alerts == nil || customer == nil || customer.EffectiveStatus() == domain.CustomerStatusClosed {
-		return
+		return nil
 	}
 
 	monitorCtx, cancel := context.WithTimeout(ctx, s.realtimeMonitorTimeout)
 	defer cancel()
 	txns, err := s.listRealtimeTransactions(monitorCtx, customer.ID, created)
 	if err != nil {
-		_ = s.queuePendingReviewDurably(ctx, customer, []domain.Transaction{*created}, err)
-		return
+		return s.queuePendingReviewDurably(ctx, customer, []domain.Transaction{*created}, err)
 	}
 	if len(txns) == 0 {
 		txns = []domain.Transaction{*created}
 	}
 	if offending, ok := s.nonBaseCurrencyTxn(txns); ok {
-		_ = s.queuePendingReviewDurably(ctx, customer, txns, s.errNonBaseCurrency(offending))
-		return
+		return s.queuePendingReviewDurably(ctx, customer, txns, s.errNonBaseCurrency(offending))
 	}
 
 	alerts, err := s.evaluateMonitoring(monitorCtx, customer, txns, engine.EvaluationModeRealtime, nil)
 	if err != nil {
-		_ = s.queuePendingReviewDurably(ctx, customer, txns, err)
-		return
+		return s.queuePendingReviewDurably(ctx, customer, txns, err)
 	}
 	for _, alert := range alerts {
 		alert.ID = generateID()
@@ -406,12 +505,14 @@ func (s *Server) monitorCreatedTransaction(ctx context.Context, customer *domain
 		s.dispatchWebhook(ctx, domain.WebhookEventAlertCreated, alert)
 		s.notifyAlertCreated(ctx, alert)
 	}
+	return nil
 }
 
-func (s *Server) queuePendingReviewDurably(parent context.Context, customer *domain.Customer, txns []domain.Transaction, cause error) bool {
+func (s *Server) queuePendingReviewDurably(parent context.Context, customer *domain.Customer, txns []domain.Transaction, cause error) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), pendingReviewPersistenceTimeout)
 	defer cancel()
-	return s.queuePendingReview(ctx, customer, txns, cause)
+	_, err := s.ensurePendingReview(ctx, customer, txns, cause)
+	return err
 }
 
 func (s *Server) listRealtimeTransactions(ctx context.Context, customerID string, created *domain.Transaction) ([]domain.Transaction, error) {

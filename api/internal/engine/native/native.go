@@ -120,12 +120,18 @@ const (
 )
 
 // NewFromEnv loads the configured content roots for the native engine.
-// It returns an error for a missing required CDD/TM root; callers may keep the
-// API in explicitly engine-disabled mode by choosing not to construct it.
+// In required-engine mode it also rejects a missing or empty screening root;
+// callers may keep the API in explicitly engine-disabled mode by choosing not
+// to construct it.
 func NewFromEnv() (*Engine, error) {
 	cddPath := envOr("MERLON_CDD_WEIGHTS_PATH", "cdd_weights.yaml")
 	tmPath := envOr("MERLON_TM_SCENARIOS_PATH", "tm_scenarios")
 	screeningPath := envOr("MERLON_SCREENING_LISTS_PATH", "screening_lists")
+	if os.Getenv("MERLON_ENGINE_REQUIRED") == "true" {
+		if _, err := os.Stat(screeningPath); err != nil {
+			return nil, fmt.Errorf("stat required screening list root: %w", err)
+		}
+	}
 	e, err := New(cddPath, tmPath, screeningPath, envOr("MERLON_COUNTRY_RISK_PATH", ""))
 	if err != nil {
 		return nil, err
@@ -222,7 +228,10 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 	if info, statErr := os.Stat(screeningPath); statErr == nil {
 		var listPaths []string
 		if info.IsDir() {
-			entries, _ := os.ReadDir(screeningPath)
+			entries, readErr := os.ReadDir(screeningPath)
+			if readErr != nil {
+				return nil, fmt.Errorf("read screening list root: %w", readErr)
+			}
 			for _, entry := range entries {
 				if !entry.IsDir() && isYAML(entry.Name()) {
 					listPaths = append(listPaths, filepath.Join(screeningPath, entry.Name()))
@@ -230,6 +239,9 @@ func New(cddPath, tmPath, screeningPath, countryPath string) (*Engine, error) {
 			}
 		} else {
 			listPaths = []string{screeningPath}
+		}
+		if os.Getenv("MERLON_ENGINE_REQUIRED") == "true" && len(listPaths) == 0 {
+			return nil, fmt.Errorf("required screening list root contains no YAML lists")
 		}
 		sort.Strings(listPaths)
 		for _, path := range listPaths {
@@ -272,6 +284,16 @@ func (e *Engine) TMContract() engine.TMContractInfo {
 	info.DefaultDigest = e.tmDigest
 	info.CompatibilityWarnings = append([]string(nil), e.tmCompatibilityWarnings...)
 	return info
+}
+
+// CheckHealth implements engine.HealthChecker. New and NewFromEnv validate and
+// fully load every configured rule root before returning an Engine, so a live
+// instance has no additional remote dependency to probe here.
+func (e *Engine) CheckHealth(context.Context) error {
+	if e == nil {
+		return fmt.Errorf("native engine is nil")
+	}
+	return nil
 }
 
 func validateCountryRisk(table countryRisk) error {

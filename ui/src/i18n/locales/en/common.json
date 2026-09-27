@@ -742,6 +742,13 @@
       "executedAt": "Executed at",
       "createdAt": "Registered at"
     },
+    "monitoring": {
+      "titleQueued": "Monitoring evaluation is queued",
+      "titleResolved": "Monitoring evaluation recovered",
+      "dependencyNotConfigured": "Monitoring could not run when this transaction was accepted. The transaction is retained in the recovery queue until evaluation completes.",
+      "dependencyRecovered": "Evaluation completed through recovery. Its history remains available from the recovery record.",
+      "openQueue": "Open this recovery record"
+    },
     "travelRule": {
       "title": "Travel Rule",
       "applicable": "Applicable",
@@ -1027,6 +1034,7 @@
     "unauthorized": "You are not authenticated. Please log in again.",
     "forbidden": "You do not have permission to perform this action.",
     "conflict": "This action conflicts with the current state of the resource.",
+    "case_unresolved_alerts": "Resolve all linked alerts before closing this case.",
     "rate_limited": "Too many requests. Please try again later.",
     "payload_too_large": "The request payload is too large.",
     "internal_error": "An internal error occurred. Please try again later.",
@@ -1065,6 +1073,8 @@
   "users": {
     "title": "User management",
     "error": "Failed to fetch user list",
+    "mutationError": "The user change could not be completed.",
+    "createButton": "Create user",
     "roles": {
       "admin": "Admin",
       "analyst": "Analyst",
@@ -1076,7 +1086,23 @@
       "pending": "Pending approval"
     },
     "entry": {
-      "created": "Created: {{date}}"
+      "created": "Created: {{date}}",
+      "roleLabel": "Role for {{email}}",
+      "statusLabel": "Status for {{email}}",
+      "passwordLabel": "New password for {{email}}",
+      "saveLabel": "Save changes for {{email}}",
+      "resetLabel": "Reset password for {{email}}",
+      "save": "Save changes",
+      "reset": "Reset password"
+    },
+    "form": {
+      "title": "Create a local user",
+      "emailLabel": "Email address",
+      "passwordLabel": "Initial password",
+      "newPasswordLabel": "New password (12+ characters)",
+      "roleLabel": "Role",
+      "statusLabel": "Status",
+      "submit": "Create account"
     },
     "empty": "No users registered"
   },
@@ -1190,13 +1216,16 @@
       "error": "Failed to retrieve job status",
       "startError": "Failed to start the backtest job",
       "timeout": "The job did not complete within 10 minutes",
-      "failed": "The backtest job failed",
+      "failed": "The backtest job failed. You can retry it",
       "cancelled": "The backtest job was cancelled",
       "missingResult": "The completed job did not return a result",
       "candidateRequired": "A candidate rule set is required",
       "cancelError": "Failed to cancel the backtest job",
+      "retryError": "Failed to retry the backtest job",
       "cancel": "Cancel job",
-      "resume": "Resume polling"
+      "resume": "Resume polling",
+      "retry": "Retry job",
+      "retrying": "Retrying"
     },
     "result": {
       "title": "Result",
@@ -1427,6 +1456,7 @@
     "title": "Pending evaluation recovery",
     "description": "Failures remain visible until an operator records retry, resolution, or escalation.",
     "error": "Failed to load pending evaluations",
+    "deepLinkError": "Failed to open the requested pending evaluation",
     "retry": "Retry",
     "refresh": "Refresh",
     "queue": "Recovery queue",
