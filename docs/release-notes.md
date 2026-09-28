@@ -6,6 +6,43 @@ title: Release Notes
 
 Merlon publishes a single release channel, `vX.Y.Z`. Tags use strict SemVer; pre-release identifiers are rejected. Notable changes in each version are generated from `CHANGELOG.md` in the repository. The same file produces the notes attached to each GitHub release, so this page and the published releases always match. Before upgrading, read the [Upgrade Runbook](operations/upgrade.md).
 
+## 0.0.3 — 2026-09-28
+
+### Changed
+
+- Update Go API, operator UI, and documentation dependencies while retaining
+  TypeScript 6 for both UI and documentation builds.
+- Build and verify the API container with Go 1.27.0 and Node.js 26.8.1, with
+  matching module, workflow, and DevContainer toolchain versions.
+- Update the documentation search, fonts, React types, and Wrangler to 4.127.0;
+  keep the Docs Deploy Wrangler pin aligned with the site dependency.
+- Refresh release-evidence tooling and clarify the README and documentation
+  landing page.
+
+### Security
+
+- Remove obsolete `image-size` audit exceptions after updating the dependency.
+
+## 0.0.2 — 2026-09-20
+
+### Fixed
+
+- Treat the expected two-decimal persistence rounding in CDD score
+  explanations as reconciled while continuing to report the measured delta.
+- Return a stable error code when a case cannot close because a linked alert
+  remains unresolved, allowing the operator UI to distinguish that condition
+  from an optimistic-concurrency conflict.
+- Retry the initial PostgreSQL connection for a bounded, configurable period
+  and restart the API after an explicit Compose database restart.
+
+### Verification
+
+- Add deterministic Standard-topology browser acceptance for authentication,
+  role enforcement, last-administrator protection, authenticated OpenAPI,
+  build identity, and restart persistence.
+- Strengthen the Docker Demo tours to validate exported STR and rule content,
+  score reconciliation, OpenAPI, and exact build identity.
+
 ## 0.0.1
 
 ### Breaking
