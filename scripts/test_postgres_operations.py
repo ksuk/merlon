@@ -870,6 +870,10 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
                   resource_type text
                 );
                 CREATE TABLE rule_activation_events (id bigint);
+                CREATE TABLE domain_event_outbox (
+                  sequence_num bigserial PRIMARY KEY,
+                  id text NOT NULL
+                );
                 CREATE TABLE schema_migrations (version text);
                 """,
                 dsn=migration_dsn,
@@ -904,6 +908,24 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
                     'public.audit_logs_id_seq',
                     'USAGE'
                   ),
+                  has_table_privilege(
+                    :'ROLE_NAME', 'public.domain_event_outbox', 'INSERT'
+                  ),
+                  has_sequence_privilege(
+                    :'ROLE_NAME',
+                    'public.domain_event_outbox_sequence_num_seq',
+                    'USAGE'
+                  ),
+                  has_sequence_privilege(
+                    :'ROLE_NAME',
+                    'public.domain_event_outbox_sequence_num_seq',
+                    'SELECT'
+                  ),
+                  has_sequence_privilege(
+                    :'ROLE_NAME',
+                    'public.domain_event_outbox_sequence_num_seq',
+                    'UPDATE'
+                  ),
                   EXISTS (
                     SELECT 1 FROM pg_catalog.pg_roles
                     WHERE rolname = 'injected_marker'
@@ -913,7 +935,7 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
             ),
             "inspect exact metacharacter role grants",
         ).stdout.strip()
-        self.assertEqual(state, "t|f|f|t|f")
+        self.assertEqual(state, "t|f|f|t|t|t|f|f|f")
 
 
 class IntegrationSuiteFloorTest(unittest.TestCase):
