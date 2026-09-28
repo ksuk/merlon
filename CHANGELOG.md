@@ -14,6 +14,13 @@ all.
 
 No unreleased changes.
 
+## [0.0.4] - 2026-09-28
+
+### Fixed
+
+- Restore PostgreSQL outbox sequence access for the dedicated serving role so
+  transaction creation works after backup recovery and audit hardening.
+
 ## [0.0.3] - 2026-09-28
 
 ### Changed
