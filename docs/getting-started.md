@@ -27,8 +27,20 @@ containers.
 git clone https://github.com/ksuk/merlon.git
 cd merlon
 cp .env.example .env
+mkdir -p operator-content/tm_scenarios operator-content/screening_lists
+cp content/_sample/cdd_weights/funds_transfer.yaml operator-content/cdd_weights.yaml
+cp content/_sample/tm_scenarios/*.yaml operator-content/tm_scenarios/
+cp deploy/seed/demo/screening_lists/*.yaml operator-content/screening_lists/
 docker compose up --build
 ```
+
+The standard topology mounts `operator-content` read-only and requires the
+native engine. The copied files are synthetic examples for local evaluation;
+replace them with reviewed, institution-approved policy content before using
+real data. If the directory or any required root is missing or invalid, the
+process remains live for setup and diagnostics but `GET /healthz/ready`
+returns `503` with `"engine":"error"`, and the system status page marks the
+engine unavailable.
 
 The first build takes a few minutes. Compose reads `.env` for the database
 password, bootstrap token, and development JWT signing secret, so the copy in
@@ -64,17 +76,17 @@ administrator account** below the login form, or go straight to
 
 Enter an email address and a password of at least 12 characters. This route
 only works while no account exists — once the first administrator is created it
-rejects further requests. This release does not provide a supported API or UI
-for creating additional accounts; **User management** is a read-only list of
-accounts that already exist.
+rejects further requests. After signing in, use **User management** to create
+the Analyst and Viewer accounts required by your operating model. The same
+screen changes roles or active state and sets a replacement password. Each of
+those changes invalidates that account's existing sessions.
 
 :::note `healthy` does not mean set up
 
-The container healthcheck asks `GET /healthz/live`, so `docker ps` reports the
-API container as `healthy` as soon as the process is serving — before this
-step. Readiness is separate: `GET /healthz/ready` returns `503` until the first
-administrator exists, because an instance nobody can log in to is not ready to
-serve. See [Troubleshooting](troubleshooting/index.md).
+The standard Compose healthcheck asks `GET /healthz/ready`, so `docker ps`
+remains `unhealthy` until the engine is loaded and the first administrator
+exists. The process is still reachable through `GET /healthz/live` for setup and
+diagnostics. See [Troubleshooting](troubleshooting/index.md).
 
 :::
 
@@ -83,6 +95,10 @@ serve. See [Troubleshooting](troubleshooting/index.md).
 Log in with the account you just created. You should land on the dashboard,
 with an empty customer list and no alerts. That is expected: nothing has been
 loaded yet.
+
+Open **User management**, create separate Analyst and Viewer accounts, and
+confirm that each can sign in. Keep at least one active Admin account: the API
+rejects an attempt to disable or demote the last one.
 
 ## What next
 

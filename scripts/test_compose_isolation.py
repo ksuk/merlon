@@ -25,6 +25,10 @@ class ComposeIsolationTests(unittest.TestCase):
         )
         environment.pop("MERLON_API_HOST_PORT", None)
         environment.pop("MERLON_DB_HOST_PORT", None)
+        environment.pop("MERLON_OPERATOR_CONTENT_PATH", None)
+        environment.pop("MERLON_BUILD_VERSION", None)
+        environment.pop("MERLON_BUILD_REVISION", None)
+        environment.pop("MERLON_BUILD_BUILT_AT", None)
         environment.update({key: str(value) for key, value in overrides.items()})
 
         command = ["docker", "compose", "-p", project]
@@ -83,6 +87,37 @@ class ComposeIsolationTests(unittest.TestCase):
         )
 
         self.assertEqual(self.published_ports(config, "db"), [])
+
+    def test_api_restarts_after_explicit_database_restart(self):
+        for compose_file in ("docker-compose.yml", "docker-compose.demo.yml"):
+            with self.subTest(compose_file=compose_file):
+                config = self.compose_config("merlon-restart", (compose_file,))
+                dependency = config["services"]["api"]["depends_on"]["db"]
+                self.assertEqual(dependency["condition"], "service_healthy")
+                self.assertTrue(dependency["restart"])
+
+    def test_demo_build_metadata_defaults_and_overrides(self):
+        default = self.compose_config("merlon-demo-default", ("docker-compose.demo.yml",))
+        self.assertEqual(
+            default["services"]["api"]["build"]["args"],
+            {"BUILT_AT": "", "REVISION": "", "VERSION": "dev"},
+        )
+
+        overridden = self.compose_config(
+            "merlon-demo-release",
+            ("docker-compose.demo.yml",),
+            MERLON_BUILD_VERSION="v0.0.2",
+            MERLON_BUILD_REVISION="3e5d00e3d52d72ce42e4fbc08d7541104635f1c4",
+            MERLON_BUILD_BUILT_AT="2026-09-20T00:00:00Z",
+        )
+        self.assertEqual(
+            overridden["services"]["api"]["build"]["args"],
+            {
+                "BUILT_AT": "2026-09-20T00:00:00Z",
+                "REVISION": "3e5d00e3d52d72ce42e4fbc08d7541104635f1c4",
+                "VERSION": "v0.0.2",
+            },
+        )
 
     def test_demo_api_binds_loopback_with_overridable_port(self):
         stack_a = self.compose_config(
@@ -184,6 +219,29 @@ class ComposeIsolationTests(unittest.TestCase):
             self.published_ports(config, "api"),
             [{"mode": "ingress", "target": 8080, "published": "8080", "protocol": "tcp"}],
         )
+
+    def test_standard_engine_is_required_and_operator_content_is_mounted(self):
+        config = self.compose_config("merlon-p00-a", ("docker-compose.yml",))
+        api = config["services"]["api"]
+        self.assertEqual(api["environment"]["MERLON_ENGINE_REQUIRED"], "true")
+        self.assertEqual(api["environment"]["MERLON_CDD_WEIGHTS_PATH"], "/app/operator-content/cdd_weights.yaml")
+        self.assertEqual(api["environment"]["MERLON_TM_SCENARIOS_PATH"], "/app/operator-content/tm_scenarios")
+        self.assertEqual(api["environment"]["MERLON_SCREENING_LISTS_PATH"], "/app/operator-content/screening_lists")
+        self.assertEqual(
+            api["healthcheck"]["test"],
+            ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz/ready"],
+        )
+        operator_content = next(
+            volume
+            for volume in api["volumes"]
+            if volume["target"] == "/app/operator-content"
+        )
+        self.assertEqual(operator_content["type"], "bind")
+        self.assertEqual(
+            operator_content["source"],
+            str((ROOT / "operator-content").resolve()),
+        )
+        self.assertTrue(operator_content["read_only"])
 
 
 if __name__ == "__main__":

@@ -64,12 +64,14 @@ type Server struct {
 	reviews                  *review.Service
 	configEngine             engine.ConfigEngine
 	engineHealth             engine.HealthChecker
+	engineRequired           bool
 	limiter                  *rateLimiter
 	clientIPs                clientIPResolver
 	bootstrapToken           string
 	tokenIssuer              *auth.TokenIssuer
 	denylist                 auth.Denylist
 	users                    domain.UserRepository
+	userLifecycle            domain.UserLifecycleRepository
 	refreshTokens            domain.RefreshTokenRepository
 	rules                    domain.RuleRepository
 	whitelist                domain.WhitelistRepository
@@ -149,12 +151,14 @@ type Deps struct {
 	CustomerReviews    *review.Service
 	Config             engine.ConfigEngine
 	EngineHealth       engine.HealthChecker
+	EngineRequired     bool
 	RateLimit          int
 	TrustedProxyCIDRs  []netip.Prefix
 	BootstrapToken     string
 	TokenIssuer        *auth.TokenIssuer
 	Denylist           auth.Denylist
 	Users              domain.UserRepository
+	UserLifecycle      domain.UserLifecycleRepository
 	RefreshTokens      domain.RefreshTokenRepository
 	Rules              domain.RuleRepository
 	Whitelist          domain.WhitelistRepository
@@ -233,11 +237,13 @@ func New(addr string, deps Deps) *Server {
 		reviews:                  deps.CustomerReviews,
 		configEngine:             deps.Config,
 		engineHealth:             deps.EngineHealth,
+		engineRequired:           deps.EngineRequired,
 		clientIPs:                newClientIPResolver(deps.TrustedProxyCIDRs),
 		bootstrapToken:           deps.BootstrapToken,
 		tokenIssuer:              deps.TokenIssuer,
 		denylist:                 deps.Denylist,
 		users:                    deps.Users,
+		userLifecycle:            deps.UserLifecycle,
 		refreshTokens:            deps.RefreshTokens,
 		rules:                    deps.Rules,
 		whitelist:                deps.Whitelist,
@@ -457,6 +463,7 @@ func (s *Server) routes() {
 	s.route("GET /api/v1/backtests/{id}", s.handleGetBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/outcomes", s.handleBacktestOutcomes)
 	s.route("POST /api/v1/backtests/{id}/cancel", s.handleCancelBacktestJob)
+	s.route("POST /api/v1/backtests/{id}/retry", s.handleRetryBacktestJob)
 	s.route("GET /api/v1/backtests/{id}/affected-customers", s.handleBacktestAffectedCustomers)
 	s.route("POST /api/v1/coverage-analyses", s.handleCreateCoverageAnalysis)
 	s.route("GET /api/v1/coverage-analyses", s.handleListCoverageAnalyses)
@@ -537,6 +544,10 @@ func (s *Server) routes() {
 
 	// Users (admin only)
 	s.route("GET /api/v1/admin/users", s.handleListUsers)
+	s.route("POST /api/v1/admin/users", s.handleCreateUser)
+	s.route("PATCH /api/v1/admin/users/{id}", s.handleUpdateUserAuthority)
+	s.route("POST /api/v1/admin/users/{id}/reset-password", s.handleResetUserPassword)
+	s.route("POST /api/v1/admin/users/{id}/revoke-sessions", s.handleRevokeUserSessions)
 
 	// Operator assignment directory. This is intentionally separate from the
 	// admin user-management endpoint: analysts may use active principals and

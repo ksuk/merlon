@@ -8,8 +8,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/domain"
+	"github.com/ksuk/merlon/api/internal/engine"
 	"github.com/ksuk/merlon/api/internal/store"
 )
 
@@ -33,7 +35,7 @@ func TestCreateBacktestJobRequiresUTCWindowAndSelector(t *testing.T) {
 	if err := rules.Create(context.Background(), &domain.RuleDefinition{Name: "v2", Type: domain.RuleTypeTMScenario, Definition: json.RawMessage(`{"scenario_id":"tm_structuring_basic"}`), IsActive: true}); err != nil {
 		t.Fatal(err)
 	}
-	s := New(":0", Deps{BacktestJobs: jobs, Rules: rules, ConfigDigests: map[string]string{"tm": "abc"}})
+	s := New(":0", Deps{Backtest: &engine.MockBacktestEngine{}, BacktestJobs: jobs, Rules: rules, ConfigDigests: map[string]string{"tm": "abc"}})
 	bad := `{"from":"2026-01-01T00:00:00+09:00","to":"2026-01-02T00:00:00Z","customer_ids":["c1"],"candidate_rule_set_id":"v2"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/backtests", strings.NewReader(bad))
 	rec := httptest.NewRecorder()
@@ -58,6 +60,86 @@ func TestCreateBacktestJobRequiresUTCWindowAndSelector(t *testing.T) {
 	stored, err := jobs.Get(context.Background(), job.ID)
 	if err != nil || stored.CandidateRuleVersion != 1 || len(stored.CandidateRuleDefinition) == 0 {
 		t.Fatalf("stored rule snapshot=%+v err=%v", stored, err)
+	}
+}
+
+func TestCreateBacktestJobRejectsUnavailableEngineBeforePersistence(t *testing.T) {
+	jobs := store.NewMemoryBacktestJobRepo()
+	s := New(":0", Deps{BacktestJobs: jobs})
+	body := `{"from":"2026-01-01T00:00:00Z","to":"2026-01-02T00:00:00Z","customer_ids":["c1"],"candidate_rule_set_id":"active"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/backtests", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s, want 503", rec.Code, rec.Body.String())
+	}
+	stored, err := jobs.List(context.Background(), 10, 0)
+	if err != nil || len(stored) != 0 {
+		t.Fatalf("jobs=%+v err=%v, want no persisted job", stored, err)
+	}
+}
+
+func TestRetryBacktestJobReturnsSameQueuedJob(t *testing.T) {
+	ctx := context.Background()
+	jobs := store.NewMemoryBacktestJobRepo()
+	now := time.Now().UTC()
+	job := &domain.BacktestJob{ID: "job-retry", From: now.Add(-time.Hour), To: now, BaselineRuleSetID: "active", CandidateRuleSetID: "candidate", SnapshotAt: now}
+	if err := jobs.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jobs.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := jobs.Fail(ctx, job.ID, "execution failed; retry is available"); err != nil {
+		t.Fatal(err)
+	}
+	s := New(":0", Deps{Backtest: &engine.MockBacktestEngine{}, BacktestJobs: jobs})
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/backtests/job-retry/retry", nil))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s, want 202", rec.Code, rec.Body.String())
+	}
+	var got domain.BacktestJob
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != job.ID || got.Status != domain.BacktestJobQueued || got.RetryCount != 1 {
+		t.Fatalf("job=%+v, want same id queued with retry_count=1", got)
+	}
+
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/backtests/job-retry/retry", nil))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("duplicate retry status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.RetryCount != 1 {
+		t.Fatalf("duplicate retry_count=%d, want 1", got.RetryCount)
+	}
+}
+
+func TestRetryBacktestJobRejectsCompletedJob(t *testing.T) {
+	ctx := context.Background()
+	jobs := store.NewMemoryBacktestJobRepo()
+	now := time.Now().UTC()
+	job := &domain.BacktestJob{ID: "job-complete", From: now.Add(-time.Hour), To: now, BaselineRuleSetID: "active", CandidateRuleSetID: "candidate", SnapshotAt: now}
+	if err := jobs.Create(ctx, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := jobs.ClaimNext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := jobs.Complete(ctx, job.ID, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	s := New(":0", Deps{Backtest: &engine.MockBacktestEngine{}, BacktestJobs: jobs})
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/backtests/job-complete/retry", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%s, want 409", rec.Code, rec.Body.String())
 	}
 }
 

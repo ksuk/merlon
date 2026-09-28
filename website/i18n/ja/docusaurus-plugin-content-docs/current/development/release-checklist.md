@@ -46,6 +46,12 @@ title: リリースチェックリスト
 
 ## バージョンと来歴
 
+- [ ] タグ作成前に、正確な候補コミットと予定する厳密な SemVer タグを指定して、手動の
+  `Release Evidence Dry Run` ワークフローを実行した。このワークフローはローカルイメージを
+  ビルドして検査し、GitHub artifact attestation bundleを作成する。さらに、公開ワークフローと
+  同じgeneratorでCycloneDXイメージSBOMとrelease manifestを生成し、それらの関連付けを検証して
+  環境記録とともに保持する。このrehearsalはタグを作成せず、イメージをpushせず、GitHub Releaseを
+  公開しない。成功したrunと保持されたartifactをrelease Issueにリンクした。
 - [ ] リリース版はプレリリース識別子を持たない厳密な SemVer で、`main` から到達可能な保護済み注釈付きタグを使用する。タグメッセージはリリース Issue を参照する。
 - [ ] `CHANGELOG.md` がこのタグの内容を記述している。タグ付け前に `node scripts/changelog.mjs <tag>` を実行し、ワークフローがどの節を公開するかを確認する。
 - [ ] リリースワークフローが不変のダイジェストでコンテナを公開した。可変の `latest` タグをリリース識別子として扱わない。

@@ -14,8 +14,13 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | 変数 | デフォルト | 本番運用ガイダンス |
 |---|---|---|
 | `MERLON_ENV` | `development` | `production` に設定する。 |
+| `MERLON_BACKTEST_QUEUE_TIMEOUT` | `10m` | 受理したバックテストがキューで待機できる最大時間。期限を超えると、運用者が再試行できる理由を伴う失敗状態になる。 |
 | `MERLON_HTTP_ADDR` | `:8080` | TLS 終端を行うリバースプロキシの背後でバインドする。 |
 | `MERLON_DATABASE_URL` | 未設定 | TLS（`sslmode=require` 以上）と最小権限のアプリケーションロールを使用する。 |
+| `MERLON_DATABASE_STARTUP_TIMEOUT` | `30s` | 起動時に設定済みdatabaseが接続を受け付けるまでAPIが待機する最大時間。 |
+| `MERLON_BUILD_VERSION` | `dev` | System statusとimage metadataに埋め込むCompose build version。 |
+| `MERLON_BUILD_REVISION` | 未設定 | Compose imageに埋め込む完全なsource commit。release acceptanceでは正確な40文字SHAを指定する。 |
+| `MERLON_BUILD_BUILT_AT` | 未設定 | Compose imageに埋め込むUTC build timestamp。 |
 | `MERLON_BACKUP_DATABASE_URL` | 未設定 | `make backup` だけで使用する専用の read-only backup 接続。文書化された既存・将来の table／sequence 読取権限を付与し、serving-role URL や schema-owner URL で代用しない。 |
 | `MERLON_MIGRATION_DATABASE_URL` | 未設定 | `make migrate`、`make restore`、`make audit-harden` で使用する、分離されたschema/object-owner接続。このroleはtargetの`public` schemaを管理し、そこで`CREATE`を持つ必要がある。別roleがfresh restore databaseを所有する場合、そのownerは`public`をこのroleへ移譲し、このroleとapplication roleの両方へdatabaseのdirect `CONNECT`を事前付与する。serving-role URLで代用しない。 |
 | `MERLON_MIGRATIONS_DIR` | `migrations` | マイグレーションコマンド専用。バージョン付き SQL マイグレーションを格納するディレクトリ。`--migrations-dir` フラグを指定した場合はその値を優先する。 |
@@ -25,7 +30,9 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_JWT_SECRET` | 未設定 | 開発用フォールバックのみ。ローカルユーザー認証を使用する場合、本番環境では設定しないこと。 |
 | `MERLON_BOOTSTRAP_TOKEN` | 未設定 | 初回セットアップ用のワンタイムシークレット。最初の管理者・API キー作成後、直ちにローテーションまたは削除する。 |
 | `MERLON_POSTGRES_PASSWORD` | 未設定 | Compose 専用の開発用パスワード。本番環境ではシークレットマネージャーを使用する。 |
+| `MERLON_OPERATOR_CONTENT_PATH` | `./operator-content` | 標準トポロジーがread-onlyでマウントするCompose専用のホストディレクトリ。このroot配下にレビュー済みのCDD、取引モニタリング、スクリーニングコンテンツを配置する。 |
 | `MERLON_AUTH_ENABLED` | `false` | 本番環境では `true` が必須。 |
+| `MERLON_ENGINE_REQUIRED` | `false` | 読み込み済みのネイティブEngineなしでモニタリングを実行してはならない場合は`true`にする。標準Composeトポロジーでは自動的に設定される。 |
 | `MERLON_SEED` | `false` | 開発・デモデータ専用。本番環境では必ず `false` にする。 |
 | `MERLON_DEMO_DATA_DIR` | 未設定 | 生成済みデモデータセットを含むディレクトリ。`MERLON_SEED` 有効時に読み込む。内容が不完全な場合は内蔵サンプルにフォールバックする。開発・デモ専用。 |
 | `MERLON_CONFIG_PATH` | `config.yaml` | アプリケーション設定へのパス。 |
@@ -65,6 +72,8 @@ Merlon は環境変数で設定する。ローカル開発では `.env.example` 
 | `MERLON_LOG_LEVEL` | `info` | `info` 以上を維持する。機密性の高いワークロードに debug ログを使用しないこと。 |
 
 ネイティブ Go エンジンは、運用担当者が指定したパスから CDD ウェイトとスクリーニングコンテンツも読み込む。これらのファイルはデータベースの監査証跡の対象外である。ソース管理、変更承認、アクセス制御、バックアップ、デプロイメント手順によって管理すること。ADR-0012 を参照。
+
+標準Composeトポロジーは、ローカルの`operator-content/`ディレクトリを`/app/operator-content`へマウントし、`MERLON_ENGINE_REQUIRED=true`を設定する。CDD、TM、スクリーニングの3つのrootには、その配下の`cdd_weights.yaml`、`tm_scenarios/`、`screening_lists/`を指定する。rootが存在しない、または不正な場合でもプロセス自体は停止せず、livenessには応答する一方、readinessとシステム状態画面はEngineを利用不能として表示する。
 
 ## 暗号鍵のローテーション
 

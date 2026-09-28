@@ -210,6 +210,62 @@ tier_thresholds: {LOW: {max: 2}, MEDIUM: {min: 2, max: 3}, HIGH: {min: 3}}
 	}
 }
 
+func TestNativeEngineHealthCheck(t *testing.T) {
+	var checker engine.HealthChecker = &Engine{}
+	if err := checker.CheckHealth(context.Background()); err != nil {
+		t.Fatalf("CheckHealth() error = %v, want nil for a constructed engine", err)
+	}
+}
+
+func TestNewFromEnvMissingAndValidOperatorRoots(t *testing.T) {
+	t.Setenv("MERLON_ENGINE_REQUIRED", "true")
+	missing := t.TempDir()
+	t.Setenv("MERLON_CDD_WEIGHTS_PATH", filepath.Join(missing, "missing.yaml"))
+	t.Setenv("MERLON_TM_SCENARIOS_PATH", filepath.Join(missing, "tm"))
+	screeningRoot := filepath.Join(missing, "screening")
+	if err := os.Mkdir(screeningRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, screeningRoot, "sanctions.yaml", "list_id: test-sanctions\nlist_type: sanctions\nsource: test\nentries:\n  - entry_id: test-entry\n    names: [Test Name]\n")
+	t.Setenv("MERLON_SCREENING_LISTS_PATH", screeningRoot)
+	if _, err := NewFromEnv(); err == nil {
+		t.Fatal("NewFromEnv() succeeded with a missing CDD root")
+	}
+	invalid := writeFixture(t, missing, "invalid.yaml", "not: a valid cdd root\n")
+	t.Setenv("MERLON_CDD_WEIGHTS_PATH", invalid)
+	if _, err := NewFromEnv(); err == nil {
+		t.Fatal("NewFromEnv() succeeded with an invalid CDD root")
+	}
+
+	dir := t.TempDir()
+	cdd := writeFixture(t, dir, "cdd.yaml", `schema_version: cdd_weight_v1
+preset_id: env_test
+risk_factors: {x: {weight: 1, values: {v: 1}}}
+tier_thresholds: {LOW: {max: 2}, MEDIUM: {min: 2, max: 3}, HIGH: {min: 3}}
+`)
+	tm := filepath.Join(dir, "tm")
+	if err := os.Mkdir(tm, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, tm, "structuring.yaml", "scenario_id: tm_structuring_basic\nevaluation_mode: realtime\n")
+	screening := filepath.Join(dir, "screening")
+	if err := os.Mkdir(screening, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, screening, "sanctions.yaml", "list_id: test-sanctions\nlist_type: sanctions\nsource: test\nentries:\n  - entry_id: test-entry\n    names: [Test Name]\n")
+	t.Setenv("MERLON_CDD_WEIGHTS_PATH", cdd)
+	t.Setenv("MERLON_TM_SCENARIOS_PATH", tm)
+	t.Setenv("MERLON_SCREENING_LISTS_PATH", screening)
+	e, err := NewFromEnv()
+	if err != nil {
+		t.Fatalf("NewFromEnv() valid roots error = %v", err)
+	}
+	var checker engine.HealthChecker = e
+	if err := checker.CheckHealth(context.Background()); err != nil {
+		t.Fatalf("valid engine CheckHealth() error = %v", err)
+	}
+}
+
 func TestNativeScoreExplainsFactorsAndFailsAlertOnUnknownMapping(t *testing.T) {
 	dir := t.TempDir()
 	cdd := writeFixture(t, dir, "cdd.yaml", `schema_version: cdd_weight_v1

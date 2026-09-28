@@ -61,6 +61,18 @@ func (r *PgPendingEvaluationRepo) Create(ctx context.Context, pe *domain.Pending
 	).Scan(&pe.CreatedAt, &pe.UpdatedAt)
 }
 
+func (r *PgPendingEvaluationRepo) GetLatestByTransaction(ctx context.Context, transactionID string) (*domain.PendingEvaluation, error) {
+	pe, err := scanPendingEvaluation(r.pool.QueryRow(ctx,
+		`SELECT `+pendingEvaluationColumns+` FROM pending_evaluations
+		 WHERE $1::uuid = ANY(transaction_ids)
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`, domain.CanonicalUUID(transactionID)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, &domain.ErrNotFound{Entity: "pending_evaluation", ID: transactionID}
+	}
+	return pe, err
+}
+
 func (r *PgPendingEvaluationRepo) ListPendingEvaluations(ctx context.Context, filter domain.PendingEvaluationFilter, limit int) ([]domain.PendingEvaluation, error) {
 	query := `SELECT ` + pendingEvaluationColumns + ` FROM pending_evaluations WHERE 1=1`
 	args := []any{}

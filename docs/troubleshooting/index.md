@@ -81,17 +81,24 @@ them before this runs anywhere but your own machine.
 
 This is expected on a new deployment and is not a fault.
 
-The image healthcheck probes `GET /healthz/live`, so `docker ps` shows the
-container as `healthy` as soon as the process responds — before setup, and
-without a database.
+The standard Compose healthcheck probes `GET /healthz/ready`, so `docker ps`
+keeps the container `unhealthy` until setup, PostgreSQL, and the native engine
+are ready. The process itself remains reachable through `GET /healthz/live`
+before setup and while dependencies are unavailable.
 
 Readiness is a different question. `GET /healthz/ready` includes "an
-administrator account exists", so until you complete
+administrator account exists" and, in the standard Compose topology, a loaded
+native engine. Until you complete
 [initial setup](#there-is-no-account-to-log-in-with) it returns `503` with:
 
 ```json
-{"checks":{"setup":"error: initial setup not completed"},"status":"unhealthy"}
+{"checks":{"setup":"error: initial setup not completed","engine":"error"},"status":"unhealthy"}
 ```
+
+If setup is complete but `engine` remains `error`, inspect the read-only
+`operator-content/` mount. The standard topology expects
+`cdd_weights.yaml`, `tm_scenarios/`, and `screening_lists/` there. Correct the
+files and restart the API; liveness can remain `200` while readiness is gated.
 
 That matters wherever readiness is deliberately gated on:
 
@@ -122,8 +129,9 @@ authenticated path to create one. Use initial setup:
 - Over the API: `POST /api/v1/setup` with `{"email": "...", "password": "..."}`.
 
 The password must be at least 12 characters. The account created is an Admin.
-The current release has no supported flow for creating later accounts:
-**User management** and `GET /api/v1/admin/users` only list existing users.
+After that Admin signs in, **User management** creates later accounts and
+manages their role, active state, and replacement password. The corresponding
+API starts at `POST /api/v1/admin/users`.
 
 ### `/setup` returns 409
 
@@ -135,9 +143,10 @@ Initial setup succeeds exactly once, by design — otherwise it would be a
 standing route for minting administrators on a live system. An account already
 exists.
 
-If nobody knows its credentials, this is a password reset against the database,
-not a setup problem. There is no supported flow for creating a second first
-administrator.
+If another Admin can sign in, use **User management** to set a replacement
+password. The change revokes the affected account's existing sessions. If no
+Admin can sign in, recover access through your deployment's database backup and
+incident process; `/setup` cannot create a second first administrator.
 
 ### Production refuses to start
 

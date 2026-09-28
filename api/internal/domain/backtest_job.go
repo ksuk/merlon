@@ -75,6 +75,7 @@ type BacktestJob struct {
 	Delta                   *BacktestResult          `json:"delta,omitempty"`
 	OutcomeAnalysis         *BacktestOutcomeAnalysis `json:"outcome_analysis,omitempty"`
 	Error                   string                   `json:"error,omitempty"`
+	RetryCount              int                      `json:"retry_count"`
 	CreatedAt               time.Time                `json:"created_at"`
 	StartedAt               *time.Time               `json:"started_at,omitempty"`
 	CompletedAt             *time.Time               `json:"completed_at,omitempty"`
@@ -114,6 +115,8 @@ type BacktestJobRepository interface {
 	UpdateProgress(ctx context.Context, id string, processed, total int, etaSeconds *int64) error
 	Complete(ctx context.Context, id string, baseline, candidate, delta *BacktestResult) error
 	Fail(ctx context.Context, id, reason string) error
+	Retry(ctx context.Context, id string) (*BacktestJob, error)
+	ExpireQueued(ctx context.Context, before time.Time, reason string) ([]string, error)
 }
 
 // BacktestCustomerSnapshotRepository persists the resolved customer population

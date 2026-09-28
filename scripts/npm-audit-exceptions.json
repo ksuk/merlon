@@ -6,26 +6,5 @@
     "The gate fails once expires passes, once the advisory reaches a dependent outside dependents,",
     "and once the advisory stops being reported at all -- so entries cannot quietly outlive their justification."
   ],
-  "exceptions": [
-    {
-      "workspace": "website",
-      "advisory": "GHSA-w3rx-r6r6-pgpr",
-      "package": "image-size",
-      "dependents": ["@docusaurus/mdx-loader"],
-      "severity": "high",
-      "reason": "Docusaurus uses image-size only during the static documentation build to read repository-local image dimensions. The deployed site does not run the Node build service, and this repository has no ICNS, JXL, or HEIF assets. npm reports no forward fix for image-size@2.0.2. Reassessment is tracked in issue #92.",
-      "expires": "2026-09-08",
-      "review": "Before expiry, check Docusaurus, @docusaurus/mdx-loader, and image-size for a compatible patched release, rerun the website audit, and remove this exception when a fix exists; otherwise obtain an explicit new expiry decision in issue #92."
-    },
-    {
-      "workspace": "website",
-      "advisory": "GHSA-5p2g-fcmc-qvqq",
-      "package": "image-size",
-      "dependents": ["@docusaurus/mdx-loader"],
-      "severity": "high",
-      "reason": "Docusaurus uses image-size only during the static documentation build to read repository-local image dimensions. The deployed site does not run the Node build service, and this repository has no ICNS, JXL, or HEIF assets. npm reports no forward fix for image-size@2.0.2. Reassessment is tracked in issue #92.",
-      "expires": "2026-09-08",
-      "review": "Before expiry, check Docusaurus, @docusaurus/mdx-loader, and image-size for a compatible patched release, rerun the website audit, and remove this exception when a fix exists; otherwise obtain an explicit new expiry decision in issue #92."
-    }
-  ]
+  "exceptions": []
 }

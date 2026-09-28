@@ -224,9 +224,10 @@ func TestHealthzReadyUnhealthyOnDBDown(t *testing.T) {
 // engine both reachable makes /healthz/ready healthy.
 func TestHealthzReadyHealthyWhenAllDepsUp(t *testing.T) {
 	s := New(":0", Deps{
-		Customers:    store.NewMemoryCustomerRepo(),
-		DB:           &stubDBPinger{},
-		EngineHealth: &engine.MockHealthChecker{},
+		Customers:      store.NewMemoryCustomerRepo(),
+		EngineRequired: true,
+		DB:             &stubDBPinger{},
+		EngineHealth:   &engine.MockHealthChecker{},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
@@ -306,5 +307,43 @@ func TestHealthzReadyUnhealthyOnEngineDown(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status code = %d, want %d, body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
+func TestHealthzReadyRequiredEngineMissing(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:      store.NewMemoryCustomerRepo(),
+		EngineRequired: true,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz/ready", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status code = %d, want %d, body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"engine":"error"`) {
+		t.Fatalf("body = %s, want required engine error", rec.Body.String())
+	}
+
+	liveRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(liveRec, httptest.NewRequest(http.MethodGet, "/healthz/live", nil))
+	if liveRec.Code != http.StatusOK {
+		t.Fatalf("liveness status = %d, want %d", liveRec.Code, http.StatusOK)
+	}
+}
+
+func TestHealthzReadyRequiredEngineHealthy(t *testing.T) {
+	s := New(":0", Deps{
+		Customers:      store.NewMemoryCustomerRepo(),
+		EngineRequired: true,
+		EngineHealth:   &engine.MockHealthChecker{},
+	})
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz/ready", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"engine":"ok"`) {
+		t.Fatalf("status = %d, body = %s; want healthy required engine", rec.Code, rec.Body.String())
 	}
 }

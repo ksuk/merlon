@@ -18,5 +18,8 @@ services:
       - ./api:/build
     environment:
       MERLON_ENV: development
+      # The source-mounted development composition keeps engine loading
+      # optional; standard deployments remain gated by the base topology.
+      MERLON_ENGINE_REQUIRED: "false"
       MERLON_LOG_LEVEL: debug
       MERLON_UI_DIR: ""

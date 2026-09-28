@@ -14,36 +14,42 @@ import (
 type Config struct {
 	Env string
 	// Mode controls process ownership: api, worker, or all.
-	Mode                 string
-	HTTPAddr             string
-	WorkerHTTPAddr       string
-	WorkerConcurrency    int
-	DatabaseURL          string
-	MigrationDatabaseURL string
-	MigrationBaseline    string
-	EncryptionKeyRing    string
-	InboundWebhookSecret string
-	Seed                 bool
+	Mode                   string
+	HTTPAddr               string
+	WorkerHTTPAddr         string
+	WorkerConcurrency      int
+	DatabaseURL            string
+	DatabaseStartupTimeout time.Duration
+	MigrationDatabaseURL   string
+	MigrationBaseline      string
+	EncryptionKeyRing      string
+	InboundWebhookSecret   string
+	Seed                   bool
 	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed. The seed package reads the
 	// same environment value; final synthetic-data provenance comes from the
 	// seed completion state rather than this configuration hint.
-	DemoDataDir            string
-	JWTSecret              string
-	JWTPrivateKeyFile      string
-	JWTPublicKeyFile       string
-	ConfigPath             string
-	CacheBackend           string
-	EventBus               string
-	LogLevel               string
-	AdapterConfigPath      string
-	UIDir                  string
-	RateLimit              int
-	TrustedProxyCIDRs      []netip.Prefix
-	AuthEnabled            bool
+	DemoDataDir       string
+	JWTSecret         string
+	JWTPrivateKeyFile string
+	JWTPublicKeyFile  string
+	ConfigPath        string
+	CacheBackend      string
+	EventBus          string
+	LogLevel          string
+	AdapterConfigPath string
+	UIDir             string
+	RateLimit         int
+	TrustedProxyCIDRs []netip.Prefix
+	AuthEnabled       bool
+	// EngineRequired makes an engine load failure a readiness failure. It is
+	// enabled by the standard Compose topology and remains disabled for the
+	// database-free development composition.
+	EngineRequired         bool
 	BootstrapToken         string
 	CountryRiskPath        string
 	TMBaseCurrency         string
 	RealtimeMonitorTimeout time.Duration
+	BacktestQueueTimeout   time.Duration
 	trustedProxyCIDRsErr   error
 	// WhitelistMaxValidDays is the maximum whitelist validity period (WL-002,
 	// whitelist.md §要件表: "最大有効期間はシステム設定で制御可能（デフォルト：1年）").
@@ -185,6 +191,18 @@ func (c *Config) Validate() error {
 	if c.RealtimeMonitorTimeout == 0 {
 		c.RealtimeMonitorTimeout = 30 * time.Second
 	}
+	if c.BacktestQueueTimeout < 0 {
+		return fmt.Errorf("MERLON_BACKTEST_QUEUE_TIMEOUT must be positive")
+	}
+	if c.BacktestQueueTimeout == 0 {
+		c.BacktestQueueTimeout = 10 * time.Minute
+	}
+	if c.DatabaseStartupTimeout < 0 {
+		return fmt.Errorf("MERLON_DATABASE_STARTUP_TIMEOUT must be positive")
+	}
+	if c.DatabaseStartupTimeout == 0 {
+		c.DatabaseStartupTimeout = 30 * time.Second
+	}
 	if c.RateLimit < 0 {
 		return fmt.Errorf("MERLON_RATE_LIMIT must not be negative")
 	}
@@ -229,6 +247,7 @@ func Load() *Config {
 		WorkerHTTPAddr:         getEnv("MERLON_WORKER_HTTP_ADDR", ":8081"),
 		WorkerConcurrency:      getEnvInt("MERLON_WORKER_CONCURRENCY", 4),
 		DatabaseURL:            getEnv("MERLON_DATABASE_URL", ""),
+		DatabaseStartupTimeout: getEnvDuration("MERLON_DATABASE_STARTUP_TIMEOUT", 30*time.Second),
 		MigrationDatabaseURL:   getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
 		MigrationBaseline:      getEnv("MERLON_MIGRATION_BASELINE", ""),
 		EncryptionKeyRing:      getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
@@ -247,10 +266,12 @@ func Load() *Config {
 		RateLimit:              getEnvInt("MERLON_RATE_LIMIT", 0),
 		TrustedProxyCIDRs:      trustedProxyCIDRs,
 		AuthEnabled:            getEnv("MERLON_AUTH_ENABLED", "") == "true",
+		EngineRequired:         getEnv("MERLON_ENGINE_REQUIRED", "") == "true",
 		BootstrapToken:         getEnv("MERLON_BOOTSTRAP_TOKEN", ""),
 		CountryRiskPath:        getEnv("MERLON_COUNTRY_RISK_PATH", ""),
 		TMBaseCurrency:         strings.ToUpper(getEnv("MERLON_TM_BASE_CURRENCY", "JPY")),
 		RealtimeMonitorTimeout: getEnvDuration("MERLON_REALTIME_MONITOR_TIMEOUT", 30*time.Second),
+		BacktestQueueTimeout:   getEnvDuration("MERLON_BACKTEST_QUEUE_TIMEOUT", 10*time.Minute),
 		WhitelistMaxValidDays:  getEnvInt("MERLON_WHITELIST_MAX_VALID_DAYS", 365),
 
 		ScreeningImportEnabled:   getEnv("MERLON_SCREENING_IMPORT_ENABLED", "") == "true",

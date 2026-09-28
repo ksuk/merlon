@@ -31,7 +31,7 @@ export const FALLBACK_MANIFEST_PATH = path.join(
 
 // Same exclusion rule used across all checks: docs/api/** and
 // docs/release-notes.md are generated (by the schema/openapi/changelog
-// generators, gitignored, and emitted for every locale at once), and
+// generators and emitted for every locale at once), and
 // docs/decisions/** (ADRs) and docs/standards/** (internal audit standards,
 // written in Japanese) are intentionally excluded from the built site.
 export const SKIP_PREFIXES = [

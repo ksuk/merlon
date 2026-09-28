@@ -15,7 +15,7 @@ sidebar_position: 1.5
 docker compose -f docker-compose.demo.yml up --build
 ```
 
-環境変数の設定は不要。`db` と `api` が `127.0.0.1:8080` にバインドされた状態で起動し、認証は無効化済み、合成顧客約1,015件・アラート98件が既にロードされている。
+環境変数の設定は不要。`db` と `api` が `127.0.0.1:8080` にバインドされた状態で起動し、認証は無効化済み、合成顧客約1,015件・アラート96件が既にロードされている。
 
 `docker compose` が両サービスともhealthyになったら [http://127.0.0.1:8080](http://127.0.0.1:8080) を開く。このツアー中に行った操作（ケースへのメモ追加、ステータス変更、STR下書き作成）はスタックを落とすまで保持される。
 
@@ -31,11 +31,11 @@ docker compose -f docker-compose.demo.yml up --build
 ## 動線A — コンプラ担当者（7〜10分）
 
 1. **ダッシュボード**（[`/`](http://127.0.0.1:8080/)）— 顧客数・アラート数・ケース数の概要、リスクティア分布、重大度分布チャートから始める。
-2. **アラート**（[`/alerts`](http://127.0.0.1:8080/alerts)）— 「Critical」バッジの付いた唯一のアラートを探す。これは `demo-story-04`（Meridian Cross Trading Pte. Ltd.）のものであり、直接開くこともできる: [`/alerts/38d7a6ce-c160-5cf3-b748-ce2650893ff3`](http://127.0.0.1:8080/alerts/38d7a6ce-c160-5cf3-b748-ce2650893ff3)。
+2. **アラート**（[`/alerts`](http://127.0.0.1:8080/alerts)）— 「Critical」バッジの付いた唯一のアラートを探す。これは `demo-story-04`（Meridian Cross Trading Pte. Ltd.）のものであり、直接開くこともできる: [`/alerts/419d1314-654e-5375-bfb7-9fcea10fcd53`](http://127.0.0.1:8080/alerts/419d1314-654e-5375-bfb7-9fcea10fcd53)。
 3. **アラート詳細** — `scenario_id`（`tm_rapid_movement`。Rules画面へのリンクあり）と説明文を確認し、関連取引バッジ3件のうち1件を開く。例えばパススルーの起点となったinbound取引: [`/transactions/b3dbf56d-8e2a-5f1c-86d2-ddf35ce38bfd`](http://127.0.0.1:8080/transactions/b3dbf56d-8e2a-5f1c-86d2-ddf35ce38bfd) — 香港からの320万円のinbound送金で、6時間以内にシンガポール・マレーシア宛のoutboundが続き、rapid-movementウィンドウでまとめて検知されている。
 4. **顧客詳細**（[`/customers/61a626c6-ced4-536d-be74-41d6ca874e4d`](http://127.0.0.1:8080/customers/61a626c6-ced4-536d-be74-41d6ca874e4d)）— CDDスコアのファクター内訳を確認し、「Score」ボタン（UI言語設定がjaの場合の表示は「スコアリング」）をクリックしてnative engineによるライブ再スコアリングを実演する。スコア履歴に同じルールセット・同じtierの新しい行が追加されることを確認する（Auditability First: 同一入力から同一出力が再現される）。
 5. **ケース** — アラートに紐づく既存ケースを開き（[`/cases/3a55610e-d00f-5a34-8bfa-cc9753cbfa06`](http://127.0.0.1:8080/cases/3a55610e-d00f-5a34-8bfa-cc9753cbfa06)）、短いメモを追加し、ステータスを遷移させる。ここが書き込み体験のステップである — メモとステータス変更は事前に仕込まれたものではなく、自分の操作である。
-6. **Reports**（[`/reports`](http://127.0.0.1:8080/reports)）— 一覧から `demo-story-04` のアラートを選び（severity=criticalのため対象に含まれる）、STR下書きを生成し、CSVまたはJSONでエクスポートする。この下書きはこのワークフローのために生成されるものであり、監査証跡に記録されるのは書き込みリクエストそのものである。
+6. **Reports**（[`/reports`](http://127.0.0.1:8080/reports)）— 一覧から `demo-story-04` のアラートを選ぶ（紐づく未解決ケースがSTR候補として設定されている）。STR下書きを生成し、CSVまたはJSONでエクスポートする。この下書きはこのワークフローのために生成されるものであり、監査証跡に記録されるのは書き込みリクエストそのものである。
 7. **Audit**（[`/audit`](http://127.0.0.1:8080/audit)）— 直前に行った再スコアリング・ケースメモ追加リクエスト・ステータス変更・STR下書き作成リクエストのすべてが、実行者とタイムスタンプ付きで記録されていることを確認する。Auditability First原則の締めくくりであり、あらかじめ仕込まれた履歴だけでなく、すべての書き込み操作がAPI共通の監査ミドルウェアによって記録される。
 
 ## 動線B — 技術評価者（5〜7分）
@@ -74,4 +74,4 @@ MERLON_SCREENING_LISTS_PATH=../deploy/seed/demo/screening_lists \
 go run ./cmd/merlon-api
 ```
 
-[http://localhost:8080](http://localhost:8080) を開く — 同じUI、同じ1,015顧客・98アラート、同じnative engine（ルールコンテンツは上記4つの `MERLON_*_PATH` 変数）が、PostgreSQLの代わりにin-memoryストアで動く。4つのルールコンテンツ変数をすべて設定しないと、engineが無効フォールバックしスコアリング・モニタリングが動作しないため、動線Aのステップ4と動線Bのすべてが機能しない — 4つとも必ず設定すること。ボリュームの削除は不要である。in-memoryストアを使っているため、プロセスを止めて再度 `go run ./cmd/merlon-api` を実行するだけで、生成し直したデータセットに戻る。
+[http://localhost:8080](http://localhost:8080) を開く — 同じUI、同じ1,015顧客・96アラート、同じnative engine（ルールコンテンツは上記4つの `MERLON_*_PATH` 変数）が、PostgreSQLの代わりにin-memoryストアで動く。4つのルールコンテンツ変数をすべて設定しないと、engineが無効フォールバックしスコアリング・モニタリングが動作しないため、動線Aのステップ4と動線Bのすべてが機能しない — 4つとも必ず設定すること。ボリュームの削除は不要である。in-memoryストアを使っているため、プロセスを止めて再度 `go run ./cmd/merlon-api` を実行するだけで、生成し直したデータセットに戻る。

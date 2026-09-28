@@ -30,6 +30,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_VERSION: "8.24.3"
+      - name: Verify complete reachable history
+        run: gitleaks detect --source=. --redact=100 --exit-code=1 --no-banner --no-color
 
   govulncheck:
     name: Go Vulnerability Check
@@ -112,7 +115,7 @@ jobs:
       # Wraps `npm audit` so an advisory with no forward fix can be accepted with
       # a recorded rationale and an expiry instead of leaving the gate red or
       # dropping it. See scripts/npm-audit-exceptions.json.
-      - run: node scripts/check-npm-audit.mjs ui website
+      - run: make audit-npm
 
   sbom:
     name: CycloneDX SBOM
@@ -123,21 +126,21 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Generate API SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: ./api
           format: cyclonedx-json
           output-file: sbom-api.cdx.json
           artifact-name: sbom-api
       - name: Generate UI SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: ./ui
           format: cyclonedx-json
           output-file: sbom-ui.cdx.json
           artifact-name: sbom-ui
       - name: Generate website SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: ./website
           format: cyclonedx-json

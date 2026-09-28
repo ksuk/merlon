@@ -1,6 +1,6 @@
 # Merlon
 
-AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) compliance software for Japanese non-bank financial institutions.
+Self-hosted AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) compliance software, designed with Japan's AML/CFT requirements as its baseline.
 
 Merlon provides integrated **Customer Due Diligence (CDD) scoring** and **Transaction Monitoring (TM)** capabilities, designed for self-hosted deployment by crypto-asset exchanges, money transfer operators, and other regulated entities.
 
@@ -51,12 +51,19 @@ Prerequisites: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose
 git clone https://github.com/ksuk/merlon.git
 cd merlon
 cp .env.example .env
+mkdir -p operator-content/tm_scenarios operator-content/screening_lists
+cp content/_sample/cdd_weights/funds_transfer.yaml operator-content/cdd_weights.yaml
+cp content/_sample/tm_scenarios/*.yaml operator-content/tm_scenarios/
+cp deploy/seed/demo/screening_lists/*.yaml operator-content/screening_lists/
 docker compose up --build
 ```
 
-Then open **[http://localhost:8080](http://localhost:8080)**. Authentication is
-on, and no account exists yet, so follow **Create the administrator account**
-on the login screen to create the first one, then log in with it.
+The standard topology requires reviewed operator policy content. The copied
+files are synthetic examples for local evaluation; replace them before using
+real data. Then open **[http://localhost:8080](http://localhost:8080)**.
+Authentication is on, and no account exists yet, so follow **Create the
+administrator account** on the login screen to create the first one, then log
+in with it.
 
 The `.env` you copied contains development-only credentials. Replace them
 before this reaches anything but your own machine — see
@@ -69,7 +76,7 @@ does not come up.
 ## Demo
 
 Want to try Merlon without your own data? A local demo stack ships with a
-synthetic dataset (about 1,015 customers, 98 alerts) and authentication
+synthetic dataset (about 1,015 customers, 96 alerts) and authentication
 disabled, so you can click through scoring, alerts, cases, and reports
 immediately.
 

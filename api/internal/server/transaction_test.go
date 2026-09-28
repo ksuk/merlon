@@ -57,6 +57,160 @@ func TestCreateTransaction(t *testing.T) {
 	}
 }
 
+type transactionMonitoringResponse struct {
+	domain.Transaction
+	MonitoringEvaluation *struct {
+		PendingEvaluationID string                         `json:"pending_evaluation_id"`
+		Status              domain.PendingEvaluationStatus `json:"status"`
+		Reason              string                         `json:"reason"`
+	} `json:"monitoring_evaluation,omitempty"`
+}
+
+func newMonitoringUnavailableServer() (*Server, *store.MemoryTransactionRepo, *store.MemoryPendingEvaluationRepo, *store.MemoryAuditRepo) {
+	transactions := store.NewMemoryTransactionRepo()
+	pending := store.NewMemoryPendingEvaluationRepo()
+	audit := store.NewMemoryAuditRepo()
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(), Transactions: transactions, Alerts: store.NewMemoryAlertRepo(),
+		Audit: audit, Scoring: &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		PendingEvaluations: pending, Screening: &engine.MockScreeningEngine{},
+	})
+	return s, transactions, pending, audit
+}
+
+func TestCreateTransactionMonitoringUnavailableQueuesPendingAtomically(t *testing.T) {
+	s, _, pending, audit := newMonitoringUnavailableServer()
+	cust := createTestCustomer(t, s)
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-MONITORING-UNAVAILABLE","amount":100,"currency":"JPY","direction":"inbound","executed_at":"2026-01-02T03:04:05Z"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created transactionMonitoringResponse
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.MonitoringEvaluation == nil {
+		t.Fatal("create response omitted monitoring_evaluation")
+	}
+	if created.MonitoringEvaluation.Status != domain.PendingEvaluationStatusPendingReview || created.MonitoringEvaluation.PendingEvaluationID == "" {
+		t.Fatalf("monitoring_evaluation = %+v, want pending review with durable id", created.MonitoringEvaluation)
+	}
+	if created.MonitoringEvaluation.Reason != "monitoring_unavailable: dependency_not_configured" {
+		t.Fatalf("reason = %q, want stable dependency reason", created.MonitoringEvaluation.Reason)
+	}
+
+	queued, err := pending.ListByStatus(context.Background(), domain.PendingEvaluationStatusPendingReview, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 1 || queued[0].ID != created.MonitoringEvaluation.PendingEvaluationID || len(queued[0].TransactionIDs) != 1 || queued[0].TransactionIDs[0] != created.ID {
+		t.Fatalf("queued = %+v, want the created transaction in one pending record", queued)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/transactions/"+created.ID, nil)
+	getRec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, body: %s", getRec.Code, getRec.Body.String())
+	}
+	var loaded transactionMonitoringResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&loaded); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.MonitoringEvaluation == nil || loaded.MonitoringEvaluation.PendingEvaluationID != created.MonitoringEvaluation.PendingEvaluationID || loaded.MonitoringEvaluation.Status != domain.PendingEvaluationStatusPendingReview {
+		t.Fatalf("GET monitoring_evaluation = %+v, want create response state", loaded.MonitoringEvaluation)
+	}
+
+	entries, err := audit.List(context.Background(), domain.AuditListFilter{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range entries {
+		if entry.Action == "pending_evaluation_queued" && entry.ResourceID == created.MonitoringEvaluation.PendingEvaluationID && entry.Details["transaction_id"] == created.ID && entry.Details["reason"] == created.MonitoringEvaluation.Reason {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("pending_evaluation_queued audit entry not found")
+	}
+}
+
+func TestCreateTransactionMonitoringUnavailableWithoutPendingStoreRollsBack(t *testing.T) {
+	transactions := store.NewMemoryTransactionRepo()
+	s := New(":0", Deps{
+		Customers: store.NewMemoryCustomerRepo(), Transactions: transactions, Alerts: store.NewMemoryAlertRepo(),
+		Audit: store.NewMemoryAuditRepo(), Scoring: &engine.MockScoringEngine{Score: 2.5, Tier: domain.RiskTierMedium},
+		Screening: &engine.MockScreeningEngine{},
+	})
+	cust := createTestCustomer(t, s)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(`{"customer_id":"`+cust.ID+`","external_id":"TX-NO-PENDING-STORE","amount":100,"currency":"JPY","direction":"inbound"}`))
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	items, err := transactions.ListByCustomer(context.Background(), cust.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("transactions after missing pending store = %d, want rollback", len(items))
+	}
+}
+
+func TestCreateTransactionMonitoringUnavailableIdempotentReplayDoesNotDuplicatePendingOrAudit(t *testing.T) {
+	s, transactions, pending, audit := newMonitoringUnavailableServer()
+	cust := createTestCustomer(t, s)
+	body := `{"customer_id":"` + cust.ID + `","external_id":"TX-MONITORING-IDEMPOTENT","amount":100,"currency":"JPY","direction":"inbound","executed_at":"2026-01-02T03:04:05Z"}`
+	responses := make([]transactionMonitoringResponse, 0, 2)
+	for i, wantStatus := range []int{http.StatusCreated, http.StatusOK} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/transactions", strings.NewReader(body))
+		req.Header.Set("Idempotency-Key", "monitoring-unavailable-retry")
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		if rec.Code != wantStatus {
+			t.Fatalf("request %d status = %d, want %d, body: %s", i+1, rec.Code, wantStatus, rec.Body.String())
+		}
+		var response transactionMonitoringResponse
+		if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		responses = append(responses, response)
+	}
+	if responses[0].ID != responses[1].ID || responses[0].MonitoringEvaluation == nil || responses[1].MonitoringEvaluation == nil || responses[0].MonitoringEvaluation.PendingEvaluationID != responses[1].MonitoringEvaluation.PendingEvaluationID {
+		t.Fatalf("replay responses disagree: first=%+v second=%+v", responses[0], responses[1])
+	}
+	items, err := transactions.ListByCustomer(context.Background(), cust.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, err := pending.ListByStatus(context.Background(), domain.PendingEvaluationStatusPendingReview, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || len(queued) != 1 {
+		t.Fatalf("transactions/pending = %d/%d, want 1/1", len(items), len(queued))
+	}
+	entries, err := audit.List(context.Background(), domain.AuditListFilter{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queuedAudits := 0
+	for _, entry := range entries {
+		if entry.Action == "pending_evaluation_queued" {
+			queuedAudits++
+		}
+	}
+	if queuedAudits != 1 {
+		t.Fatalf("pending_evaluation_queued audits = %d, want 1", queuedAudits)
+	}
+}
+
 func TestCreateTransactionAuditFailureRollsBackTransaction(t *testing.T) {
 	audit := store.NewMemoryAuditRepo()
 	transactions := store.NewMemoryTransactionRepo()

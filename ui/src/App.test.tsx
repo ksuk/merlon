@@ -95,6 +95,31 @@ test("redirects an unauthenticated protected route to login before mounting the 
   );
 });
 
+test("redirects to login when logout left no CSRF cookie for refresh", async () => {
+  window.history.replaceState(null, "", "/audit");
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith("/system/info")) {
+      return jsonResponse(
+        { error: "missing Authorization header", error_code: "unauthorized" },
+        401,
+      );
+    }
+    if (url.endsWith("/auth/refresh")) {
+      return jsonResponse(
+        { error: "CSRF token mismatch", error_code: "forbidden" },
+        403,
+      );
+    }
+    throw new Error(`unexpected request: ${url}`);
+  });
+
+  render(<App />);
+
+  await waitFor(() => expect(window.location.pathname).toBe("/login"));
+  expect(screen.queryByText("セッションを確認できませんでした")).toBeNull();
+});
+
 test("uses a valid refresh token before deciding the user is unauthenticated", async () => {
   window.history.replaceState(null, "", "/definitely-missing");
   let systemInfoCalls = 0;

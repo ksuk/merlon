@@ -1,4 +1,4 @@
-.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage test test-go test-ui test-website test-scripts test-integration build build-go build-ui migrate backup restore audit-harden seed up down dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
+.PHONY: help fmt fmt-check lint lint-go lint-ui audit-npm verify-go verify-container-pins verify-wrangler-pin verify-toolchain-pins verify-ruleset-baseline verify-env-vars verify-openapi-coverage verify-demo-tour verify-standard-acceptance test test-go test-ui test-website test-scripts standard-engine-smoke test-integration build build-go build-ui migrate backup restore audit-harden seed up down demo-up dev-up dev-down screenshots demogen performance-evidence generate-openapi docs-build docs-check
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -19,6 +19,7 @@ lint-ui: ## Run UI lint
 	@cd ui && npm run lint
 
 audit-npm: ## Check npm advisories against the recorded exceptions (same gate as CI)
+	@node scripts/check-doc-image-assets.mjs
 	@node scripts/check-npm-audit.mjs ui website
 
 test: test-go test-ui test-website test-scripts ## Run all tests
@@ -37,6 +38,9 @@ test-website: ## Run documentation generator script tests
 test-scripts: ## Run tests for the reference scripts (standard library only)
 	@python3 -m unittest discover -s scripts -p 'test_*.py'
 	@node --test scripts/*.test.mjs
+
+standard-engine-smoke: ## Exercise standard Compose with missing, invalid, and valid engine roots
+	@python3 scripts/smoke_standard_engine_readiness.py
 
 test-integration: ## Apply migrations twice and run all Go tests against PostgreSQL
 	@test -n "$${MERLON_MIGRATION_DATABASE_URL:-$${MERLON_DATABASE_URL:-}}" || (echo "MERLON_MIGRATION_DATABASE_URL or MERLON_DATABASE_URL is required"; exit 1)
@@ -110,8 +114,17 @@ up: ## Start the standard topology (PostgreSQL + API)
 down: ## Stop the standard topology
 	docker compose down
 
+demo-up: ## Start the local demo with exact build identity
+	MERLON_BUILD_VERSION="$(VERSION)" MERLON_BUILD_REVISION="$$(git rev-parse HEAD)" MERLON_BUILD_BUILT_AT="$(BUILT_AT)" docker compose -f docker-compose.demo.yml up --build
+
 screenshots: ## Capture docs/img demo UI screenshots (needs the demo stack running)
 	@bash scripts/capture-screenshots.sh
+
+verify-demo-tour: ## Exercise both documented tours against a fresh healthy demo stack
+	@bash scripts/verify-demo-tour.sh
+
+verify-standard-acceptance: ## Exercise authentication, authorization, and restart persistence on Standard Compose
+	@bash scripts/verify-standard-acceptance.sh
 
 demogen: ## Generate synthetic demo data (deploy/seed/demo/*.json; not committed)
 	@cd api && go run ./cmd/merlon-demogen -out ../deploy/seed/demo
@@ -143,5 +156,6 @@ generate-openapi: ## Export the OpenAPI spec to docs/api/openapi.json
 docs-build: generate-openapi ## Build the documentation site
 	@cd website && (npm ci --no-audit --no-fund || npm install) && npm run build
 
-docs-check: ## Run reproducible documentation check gates (language, titles, i18n parity/freshness, UI translations)
+docs-check: ## Run reproducible documentation check gates (generated pages, language, titles, i18n, UI translations)
+	@node website/scripts/generate-changelog-page.mjs --check
 	@node website/scripts/checks/run-all.mjs

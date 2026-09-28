@@ -24,11 +24,12 @@ type caseNoteRecord struct {
 
 // caseSeed is one case-to-be, before ID/status/priority/notes are finalized.
 type caseSeed struct {
-	CustomerID string
-	AlertIDs   []string
-	Priority   domain.CasePriority
-	Status     domain.CaseStatus
-	Summary    string
+	CustomerID   string
+	AlertIDs     []string
+	Priority     domain.CasePriority
+	Status       domain.CaseStatus
+	STRCandidate bool
+	Summary      string
 	// anchorTime is the latest DetectedAt among AlertIDs, used to date
 	// case_notes chronologically after the alert(s) that opened the case.
 	AnchorTime time.Time
@@ -73,7 +74,7 @@ func storyCaseSeeds(storyAlerts map[string][]domain.Alert) []caseSeed {
 		Summary: "ハイリスク国(MM)向け送金の検知。中古車輸出業の実態を確認し、対応済み。", AnchorTime: latestDetected(story3)})
 
 	story4 := storyAlerts["demo-story-04"]
-	seeds = append(seeds, caseSeed{CustomerID: "demo-story-04", AlertIDs: ids(story4), Priority: domain.CasePriorityCritical, Status: domain.CaseStatusInvestigating,
+	seeds = append(seeds, caseSeed{CustomerID: "demo-story-04", AlertIDs: ids(story4), Priority: domain.CasePriorityCritical, Status: domain.CaseStatusInvestigating, STRCandidate: true,
 		Summary: "急速資金移動(パススルー構造の疑い)。設立1年未満の法人による短期間での資金の入出を調査中。", AnchorTime: latestDetected(story4)})
 
 	story5 := storyAlerts["demo-story-05"]
@@ -154,15 +155,16 @@ func finalizeCases(anchor time.Time, seeds []caseSeed) ([]domain.Case, []caseNot
 		}
 		analyst := analysts[i%len(analysts)]
 		c := domain.Case{
-			ID:         caseID,
-			CustomerID: s.CustomerID,
-			AlertIDs:   s.AlertIDs,
-			Status:     s.Status,
-			Priority:   s.Priority,
-			AssignedTo: analyst,
-			Summary:    s.Summary,
-			CreatedAt:  createdAt,
-			UpdatedAt:  createdAt,
+			ID:           caseID,
+			CustomerID:   s.CustomerID,
+			AlertIDs:     s.AlertIDs,
+			Status:       s.Status,
+			Priority:     s.Priority,
+			STRCandidate: s.STRCandidate,
+			AssignedTo:   analyst,
+			Summary:      s.Summary,
+			CreatedAt:    createdAt,
+			UpdatedAt:    createdAt,
 		}
 		if domain.IsCaseTerminal(s.Status) {
 			closedAt := createdAt.Add(48 * time.Hour)

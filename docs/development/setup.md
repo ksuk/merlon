@@ -35,6 +35,11 @@ do not share their database resources. The standard topology keeps API port
 docker compose -p merlon-dev -f docker-compose.yml up --build
 ```
 
+The standard topology requires the reviewed `operator-content/` roots described
+in [Getting Started](../getting-started.md). The source-mounted development
+overlay below explicitly keeps engine loading optional while iterating on API
+code.
+
 When another stack already uses the API port, override only the host-side port
 and use a separate project name:
 

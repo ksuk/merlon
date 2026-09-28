@@ -213,6 +213,7 @@ type TargetManifestRepository interface {
 }
 
 type PendingEvaluationWorkflowRepository interface {
+	Create(ctx context.Context, pe *PendingEvaluation) error
 	ListPendingEvaluations(ctx context.Context, filter PendingEvaluationFilter, limit int) ([]PendingEvaluation, error)
 	ListPendingHistory(ctx context.Context, id string, limit int) ([]PendingEvaluationHistoryEntry, error)
 	TransitionPendingEvaluation(ctx context.Context, id, action, actor, reason string, expectedVersion int) (*PendingEvaluation, error)

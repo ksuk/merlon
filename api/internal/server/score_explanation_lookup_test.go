@@ -96,3 +96,28 @@ func TestScoreExplanationStillRejectsAnUnknownRecord(t *testing.T) {
 		t.Fatalf("status = %d, want 404 for a score id that does not exist", rec.Code)
 	}
 }
+
+func TestScoreExplanationReturnsNotFoundWhenCustomerHasNoScores(t *testing.T) {
+	ctx := context.Background()
+	customers := store.NewMemoryCustomerRepo()
+	now := time.Now().UTC()
+	customerID := "00000000000000000000000000000703"
+	if err := customers.Create(ctx, &domain.Customer{
+		ID: customerID, ExternalID: "explain-unscored", CustomerType: domain.CustomerTypeIndividual,
+		CountryCode: "JP", Status: domain.CustomerStatusActive, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(":0", Deps{
+		Customers: customers, Alerts: store.NewMemoryAlertRepo(), Cases: store.NewMemoryCaseRepo(),
+		Audit: store.NewMemoryAuditRepo(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/customers/"+customerID+"/score-explanation", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 when the customer has no score records", rec.Code)
+	}
+	assertErrorCode(t, rec, "not_found")
+}
