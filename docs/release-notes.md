@@ -6,6 +6,13 @@ title: Release Notes
 
 Merlon publishes a single release channel, `vX.Y.Z`. Tags use strict SemVer; pre-release identifiers are rejected. Notable changes in each version are generated from `CHANGELOG.md` in the repository. The same file produces the notes attached to each GitHub release, so this page and the published releases always match. Before upgrading, read the [Upgrade Runbook](operations/upgrade.md).
 
+## 0.0.4 — 2026-09-28
+
+### Fixed
+
+- Restore PostgreSQL outbox sequence access for the dedicated serving role so
+  transaction creation works after backup recovery and audit hardening.
+
 ## 0.0.3 — 2026-09-28
 
 ### Changed
