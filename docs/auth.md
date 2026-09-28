@@ -25,9 +25,26 @@ initial Admin account and nothing else.
   any account exists would disclose that to anyone who can reach the login
   page.
 
-The current release has no supported API or UI flow for creating subsequent
-accounts. **User management** and `GET /api/v1/admin/users` provide a read-only
-list of existing users; they do not create users.
+After setup, an Admin manages local accounts through **User management** or the
+`/api/v1/admin/users` API:
+
+| Action | Endpoint |
+|---|---|
+| List accounts | `GET /api/v1/admin/users` |
+| Create an account | `POST /api/v1/admin/users` |
+| Change role or active state | `PATCH /api/v1/admin/users/{id}` |
+| Set a replacement password | `POST /api/v1/admin/users/{id}/reset-password` |
+| Force all sessions to end | `POST /api/v1/admin/users/{id}/revoke-sessions` |
+
+Passwords must contain at least 12 characters. Role and active-state changes,
+password resets, and explicit session revocation end every session that was
+active for the affected account. A later login starts a new session under the
+current role. An inactive account cannot log in. The last active Admin cannot
+be disabled or demoted.
+
+Account mutations and their audit entry commit together. Audit details include
+authority changes but never passwords, password hashes, tokens, or refresh-
+session family identifiers.
 
 The consequence for deployment is that the window between first start and first
 administrator is the one moment where an unauthenticated caller can create a
@@ -80,6 +97,7 @@ are not written to the audit log.
 | Request a whitelist entry (`whitelist:request`) | Yes | Yes | No |
 | Approve a whitelist entry (`whitelist:approve`) | Yes | No | No |
 | Read audit records (`audit:read`) | Yes | No | No |
+| Manage local users (`user:manage`) | Yes | No | No |
 | Create, update, import, activate, or deactivate rules (`rule:write`) | Yes | No | No |
 | Confirm a bulk run covering a large target population (`batch:execute:large`) | Yes | No | No |
 | Re-score a customer (`cdd:score`) | Yes | Yes | No |

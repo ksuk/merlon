@@ -49,12 +49,48 @@ const webhookRetryCheckInterval = 30 * time.Second
 
 const eventOutboxCheckInterval = time.Second
 
+const backtestLifecycleCheckInterval = 5 * time.Second
+
 const (
-	httpReadHeaderTimeout = 10 * time.Second
-	httpReadTimeout       = 30 * time.Second
-	httpWriteTimeout      = 5 * time.Minute
-	httpIdleTimeout       = 2 * time.Minute
+	httpReadHeaderTimeout     = 10 * time.Second
+	httpReadTimeout           = 30 * time.Second
+	httpWriteTimeout          = 5 * time.Minute
+	httpIdleTimeout           = 2 * time.Minute
+	databaseStartupRetryDelay = 250 * time.Millisecond
 )
+
+type databasePinger interface {
+	Ping(context.Context) error
+}
+
+func waitForDatabase(ctx context.Context, pinger databasePinger, timeout, initialDelay time.Duration) error {
+	startupCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	delay := initialDelay
+	for {
+		if err := pinger.Ping(startupCtx); err == nil {
+			return nil
+		}
+		if startupCtx.Err() != nil {
+			return fmt.Errorf("database did not become ready within %s", timeout)
+		}
+		slog.Warn("database not ready; retrying", "retry_in", delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-startupCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("database did not become ready within %s", timeout)
+		case <-timer.C:
+		}
+		if delay < 2*time.Second {
+			delay *= 2
+			if delay > 2*time.Second {
+				delay = 2 * time.Second
+			}
+		}
+	}
+}
 
 // eddEscalationCheckInterval governs how often RunEDDEscalationJob runs
 // (the case-management workflow §EDD未実施継続時の段階的措置). Its finest granularity
@@ -337,7 +373,7 @@ func main() {
 		}
 		defer pool.Close()
 
-		if err := pool.Ping(context.Background()); err != nil {
+		if err := waitForDatabase(context.Background(), pool, cfg.DatabaseStartupTimeout, databaseStartupRetryDelay); err != nil {
 			slog.Error("database ping", "error", err)
 			os.Exit(1)
 		}
@@ -444,10 +480,14 @@ func main() {
 			deps.APIKeys = store.NewPgAPIKeyRepo(pool)
 			deps.Users = store.NewPgUserRepo(pool)
 			deps.RefreshTokens = store.NewPgRefreshTokenRepo(pool)
+			deps.UserLifecycle = store.NewPgUserLifecycleRepo(pool)
 		} else {
 			deps.APIKeys = store.NewMemoryAPIKeyRepo()
-			deps.Users = store.NewMemoryUserRepo()
-			deps.RefreshTokens = store.NewMemoryRefreshTokenRepoWithAudit(deps.Audit)
+			memoryUsers := store.NewMemoryUserRepo()
+			memoryTokens := store.NewMemoryRefreshTokenRepoWithAuditAndUsers(deps.Audit, memoryUsers)
+			deps.Users = memoryUsers
+			deps.RefreshTokens = memoryTokens
+			deps.UserLifecycle = store.NewMemoryUserLifecycleRepo(memoryUsers, memoryTokens, deps.Audit.(*store.MemoryAuditRepo))
 		}
 		deps.BootstrapToken = cfg.BootstrapToken
 		deps.Denylist = auth.NewInMemoryDenylist()
@@ -798,10 +838,19 @@ func main() {
 
 	backtestCtx, cancelBacktest := context.WithCancel(context.Background())
 	defer cancelBacktest()
+	if deps.BacktestJobs != nil {
+		lifecycle := &backtestworker.Lifecycle{Jobs: deps.BacktestJobs, Audit: deps.Audit, QueueTimeout: cfg.BacktestQueueTimeout}
+		go func() {
+			if err := lifecycle.Run(backtestCtx, backtestLifecycleCheckInterval); err != nil && !errors.Is(err, context.Canceled) {
+				slog.Error("backtest lifecycle monitor stopped", "error", err)
+			}
+		}()
+		slog.Info("backtest lifecycle monitor started", "queue_timeout", cfg.BacktestQueueTimeout, "interval", backtestLifecycleCheckInterval)
+	}
 	if runWorkerJobs && deps.BacktestJobs != nil && deps.Backtest != nil {
 		for i := 0; i < cfg.WorkerConcurrency; i++ {
 			worker := &backtestworker.Worker{
-				Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules,
+				Jobs: deps.BacktestJobs, Customers: deps.Customers, Transactions: deps.Transactions, Engine: deps.Backtest, Rules: deps.Rules, Audit: deps.Audit,
 				ReplayOutcomeBuilder: backtestworker.NewReplayOutcomeBuilder(backtestworker.ReplayOutcomeDependencies{
 					Customers: deps.Customers, Alerts: deps.Alerts, Cases: deps.Cases, Reports: deps.Reports, AlertDecisions: deps.AlertDecisions,
 				}),

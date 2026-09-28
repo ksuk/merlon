@@ -51,6 +51,7 @@ function makeJob(status: BacktestJob["status"], overrides: Partial<BacktestJob> 
     progress: status === "completed" ? 1 : 0,
     processed_customers: status === "completed" ? 1 : 0,
     total_customers: 1,
+    retry_count: 0,
     created_at: "2025-02-01T00:00:00Z",
     updated_at: "2025-02-01T00:00:00Z",
     ...overrides,
@@ -173,6 +174,61 @@ describe("durable backtest polling", () => {
 
     expect(get).toHaveBeenCalledTimes(2)
     expect(screen.getByText("実行結果")).toBeDefined()
+  })
+
+  test("retries a failed job with the same id and resumes polling", async () => {
+    vi.spyOn(api.backtest, "create").mockResolvedValue(makeJob("queued"))
+    const get = vi
+      .spyOn(api.backtest, "get")
+      .mockResolvedValueOnce(
+        makeJob("failed", {
+          error: "backtest execution failed; retry is available",
+        }),
+      )
+      .mockResolvedValueOnce(makeJob("completed", { candidate: result, retry_count: 1 }))
+    const retry = vi.spyOn(api.backtest, "retry").mockResolvedValue(makeJob("queued", { retry_count: 1 }))
+
+    await renderWithRouter(<BacktestPage />)
+    await flushInitialLoad()
+    await startBacktest()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+
+    expect(screen.getByRole("alert").textContent).toContain("再試行できます")
+    fireEvent.click(screen.getByRole("button", { name: "ジョブを再試行" }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(retry).toHaveBeenCalledWith("job-1")
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(screen.getByText("実行結果")).toBeDefined()
+  })
+
+  test("opens a failed job from durable history after reload", async () => {
+    const failed = makeJob("failed", {
+      error: "backtest execution failed; retry is available",
+    })
+    vi.spyOn(api.backtest, "list").mockResolvedValue({
+      data: [failed],
+      pagination: { has_more: false },
+    })
+    const get = vi.spyOn(api.backtest, "get").mockResolvedValue(failed)
+
+    await renderWithRouter(<BacktestPage />)
+    await flushInitialLoad()
+    fireEvent.click(screen.getByRole("button", { name: "job-1" }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(get).toHaveBeenCalledWith("job-1")
+    expect(screen.getByRole("button", { name: "ジョブを再試行" })).toBeDefined()
+    expect(screen.getByRole("alert").textContent).toContain("再試行できます")
   })
 
   test("stops after ten minutes and offers resume", async () => {

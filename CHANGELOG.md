@@ -12,8 +12,29 @@ all.
 
 ## [Unreleased]
 
-No version has been tagged yet. Everything below describes the state of `main`
-ahead of the first release.
+No unreleased changes.
+
+## [0.0.2] - 2026-09-20
+
+### Fixed
+
+- Treat the expected two-decimal persistence rounding in CDD score
+  explanations as reconciled while continuing to report the measured delta.
+- Return a stable error code when a case cannot close because a linked alert
+  remains unresolved, allowing the operator UI to distinguish that condition
+  from an optimistic-concurrency conflict.
+- Retry the initial PostgreSQL connection for a bounded, configurable period
+  and restart the API after an explicit Compose database restart.
+
+### Verification
+
+- Add deterministic Standard-topology browser acceptance for authentication,
+  role enforcement, last-administrator protection, authenticated OpenAPI,
+  build identity, and restart persistence.
+- Strengthen the Docker Demo tours to validate exported STR and rule content,
+  score reconciliation, OpenAPI, and exact build identity.
+
+## [0.0.1]
 
 ### Breaking
 
@@ -260,5 +281,6 @@ Two further changes are 2xx-compatible but worth noting:
   transaction history runs through the REST API; see
   `docs/operations/initial-migration.md` for the supported procedure and its
   constraints, and ADR-0015 for the bulk loader design.
-- Production release is gated on the governance controls in
-  `docs/development/release-checklist.md`, which are not yet evidenced.
+- Release governance uses single-maintainer self-review rather than independent
+  approval or separation of duties. Every release discloses this posture in its
+  notes, image labels, and release manifest.

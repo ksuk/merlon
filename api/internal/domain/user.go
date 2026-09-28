@@ -7,8 +7,9 @@ import (
 )
 
 var (
-	ErrRefreshTokenReuse   = errors.New("refresh token reuse detected")
-	ErrRefreshTokenExpired = errors.New("refresh token expired")
+	ErrRefreshTokenReuse       = errors.New("refresh token reuse detected")
+	ErrRefreshTokenExpired     = errors.New("refresh token expired")
+	ErrSessionAuthorityChanged = errors.New("session authority changed before creation")
 )
 
 type User struct {
@@ -27,9 +28,12 @@ type RefreshToken struct {
 	TokenHash   string
 	TokenFamily string
 	SessionRole Role
-	ExpiresAt   time.Time
-	RevokedAt   *time.Time
-	CreatedAt   time.Time
+	// AuthorityUpdatedAt is a creation-time compare value. It is not persisted:
+	// session_role remains the durable authority snapshot after insertion.
+	AuthorityUpdatedAt time.Time
+	ExpiresAt          time.Time
+	RevokedAt          *time.Time
+	CreatedAt          time.Time
 }
 
 type UserRepository interface {
@@ -45,6 +49,16 @@ type UserRepository interface {
 	Count(ctx context.Context) (int, error)
 	// List returns all users, for the admin user-management screen.
 	List(ctx context.Context) ([]User, error)
+}
+
+// UserLifecycleRepository applies administrator-managed account mutations,
+// session revocation, and the corresponding audit append as one transaction.
+// Returned family IDs are used only to invalidate process-local caches; the
+// durable refresh-token rows are already revoked when the method succeeds.
+type UserLifecycleRepository interface {
+	CreateUser(ctx context.Context, user *User, audit *AuditEntry) error
+	UpdateAuthority(ctx context.Context, id string, role Role, active bool, updatedAt time.Time, audit *AuditEntry) (*User, []string, error)
+	ResetPassword(ctx context.Context, id, passwordHash string, updatedAt time.Time, audit *AuditEntry) (*User, []string, error)
 }
 
 type RefreshTokenRepository interface {

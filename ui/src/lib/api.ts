@@ -763,6 +763,7 @@ export interface BacktestJob {
   delta?: BacktestResult
   outcome_analysis?: BacktestOutcomeAnalysis
   error?: string
+  retry_count: number
   created_at: string
   updated_at: string
   metadata?: {
@@ -1251,6 +1252,7 @@ function normalizeBacktestResult(result: BacktestResult): BacktestResult {
 function normalizeBacktestJob(job: BacktestJob): BacktestJob {
   return {
     ...job,
+    retry_count: job.retry_count ?? 0,
     baseline: job.baseline ? normalizeBacktestResult(job.baseline) : job.baseline,
     candidate: job.candidate ? normalizeBacktestResult(job.candidate) : job.candidate,
     delta: job.delta ? normalizeBacktestResult(job.delta) : job.delta,
@@ -2047,6 +2049,8 @@ export const api = {
     },
     cancel: async (id: string) =>
       normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/cancel`, { method: "POST" })),
+    retry: async (id: string) =>
+      normalizeBacktestJob(await request<BacktestJob>(`/backtests/${encodeURIComponent(id)}/retry`, { method: "POST" })),
     run: (customerIds: string[], scenarioIds: string[], description: string) =>
       request<BacktestResult>("/backtest", {
         method: "POST",
@@ -2186,5 +2190,11 @@ export const api = {
     }),
   users: {
     list: () => request<User[]>("/admin/users"),
+    create: (data: { email: string; password: string; role: Role }) =>
+      request<User>("/admin/users", { method: "POST", body: JSON.stringify(data) }),
+    updateAuthority: (id: string, data: { role: Role; active: boolean }) =>
+      request<User>(`/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(data) }),
+    resetPassword: (id: string, password: string) =>
+      request<User>(`/admin/users/${encodeURIComponent(id)}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
   },
 }

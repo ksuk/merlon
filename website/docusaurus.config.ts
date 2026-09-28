@@ -11,7 +11,7 @@ const siteUrl = (process.env.DOCS_SITE_URL ?? 'http://localhost:3000').replace(
 
 const config: Config = {
   title: 'Merlon',
-  tagline: 'Self-hosted AML/CFT platform for non-bank financial institutions',
+  tagline: 'Self-hosted AML/CFT platform where customer risk drives transaction monitoring',
   favicon: 'img/favicon.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future

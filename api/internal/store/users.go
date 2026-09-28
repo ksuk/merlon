@@ -96,6 +96,7 @@ type MemoryRefreshTokenRepo struct {
 	mu    sync.RWMutex
 	data  map[string]*domain.RefreshToken // keyed by id
 	audit domain.AuditRepository
+	users *MemoryUserRepo
 }
 
 func NewMemoryRefreshTokenRepo() *MemoryRefreshTokenRepo {
@@ -104,6 +105,10 @@ func NewMemoryRefreshTokenRepo() *MemoryRefreshTokenRepo {
 
 func NewMemoryRefreshTokenRepoWithAudit(audit domain.AuditRepository) *MemoryRefreshTokenRepo {
 	return &MemoryRefreshTokenRepo{data: make(map[string]*domain.RefreshToken), audit: audit}
+}
+
+func NewMemoryRefreshTokenRepoWithAuditAndUsers(audit domain.AuditRepository, users *MemoryUserRepo) *MemoryRefreshTokenRepo {
+	return &MemoryRefreshTokenRepo{data: make(map[string]*domain.RefreshToken), audit: audit, users: users}
 }
 
 func (r *MemoryRefreshTokenRepo) CreateSession(ctx context.Context, t *domain.RefreshToken, maxActiveFamilies int) ([]string, error) {
@@ -117,6 +122,14 @@ func (r *MemoryRefreshTokenRepo) CreateSessionWithAudit(ctx context.Context, t *
 func (r *MemoryRefreshTokenRepo) createSession(ctx context.Context, t *domain.RefreshToken, maxActiveFamilies int, auditEntry *domain.AuditEntry) ([]string, error) {
 	if maxActiveFamilies <= 0 {
 		return nil, errors.New("max active refresh-token families must be positive")
+	}
+	if r.users != nil && !t.AuthorityUpdatedAt.IsZero() {
+		r.users.mu.RLock()
+		defer r.users.mu.RUnlock()
+		user, ok := r.users.data[t.UserID]
+		if !ok || !user.Active || user.Role != t.SessionRole || !user.UpdatedAt.Equal(t.AuthorityUpdatedAt) {
+			return nil, domain.ErrSessionAuthorityChanged
+		}
 	}
 
 	r.mu.Lock()
@@ -469,6 +482,20 @@ func (r *PgRefreshTokenRepo) createSession(ctx context.Context, t *domain.Refres
 
 	if _, err := tx.Exec(ctx, refreshTokenUserLockSQL, t.UserID); err != nil {
 		return nil, err
+	}
+	if !t.AuthorityUpdatedAt.IsZero() {
+		var role domain.Role
+		var active bool
+		var updatedAt time.Time
+		if err := tx.QueryRow(ctx, `SELECT role, active, updated_at FROM users WHERE id = $1`, t.UserID).Scan(&role, &active, &updatedAt); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, domain.ErrSessionAuthorityChanged
+			}
+			return nil, err
+		}
+		if !active || role != t.SessionRole || !updatedAt.Equal(t.AuthorityUpdatedAt) {
+			return nil, domain.ErrSessionAuthorityChanged
+		}
 	}
 	rows, err := tx.Query(ctx, `SELECT token_family, MIN(created_at) AS family_created_at
 		FROM refresh_tokens
