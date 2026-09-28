@@ -150,7 +150,7 @@ jobs:
       # unpromised, so this ratchets coverage rather than letting it slip.
       - name: Verify OpenAPI coverage
         run: make verify-openapi-coverage
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Build testable release image
         run: >-
           docker buildx build

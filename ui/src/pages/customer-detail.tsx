@@ -177,7 +177,7 @@ export function CustomerDetailPage() {
   // error payload rather than a list, so the shape is checked before use.
   const candidates = Array.isArray(cddCandidates?.data) ? cddCandidates.data : []
   const recommendedCandidate = candidates.find((candidate) => candidate.recommended)
-  const effectiveRuleSet = selectedRuleSet || recommendedCandidate?.id || ""
+  const effectiveRuleSet = selectedRuleSet || recommendedCandidate?.name || ""
   const pendingOverrides = (Array.isArray(scoreOverrides) ? scoreOverrides : []).filter((override) => override.status === "pending_approval")
   const eddEventList = Array.isArray(eddEvents) ? eddEvents : []
   const { required: requiredIdentityFields, fields: identityFields } = identityRequirements(kyc?.document, customer?.customer_type ?? "")
@@ -496,7 +496,7 @@ export function CustomerDetailPage() {
                 <select id="cdd-rule-set" aria-label={t("customerDetail.riskAssessment.ruleSet")} value={effectiveRuleSet} onChange={(event) => { setSelectedRuleSet(event.target.value); setScoreConfirmation(false) }} className="w-full rounded-md border bg-background px-2 py-1">
                   <option value="">{t("customerDetail.riskAssessment.selectRuleSet")}</option>
                   {candidates.map((candidate) => (
-                    <option key={`${candidate.id}-${candidate.version}`} value={candidate.id}>
+                    <option key={`${candidate.id}-${candidate.version}`} value={candidate.name}>
                       {candidate.name} v{candidate.version}
                       {candidate.recommended ? ` · ${t("customerDetail.riskAssessment.recommended")}` : ""}
                       {candidate.matched_on ? ` · ${candidate.matched_on}` : ""}

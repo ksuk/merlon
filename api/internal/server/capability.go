@@ -97,10 +97,11 @@ var capabilityCatalog = []capabilityEntry{
 		present:  func(s *Server) bool { return s.apikeys != nil },
 	},
 	{
-		id:       "users.manage",
-		surfaces: []string{surfaceUI, surfaceAPI},
-		docsURL:  "/docs/auth",
-		present:  func(s *Server) bool { return s.users != nil },
+		id:         "users.manage",
+		permission: auth.PermUserManage,
+		surfaces:   []string{surfaceUI, surfaceAPI},
+		docsURL:    "/docs/auth",
+		present:    func(s *Server) bool { return s.users != nil && s.userLifecycle != nil },
 	},
 	{
 		id:       "webhooks.manage",

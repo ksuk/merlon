@@ -106,6 +106,35 @@ func TestOpenAPI_ExistingFieldsPreserved(t *testing.T) {
 	}
 }
 
+func TestOpenAPI_BacktestRetryLifecycleContract(t *testing.T) {
+	spec := fetchOpenAPISpec(t)
+	paths := spec["paths"].(map[string]any)
+	retryPath, ok := paths["/api/v1/backtests/{id}/retry"].(map[string]any)
+	if !ok {
+		t.Fatal("backtest retry path missing")
+	}
+	post, ok := retryPath["post"].(map[string]any)
+	if !ok {
+		t.Fatal("backtest retry POST missing")
+	}
+	responses := post["responses"].(map[string]any)
+	for _, status := range []string{"202", "404", "409", "503"} {
+		if _, ok := responses[status]; !ok {
+			t.Errorf("backtest retry response %s missing", status)
+		}
+	}
+	components := spec["components"].(map[string]any)["schemas"].(map[string]any)
+	job := components["BacktestJob"].(map[string]any)
+	properties := job["properties"].(map[string]any)
+	if _, ok := properties["retry_count"]; !ok {
+		t.Fatal("BacktestJob.retry_count missing")
+	}
+	required := job["required"].([]any)
+	if !slices.Contains(required, any("retry_count")) {
+		t.Fatalf("BacktestJob required = %#v, want retry_count", required)
+	}
+}
+
 // TestBuildOpenAPISpec_MatchesHandlerOutput guards the refactor that
 // extracted the spec construction out of handleOpenAPI into the exported
 // BuildOpenAPISpec, which cmd/openapi-export calls directly (without an HTTP

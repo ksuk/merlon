@@ -589,3 +589,9 @@ func TestAuditDeleteEndpointNotExposed(t *testing.T) {
 		t.Errorf("status = %d, want %d (no delete route should be registered for audit logs)", rec.Code, http.StatusNotFound)
 	}
 }
+
+func TestResolveActionBacktestRetry(t *testing.T) {
+	if got := resolveAction(http.MethodPost, "/api/v1/backtests/job-1/retry"); got != "retry_backtest" {
+		t.Fatalf("resolveAction retry = %q, want retry_backtest", got)
+	}
+}

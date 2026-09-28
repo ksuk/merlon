@@ -1,6 +1,6 @@
 # Merlon
 
-AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) compliance software for Japanese non-bank financial institutions.
+Self-hosted AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) compliance software, designed with Japan's AML/CFT requirements as its baseline.
 
 Merlon provides integrated **Customer Due Diligence (CDD) scoring** and **Transaction Monitoring (TM)** capabilities, designed for self-hosted deployment by crypto-asset exchanges, money transfer operators, and other regulated entities.
 
@@ -76,7 +76,7 @@ does not come up.
 ## Demo
 
 Want to try Merlon without your own data? A local demo stack ships with a
-synthetic dataset (about 1,015 customers, 98 alerts) and authentication
+synthetic dataset (about 1,015 customers, 96 alerts) and authentication
 disabled, so you can click through scoring, alerts, cases, and reports
 immediately.
 

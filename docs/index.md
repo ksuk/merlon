@@ -5,11 +5,11 @@ sidebar_position: 0
 
 # Overview
 
-Merlon is self-hosted AML/CFT software for non-bank financial institutions in
-Japan. It scores customer risk (CDD), monitors transactions (TM), screens
-against sanctions and PEP lists, and manages the resulting alerts and cases —
-all running inside your own infrastructure, against your own PostgreSQL
-database.
+Merlon is self-hosted AML/CFT software, designed with Japan's AML/CFT
+requirements as its baseline. It scores customer risk (CDD), monitors
+transactions (TM), screens against sanctions and PEP lists, and manages the
+resulting alerts and cases — all running inside your own infrastructure,
+against your own PostgreSQL database.
 
 These pages are organized by what you are trying to do. Pick the track that
 matches your role; each one is ordered so you can read it top to bottom.

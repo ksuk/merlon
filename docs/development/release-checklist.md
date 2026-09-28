@@ -91,6 +91,14 @@ against the internal quality standard.
 
 ## Version and Provenance
 
+- [ ] Before creating a tag, run the manual `Release Evidence Dry Run`
+  workflow with the exact candidate commit and intended strict SemVer tag. It
+  builds and checks a local image, creates a GitHub artifact-attestation bundle,
+  generates the CycloneDX image SBOM and release manifest through the same
+  generator used by the publishing workflow, validates their linkage, and
+  retains them with the environment record. This rehearsal does not create a
+  tag, does not push an image, and does not publish a GitHub release. Link the
+  successful run and retained artifact from the release issue.
 - [ ] The release version is strict SemVer with no pre-release identifier, and
   uses an annotated, protected tag reachable from `main`. The tag message links
   the release issue.
