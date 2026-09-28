@@ -12,6 +12,11 @@ import (
 // flagged (the audit design §7).
 const defaultDropThreshold = 0.5
 
+// Audit timestamps are recorded by concurrent application requests before
+// their database inserts reserve sequence IDs. A small inversion in ID order
+// is therefore expected. Only a larger regression is a useful anomaly signal.
+const concurrentInsertSkewTolerance = time.Second
+
 // IDGap is a break in audit_logs.id's expected consecutive sequence, the
 // simplest signal of deleted rows on a table that should be append-only
 // (the audit design §7).
@@ -20,9 +25,8 @@ type IDGap struct {
 	NextID     int64 `json:"next_id"`
 }
 
-// TimeRegression is a row whose created_at precedes an earlier-id row's
-// created_at, which should never happen if audit_logs is only ever
-// inserted into in real time.
+// TimeRegression is a row whose created_at precedes an earlier-ID row's
+// created_at by more than the tolerated concurrent-insert skew.
 type TimeRegression struct {
 	ID                int64     `json:"id"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -98,7 +102,7 @@ func Verify(ctx context.Context, pool *pgxpool.Pool, opts VerifyOptions) (Verify
 			if id > prevID+1 {
 				result.IDGaps = append(result.IDGaps, IDGap{PreviousID: prevID, NextID: id})
 			}
-			if createdAt.Before(prevCreatedAt) {
+			if createdAt.Before(prevCreatedAt.Add(-concurrentInsertSkewTolerance)) {
 				result.TimeRegressions = append(result.TimeRegressions, TimeRegression{
 					ID: id, CreatedAt: createdAt,
 					PreviousID: prevID, PreviousCreatedAt: prevCreatedAt,
