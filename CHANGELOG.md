@@ -27,6 +27,11 @@ No unreleased changes.
 - Refresh release-evidence tooling and clarify the README and documentation
   landing page.
 
+### Fixed
+
+- Avoid false audit timestamp-regression findings from concurrent writes while
+  continuing to report gaps, count drops, and larger clock regressions.
+
 ### Security
 
 - Remove obsolete `image-size` audit exceptions after updating the dependency.
