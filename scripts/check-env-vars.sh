@@ -38,6 +38,10 @@ env_example=.env.example
 #   MERLON_OPERATOR_CONTENT_PATH -- consumed by the standard Docker Compose
 #   topology for the host-side operator-content bind mount. The application
 #   reads only the container-side CDD, TM, and screening paths.
+#   MERLON_BUILD_VERSION / MERLON_BUILD_REVISION / MERLON_BUILD_BUILT_AT --
+#   consumed by Demo Compose as Docker build arguments. The resulting binary
+#   exposes them through System status; the running process does not reread
+#   these variables.
 allowlist=(
   MERLON_BACKUP_DATABASE_URL
   MERLON_POSTGRES_PASSWORD
@@ -59,6 +63,12 @@ if grep -qE '`MERLON_OPERATOR_CONTENT_PATH`' "$config_doc" &&
   grep -qE '^[[:space:]]*#?[[:space:]]*MERLON_OPERATOR_CONTENT_PATH[[:space:]]*=' "$env_example"; then
   allowlist+=(MERLON_OPERATOR_CONTENT_PATH)
 fi
+for build_var in MERLON_BUILD_VERSION MERLON_BUILD_REVISION MERLON_BUILD_BUILT_AT; do
+  if grep -qF "\`$build_var\`" "$config_doc" &&
+    grep -qE "^[[:space:]]*#?[[:space:]]*$build_var[[:space:]]*=" "$env_example"; then
+    allowlist+=("$build_var")
+  fi
+done
 
 # code_vars -- every MERLON_* name the Go code actually reads. Restricted to
 # the call forms that read an environment variable, so a name appearing only in

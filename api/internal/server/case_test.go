@@ -361,6 +361,7 @@ func TestUpdateCaseRejectsTerminalWithActiveLinkedAlert(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
+	assertErrorCode(t, rec, "case_unresolved_alerts")
 
 	unchangedCase, _ := s.cases.Get(context.Background(), caseRecord.ID)
 	unchangedAlert, _ := s.alerts.Get(context.Background(), alert.ID)

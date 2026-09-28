@@ -4,9 +4,44 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ksuk/merlon/api/internal/events"
 )
+
+type startupPinger struct {
+	failures int
+	calls    int
+}
+
+func (p *startupPinger) Ping(context.Context) error {
+	p.calls++
+	if p.calls <= p.failures {
+		return errors.New("database is starting")
+	}
+	return nil
+}
+
+func TestWaitForDatabaseRetriesUntilReady(t *testing.T) {
+	pinger := &startupPinger{failures: 2}
+	if err := waitForDatabase(context.Background(), pinger, 100*time.Millisecond, time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if pinger.calls != 3 {
+		t.Fatalf("Ping calls = %d, want 3", pinger.calls)
+	}
+}
+
+func TestWaitForDatabaseStopsAtDeadline(t *testing.T) {
+	pinger := &startupPinger{failures: 100}
+	err := waitForDatabase(context.Background(), pinger, 5*time.Millisecond, time.Millisecond)
+	if err == nil {
+		t.Fatal("waitForDatabase returned nil for a database that never became ready")
+	}
+	if pinger.calls < 2 {
+		t.Fatalf("Ping calls = %d, want at least 2", pinger.calls)
+	}
+}
 
 type startupBus struct {
 	initErr error

@@ -1,6 +1,6 @@
 # Merlon
 
-AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) compliance software for Japanese non-bank financial institutions.
+Self-hosted AML/CFT (Anti-Money Laundering / Countering the Financing of Terrorism) compliance software, designed with Japan's AML/CFT requirements as its baseline.
 
 Merlon provides integrated **Customer Due Diligence (CDD) scoring** and **Transaction Monitoring (TM)** capabilities, designed for self-hosted deployment by crypto-asset exchanges, money transfer operators, and other regulated entities.
 

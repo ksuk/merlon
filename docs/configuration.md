@@ -19,6 +19,10 @@ for local development; do not use its credentials or secrets in production.
 | `MERLON_WORKER_CONCURRENCY` | `4` | Worker evaluation concurrency; keep bounded to the database/CPU budget. |
 | `MERLON_BACKTEST_QUEUE_TIMEOUT` | `10m` | Maximum time an accepted backtest may remain queued. On expiry the job becomes failed with a retryable operator-facing reason. |
 | `MERLON_DATABASE_URL` | unset | Use TLS (`sslmode=require` or stronger) and a least-privilege application role. |
+| `MERLON_DATABASE_STARTUP_TIMEOUT` | `30s` | Maximum time the API waits for the configured database to accept connections during startup. |
+| `MERLON_BUILD_VERSION` | `dev` | Compose build version embedded in the System status and image metadata. |
+| `MERLON_BUILD_REVISION` | unset | Full source commit embedded in the Compose image; release acceptance must provide the exact 40-character SHA. |
+| `MERLON_BUILD_BUILT_AT` | unset | UTC build timestamp embedded in the Compose image. |
 | `MERLON_BACKUP_DATABASE_URL` | unset | Dedicated read-only backup connection used only by `make backup`. Grant the documented existing/future table and sequence read privileges; never substitute a serving or schema-owner URL. |
 | `MERLON_MIGRATION_DATABASE_URL` | unset | Separate schema/object-owner connection used by `make migrate`, `make restore`, and `make audit-harden`. This role must manage and have `CREATE` on the target `public` schema. When another role owns a fresh restore database, its owner must transfer `public` to this role and pre-grant direct database `CONNECT` to both this role and the application role. Never substitute the serving-role URL. |
 | `MERLON_MIGRATION_BASELINE` | unset | Explicit last-applied migration filename for a pre-ledger database; never inferred automatically. |

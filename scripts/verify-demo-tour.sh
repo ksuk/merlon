@@ -60,7 +60,10 @@ CMD ["node", "/verify/verify-demo-tour.mjs"]
 DOCKERFILE
 
 docker create --name "$CONTAINER" --network "$network" \
-  -e BASE_URL=http://api:8080 "$VERIFY_IMAGE" >/dev/null
+  -e BASE_URL=http://api:8080 \
+  -e EXPECTED_VERSION="${MERLON_BUILD_VERSION:-dev}" \
+  -e EXPECTED_REVISION="${MERLON_BUILD_REVISION:-}" \
+  "$VERIFY_IMAGE" >/dev/null
 docker cp scripts/verify-demo-tour.mjs "$CONTAINER:/verify/verify-demo-tour.mjs"
 docker start "$CONTAINER" >/dev/null
 status=$(docker wait "$CONTAINER")
