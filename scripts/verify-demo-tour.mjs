@@ -3,9 +3,12 @@
 // are controlled without adding Playwright to the repository dependencies.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 
 const BASE_URL = process.env.BASE_URL || 'http://api:8080';
+const EXPECTED_VERSION = process.env.EXPECTED_VERSION || 'dev';
+const EXPECTED_REVISION = process.env.EXPECTED_REVISION || '';
 const STORY = {
   alert: '419d1314-654e-5375-bfb7-9fcea10fcd53',
   alertCompact: '419d1314654e5375bfb79fcea10fcd53',
@@ -18,6 +21,10 @@ const STORY = {
 };
 
 const MARKER = `demo-tour-${Date.now()}`;
+
+function sha256(content) {
+  return createHash('sha256').update(content).digest('hex');
+}
 
 async function open(page, path) {
   await page.goto(`${BASE_URL}${path}`, { waitUntil: 'networkidle' });
@@ -133,7 +140,26 @@ async function pathA(page, request) {
     response.url().includes(`report_id=${created.id}`) && response.ok(),
   );
   await page.getByRole('button', { name: 'JSON', exact: true }).first().click();
-  await exportResponse;
+  const jsonExportResponse = await exportResponse;
+  assert.match(jsonExportResponse.headers()['content-type'] || '', /application\/json/);
+  const jsonExportText = await jsonExportResponse.text();
+  const jsonExport = JSON.parse(jsonExportText);
+  assert.equal(jsonExport.report_id, created.id);
+  assert.equal(jsonExport.alert_id, STORY.alertCompact);
+  assert.equal(jsonExport.case_id, STORY.caseCompact);
+  assert.equal(jsonExport.export_version, 'str-v1');
+  assert.match(sha256(jsonExportText), /^[0-9a-f]{64}$/);
+
+  const csvExportResponse = await request.get(
+    `${BASE_URL}/api/v1/reports/str/export?report_id=${created.id}&format=csv`,
+  );
+  assert.equal(csvExportResponse.ok(), true, 'STR CSV export failed');
+  assert.match(csvExportResponse.headers()['content-type'] || '', /text\/csv/);
+  const csvExportText = await csvExportResponse.text();
+  assert.match(csvExportText, /^report_id,report_status,/);
+  assert.ok(csvExportText.includes(created.id));
+  assert.ok(csvExportText.includes(STORY.alertCompact));
+  assert.match(sha256(csvExportText), /^[0-9a-f]{64}$/);
 
   await page.reload({ waitUntil: 'networkidle' });
   assert.ok((await bodyText(page)).includes(`${MARKER}-narrative`), 'STR draft did not persist');
@@ -175,7 +201,20 @@ async function pathB(page, request) {
   await page.getByRole('link', { name: 'JSON', exact: true }).click();
   const ruleExport = await ruleExportPromise;
   assert.match(ruleExport.headers()['content-type'] || '', /application\/json/);
-  assert.match(await ruleExport.text(), /rapid_movement/);
+  const ruleJSON = await ruleExport.text();
+  const parsedRule = JSON.parse(ruleJSON);
+  assert.equal(parsedRule.name, 'rapid_movement');
+  assert.match(sha256(ruleJSON), /^[0-9a-f]{64}$/);
+
+  const ruleYAMLResponse = await request.get(
+    `${BASE_URL}/api/v1/rules/rapid_movement/export?format=yaml`,
+  );
+  assert.equal(ruleYAMLResponse.ok(), true, 'rule YAML export failed');
+  assert.match(ruleYAMLResponse.headers()['content-type'] || '', /application\/x-yaml/);
+  const ruleYAML = await ruleYAMLResponse.text();
+  assert.match(ruleYAML, /^type:/m);
+  assert.match(ruleYAML, /^name: rapid_movement$/m);
+  assert.match(sha256(ruleYAML), /^[0-9a-f]{64}$/);
 
   await open(page, `/customers/${STORY.customer}`);
   assert.match(await bodyText(page), /スコア評価\s*2/);
@@ -188,6 +227,13 @@ async function pathB(page, request) {
   await page.getByRole('button', { name: 'スコアリングを確定', exact: true }).click();
   assert.equal((await scoreResponse).ok(), true, 'Path B CDD scoring failed');
   await expectPoll(async () => /スコア評価\s*3/.test(await bodyText(page)), 10_000);
+  const explanationResponse = await request.get(
+    `${BASE_URL}/api/v1/customers/${STORY.customer}/score-explanation`,
+  );
+  assert.equal(explanationResponse.ok(), true, 'score explanation failed');
+  const explanation = await explanationResponse.json();
+  assert.equal(explanation.reconciled, true);
+  assert.ok(explanation.reconciliation_delta <= 0.005);
 
   await open(page, '/backtest');
   await page.locator('#backtest-rationale').fill(`${MARKER}-backtest`);
@@ -229,6 +275,13 @@ async function pathB(page, request) {
   const system = await bodyText(page);
   for (const component of ['Go API', 'PostgreSQL', 'Go Engine']) {
     assert.ok(system.includes(component), `system page is missing ${component}`);
+  }
+  const statusResponse = await request.get(`${BASE_URL}/api/v1/system/status?refresh=true`);
+  assert.equal(statusResponse.ok(), true, 'system status failed');
+  const status = await statusResponse.json();
+  assert.equal(status.version, EXPECTED_VERSION, 'system version does not match the demo build');
+  if (EXPECTED_REVISION) {
+    assert.equal(status.commit, EXPECTED_REVISION, 'system commit does not match the demo build');
   }
   const openapiResponse = await request.get(`${BASE_URL}/api/v1/openapi.json`);
   assert.equal(openapiResponse.ok(), true);

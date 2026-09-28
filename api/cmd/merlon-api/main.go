@@ -52,11 +52,45 @@ const eventOutboxCheckInterval = time.Second
 const backtestLifecycleCheckInterval = 5 * time.Second
 
 const (
-	httpReadHeaderTimeout = 10 * time.Second
-	httpReadTimeout       = 30 * time.Second
-	httpWriteTimeout      = 5 * time.Minute
-	httpIdleTimeout       = 2 * time.Minute
+	httpReadHeaderTimeout     = 10 * time.Second
+	httpReadTimeout           = 30 * time.Second
+	httpWriteTimeout          = 5 * time.Minute
+	httpIdleTimeout           = 2 * time.Minute
+	databaseStartupRetryDelay = 250 * time.Millisecond
 )
+
+type databasePinger interface {
+	Ping(context.Context) error
+}
+
+func waitForDatabase(ctx context.Context, pinger databasePinger, timeout, initialDelay time.Duration) error {
+	startupCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	delay := initialDelay
+	for {
+		if err := pinger.Ping(startupCtx); err == nil {
+			return nil
+		}
+		if startupCtx.Err() != nil {
+			return fmt.Errorf("database did not become ready within %s", timeout)
+		}
+		slog.Warn("database not ready; retrying", "retry_in", delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-startupCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("database did not become ready within %s", timeout)
+		case <-timer.C:
+		}
+		if delay < 2*time.Second {
+			delay *= 2
+			if delay > 2*time.Second {
+				delay = 2 * time.Second
+			}
+		}
+	}
+}
 
 // eddEscalationCheckInterval governs how often RunEDDEscalationJob runs
 // (the case-management workflow §EDD未実施継続時の段階的措置). Its finest granularity
@@ -339,7 +373,7 @@ func main() {
 		}
 		defer pool.Close()
 
-		if err := pool.Ping(context.Background()); err != nil {
+		if err := waitForDatabase(context.Background(), pool, cfg.DatabaseStartupTimeout, databaseStartupRetryDelay); err != nil {
 			slog.Error("database ping", "error", err)
 			os.Exit(1)
 		}

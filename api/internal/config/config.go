@@ -14,16 +14,17 @@ import (
 type Config struct {
 	Env string
 	// Mode controls process ownership: api, worker, or all.
-	Mode                 string
-	HTTPAddr             string
-	WorkerHTTPAddr       string
-	WorkerConcurrency    int
-	DatabaseURL          string
-	MigrationDatabaseURL string
-	MigrationBaseline    string
-	EncryptionKeyRing    string
-	InboundWebhookSecret string
-	Seed                 bool
+	Mode                   string
+	HTTPAddr               string
+	WorkerHTTPAddr         string
+	WorkerConcurrency      int
+	DatabaseURL            string
+	DatabaseStartupTimeout time.Duration
+	MigrationDatabaseURL   string
+	MigrationBaseline      string
+	EncryptionKeyRing      string
+	InboundWebhookSecret   string
+	Seed                   bool
 	// DemoDataDir is MERLON_DEMO_DATA_DIR, trimmed. The seed package reads the
 	// same environment value; final synthetic-data provenance comes from the
 	// seed completion state rather than this configuration hint.
@@ -196,6 +197,12 @@ func (c *Config) Validate() error {
 	if c.BacktestQueueTimeout == 0 {
 		c.BacktestQueueTimeout = 10 * time.Minute
 	}
+	if c.DatabaseStartupTimeout < 0 {
+		return fmt.Errorf("MERLON_DATABASE_STARTUP_TIMEOUT must be positive")
+	}
+	if c.DatabaseStartupTimeout == 0 {
+		c.DatabaseStartupTimeout = 30 * time.Second
+	}
 	if c.RateLimit < 0 {
 		return fmt.Errorf("MERLON_RATE_LIMIT must not be negative")
 	}
@@ -240,6 +247,7 @@ func Load() *Config {
 		WorkerHTTPAddr:         getEnv("MERLON_WORKER_HTTP_ADDR", ":8081"),
 		WorkerConcurrency:      getEnvInt("MERLON_WORKER_CONCURRENCY", 4),
 		DatabaseURL:            getEnv("MERLON_DATABASE_URL", ""),
+		DatabaseStartupTimeout: getEnvDuration("MERLON_DATABASE_STARTUP_TIMEOUT", 30*time.Second),
 		MigrationDatabaseURL:   getEnv("MERLON_MIGRATION_DATABASE_URL", ""),
 		MigrationBaseline:      getEnv("MERLON_MIGRATION_BASELINE", ""),
 		EncryptionKeyRing:      getEnv("MERLON_ENCRYPTION_KEY_RING", ""),
