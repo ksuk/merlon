@@ -14,6 +14,23 @@ all.
 
 No unreleased changes.
 
+## [0.0.3] - 2026-09-28
+
+### Changed
+
+- Update Go API, operator UI, and documentation dependencies while retaining
+  TypeScript 6 for both UI and documentation builds.
+- Build and verify the API container with Go 1.27.0 and Node.js 26.8.1, with
+  matching module, workflow, and DevContainer toolchain versions.
+- Update the documentation search, fonts, React types, and Wrangler to 4.127.0;
+  keep the Docs Deploy Wrangler pin aligned with the site dependency.
+- Refresh release-evidence tooling and clarify the README and documentation
+  landing page.
+
+### Security
+
+- Remove obsolete `image-size` audit exceptions after updating the dependency.
+
 ## [0.0.2] - 2026-09-20
 
 ### Fixed
