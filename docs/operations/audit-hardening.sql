@@ -222,6 +222,20 @@ BEGIN
         );
     END IF;
 
+    -- The transactional outbox also uses BIGSERIAL. Restores discard grants,
+    -- so an otherwise permitted transaction insert needs this sequence grant.
+    IF to_regclass('public.domain_event_outbox_sequence_num_seq') IS NOT NULL THEN
+        REVOKE ALL PRIVILEGES ON SEQUENCE public.domain_event_outbox_sequence_num_seq FROM PUBLIC;
+        EXECUTE format(
+            'REVOKE ALL PRIVILEGES ON SEQUENCE public.domain_event_outbox_sequence_num_seq FROM %I',
+            app_role
+        );
+        EXECUTE format(
+            'GRANT USAGE ON SEQUENCE public.domain_event_outbox_sequence_num_seq TO %I',
+            app_role
+        );
+    END IF;
+
     -- The migration ledger is operator-only.
     IF to_regclass('public.schema_migrations') IS NOT NULL THEN
         REVOKE ALL PRIVILEGES ON TABLE public.schema_migrations FROM PUBLIC;
@@ -287,6 +301,19 @@ BEGIN
             ) THEN
                 RAISE EXCEPTION
                     'MERLON_APP_ROLE % inherits forbidden % on audit sequence',
+                    app_role, privilege_name;
+            END IF;
+        END LOOP;
+    END IF;
+    IF to_regclass('public.domain_event_outbox_sequence_num_seq') IS NOT NULL THEN
+        FOREACH privilege_name IN ARRAY ARRAY['SELECT', 'UPDATE'] LOOP
+            IF has_sequence_privilege(
+                app_role,
+                'public.domain_event_outbox_sequence_num_seq',
+                privilege_name
+            ) THEN
+                RAISE EXCEPTION
+                    'MERLON_APP_ROLE % inherits forbidden % on outbox sequence',
                     app_role, privilege_name;
             END IF;
         END LOOP;
