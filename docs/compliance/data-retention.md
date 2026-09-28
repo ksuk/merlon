@@ -259,3 +259,9 @@ hash chain for audit logs. The deploying
 organization is responsible for configuring database roles, backups, access
 control, and monitoring. See [Regulatory Scope](regulatory-scope.md) for
 details.
+
+The verifier checks gaps in audit IDs, daily count drops, and timestamp
+regressions greater than one second in ID order. Concurrent requests can record
+timestamps before their inserts reserve IDs, so smaller inversions do not
+establish tampering. The one-second threshold is a heuristic, not proof that
+rows within that interval are intact; protect the database and retain backups.

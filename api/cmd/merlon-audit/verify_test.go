@@ -167,6 +167,25 @@ func TestVerifyDetectsTimeRegression(t *testing.T) {
 	}
 }
 
+func TestVerifyIgnoresConcurrentInsertTimestampSkew(t *testing.T) {
+	pool, _ := newTestPgPool(t)
+	base := nextTestIDBlock()
+	now := time.Now()
+
+	// Concurrent requests can reserve IDs in a different order from their
+	// application timestamps. A few milliseconds is not evidence of tampering.
+	insertAuditLog(t, pool, base, now)
+	insertAuditLog(t, pool, base+1, now.Add(-15*time.Millisecond))
+
+	result, err := Verify(context.Background(), pool, VerifyOptions{})
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if len(result.TimeRegressions) != 0 {
+		t.Fatalf("concurrent insert skew reported as time regression: %+v", result.TimeRegressions)
+	}
+}
+
 func TestVerifyDetectsCountDrop(t *testing.T) {
 	pool, _ := newTestPgPool(t)
 	base := nextTestIDBlock()
