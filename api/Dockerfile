@@ -2,7 +2,7 @@
 # never runs a toolchain under emulation: the UI bundle is architecture-neutral,
 # and Go cross-compiles to TARGETARCH natively (see api-builder below). Only the
 # runtime stage varies per target architecture.
-FROM --platform=$BUILDPLATFORM node:26.8.1-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS ui-builder
+FROM --platform=$BUILDPLATFORM node:26.8.2-alpine3.24@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS ui-builder
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm ci
