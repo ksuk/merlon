@@ -6,6 +6,29 @@ title: リリースノート
 
 Merlonは単一のリリースチャネル `vX.Y.Z` を公開します。タグには厳密なSemVerを使用し、プレリリース識別子は拒否されます。各バージョンの主な変更点は、リポジトリの `CHANGELOG.md` から自動生成されています。同じファイルから GitHub リリースのノートも生成されるため、このページと公開されたリリースの内容は常に一致します。アップグレード前に[アップグレード手順](operations/upgrade.md)を参照してください。
 
+## 0.0.5 — 2026-10-28
+
+### Changed
+
+- Integrate the dependency updates from Dependabot PRs #217–#234 into one
+  compatible Go, operator UI, and documentation dependency graph (#236).
+- Refresh and synchronize the build and CI toolchains to Go 1.27.3 and
+  Node.js 26.12.1, the documentation deploy tool to Wrangler 4.153.0, and
+  the pinned PostgreSQL and Alpine images to 18.6 and 3.24.3 respectively.
+- Update the pinned GitHub build actions and DevContainer base image.
+
+### Security
+
+- Update Go and npm dependencies, including vulnerable transitive packages,
+  without weakening the vulnerability audit gates. The Go scan reports no
+  reachable vulnerabilities; both npm audit gates pass.
+
+### Verification
+
+- Recheck migration replay and integration tests against PostgreSQL 18.6,
+  together with the Go and UI tests and release-image build contract. No
+  application schema or REST contract changes are introduced by this release.
+
 ## 0.0.4 — 2026-09-28
 
 ### Fixed
