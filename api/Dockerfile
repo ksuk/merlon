@@ -2,14 +2,14 @@
 # never runs a toolchain under emulation: the UI bundle is architecture-neutral,
 # and Go cross-compiles to TARGETARCH natively (see api-builder below). Only the
 # runtime stage varies per target architecture.
-FROM --platform=$BUILDPLATFORM node:26.8.1-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS ui-builder
+FROM --platform=$BUILDPLATFORM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS ui-builder
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm ci
 COPY ui/ .
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine3.24@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS api-builder
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS api-builder
 WORKDIR /build
 COPY api/go.mod api/go.sum* ./
 # Not suppressed: a checksum mismatch, a proxy outage, or a GOSUMDB failure has
@@ -55,12 +55,12 @@ RUN CGO_ENABLED=0 go build -o merlon-demogen ./cmd/merlon-demogen && \
 # is pure cross-compilation and cannot fail because a runner lacks emulation.
 # CA certificates and the passwd/group entries are architecture-independent
 # text, and this stage uses the same pinned Alpine as the runtime stage.
-FROM --platform=$BUILDPLATFORM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS rootfs
+FROM --platform=$BUILDPLATFORM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS rootfs
 RUN apk add --no-cache ca-certificates && \
     addgroup -g 10001 -S merlon && \
     adduser -u 10001 -S -G merlon -H -s /sbin/nologin merlon
 
-FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runtime-base
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS runtime-base
 COPY --from=rootfs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 # A fixed uid/gid rather than a name, so ownership is predictable regardless of
 # the host's user database.
