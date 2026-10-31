@@ -6,7 +6,14 @@ title: リリースノート
 
 Merlonは単一のリリースチャネル `vX.Y.Z` を公開します。タグには厳密なSemVerを使用し、プレリリース識別子は拒否されます。各バージョンの主な変更点は、リポジトリの `CHANGELOG.md` から自動生成されています。同じファイルから GitHub リリースのノートも生成されるため、このページと公開されたリリースの内容は常に一致します。アップグレード前に[アップグレード手順](operations/upgrade.md)を参照してください。
 
-## 0.0.5 — 2026-10-28
+## 0.0.5 — 2026-10-31
+
+### Fixed
+
+- Restore backups using libpq environment variables or service definitions
+  without placing connection credentials in process arguments. Explicitly
+  select database restore mode for `pg_restore` and cover it with a real
+  PostgreSQL regression test.
 
 ### Changed
 

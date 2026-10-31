@@ -697,7 +697,11 @@ class RestoreTest(unittest.TestCase):
             },
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("--dbname", args)
+        # pg_restore needs -d even when libpq supplies the connection. An empty
+        # connection string selects database restore mode without exposing a DSN.
+        self.assertIn("--dbname", args)
+        self.assertEqual(args[args.index("--dbname") + 1], "")
+        self.assertNotIn("--dbname", result.psql_grants_args)
         for arg in args + result.psql_grants_args:
             self.assertNotIn("libpq-secret", arg)
         self.assertNotIn("libpq-secret", result.stdout + result.stderr)

@@ -429,6 +429,46 @@ class PostgresOperationsIntegrationTest(unittest.TestCase):
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("large objects are not supported", refused.stderr)
 
+    def test_restore_uses_libpq_environment_with_real_pg_restore(self) -> None:
+        source = self.create_database("merlon_libpq_source")
+        target, _ = self.provision_managed_target("merlon_libpq_target")
+        suffix = uuid.uuid4().hex[:12]
+        app_role = f"merlon_app_{suffix}"
+        self.require_ok(
+            self.psql("postgres", f'CREATE ROLE "{app_role}" LOGIN'),
+            "create non-superuser serving role",
+        )
+        self.require_ok(
+            self.psql(source, "CREATE TABLE customers (id bigint PRIMARY KEY); "
+                      "INSERT INTO customers VALUES (41)"),
+            "create synthetic source data",
+        )
+        dump = f"/tmp/merlon-libpq-{suffix}.dump"
+        self.require_ok(
+            self.docker_exec([
+                "pg_dump", "--username", "postgres", "--format=custom",
+                "--no-owner", "--no-privileges", f"--file={dump}", source,
+            ]),
+            "create real archive",
+        )
+        restored = self.docker_exec(
+            ["bash", "/repo/scripts/restore.sh", dump],
+            input_text="restore\n",
+            env={
+                "PGHOST": "127.0.0.1",
+                "PGDATABASE": target,
+                "PGUSER": "postgres",
+                "PGPASSWORD": "operations-test-password",
+                "MERLON_APP_ROLE": app_role,
+            },
+        )
+        self.require_ok(restored, "restore using only libpq connection variables")
+        count = self.require_ok(
+            self.psql(target, "SELECT count(*) FROM customers WHERE id = 41"),
+            "verify archive was loaded rather than emitted as SQL",
+        ).stdout.strip()
+        self.assertEqual(count, "1")
+
     def provision_managed_target(self, label: str) -> tuple[str, str]:
         """Create a fresh database whose public schema a migration role manages.
 

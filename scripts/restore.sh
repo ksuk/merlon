@@ -426,8 +426,16 @@ if [[ $confirm != restore ]]; then
 fi
 
 echo "Restoring..."
+# Unlike psql, pg_restore does not enter database restore mode merely because
+# PGDATABASE or PGSERVICE is set. An explicit empty connection string selects
+# that mode while letting libpq read its environment/service defaults, without
+# putting credentials in the process arguments.
+restore_conn_args=("${conn_args[@]}")
+if [[ ${#restore_conn_args[@]} -eq 0 ]]; then
+  restore_conn_args=(--dbname "")
+fi
 pg_restore --no-owner --no-privileges --single-transaction --exit-on-error \
-  "${conn_args[@]}" "$dump_file"
+  "${restore_conn_args[@]}" "$dump_file"
 
 echo "Reapplying serving-role grants and audit hardening..."
 psql "${conn_args[@]}" \
