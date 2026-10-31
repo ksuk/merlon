@@ -14,7 +14,14 @@ all.
 
 No unreleased changes.
 
-## [0.0.5] - 2026-10-28
+## [0.0.5] - 2026-10-31
+
+### Fixed
+
+- Restore backups using libpq environment variables or service definitions
+  without placing connection credentials in process arguments. Explicitly
+  select database restore mode for `pg_restore` and cover it with a real
+  PostgreSQL regression test.
 
 ### Changed
 

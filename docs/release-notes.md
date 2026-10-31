@@ -6,7 +6,14 @@ title: Release Notes
 
 Merlon publishes a single release channel, `vX.Y.Z`. Tags use strict SemVer; pre-release identifiers are rejected. Notable changes in each version are generated from `CHANGELOG.md` in the repository. The same file produces the notes attached to each GitHub release, so this page and the published releases always match. Before upgrading, read the [Upgrade Runbook](operations/upgrade.md).
 
-## 0.0.5 — 2026-10-28
+## 0.0.5 — 2026-10-31
+
+### Fixed
+
+- Restore backups using libpq environment variables or service definitions
+  without placing connection credentials in process arguments. Explicitly
+  select database restore mode for `pg_restore` and cover it with a real
+  PostgreSQL regression test.
 
 ### Changed
 
